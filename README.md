@@ -249,4 +249,8 @@
 
 ---
 
+<<<<<<< HEAD
 ✨ *End of README*
+=======
+✨ *End of README*
+>>>>>>> e43b874b53e0bc6ced6a462c57a0635e2d9dbdaa
