@@ -33,6 +33,7 @@ public class ModConfig {
 
     public static boolean isDebugModeEnabled = false; // 全局调试模式开关
     public static final Map<DebugModule, Boolean> debugFlags = new EnumMap<>(DebugModule.class);
+    private static final ThreadLocal<Integer> INTERNAL_CHAT_SUPPRESSION_DEPTH = ThreadLocal.withInitial(() -> 0);
     public static boolean isMouseDetached = false;
     static {
         for (DebugModule module : DebugModule.values()) {
@@ -54,6 +55,34 @@ public class ModConfig {
         return debugFlags.getOrDefault(module, false);
     }
 
+    public static void runWithInternalChatSuppressed(Runnable action) {
+        if (action == null) {
+            return;
+        }
+        int depth = INTERNAL_CHAT_SUPPRESSION_DEPTH.get();
+        INTERNAL_CHAT_SUPPRESSION_DEPTH.set(depth + 1);
+        try {
+            action.run();
+        } finally {
+            int newDepth = INTERNAL_CHAT_SUPPRESSION_DEPTH.get() - 1;
+            if (newDepth <= 0) {
+                INTERNAL_CHAT_SUPPRESSION_DEPTH.remove();
+            } else {
+                INTERNAL_CHAT_SUPPRESSION_DEPTH.set(newDepth);
+            }
+        }
+    }
+
+    public static boolean isInternalChatSuppressed() {
+        return INTERNAL_CHAT_SUPPRESSION_DEPTH.get() > 0;
+    }
+
+    public static boolean isInternalDebugChatMessage(String text) {
+        String normalized = normalizeInternalDebugChatText(text);
+        return normalized.startsWith("[DEBUG:")
+                || normalized.startsWith("[FORCE DEBUG:");
+    }
+
     /**
      * 向游戏内聊天框打印调试信息的方法。
      * 
@@ -61,12 +90,8 @@ public class ModConfig {
      * @param message 要打印的消息
      */
     public static void debugPrint(DebugModule module, String message) {
-        if (isDebugFlagEnabled(module) && Minecraft.getMinecraft().player != null) {
-            // 使用 addScheduledTask 确保消息在主线程发送，避免多线程问题
-            Minecraft.getMinecraft().addScheduledTask(() -> {
-                Minecraft.getMinecraft().player.sendMessage(new TextComponentString(TextFormatting.AQUA + "[DEBUG: "
-                        + module.getDisplayName() + "] " + TextFormatting.GRAY + message));
-            });
+        if (isDebugFlagEnabled(module)) {
+            sendInternalDebugChatMessage(module, message, false);
         }
     }
 
@@ -77,12 +102,7 @@ public class ModConfig {
      * @param message 要打印的消息
      */
     public static void debugPrintForce(DebugModule module, String message) {
-        if (Minecraft.getMinecraft().player != null) {
-            Minecraft.getMinecraft().addScheduledTask(() -> {
-                Minecraft.getMinecraft().player.sendMessage(new TextComponentString(TextFormatting.RED
-                        + "[FORCE DEBUG: " + module.getDisplayName() + "] " + TextFormatting.YELLOW + message));
-            });
-        }
+        sendInternalDebugChatMessage(module, message, true);
     }
 
     /**
@@ -135,6 +155,53 @@ public class ModConfig {
      */
     public static boolean isGuiOpen() {
         return Minecraft.getMinecraft().currentScreen != null;
+    }
+
+    private static void sendInternalDebugChatMessage(DebugModule module, String message, boolean force) {
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc.player == null) {
+            return;
+        }
+        mc.addScheduledTask(() -> {
+            Minecraft currentMc = Minecraft.getMinecraft();
+            if (currentMc.player == null) {
+                return;
+            }
+            TextComponentString component = buildInternalDebugChatComponent(module, message, force);
+            runWithInternalChatSuppressed(() -> currentMc.player.sendMessage(component));
+        });
+    }
+
+    private static TextComponentString buildInternalDebugChatComponent(DebugModule module, String message, boolean force) {
+        TextFormatting prefixColor = force ? TextFormatting.RED : TextFormatting.AQUA;
+        TextFormatting messageColor = force ? TextFormatting.YELLOW : TextFormatting.GRAY;
+        String prefix = force
+                ? "[FORCE DEBUG: " + getDebugModuleDisplayName(module) + "] "
+                : "[DEBUG: " + getDebugModuleDisplayName(module) + "] ";
+
+        TextComponentString root = new TextComponentString(prefix);
+        root.getStyle().setColor(prefixColor);
+
+        TextComponentString body = new TextComponentString(safeDebugMessage(message));
+        body.getStyle().setColor(messageColor);
+        root.appendSibling(body);
+        return root;
+    }
+
+    private static String normalizeInternalDebugChatText(String text) {
+        if (text == null) {
+            return "";
+        }
+        String stripped = TextFormatting.getTextWithoutFormattingCodes(text);
+        return (stripped == null ? text : stripped).trim();
+    }
+
+    private static String getDebugModuleDisplayName(DebugModule module) {
+        return module == null ? "未知模块" : module.getDisplayName();
+    }
+
+    private static String safeDebugMessage(String message) {
+        return message == null ? "" : message;
     }
 }
 

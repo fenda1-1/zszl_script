@@ -28,6 +28,8 @@ import java.util.regex.Pattern;
 
 import static com.zszl.zszlScriptMod.shadowbaritone.api.command.IBaritoneChatControl.FORCE_COMMAND_PREFIX;
 
+import com.zszl.zszlScriptMod.config.ModConfig;
+
 public class ChatEventHandler {
 
     private static final Pattern PLAYER_NAME_IN_HOVER = Pattern.compile("玩家名称\\]\\s*([A-Za-z0-9_\\p{IsHan}]{2,20})");
@@ -56,10 +58,20 @@ public class ChatEventHandler {
 
     public static void triggerDisplayedChatMessage(ITextComponent originalComponent, ITextComponent displayedComponent,
             int chatLineId) {
+        if (ModConfig.isInternalChatSuppressed()) {
+            return;
+        }
         String rawMessage = normalizeTriggerMessage(originalComponent == null ? null : originalComponent.getUnformattedText());
         String displayedMessage = normalizeTriggerMessage(
                 displayedComponent == null ? null : displayedComponent.getUnformattedText());
         if (rawMessage.isEmpty() && displayedMessage.isEmpty()) {
+            return;
+        }
+        String rawDetectionText = originalComponent == null ? rawMessage : safe(originalComponent.getFormattedText());
+        String displayedDetectionText = displayedComponent == null ? displayedMessage
+                : safe(displayedComponent.getFormattedText());
+        if (ModConfig.isInternalDebugChatMessage(rawDetectionText)
+                || ModConfig.isInternalDebugChatMessage(displayedDetectionText)) {
             return;
         }
 

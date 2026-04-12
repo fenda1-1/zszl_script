@@ -20,6 +20,7 @@ public enum DebugModule {
     SHULKER_STACKING("潜影盒叠加"),
     REFINE("精炼设置"),
     AUTO_EQUIP("自动穿戴"),
+    TRIGGER_RULES("触发器"),
     MAIL_GUI("邮件GUI调试"),
     PASSWORD_MANAGER("密码管理"),
     BARITONE("调试Baritone"),

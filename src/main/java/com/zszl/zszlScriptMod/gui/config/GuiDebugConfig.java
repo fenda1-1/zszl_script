@@ -825,6 +825,8 @@ public class GuiDebugConfig extends ThemedGuiScreen {
                 return "gui.debug.tip.shulker";
             case AUTO_EQUIP:
                 return "gui.debug.tip.autoequip";
+            case TRIGGER_RULES:
+                return "gui.debug.tip.trigger";
             default:
                 return null;
         }
@@ -862,6 +864,8 @@ public class GuiDebugConfig extends ThemedGuiScreen {
                 return "输出精炼配置命中、材料检查和执行步骤。";
             case AUTO_EQUIP:
                 return "记录装备比较、刷新判断与自动穿戴流程。";
+            case TRIGGER_RULES:
+                return "输出触发器事件到达、规则匹配过程、冷却与执行结果。";
             case MAIL_GUI:
                 return "跟踪邮件 GUI 的识别结果、控件状态与交互信息。";
             case PASSWORD_MANAGER:

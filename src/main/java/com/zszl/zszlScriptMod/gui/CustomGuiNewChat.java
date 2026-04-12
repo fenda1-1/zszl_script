@@ -4,6 +4,7 @@ package com.zszl.zszlScriptMod.gui;
 
 import com.google.common.collect.Lists;
 import com.zszl.zszlScriptMod.config.ChatOptimizationConfig;
+import com.zszl.zszlScriptMod.config.ModConfig;
 import com.zszl.zszlScriptMod.handlers.ChatEventHandler;
 import com.zszl.zszlScriptMod.utils.AnimationTools;
 import com.zszl.zszlScriptMod.utils.TextureManagerHelper;
@@ -246,7 +247,9 @@ public class CustomGuiNewChat extends GuiNewChat {
     public void printChatMessageWithOptionalDeletion(ITextComponent chatComponent, int chatLineId) {
         // 如果 chatLineId 不为 0，说明是系统消息（如/say），我们直接用旧逻辑处理，不进行过滤
         if (chatLineId != 0) {
-            ChatEventHandler.triggerDisplayedChatMessage(chatComponent, chatComponent, chatLineId);
+            if (!ModConfig.isInternalChatSuppressed()) {
+                ChatEventHandler.triggerDisplayedChatMessage(chatComponent, chatComponent, chatLineId);
+            }
             this.setChatLine(chatComponent, chatLineId, this.mc.ingameGUI.getUpdateCounter(), false);
             return;
         }
@@ -322,7 +325,9 @@ public class CustomGuiNewChat extends GuiNewChat {
 
         percentComplete = 0.0F;
 
-        ChatEventHandler.triggerDisplayedChatMessage(chatComponent, componentToDisplay, logicalIdToUse);
+        if (!ModConfig.isInternalChatSuppressed()) {
+            ChatEventHandler.triggerDisplayedChatMessage(chatComponent, componentToDisplay, logicalIdToUse);
+        }
 
         // 使用新的唯一ID来设置聊天行
         this.setChatLine(componentToDisplay, logicalIdToUse, this.mc.ingameGUI.getUpdateCounter(), false);
