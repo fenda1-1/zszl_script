@@ -1431,6 +1431,10 @@ gui.path.action_editor.label.required_nbt_tags_mode=NBT标签匹配模式
 gui.path.action_editor.help.required_nbt_tags_mode=包含=仅移动匹配关键字的物品；不包含=排除匹配关键字的物品，其他物品都可移动
 gui.path.action_editor.option.nbt_tag_mode.contains=包含
 gui.path.action_editor.option.nbt_tag_mode.not_contains=不包含
+gui.path.action_editor.help.move_chest_item_name=按物品显示名称匹配，忽略颜色代码；与 NBT 标签条件至少填写一个
+gui.path.action_editor.help.move_chest_required_nbt_tags=按物品提示、附魔描述、NBT 文本和物品 ID 匹配；与物品名称至少填写一个
+gui.path.action_editor.placeholder.move_chest_item_name=输入要匹配的物品名
+gui.path.action_editor.placeholder.move_chest_required_nbt_tags=输入要匹配的 NBT 关键字
 gui.path.action_editor.label.target_chest_slots=目标容器槽位
 gui.path.action_editor.label.source_chest_slots=来源容器槽位
 gui.path.action_editor.label.source_inventory_slots=来源背包槽位

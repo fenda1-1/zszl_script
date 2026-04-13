@@ -412,11 +412,13 @@ public final class NodeParameterSchemaRegistry {
                         schemas.add(FieldSchema.paramsField("moveDirection", "移动方向", FieldType.SELECT, false,
                                         "选择物品移动方向。默认背包->容器，也可切换为容器->背包。", "INVENTORY_TO_CHEST / CHEST_TO_INVENTORY",
                                         "INVENTORY_TO_CHEST", "INVENTORY_TO_CHEST", "CHEST_TO_INVENTORY"));
+                        schemas.add(FieldSchema.paramsField("itemName", "物品名", FieldType.TEXT, false,
+                                        "按物品显示名称包含匹配，忽略颜色代码。与 NBT 条件至少填写一个。", "可为空", ""));
                         schemas.add(FieldSchema.paramsField("requiredNbtTagsMode", "NBT匹配模式", FieldType.SELECT, false,
                                         "包含=只移动匹配关键字的物品；不包含=排除匹配关键字的物品。", "包含 / 不包含", "CONTAINS",
                                         "CONTAINS", "NOT_CONTAINS"));
-                        schemas.add(FieldSchema.paramsField("requiredNbtTagsText", "NBT标签条件", FieldType.KV_LINES, false,
-                                        "每行一个NBT标签关键字；留空表示不过滤NBT。", "可为空", ""));
+                        schemas.add(FieldSchema.paramsField("requiredNbtTagsText", "NBT标签条件", FieldType.TEXT, false,
+                                        "输入 NBT/tooltip/附魔/物品 ID 关键字。与物品名至少填写一个。", "可为空", ""));
                 } else if ("transferitemstowarehouse".equals(normalized)) {
                 } else if ("warehouse_auto_deposit".equals(normalized)) {
                 } else if ("blocknextgui".equals(normalized)) {

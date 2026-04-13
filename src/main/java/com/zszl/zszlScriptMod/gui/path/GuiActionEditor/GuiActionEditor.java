@@ -92,6 +92,19 @@ import java.util.function.Consumer;
 import static com.zszl.zszlScriptMod.gui.path.GuiActionEditor.util.ActionEditorDisplayConverters.*;
 
 public class GuiActionEditor extends ThemedGuiScreen {
+    private static final class MoveChestFilterRuleDraft {
+        private final String itemName;
+        private final String nbtText;
+
+        private MoveChestFilterRuleDraft(String itemName, String nbtText) {
+            this.itemName = itemName == null ? "" : itemName.trim();
+            this.nbtText = nbtText == null ? "" : nbtText.trim();
+        }
+
+        private boolean isEmpty() {
+            return itemName.isEmpty() && nbtText.isEmpty();
+        }
+    }
 
     private static final int BTN_ID_FILL_NEAREST_CHEST = 300;
     static final int BTN_ID_SCAN_NEARBY_ENTITIES = 301;
@@ -270,9 +283,12 @@ public class GuiActionEditor extends ThemedGuiScreen {
     final Map<String, GroupedVariableSelectorBinding> groupedVariableBindings = new LinkedHashMap<>();
     final Map<String, LinkedHashMap<String, String>> expressionTemplateBindings = new LinkedHashMap<>();
     final Map<String, ExpressionEditorBinding> expressionEditorBindings = new LinkedHashMap<>();
+    private GuiTextField moveChestItemNameInputField;
     private GuiTextField moveChestNbtTagInputField;
     GuiTextField conditionInventoryNbtTagInputField;
-    private final List<String> moveChestRequiredNbtTags = new ArrayList<>();
+    private String moveChestDraftItemName = "";
+    private String moveChestDraftNbtText = "";
+    private final List<MoveChestFilterRuleDraft> moveChestFilterRules = new ArrayList<>();
     private final List<String> conditionInventoryRequiredNbtTags = new ArrayList<>();
     private final LinkedHashSet<Integer> moveChestSelectedChestSlots = new LinkedHashSet<>();
     private final LinkedHashSet<Integer> moveChestSelectedInventorySlots = new LinkedHashSet<>();
@@ -298,7 +314,9 @@ public class GuiActionEditor extends ThemedGuiScreen {
     private int systemMessageFormatLabelX;
     private int systemMessageFormatLabelY;
     int runSequenceStatusLabelY;
+    private int moveChestItemInputBaseY = -1;
     private int moveChestTagInputBaseY = -1;
+    private int moveChestRuleButtonBaseY = -1;
     int conditionInventoryNbtTagInputBaseY = -1;
     int booleanExpressionToolbarBaseY = -1;
     int booleanExpressionCardListBaseY = -1;
@@ -1019,9 +1037,12 @@ public class GuiActionEditor extends ThemedGuiScreen {
         this.activeExpressionPopupBooleanOnly = false;
         this.nearbyBlockPosMap.clear();
         this.systemMessageField = null;
+        this.moveChestItemNameInputField = null;
         this.moveChestNbtTagInputField = null;
         this.conditionInventoryNbtTagInputField = null;
-        this.moveChestRequiredNbtTags.clear();
+        this.moveChestDraftItemName = "";
+        this.moveChestDraftNbtText = "";
+        this.moveChestFilterRules.clear();
         this.conditionInventoryRequiredNbtTags.clear();
         this.moveChestSelectedChestSlots.clear();
         this.moveChestSelectedInventorySlots.clear();
@@ -1047,7 +1068,9 @@ public class GuiActionEditor extends ThemedGuiScreen {
         this.systemMessageFormatLabelX = 0;
         this.systemMessageFormatLabelY = 0;
         this.runSequenceStatusLabelY = 0;
+        this.moveChestItemInputBaseY = -1;
         this.moveChestTagInputBaseY = -1;
+        this.moveChestRuleButtonBaseY = -1;
         this.conditionInventoryNbtTagInputBaseY = -1;
         this.booleanExpressionToolbarBaseY = -1;
         this.booleanExpressionCardListBaseY = -1;
@@ -1728,6 +1751,12 @@ public class GuiActionEditor extends ThemedGuiScreen {
                 currentY += 40;
                 addSectionTitle("§b§l━━━ 物品过滤 ━━━", x, currentY);
                 currentY += 25;
+                moveChestItemInputBaseY = currentY + 18;
+                moveChestItemNameInputField = new GuiTextField(949, this.fontRenderer, x, currentY + 18, fieldWidth, 20);
+                moveChestItemNameInputField.setMaxStringLength(256);
+                moveChestItemNameInputField.setEnableBackgroundDrawing(false);
+                moveChestItemNameInputField.setText(moveChestDraftItemName);
+                currentY += 40;
                 addDropdown(I18n.format("gui.path.action_editor.label.required_nbt_tags_mode"),
                         "requiredNbtTagsMode",
                         I18n.format("gui.path.action_editor.help.required_nbt_tags_mode"),
@@ -1741,18 +1770,17 @@ public class GuiActionEditor extends ThemedGuiScreen {
                                 : "CONTAINS"));
                 currentY += 40;
                 moveChestTagInputBaseY = currentY + 18;
-                moveChestNbtTagInputField = new GuiTextField(950, this.fontRenderer, x, currentY + 18,
-                        shouldWrapTagInputRow(fieldWidth) ? fieldWidth : Math.max(80, fieldWidth - 88), 20);
+                moveChestNbtTagInputField = new GuiTextField(950, this.fontRenderer, x, currentY + 18, fieldWidth, 20);
                 moveChestNbtTagInputField.setMaxStringLength(256);
                 moveChestNbtTagInputField.setEnableBackgroundDrawing(false);
-                int moveChestButtonY = getTagButtonBaseY(moveChestTagInputBaseY, fieldWidth);
-                int moveChestButtonWidth = shouldWrapTagInputRow(fieldWidth) ? fieldWidth : 80;
-                int moveChestButtonX = shouldWrapTagInputRow(fieldWidth) ? x : x + fieldWidth - moveChestButtonWidth;
-                btnAddMoveChestNbtTag = new ThemedButton(BTN_ID_ADD_MOVE_CHEST_NBT_TAG, moveChestButtonX,
-                        moveChestButtonY, moveChestButtonWidth, 20, "添加NBT");
+                moveChestNbtTagInputField.setText(moveChestDraftNbtText);
+                currentY += 40;
+                moveChestRuleButtonBaseY = currentY;
+                btnAddMoveChestNbtTag = new ThemedButton(BTN_ID_ADD_MOVE_CHEST_NBT_TAG, x, currentY, fieldWidth, 20,
+                        "添加规则");
                 this.buttonList.add(btnAddMoveChestNbtTag);
-                registerScrollableButton(btnAddMoveChestNbtTag, moveChestButtonY);
-                currentY += getTagEditorAdvance(fieldWidth);
+                registerScrollableButton(btnAddMoveChestNbtTag, moveChestRuleButtonBaseY);
+                currentY += 28;
                 addSectionTitle("§b§l━━━ 槽位选择 ━━━", x, currentY);
                 break;
             case "blocknextgui":
@@ -2272,14 +2300,45 @@ public class GuiActionEditor extends ThemedGuiScreen {
                 inventorySlots.add(slotIndex);
             }
             newParams.add("inventorySlots", inventorySlots);
-
-            JsonArray requiredTags = new JsonArray();
-            for (String tag : moveChestRequiredNbtTags) {
-                if (tag != null && !tag.trim().isEmpty()) {
-                    requiredTags.add(tag.trim());
+            String moveChestItemName = moveChestItemNameInputField == null ? moveChestDraftItemName
+                    : moveChestItemNameInputField.getText();
+            moveChestItemName = moveChestItemName == null ? "" : moveChestItemName.trim();
+            String moveChestNbtText = moveChestNbtTagInputField == null ? moveChestDraftNbtText
+                    : moveChestNbtTagInputField.getText();
+            moveChestNbtText = moveChestNbtText == null ? "" : moveChestNbtText.trim();
+            MoveChestFilterRuleDraft pendingRule = new MoveChestFilterRuleDraft(moveChestItemName, moveChestNbtText);
+            JsonArray moveChestRules = new JsonArray();
+            for (MoveChestFilterRuleDraft rule : moveChestFilterRules) {
+                if (rule == null || rule.isEmpty()) {
+                    continue;
                 }
+                JsonObject ruleObject = new JsonObject();
+                if (!rule.itemName.isEmpty()) {
+                    ruleObject.addProperty("itemName", rule.itemName);
+                }
+                if (!rule.nbtText.isEmpty()) {
+                    ruleObject.addProperty("requiredNbtTagsText", rule.nbtText);
+                }
+                moveChestRules.add(ruleObject);
             }
-            newParams.add("requiredNbtTags", requiredTags);
+            if (!pendingRule.isEmpty()) {
+                JsonObject ruleObject = new JsonObject();
+                if (!pendingRule.itemName.isEmpty()) {
+                    ruleObject.addProperty("itemName", pendingRule.itemName);
+                }
+                if (!pendingRule.nbtText.isEmpty()) {
+                    ruleObject.addProperty("requiredNbtTagsText", pendingRule.nbtText);
+                }
+                moveChestRules.add(ruleObject);
+            }
+            newParams.remove("itemName");
+            newParams.remove("requiredNbtTags");
+            if (moveChestRules.size() > 0) {
+                newParams.add("moveChestRules", moveChestRules);
+            } else {
+                newParams.remove("moveChestRules");
+                newParams.remove("requiredNbtTagsText");
+            }
         }
 
         if ("toggle_other_feature".equalsIgnoreCase(actionTypeToSave)) {
@@ -3491,7 +3550,7 @@ public class GuiActionEditor extends ThemedGuiScreen {
     }
 
     private void initializeMoveChestSelectionState() {
-        moveChestRequiredNbtTags.clear();
+        moveChestFilterRules.clear();
         moveChestSelectedChestSlots.clear();
         moveChestSelectedInventorySlots.clear();
         moveChestDragSelectionSnapshot.clear();
@@ -3502,7 +3561,9 @@ public class GuiActionEditor extends ThemedGuiScreen {
         moveChestDragCurrentIndex = -1;
         readMoveChestIndexList(currentParams, "chestSlots", "chestSlotsText", moveChestSelectedChestSlots);
         readMoveChestIndexList(currentParams, "inventorySlots", "inventorySlotsText", moveChestSelectedInventorySlots);
-        readMoveChestTagList(currentParams, "requiredNbtTags", "requiredNbtTagsText", moveChestRequiredNbtTags);
+        moveChestDraftItemName = "";
+        moveChestDraftNbtText = "";
+        readMoveChestFilterRules(currentParams, moveChestFilterRules);
     }
 
     private void readMoveChestIndexList(JsonObject source, String arrayKey, String textKey, Set<Integer> target) {
@@ -3540,45 +3601,73 @@ public class GuiActionEditor extends ThemedGuiScreen {
         }
     }
 
-    private void readMoveChestTagList(JsonObject source, String arrayKey, String textKey, List<String> target) {
-        if (source == null || target == null) {
-            return;
+    private String readMoveChestTagText(JsonObject source, String arrayKey, String textKey) {
+        if (source == null) {
+            return "";
         }
+        List<String> values = new ArrayList<>();
         if (source.has(arrayKey) && source.get(arrayKey).isJsonArray()) {
             for (JsonElement element : source.getAsJsonArray(arrayKey)) {
                 if (element != null && element.isJsonPrimitive()) {
-                    addMoveChestTag(element.getAsString());
+                    String value = safe(element.getAsString()).trim();
+                    if (!value.isEmpty()) {
+                        values.add(value);
+                    }
                 }
             }
-            return;
+            if (!values.isEmpty()) {
+                return String.join(", ", values);
+            }
         }
 
-        String text = null;
+        if (source.has(textKey) && source.get(textKey).isJsonPrimitive()) {
+            return safe(source.get(textKey).getAsString());
+        }
         if (source.has(arrayKey) && source.get(arrayKey).isJsonPrimitive()) {
-            text = source.get(arrayKey).getAsString();
-        } else if (source.has(textKey) && source.get(textKey).isJsonPrimitive()) {
-            text = source.get(textKey).getAsString();
+            return safe(source.get(arrayKey).getAsString());
         }
-        if (text == null || text.trim().isEmpty()) {
-            return;
-        }
-
-        for (String token : text.split("\\r?\\n|,")) {
-            addMoveChestTag(token);
-        }
+        return "";
     }
 
-    private void addMoveChestTag(String rawTag) {
-        String normalized = rawTag == null ? "" : rawTag.trim();
-        if (normalized.isEmpty()) {
+    private void readMoveChestFilterRules(JsonObject source, List<MoveChestFilterRuleDraft> target) {
+        if (source == null || target == null) {
             return;
         }
-        for (String existing : moveChestRequiredNbtTags) {
-            if (existing.equalsIgnoreCase(normalized)) {
+        if (source.has("moveChestRules") && source.get("moveChestRules").isJsonArray()) {
+            for (JsonElement element : source.getAsJsonArray("moveChestRules")) {
+                if (element == null || !element.isJsonObject()) {
+                    continue;
+                }
+                JsonObject ruleObject = element.getAsJsonObject();
+                String itemName = ruleObject.has("itemName") && ruleObject.get("itemName").isJsonPrimitive()
+                        ? safe(ruleObject.get("itemName").getAsString())
+                        : "";
+                String nbtText = readMoveChestTagText(ruleObject, "requiredNbtTags", "requiredNbtTagsText");
+                addMoveChestFilterRule(itemName, nbtText);
+            }
+            if (!target.isEmpty()) {
                 return;
             }
         }
-        moveChestRequiredNbtTags.add(normalized);
+
+        String legacyItemName = source.has("itemName") && source.get("itemName").isJsonPrimitive()
+                ? safe(source.get("itemName").getAsString())
+                : "";
+        String legacyNbtText = readMoveChestTagText(source, "requiredNbtTags", "requiredNbtTagsText");
+        addMoveChestFilterRule(legacyItemName, legacyNbtText);
+    }
+
+    private void addMoveChestFilterRule(String itemName, String nbtText) {
+        MoveChestFilterRuleDraft rule = new MoveChestFilterRuleDraft(itemName, nbtText);
+        if (rule.isEmpty()) {
+            return;
+        }
+        for (MoveChestFilterRuleDraft existing : moveChestFilterRules) {
+            if (existing.itemName.equalsIgnoreCase(rule.itemName) && existing.nbtText.equalsIgnoreCase(rule.nbtText)) {
+                return;
+            }
+        }
+        moveChestFilterRules.add(rule);
     }
 
     private void updateConditionInventoryNbtControlLayout() {
@@ -3607,26 +3696,34 @@ public class GuiActionEditor extends ThemedGuiScreen {
     }
 
     private void updateMoveChestCustomControlLayout() {
-        if (!isMoveChestActionSelected() || moveChestNbtTagInputField == null) {
+        if (!isMoveChestActionSelected() || moveChestItemNameInputField == null || moveChestNbtTagInputField == null) {
             return;
         }
 
         int fieldWidth = getMoveChestFieldWidth();
         int x = getParamContentX();
+        int itemInputY = moveChestItemInputBaseY - paramScrollOffset;
+        moveChestItemNameInputField.x = x;
+        moveChestItemNameInputField.y = itemInputY;
+        moveChestItemNameInputField.width = fieldWidth;
+        moveChestItemNameInputField.height = 20;
+        moveChestItemNameInputField.setVisible(itemInputY + 20 >= paramViewTop && itemInputY <= paramViewBottom);
+
         int inputY = moveChestTagInputBaseY - paramScrollOffset;
-        boolean wrap = shouldWrapTagInputRow(fieldWidth);
-        int inputWidth = wrap ? fieldWidth : Math.max(80, fieldWidth - 88);
         moveChestNbtTagInputField.x = x;
         moveChestNbtTagInputField.y = inputY;
-        moveChestNbtTagInputField.width = inputWidth;
+        moveChestNbtTagInputField.width = fieldWidth;
         moveChestNbtTagInputField.height = 20;
         moveChestNbtTagInputField.setVisible(inputY + 20 >= paramViewTop && inputY <= paramViewBottom);
 
         if (btnAddMoveChestNbtTag != null) {
-            btnAddMoveChestNbtTag.x = wrap ? x : x + inputWidth + PARAM_INLINE_GAP;
-            btnAddMoveChestNbtTag.y = (wrap ? inputY + 28 : inputY);
-            btnAddMoveChestNbtTag.width = wrap ? fieldWidth : Math.max(72, fieldWidth - inputWidth - PARAM_INLINE_GAP);
-            registerScrollableButton(btnAddMoveChestNbtTag, getTagButtonBaseY(moveChestTagInputBaseY, fieldWidth));
+            int buttonY = moveChestRuleButtonBaseY - paramScrollOffset;
+            btnAddMoveChestNbtTag.x = x;
+            btnAddMoveChestNbtTag.y = buttonY;
+            btnAddMoveChestNbtTag.width = fieldWidth;
+            btnAddMoveChestNbtTag.height = 20;
+            btnAddMoveChestNbtTag.visible = buttonY + 20 >= paramViewTop && buttonY <= paramViewBottom;
+            registerScrollableButton(btnAddMoveChestNbtTag, moveChestRuleButtonBaseY);
         }
     }
 
@@ -3729,12 +3826,11 @@ public class GuiActionEditor extends ThemedGuiScreen {
     }
 
     private int getMoveChestTagListBaseY() {
-        return moveChestTagInputBaseY < 0 ? -1 : moveChestTagInputBaseY + getTagListOffset(getMoveChestFieldWidth());
+        return moveChestRuleButtonBaseY < 0 ? -1 : moveChestRuleButtonBaseY + 28;
     }
 
     private int getMoveChestTagListHeight() {
-        int itemCount = Math.max(1, moveChestRequiredNbtTags.size());
-        return itemCount * 20;
+        return Math.max(1, moveChestFilterRules.size()) * 20;
     }
 
     private int getMoveChestGridCellSize(int columns) {
@@ -3961,8 +4057,9 @@ public class GuiActionEditor extends ThemedGuiScreen {
         }
 
         if (button.id == BTN_ID_ADD_MOVE_CHEST_NBT_TAG) {
-            if (moveChestNbtTagInputField != null) {
-                addMoveChestTag(moveChestNbtTagInputField.getText());
+            if (moveChestItemNameInputField != null && moveChestNbtTagInputField != null) {
+                addMoveChestFilterRule(moveChestItemNameInputField.getText(), moveChestNbtTagInputField.getText());
+                moveChestItemNameInputField.setText("");
                 moveChestNbtTagInputField.setText("");
                 this.hasUnsavedChanges = true;
                 this.pendingSwitchActionType = null;
@@ -4485,7 +4582,7 @@ public class GuiActionEditor extends ThemedGuiScreen {
         moveChestTargetSlotRegions.clear();
         moveChestInventorySlotRegions.clear();
 
-        if (!isMoveChestActionSelected() || moveChestNbtTagInputField == null) {
+        if (!isMoveChestActionSelected() || moveChestItemNameInputField == null || moveChestNbtTagInputField == null) {
             return;
         }
 
@@ -4494,37 +4591,69 @@ public class GuiActionEditor extends ThemedGuiScreen {
         int x = getParamContentX();
         int fieldWidth = getMoveChestFieldWidth();
 
+        if (moveChestItemNameInputField.getVisible()) {
+            this.drawString(fontRenderer, I18n.format("gui.path.action_editor.label.item_name") + ":",
+                    moveChestItemNameInputField.x, moveChestItemNameInputField.y - 12, 0xFFDDDDDD);
+            drawThemedTextField(moveChestItemNameInputField);
+            if (moveChestItemNameInputField.getText().trim().isEmpty() && !moveChestItemNameInputField.isFocused()) {
+                this.drawString(fontRenderer,
+                        I18n.format("gui.path.action_editor.placeholder.move_chest_item_name"),
+                        moveChestItemNameInputField.x + 4, moveChestItemNameInputField.y + 6, 0xFF7F8FA4);
+            }
+        }
+
         if (moveChestNbtTagInputField.getVisible()) {
             this.drawString(fontRenderer, I18n.format("gui.path.action_editor.label.required_nbt_tags") + ":",
                     moveChestNbtTagInputField.x, moveChestNbtTagInputField.y - 12, 0xFFDDDDDD);
             drawThemedTextField(moveChestNbtTagInputField);
             if (moveChestNbtTagInputField.getText().trim().isEmpty() && !moveChestNbtTagInputField.isFocused()) {
-                this.drawString(fontRenderer, "§7输入要匹配的物品/NBT关键字", moveChestNbtTagInputField.x + 4,
+                this.drawString(fontRenderer,
+                        I18n.format("gui.path.action_editor.placeholder.move_chest_required_nbt_tags"),
+                        moveChestNbtTagInputField.x + 4,
                         moveChestNbtTagInputField.y + 6, 0xFF7F8FA4);
             }
         }
 
         int tagListY = getMoveChestTagListBaseY() - paramScrollOffset;
         int tagRowHeight = 18;
-        if (moveChestRequiredNbtTags.isEmpty()) {
-            if (tagListY + tagRowHeight >= paramViewTop && tagListY <= paramViewBottom) {
-                GuiTheme.drawInputFrameSafe(x, tagListY, fieldWidth, tagRowHeight, false, true);
-                this.drawString(fontRenderer, "§7未添加关键字时，将匹配所有选中背包槽位中的物品", x + 6, tagListY + 5,
-                        0xFF9FB0C0);
-            }
-        } else {
-            for (int i = 0; i < moveChestRequiredNbtTags.size(); i++) {
-                int rowY = tagListY + i * 20;
-                if (rowY + tagRowHeight < paramViewTop || rowY > paramViewBottom) {
-                    continue;
+        if (tagListY + tagRowHeight >= paramViewTop && tagListY <= paramViewBottom) {
+            if (moveChestFilterRules.isEmpty()) {
+                String itemValue = moveChestItemNameInputField.getText().trim();
+                String nbtValue = moveChestNbtTagInputField.getText().trim();
+                String tipText;
+                int tipColor;
+                if (itemValue.isEmpty() && nbtValue.isEmpty()) {
+                    tipText = "§6至少添加一条规则；每条规则可填物品名、NBT 或两者同时填写";
+                    tipColor = 0xFFE4C46A;
+                } else if (!itemValue.isEmpty() && !nbtValue.isEmpty()) {
+                    tipText = "§a当前待添加规则将同时验证物品名和 NBT";
+                    tipColor = 0xFF9FE0B1;
+                } else if (!itemValue.isEmpty()) {
+                    tipText = "§7当前待添加规则仅按物品名匹配";
+                    tipColor = 0xFF9FB0C0;
+                } else {
+                    tipText = "§7当前待添加规则仅按 NBT 匹配";
+                    tipColor = 0xFF9FB0C0;
                 }
-                GuiTheme.drawInputFrameSafe(x, rowY, fieldWidth, tagRowHeight, false, true);
-                this.drawString(fontRenderer,
-                        this.fontRenderer.trimStringToWidth(moveChestRequiredNbtTags.get(i), fieldWidth - 30), x + 6,
-                        rowY + 5, 0xFFEAF7FF);
-                int removeX = x + fieldWidth - 16;
-                this.drawString(fontRenderer, "§cX", removeX, rowY + 5, 0xFFFF6666);
-                moveChestTagRemoveRegions.add(new IndexedHitRegion(removeX - 2, rowY + 1, 16, tagRowHeight - 2, i));
+                GuiTheme.drawInputFrameSafe(x, tagListY, fieldWidth, tagRowHeight, false, true);
+                this.drawString(fontRenderer, tipText, x + 6, tagListY + 5, tipColor);
+            } else {
+                for (int i = 0; i < moveChestFilterRules.size(); i++) {
+                    int rowY = tagListY + i * 20;
+                    if (rowY + tagRowHeight < paramViewTop || rowY > paramViewBottom) {
+                        continue;
+                    }
+                    MoveChestFilterRuleDraft rule = moveChestFilterRules.get(i);
+                    String ruleText = (rule.itemName.isEmpty() ? "任意名称" : ("物品:" + rule.itemName))
+                            + " | "
+                            + (rule.nbtText.isEmpty() ? "任意NBT" : ("NBT:" + rule.nbtText));
+                    GuiTheme.drawInputFrameSafe(x, rowY, fieldWidth, tagRowHeight, false, true);
+                    this.drawString(fontRenderer, this.fontRenderer.trimStringToWidth(ruleText, fieldWidth - 30), x + 6,
+                            rowY + 5, 0xFFEAF7FF);
+                    int removeX = x + fieldWidth - 16;
+                    this.drawString(fontRenderer, "§cX", removeX, rowY + 5, 0xFFFF6666);
+                    moveChestTagRemoveRegions.add(new IndexedHitRegion(removeX - 2, rowY + 1, 16, tagRowHeight - 2, i));
+                }
             }
         }
 
@@ -4884,6 +5013,9 @@ public class GuiActionEditor extends ThemedGuiScreen {
         if (conditionInventoryNbtTagInputField != null) {
             conditionInventoryNbtTagInputField.mouseClicked(mouseX, mouseY, mouseButton);
         }
+        if (moveChestItemNameInputField != null) {
+            moveChestItemNameInputField.mouseClicked(mouseX, mouseY, mouseButton);
+        }
         if (moveChestNbtTagInputField != null) {
             moveChestNbtTagInputField.mouseClicked(mouseX, mouseY, mouseButton);
         }
@@ -5151,17 +5283,38 @@ public class GuiActionEditor extends ThemedGuiScreen {
                 pendingSwitchActionType = null;
             }
         }
+        if (moveChestItemNameInputField != null) {
+            if ((keyCode == org.lwjgl.input.Keyboard.KEY_RETURN
+                    || keyCode == org.lwjgl.input.Keyboard.KEY_NUMPADENTER)
+                    && moveChestItemNameInputField.isFocused()
+                    && moveChestNbtTagInputField != null) {
+                addMoveChestFilterRule(moveChestItemNameInputField.getText(), moveChestNbtTagInputField.getText());
+                moveChestItemNameInputField.setText("");
+                moveChestNbtTagInputField.setText("");
+                hasUnsavedChanges = true;
+                pendingSwitchActionType = null;
+                refreshDynamicParamLayout();
+                return;
+            }
+            int beforeLen = moveChestItemNameInputField.getText().length();
+            moveChestItemNameInputField.textboxKeyTyped(typedChar, keyCode);
+            if (moveChestItemNameInputField.getText().length() != beforeLen || Character.isDefined(typedChar)) {
+                hasUnsavedChanges = true;
+                pendingSwitchActionType = null;
+            }
+        }
         if (moveChestNbtTagInputField != null) {
-            if (keyCode == org.lwjgl.input.Keyboard.KEY_RETURN
-                    || keyCode == org.lwjgl.input.Keyboard.KEY_NUMPADENTER) {
-                if (moveChestNbtTagInputField.isFocused()) {
-                    addMoveChestTag(moveChestNbtTagInputField.getText());
-                    moveChestNbtTagInputField.setText("");
-                    hasUnsavedChanges = true;
-                    pendingSwitchActionType = null;
-                    refreshDynamicParamLayout();
-                    return;
-                }
+            if ((keyCode == org.lwjgl.input.Keyboard.KEY_RETURN
+                    || keyCode == org.lwjgl.input.Keyboard.KEY_NUMPADENTER)
+                    && moveChestNbtTagInputField.isFocused()
+                    && moveChestItemNameInputField != null) {
+                addMoveChestFilterRule(moveChestItemNameInputField.getText(), moveChestNbtTagInputField.getText());
+                moveChestItemNameInputField.setText("");
+                moveChestNbtTagInputField.setText("");
+                hasUnsavedChanges = true;
+                pendingSwitchActionType = null;
+                refreshDynamicParamLayout();
+                return;
             }
             int beforeLen = moveChestNbtTagInputField.getText().length();
             moveChestNbtTagInputField.textboxKeyTyped(typedChar, keyCode);
@@ -5597,11 +5750,24 @@ public class GuiActionEditor extends ThemedGuiScreen {
             return "按分组选择一个捕获ID规则，等待其更新或重新捕获";
         }
 
+        if (moveChestItemNameInputField != null
+                && moveChestItemNameInputField.getVisible()
+                && isPointInside(mouseX, mouseY, moveChestItemNameInputField.x, moveChestItemNameInputField.y,
+                        moveChestItemNameInputField.width, moveChestItemNameInputField.height)) {
+            return I18n.format("gui.path.action_editor.help.move_chest_item_name");
+        }
+
         if (moveChestNbtTagInputField != null
                 && moveChestNbtTagInputField.getVisible()
                 && isPointInside(mouseX, mouseY, moveChestNbtTagInputField.x, moveChestNbtTagInputField.y,
                         moveChestNbtTagInputField.width, moveChestNbtTagInputField.height)) {
-            return "输入要匹配的物品名、附魔名、NBT或物品ID关键字；留空时不做筛选";
+            return I18n.format("gui.path.action_editor.help.move_chest_required_nbt_tags");
+        }
+
+        if (btnAddMoveChestNbtTag != null && btnAddMoveChestNbtTag.visible
+                && isPointInside(mouseX, mouseY, btnAddMoveChestNbtTag.x, btnAddMoveChestNbtTag.y,
+                        btnAddMoveChestNbtTag.width, btnAddMoveChestNbtTag.height)) {
+            return "把当前物品名 + NBT 输入保存为一条批量转移规则；命中任意规则的物品都会被转移";
         }
 
         if (conditionInventoryNbtTagInputField != null
@@ -5610,12 +5776,6 @@ public class GuiActionEditor extends ThemedGuiScreen {
                         conditionInventoryNbtTagInputField.y,
                         conditionInventoryNbtTagInputField.width, conditionInventoryNbtTagInputField.height)) {
             return "输入要匹配或排除的 NBT 关键字；支持物品提示、附魔、NBT 文本和物品 ID";
-        }
-
-        if (btnAddMoveChestNbtTag != null && btnAddMoveChestNbtTag.visible
-                && isPointInside(mouseX, mouseY, btnAddMoveChestNbtTag.x, btnAddMoveChestNbtTag.y,
-                        btnAddMoveChestNbtTag.width, btnAddMoveChestNbtTag.height)) {
-            return "把当前输入框中的关键字加入条件列表";
         }
 
         if (btnAddConditionInventoryNbtTag != null && btnAddConditionInventoryNbtTag.visible
@@ -5638,7 +5798,7 @@ public class GuiActionEditor extends ThemedGuiScreen {
 
         for (IndexedHitRegion region : moveChestTagRemoveRegions) {
             if (region.contains(mouseX, mouseY)) {
-                return "点击删除这一条NBT标签条件";
+                return "点击删除这一条批量转移规则";
             }
         }
 
@@ -5736,8 +5896,8 @@ public class GuiActionEditor extends ThemedGuiScreen {
         for (IndexedHitRegion region : moveChestTagRemoveRegions) {
             if (region.contains(mouseX, mouseY)
                     && region.index >= 0
-                    && region.index < moveChestRequiredNbtTags.size()) {
-                moveChestRequiredNbtTags.remove(region.index);
+                    && region.index < moveChestFilterRules.size()) {
+                moveChestFilterRules.remove(region.index);
                 return true;
             }
         }

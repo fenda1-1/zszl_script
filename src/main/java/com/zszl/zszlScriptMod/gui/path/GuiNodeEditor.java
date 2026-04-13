@@ -2613,6 +2613,7 @@ public class GuiNodeEditor extends ThemedGuiScreen {
                                 presetAction("move_inventory_items_to_chest_slots", "delayTicks", 2, "chestRows", 6,
                                         "chestCols", 9, "inventoryRows", 4, "inventoryCols", 9, "chestSlotsText", "",
                                         "inventorySlotsText", "", "moveDirection", "INVENTORY_TO_CHEST",
+                                        "itemName", "",
                                         "requiredNbtTagsText", "")),
                         LibraryNode.item("item_action_warehouse_auto_deposit", "仓库管理-自动存入", NodeNode.TYPE_ACTION,
                                 presetAction("warehouse_auto_deposit")),

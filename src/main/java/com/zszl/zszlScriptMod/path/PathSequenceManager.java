@@ -696,7 +696,8 @@ public class PathSequenceManager {
                     case "move_inventory_items_to_chest_slots":
                         int chestSlotCount = countIntListParam(params, "chestSlots", "chestSlotsText");
                         int inventorySlotCount = countIntListParam(params, "inventorySlots", "inventorySlotsText");
-                        int nbtTagCount = countStringListParam(params, "requiredNbtTags", "requiredNbtTagsText");
+                        List<ItemFilterHandler.MoveChestFilterRule> moveChestRules = ItemFilterHandler
+                                .readMoveChestFilterRules(params);
                         String nbtTagMode = params.has("requiredNbtTagsMode")
                                 ? params.get("requiredNbtTagsMode").getAsString()
                                 : "CONTAINS";
@@ -710,17 +711,40 @@ public class PathSequenceManager {
                         int sourceSlotCount = chestToInventory ? chestSlotCount : inventorySlotCount;
                         String targetLabel = chestToInventory ? "背包" : "容器";
                         int targetSlotCount = chestToInventory ? inventorySlotCount : chestSlotCount;
+                        StringBuilder moveChestFilter = new StringBuilder();
+                        if (moveChestRules.isEmpty()) {
+                            moveChestFilter.append("未设置");
+                        } else {
+                            moveChestFilter.append("规则").append(moveChestRules.size()).append("条");
+                            ItemFilterHandler.MoveChestFilterRule firstRule = moveChestRules.get(0);
+                            String firstItem = firstRule.getItemName();
+                            int firstNbtCount = firstRule.getRequiredNbtTags() == null ? 0
+                                    : firstRule.getRequiredNbtTags().size();
+                            if ((firstItem != null && !firstItem.trim().isEmpty()) || firstNbtCount > 0) {
+                                moveChestFilter.append(" (首条: ");
+                                if (firstItem != null && !firstItem.trim().isEmpty()) {
+                                    moveChestFilter.append("物品=").append(firstItem.trim());
+                                }
+                                if (firstNbtCount > 0) {
+                                    if (firstItem != null && !firstItem.trim().isEmpty()) {
+                                        moveChestFilter.append(", ");
+                                    }
+                                    moveChestFilter.append("NBT")
+                                            .append("NOT_CONTAINS".equalsIgnoreCase(nbtTagMode) ? "不包含" : "包含")
+                                            .append(firstNbtCount)
+                                            .append("项");
+                                }
+                                moveChestFilter.append(")");
+                            }
+                        }
                         return "容器物品批量移动: "
                                 + sourceLabel
                                 + sourceSlotCount
                                 + "格 -> "
                                 + targetLabel
                                 + targetSlotCount
-                                + "格 / NBT标签"
-                                + nbtTagCount
-                                + "项("
-                                + ("NOT_CONTAINS".equalsIgnoreCase(nbtTagMode) ? "不包含" : "包含")
-                                + ")"
+                                + "格 / 过滤: "
+                                + moveChestFilter
                                 + " / 延迟"
                                 + moveChestDelayTicks
                                 + " tick"

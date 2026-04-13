@@ -3,6 +3,7 @@ package com.zszl.zszlScriptMod.path.validation;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.zszl.zszlScriptMod.handlers.ItemFilterHandler;
 import com.zszl.zszlScriptMod.handlers.KillAuraHandler;
 import com.zszl.zszlScriptMod.path.LegacyActionRuntime;
 import com.zszl.zszlScriptMod.path.PathSequenceManager.ActionData;
@@ -487,6 +488,12 @@ public final class PathConfigValidator {
             case "autochestclick":
             case "move_inventory_items_to_chest_slots":
                 validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "delayTicks", "延迟", issues);
+                if (ItemFilterHandler.readMoveChestFilterRules(params).isEmpty()) {
+                    issues.add(new Issue(Severity.ERROR, "move_chest_filter_missing", sequenceName, stepIndex,
+                            actionIndex,
+                            "容器物品批量移动缺少过滤条件",
+                            "至少需要添加一条有效规则；每条规则可填写物品名、NBT，或两者同时填写。"));
+                }
                 break;
             case "window_click":
                 if (isBlank(getString(params, "uuid"))) {
@@ -1140,6 +1147,43 @@ public final class PathConfigValidator {
             expressions.add(legacyExpression);
         }
         return expressions;
+    }
+
+    private static List<String> readSimpleStringList(JsonObject params, String arrayKey, String legacyKey) {
+        List<String> values = new ArrayList<>();
+        if (params == null) {
+            return values;
+        }
+        if (params.has(arrayKey) && params.get(arrayKey).isJsonArray()) {
+            JsonArray array = params.getAsJsonArray(arrayKey);
+            for (JsonElement element : array) {
+                if (element != null && element.isJsonPrimitive()) {
+                    String value = safe(element.getAsString()).trim();
+                    if (!value.isEmpty()) {
+                        values.add(value);
+                    }
+                }
+            }
+            if (!values.isEmpty()) {
+                return values;
+            }
+        }
+
+        String text = getString(params, legacyKey);
+        if (isBlank(text)) {
+            text = getString(params, arrayKey);
+        }
+        if (isBlank(text)) {
+            return values;
+        }
+
+        for (String token : text.split("\\r?\\n|,")) {
+            String value = safe(token).trim();
+            if (!value.isEmpty()) {
+                values.add(value);
+            }
+        }
+        return values;
     }
 
     private static String getString(JsonObject params, String key) {

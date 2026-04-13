@@ -55,6 +55,28 @@ public class ItemFilterHandler {
         }
     }
 
+    public static final class MoveChestFilterRule {
+        private final String itemName;
+        private final List<String> requiredNbtTags;
+
+        private MoveChestFilterRule(String itemName, List<String> requiredNbtTags) {
+            this.itemName = itemName == null ? "" : itemName.trim();
+            this.requiredNbtTags = requiredNbtTags == null ? Collections.<String>emptyList() : requiredNbtTags;
+        }
+
+        public String getItemName() {
+            return itemName;
+        }
+
+        public List<String> getRequiredNbtTags() {
+            return requiredNbtTags;
+        }
+
+        public boolean isEmpty() {
+            return itemName.isEmpty() && (requiredNbtTags == null || requiredNbtTags.isEmpty());
+        }
+    }
+
     private static volatile int pendingWarehouseTransferClicks = 0;
     private static volatile boolean warehouseTransferInProgress = false;
 
@@ -544,9 +566,16 @@ public class ItemFilterHandler {
         List<Integer> selectedContainerSlots = readSlotList(params, "chestSlots", "chestSlotsText", containerSlotCount);
         List<Integer> selectedInventorySlots = readSlotList(params, "inventorySlots", "inventorySlotsText",
                 playerInventoryVisibleSlots);
-        List<String> requiredNbtTags = readTagFilters(params, "requiredNbtTags", "requiredNbtTagsText");
+        List<MoveChestFilterRule> filterRules = readMoveChestFilterRules(params);
         String requiredNbtTagMatchMode = readRequiredNbtTagMatchMode(params);
         String moveDirection = readMoveChestDirection(params);
+
+        if (filterRules.isEmpty()) {
+            if (ModConfig.isDebugFlagEnabled(DebugModule.ITEM_FILTER)) {
+                player.sendMessage(new TextComponentString("§d[调试] §e至少需要添加一条有效的物品转移规则，槽位转移取消。"));
+            }
+            return;
+        }
 
         if (selectedContainerSlots.isEmpty() || selectedInventorySlots.isEmpty()) {
             if (ModConfig.isDebugFlagEnabled(DebugModule.ITEM_FILTER)) {
@@ -574,11 +603,11 @@ public class ItemFilterHandler {
                 selectedSourceSlots,
                 targetSlotIndices,
                 selectedTargetSlots,
-                requiredNbtTags,
+                filterRules,
                 requiredNbtTagMatchMode);
         if (clickPlan.isEmpty()) {
             if (ModConfig.isDebugFlagEnabled(DebugModule.ITEM_FILTER)) {
-                player.sendMessage(new TextComponentString("§d[调试] §e未找到符合NBT标签条件且可放入目标槽位的物品。"));
+                player.sendMessage(new TextComponentString("§d[调试] §e未找到符合任意转移规则且可放入目标槽位的物品。"));
             }
             return;
         }
@@ -654,7 +683,7 @@ public class ItemFilterHandler {
             List<Integer> selectedSourceSlots,
             List<Integer> targetSlotIndices,
             List<Integer> selectedTargetSlots,
-            List<String> requiredNbtTags,
+            List<MoveChestFilterRule> filterRules,
             String requiredNbtTagMatchMode) {
         if (container == null) {
             return Collections.emptyList();
@@ -681,7 +710,7 @@ public class ItemFilterHandler {
             if (sourceStack == null || sourceStack.isEmpty()) {
                 continue;
             }
-            if (!matchesRequiredNbtTags(sourceStack, requiredNbtTags, requiredNbtTagMatchMode)) {
+            if (!matchesAnyMoveChestRule(sourceStack, filterRules, requiredNbtTagMatchMode)) {
                 continue;
             }
 
@@ -786,6 +815,37 @@ public class ItemFilterHandler {
         return excludeMatches;
     }
 
+    private static boolean matchesMoveChestItemName(ItemStack stack, String requiredItemName) {
+        String expected = normalizeMoveChestItemName(requiredItemName);
+        if (expected.isEmpty()) {
+            return true;
+        }
+        if (stack == null || stack.isEmpty()) {
+            return false;
+        }
+        return normalizeMoveChestItemName(stack.getDisplayName()).contains(expected);
+    }
+
+    private static boolean matchesAnyMoveChestRule(ItemStack stack, List<MoveChestFilterRule> rules,
+            String requiredNbtTagMatchMode) {
+        if (rules == null || rules.isEmpty()) {
+            return false;
+        }
+        for (MoveChestFilterRule rule : rules) {
+            if (rule == null || rule.isEmpty()) {
+                continue;
+            }
+            if (!matchesMoveChestItemName(stack, rule.getItemName())) {
+                continue;
+            }
+            if (!matchesRequiredNbtTags(stack, rule.getRequiredNbtTags(), requiredNbtTagMatchMode)) {
+                continue;
+            }
+            return true;
+        }
+        return false;
+    }
+
     public static String buildItemSearchableText(ItemStack stack) {
         if (stack == null || stack.isEmpty()) {
             return "";
@@ -841,6 +901,17 @@ public class ItemFilterHandler {
             builder.append('\n');
         }
         builder.append(normalized);
+    }
+
+    private static String normalizeMoveChestItemName(String text) {
+        if (text == null) {
+            return "";
+        }
+        String normalized = TextFormatting.getTextWithoutFormattingCodes(text);
+        if (normalized == null) {
+            normalized = text;
+        }
+        return normalized.trim().toLowerCase(Locale.ROOT);
     }
 
     private static List<Integer> readSlotList(JsonObject params, String arrayKey, String textKey, int maxSlots) {
@@ -959,6 +1030,55 @@ public class ItemFilterHandler {
         } catch (Exception ignored) {
             return MOVE_DIRECTION_INVENTORY_TO_CHEST;
         }
+    }
+
+    public static String readMoveChestItemName(JsonObject params) {
+        if (params == null || !params.has("itemName") || !params.get("itemName").isJsonPrimitive()) {
+            return "";
+        }
+        try {
+            String value = params.get("itemName").getAsString();
+            return value == null ? "" : value.trim();
+        } catch (Exception ignored) {
+            return "";
+        }
+    }
+
+    public static List<MoveChestFilterRule> readMoveChestFilterRules(JsonObject params) {
+        List<MoveChestFilterRule> rules = new ArrayList<>();
+        if (params == null) {
+            return rules;
+        }
+
+        if (params.has("moveChestRules") && params.get("moveChestRules").isJsonArray()) {
+            JsonArray array = params.getAsJsonArray("moveChestRules");
+            for (JsonElement element : array) {
+                if (element == null || !element.isJsonObject()) {
+                    continue;
+                }
+                JsonObject ruleObject = element.getAsJsonObject();
+                String itemName = "";
+                if (ruleObject.has("itemName") && ruleObject.get("itemName").isJsonPrimitive()) {
+                    itemName = ruleObject.get("itemName").getAsString();
+                }
+                List<String> requiredNbtTags = readTagFilters(ruleObject, "requiredNbtTags", "requiredNbtTagsText");
+                MoveChestFilterRule rule = new MoveChestFilterRule(itemName, requiredNbtTags);
+                if (!rule.isEmpty()) {
+                    rules.add(rule);
+                }
+            }
+            if (!rules.isEmpty()) {
+                return rules;
+            }
+        }
+
+        String itemName = readMoveChestItemName(params);
+        List<String> requiredNbtTags = readTagFilters(params, "requiredNbtTags", "requiredNbtTagsText");
+        MoveChestFilterRule legacyRule = new MoveChestFilterRule(itemName, requiredNbtTags);
+        if (!legacyRule.isEmpty()) {
+            rules.add(legacyRule);
+        }
+        return rules;
     }
 
     private static void addTagFilter(List<String> values, String raw) {
