@@ -9,6 +9,7 @@ import java.util.List;
 
 public class AutoPickupRule {
     public static final double DEFAULT_TARGET_REACH_DISTANCE = 0.5D;
+    public static final int DEFAULT_MAX_PICKUP_ATTEMPTS = 3;
 
     public static class ItemMatchEntry {
         public String keyword;
@@ -63,6 +64,7 @@ public class AutoPickupRule {
     public boolean enabled; // 此规则是否激活
     public double centerX, centerY, centerZ, radius;
     public double targetReachDistance;
+    public int maxPickupAttempts;
     public boolean visualizeRange;
     public boolean enableItemWhitelist;
     public boolean enableItemBlacklist;
@@ -88,6 +90,7 @@ public class AutoPickupRule {
         this.centerZ = 0;
         this.radius = 20.0;
         this.targetReachDistance = DEFAULT_TARGET_REACH_DISTANCE;
+        this.maxPickupAttempts = DEFAULT_MAX_PICKUP_ATTEMPTS;
         this.visualizeRange = false;
         this.enableItemWhitelist = false;
         this.enableItemBlacklist = false;

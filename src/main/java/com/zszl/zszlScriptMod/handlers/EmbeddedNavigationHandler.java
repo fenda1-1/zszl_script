@@ -254,4 +254,18 @@ public class EmbeddedNavigationHandler {
     public void resume() {
         dispatchNavigationCommand("!resume", false);
     }
+
+    public boolean isPathingOrCalculating() {
+        try {
+            IBaritone baritone = getPrimaryBaritone();
+            if (baritone == null || baritone.getPathingBehavior() == null) {
+                return false;
+            }
+            return baritone.getPathingBehavior().isPathing()
+                    || baritone.getPathingBehavior().hasPath()
+                    || baritone.getPathingBehavior().getInProgress().isPresent();
+        } catch (Throwable t) {
+            return false;
+        }
+    }
 }

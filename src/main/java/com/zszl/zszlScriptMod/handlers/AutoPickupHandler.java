@@ -55,6 +55,10 @@ public class AutoPickupHandler {
     private static final int ITEM_SEARCH_SCAN_INTERVAL_TICKS = 3;
     private static final int ITEM_MATCH_CACHE_PRUNE_INTERVAL_TICKS = 40;
     private static final int MAX_ITEM_MATCH_CACHE_SIZE = 1024;
+    private static final int NAVIGATION_START_CHECK_TICKS = 12;
+    private static final int NAVIGATION_MOVEMENT_TIMEOUT_TICKS = 40;
+    private static final double NAVIGATION_MOVEMENT_THRESHOLD_SQ = 0.09D;
+    private static final double ITEM_POSITION_QUANTIZATION = 4.0D;
 
     public static boolean globalEnabled = false;
     public static final List<AutoPickupRule> rules = new CopyOnWriteArrayList<>();
@@ -78,6 +82,7 @@ public class AutoPickupHandler {
     private boolean hasPickedUpAtLeastOneItem = false;
     // --- 修改结束 ---
     private final List<PendingPickupSequenceAction> pendingPickupActions = new ArrayList<>();
+    private final Map<String, Map<ItemLocationKey, Integer>> failedPickupAttemptsByRule = new HashMap<>();
     private int antiStuckStationaryTicks = 0;
     private double antiStuckLastPosX = Double.NaN;
     private double antiStuckLastPosY = Double.NaN;
@@ -88,6 +93,13 @@ public class AutoPickupHandler {
     private boolean lastItemSearchFoundMatch = false;
     private int lastItemMatchCachePruneTick = -99999;
     private final Map<Integer, ItemMatchCacheEntry> itemMatchCache = new HashMap<>();
+    private String pendingNavigationRuleKey = "";
+    private ItemLocationKey pendingNavigationItemLocation = null;
+    private int pendingNavigationEntityId = Integer.MIN_VALUE;
+    private int pendingNavigationStartTick = -99999;
+    private double pendingNavigationPlayerX = Double.NaN;
+    private double pendingNavigationPlayerY = Double.NaN;
+    private double pendingNavigationPlayerZ = Double.NaN;
 
     private AutoPickupHandler() {
     }
@@ -111,6 +123,39 @@ public class AutoPickupHandler {
             this.fingerprint = fingerprint;
             this.itemName = itemName;
             this.searchableText = searchableText;
+        }
+    }
+
+    private static final class ItemLocationKey {
+        private final int x;
+        private final int y;
+        private final int z;
+
+        private ItemLocationKey(int x, int y, int z) {
+            this.x = x;
+            this.y = y;
+            this.z = z;
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (this == obj) {
+                return true;
+            }
+            if (!(obj instanceof ItemLocationKey)) {
+                return false;
+            }
+            ItemLocationKey other = (ItemLocationKey) obj;
+            return x == other.x && y == other.y && z == other.z;
+        }
+
+        @Override
+        public int hashCode() {
+            int result = 17;
+            result = 31 * result + x;
+            result = 31 * result + y;
+            result = 31 * result + z;
+            return result;
         }
     }
 
@@ -332,6 +377,7 @@ public class AutoPickupHandler {
                     PathSequenceEventListener.instance.stopTracking();
                     mc.player.sendMessage(new TextComponentString(TextFormatting.YELLOW + "[自动拾取] 已离开区域，后续序列已停止。"));
                 }
+                clearFailedAttemptsForRule(activeRule);
                 resetState();
             }
             if (currentState == State.SEQUENCE_RUNNING) {
@@ -347,12 +393,16 @@ public class AutoPickupHandler {
                     PathSequenceEventListener.instance.stopTracking();
                     mc.player.sendMessage(new TextComponentString(TextFormatting.YELLOW + "[自动拾取] 已离开区域，后续序列已停止。"));
                 }
+                clearFailedAttemptsForRule(activeRule);
                 resetState();
             }
             return;
         }
 
         if (activeRule != rulePlayerIsIn) {
+            if (activeRule != null) {
+                clearFailedAttemptsForRule(activeRule);
+            }
             resetState();
             activeRule = rulePlayerIsIn;
             // --- 核心修改 2: 进入新区域时，重置拾取标志 ---
@@ -368,6 +418,7 @@ public class AutoPickupHandler {
 
         processPendingPickupActions();
         updateAntiStuckState();
+        updatePendingNavigationAttempt(nowTick);
 
         switch (currentState) {
         case SEARCHING:
@@ -452,6 +503,9 @@ public class AutoPickupHandler {
             boolean targetChanged = currentTargetItem == null
                     || currentTargetItem.isDead
                     || currentTargetItem.getEntityId() != nearest.getEntityId();
+            if (targetChanged) {
+                clearPendingNavigationAttempt();
+            }
             currentTargetItem = nearest;
             currentTargetStackSnapshot = nearest.getItem().copy();
             currentState = State.MOVING_TO_ITEM;
@@ -466,6 +520,7 @@ public class AutoPickupHandler {
             currentTargetStackSnapshot = ItemStack.EMPTY;
             lastGotoTargetEntityId = Integer.MIN_VALUE;
             lastGotoTick = -99999;
+            clearPendingNavigationAttempt();
             if (hasPickedUpAtLeastOneItem) {
                 mc.player.sendMessage(new TextComponentString(
                         TextFormatting.AQUA + "[自动拾取] " + TextFormatting.GREEN + "区域内所有物品拾取完毕。"));
@@ -496,6 +551,7 @@ public class AutoPickupHandler {
             currentTargetStackSnapshot = ItemStack.EMPTY;
             lastGotoTargetEntityId = Integer.MIN_VALUE;
             lastGotoTick = -99999;
+            clearPendingNavigationAttempt();
             if (tryTriggerPickupActionSequence(pickedStack)) {
                 return;
             }
@@ -506,6 +562,7 @@ public class AutoPickupHandler {
                 lastGotoTargetEntityId = Integer.MIN_VALUE;
                 lastGotoTick = -99999;
             }
+            clearPendingNavigationAttempt();
         } else {
             ensureNavigationToCurrentTarget(nowTick);
         }
@@ -550,6 +607,7 @@ public class AutoPickupHandler {
         postPickupDelayTicks = 0;
         lastGotoTargetEntityId = Integer.MIN_VALUE;
         lastGotoTick = -99999;
+        clearPendingNavigationAttempt();
         hasPickedUpAtLeastOneItem = false;
         pendingPickupActions.clear();
         antiStuckStationaryTicks = 0;
@@ -671,6 +729,9 @@ public class AutoPickupHandler {
         if (dx * dx + dy * dy + dz * dz > rule.radius * rule.radius) {
             return false;
         }
+        if (hasReachedMaxPickupAttempts(item, rule)) {
+            return false;
+        }
 
         ItemMatchCacheEntry cacheEntry = getItemMatchCacheEntry(item);
         String itemName = cacheEntry.itemName;
@@ -747,6 +808,7 @@ public class AutoPickupHandler {
             return;
         }
         if (mc.player.getDistanceSq(currentTargetItem) <= getPickupReachedDistanceSq(activeRule)) {
+            clearPendingNavigationAttempt();
             return;
         }
 
@@ -761,6 +823,205 @@ public class AutoPickupHandler {
                 currentTargetItem.posZ);
         lastGotoTick = nowTick;
         lastGotoTargetEntityId = targetId;
+        armPendingNavigationAttempt(nowTick);
+    }
+
+    private void armPendingNavigationAttempt(int nowTick) {
+        if (activeRule == null || currentTargetItem == null || mc.player == null) {
+            return;
+        }
+        String ruleKey = buildRuleAttemptKey(activeRule);
+        ItemLocationKey locationKey = buildItemLocationKey(currentTargetItem);
+        if (locationKey == null) {
+            return;
+        }
+        if (ruleKey.equals(pendingNavigationRuleKey)
+                && locationKey.equals(pendingNavigationItemLocation)
+                && pendingNavigationEntityId == currentTargetItem.getEntityId()) {
+            return;
+        }
+        pendingNavigationRuleKey = ruleKey;
+        pendingNavigationItemLocation = locationKey;
+        pendingNavigationEntityId = currentTargetItem.getEntityId();
+        pendingNavigationStartTick = nowTick;
+        pendingNavigationPlayerX = mc.player.posX;
+        pendingNavigationPlayerY = mc.player.posY;
+        pendingNavigationPlayerZ = mc.player.posZ;
+    }
+
+    private void updatePendingNavigationAttempt(int nowTick) {
+        if (pendingNavigationItemLocation == null || mc.player == null) {
+            return;
+        }
+        if (activeRule == null || currentTargetItem == null || currentTargetItem.isDead) {
+            clearPendingNavigationAttempt();
+            return;
+        }
+
+        String currentRuleKey = buildRuleAttemptKey(activeRule);
+        ItemLocationKey currentLocation = buildItemLocationKey(currentTargetItem);
+        if (!currentRuleKey.equals(pendingNavigationRuleKey)
+                || currentLocation == null
+                || !currentLocation.equals(pendingNavigationItemLocation)
+                || currentTargetItem.getEntityId() != pendingNavigationEntityId) {
+            clearPendingNavigationAttempt();
+            return;
+        }
+
+        if (hasPlayerMovedSincePendingNavigation()) {
+            clearPendingNavigationAttempt();
+            return;
+        }
+
+        boolean navigationEngaged = EmbeddedNavigationHandler.INSTANCE.isPathingOrCalculating();
+        int elapsedTicks = nowTick - pendingNavigationStartTick;
+        if (!navigationEngaged && elapsedTicks < NAVIGATION_START_CHECK_TICKS) {
+            return;
+        }
+        if (navigationEngaged && elapsedTicks < NAVIGATION_MOVEMENT_TIMEOUT_TICKS) {
+            return;
+        }
+
+        handleNavigationAttemptFailure();
+    }
+
+    private void handleNavigationAttemptFailure() {
+        if (activeRule == null || currentTargetItem == null) {
+            clearPendingNavigationAttempt();
+            return;
+        }
+
+        EntityItem failedItem = currentTargetItem;
+        ItemLocationKey locationKey = pendingNavigationItemLocation;
+        int maxAttempts = getMaxPickupAttempts(activeRule);
+        int attempts = incrementFailedAttempts(activeRule, locationKey);
+
+        EmbeddedNavigationHandler.INSTANCE.stop();
+        currentTargetItem = null;
+        currentTargetStackSnapshot = ItemStack.EMPTY;
+        lastGotoTargetEntityId = Integer.MIN_VALUE;
+        lastGotoTick = -99999;
+        clearPendingNavigationAttempt();
+        currentState = State.SEARCHING;
+
+        if (mc.player != null && ModConfig.isDebugFlagEnabled(DebugModule.AUTO_PICKUP)) {
+            mc.player.sendMessage(new TextComponentString(String.format(
+                    "§d[调试] §7掉落物未开始寻路，记录尝试 %d/%d: %s @ (%.2f, %.2f, %.2f)",
+                    attempts,
+                    maxAttempts,
+                    failedItem.getItem().getDisplayName(),
+                    failedItem.posX,
+                    failedItem.posY,
+                    failedItem.posZ)));
+        }
+        if (mc.player != null && attempts >= maxAttempts) {
+            mc.player.sendMessage(new TextComponentString(String.format(
+                    "%s[自动拾取] %s多次寻路无效，已暂时跳过: %s%s %s@ (%.1f, %.1f, %.1f)%s，离开并重新进入区域后会重试。",
+                    TextFormatting.YELLOW,
+                    TextFormatting.RED,
+                    TextFormatting.WHITE,
+                    failedItem.getItem().getDisplayName(),
+                    TextFormatting.GRAY,
+                    failedItem.posX,
+                    failedItem.posY,
+                    failedItem.posZ,
+                    TextFormatting.YELLOW)));
+        }
+    }
+
+    private boolean hasPlayerMovedSincePendingNavigation() {
+        double dx = mc.player.posX - pendingNavigationPlayerX;
+        double dy = mc.player.posY - pendingNavigationPlayerY;
+        double dz = mc.player.posZ - pendingNavigationPlayerZ;
+        return dx * dx + dy * dy + dz * dz > NAVIGATION_MOVEMENT_THRESHOLD_SQ;
+    }
+
+    private void clearPendingNavigationAttempt() {
+        pendingNavigationRuleKey = "";
+        pendingNavigationItemLocation = null;
+        pendingNavigationEntityId = Integer.MIN_VALUE;
+        pendingNavigationStartTick = -99999;
+        pendingNavigationPlayerX = Double.NaN;
+        pendingNavigationPlayerY = Double.NaN;
+        pendingNavigationPlayerZ = Double.NaN;
+    }
+
+    private int incrementFailedAttempts(AutoPickupRule rule, ItemLocationKey locationKey) {
+        if (rule == null || locationKey == null) {
+            return 0;
+        }
+        String ruleKey = buildRuleAttemptKey(rule);
+        Map<ItemLocationKey, Integer> attempts = failedPickupAttemptsByRule.get(ruleKey);
+        if (attempts == null) {
+            attempts = new HashMap<>();
+            failedPickupAttemptsByRule.put(ruleKey, attempts);
+        }
+        int next = attempts.containsKey(locationKey) ? attempts.get(locationKey) + 1 : 1;
+        attempts.put(locationKey, next);
+        return next;
+    }
+
+    private boolean hasReachedMaxPickupAttempts(EntityItem item, AutoPickupRule rule) {
+        if (item == null || rule == null) {
+            return false;
+        }
+        ItemLocationKey locationKey = buildItemLocationKey(item);
+        if (locationKey == null) {
+            return false;
+        }
+        Map<ItemLocationKey, Integer> attempts = failedPickupAttemptsByRule.get(buildRuleAttemptKey(rule));
+        if (attempts == null) {
+            return false;
+        }
+        Integer count = attempts.get(locationKey);
+        return count != null && count >= getMaxPickupAttempts(rule);
+    }
+
+    private void clearFailedAttemptsForRule(AutoPickupRule rule) {
+        if (rule == null) {
+            return;
+        }
+        failedPickupAttemptsByRule.remove(buildRuleAttemptKey(rule));
+        if (buildRuleAttemptKey(rule).equals(pendingNavigationRuleKey)) {
+            clearPendingNavigationAttempt();
+        }
+    }
+
+    private int getMaxPickupAttempts(AutoPickupRule rule) {
+        if (rule == null) {
+            return AutoPickupRule.DEFAULT_MAX_PICKUP_ATTEMPTS;
+        }
+        return Math.max(1, rule.maxPickupAttempts);
+    }
+
+    private String buildRuleAttemptKey(AutoPickupRule rule) {
+        if (rule == null) {
+            return "";
+        }
+        return normalizeCategory(rule.category)
+                + "|" + safeRuleName(rule.name)
+                + "|" + roundAttemptKeyValue(rule.centerX)
+                + "|" + roundAttemptKeyValue(rule.centerY)
+                + "|" + roundAttemptKeyValue(rule.centerZ)
+                + "|" + roundAttemptKeyValue(rule.radius);
+    }
+
+    private static String safeRuleName(String name) {
+        return name == null ? "" : name.trim();
+    }
+
+    private static long roundAttemptKeyValue(double value) {
+        return Math.round(value * 1000.0D);
+    }
+
+    private ItemLocationKey buildItemLocationKey(EntityItem item) {
+        if (item == null) {
+            return null;
+        }
+        return new ItemLocationKey(
+                (int) Math.round(item.posX * ITEM_POSITION_QUANTIZATION),
+                (int) Math.round(item.posY * ITEM_POSITION_QUANTIZATION),
+                (int) Math.round(item.posZ * ITEM_POSITION_QUANTIZATION));
     }
 
     private static void normalizeRule(AutoPickupRule rule) {
@@ -770,6 +1031,9 @@ public class AutoPickupHandler {
         rule.category = normalizeCategory(rule.category);
         if (rule.targetReachDistance <= 0.0D) {
             rule.targetReachDistance = AutoPickupRule.DEFAULT_TARGET_REACH_DISTANCE;
+        }
+        if (rule.maxPickupAttempts < 1) {
+            rule.maxPickupAttempts = AutoPickupRule.DEFAULT_MAX_PICKUP_ATTEMPTS;
         }
         rule.itemWhitelist = normalizeRuleNameList(rule.itemWhitelist);
         rule.itemBlacklist = normalizeRuleNameList(rule.itemBlacklist);
@@ -1059,6 +1323,7 @@ public class AutoPickupHandler {
         currentTargetStackSnapshot = ItemStack.EMPTY;
         lastGotoTargetEntityId = Integer.MIN_VALUE;
         lastGotoTick = -99999;
+        clearPendingNavigationAttempt();
         antiStuckStationaryTicks = 0;
         String restartSequence = activeRule == null ? "" : safeSequenceName(activeRule.antiStuckRestartSequence);
         if (!restartSequence.isEmpty() && PathSequenceManager.hasSequence(restartSequence)) {

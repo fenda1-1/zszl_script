@@ -65,6 +65,7 @@ public class GuiAutoPickupConfig extends AbstractThreePaneRuleManager<AutoPickup
     private GuiTextField zField;
     private GuiTextField radiusField;
     private GuiTextField reachDistanceField;
+    private GuiTextField maxPickupAttemptsField;
     private GuiTextField delayField;
     private GuiTextField antiStuckTimeoutField;
 
@@ -224,6 +225,7 @@ public class GuiAutoPickupConfig extends AbstractThreePaneRuleManager<AutoPickup
         copy.centerZ = source.centerZ;
         copy.radius = source.radius;
         copy.targetReachDistance = source.targetReachDistance;
+        copy.maxPickupAttempts = source.maxPickupAttempts;
         copy.visualizeRange = source.visualizeRange;
         copy.enableItemWhitelist = source.enableItemWhitelist;
         copy.enableItemBlacklist = source.enableItemBlacklist;
@@ -285,6 +287,7 @@ public class GuiAutoPickupConfig extends AbstractThreePaneRuleManager<AutoPickup
         setText(zField, formatDouble(rule.centerZ));
         setText(radiusField, formatDouble(rule.radius));
         setText(reachDistanceField, formatDouble(rule.targetReachDistance));
+        setText(maxPickupAttemptsField, String.valueOf(Math.max(1, rule.maxPickupAttempts)));
         setText(delayField, String.valueOf(Math.max(0, rule.postPickupDelaySeconds)));
         setText(antiStuckTimeoutField, String.valueOf(Math.max(1, rule.antiStuckTimeoutSeconds)));
 
@@ -325,6 +328,7 @@ public class GuiAutoPickupConfig extends AbstractThreePaneRuleManager<AutoPickup
         base.radius = Math.max(0.0D, parseDouble(radiusField.getText(), base.radius));
         base.targetReachDistance = Math.max(0.0D,
                 parseDouble(reachDistanceField.getText(), base.targetReachDistance));
+        base.maxPickupAttempts = Math.max(1, parseInt(maxPickupAttemptsField.getText(), base.maxPickupAttempts));
         base.visualizeRange = editorVisualizeRange;
         base.enableItemWhitelist = editorEnableItemWhitelist;
         base.enableItemBlacklist = editorEnableItemBlacklist;
@@ -355,6 +359,7 @@ public class GuiAutoPickupConfig extends AbstractThreePaneRuleManager<AutoPickup
         target.centerZ = source.centerZ;
         target.radius = source.radius;
         target.targetReachDistance = source.targetReachDistance;
+        target.maxPickupAttempts = source.maxPickupAttempts;
         target.visualizeRange = source.visualizeRange;
         target.enableItemWhitelist = source.enableItemWhitelist;
         target.enableItemBlacklist = source.enableItemBlacklist;
@@ -379,6 +384,7 @@ public class GuiAutoPickupConfig extends AbstractThreePaneRuleManager<AutoPickup
         zField = createField(3005);
         radiusField = createField(3006);
         reachDistanceField = createField(3009);
+        maxPickupAttemptsField = createField(3010);
         delayField = createField(3007);
         antiStuckTimeoutField = createField(3008);
     }
@@ -457,33 +463,34 @@ public class GuiAutoPickupConfig extends AbstractThreePaneRuleManager<AutoPickup
         placeField(zField, 5, editorFieldX, halfWidth);
         placeField(radiusField, 5, editorFieldX + halfWidth + 10, halfWidth);
         placeField(reachDistanceField, 6, editorFieldX, halfWidth);
-        placeButton(btnGetCoords, 6, editorFieldX + halfWidth + 10, halfWidth, 20);
-        placeButton(btnToggleAntiStuck, 7, editorFieldX, fullFieldWidth, 20);
-        placeField(antiStuckTimeoutField, 8, editorFieldX, halfWidth);
-        placeButton(btnSelectAntiStuckSequence, 8, editorFieldX + halfWidth + 10, halfWidth, 20);
+        placeField(maxPickupAttemptsField, 6, editorFieldX + halfWidth + 10, halfWidth);
+        placeButton(btnGetCoords, 7, editorFieldX, fullFieldWidth, 20);
+        placeButton(btnToggleAntiStuck, 8, editorFieldX, fullFieldWidth, 20);
+        placeField(antiStuckTimeoutField, 9, editorFieldX, halfWidth);
+        placeButton(btnSelectAntiStuckSequence, 9, editorFieldX + halfWidth + 10, halfWidth, 20);
 
-        placeButton(btnToggleItemWhitelist, 9, editorFieldX, fullFieldWidth, 20);
-        placeButton(btnAddWhitelistEntry, 10, editorFieldX, actionButtonWidth, 20);
-        placeButton(btnEditWhitelistEntry, 10, editorFieldX + actionButtonWidth + 4, actionButtonWidth, 20);
-        placeButton(btnDeleteWhitelistEntry, 10, editorFieldX + 2 * (actionButtonWidth + 4), actionButtonWidth, 20);
-        placeButton(btnWhitelistScrollUp, 11, editorFieldX, smallButtonWidth, 20);
-        placeButton(btnWhitelistScrollDown, 11, editorFieldX + smallButtonWidth + 4, smallButtonWidth, 20);
+        placeButton(btnToggleItemWhitelist, 10, editorFieldX, fullFieldWidth, 20);
+        placeButton(btnAddWhitelistEntry, 11, editorFieldX, actionButtonWidth, 20);
+        placeButton(btnEditWhitelistEntry, 11, editorFieldX + actionButtonWidth + 4, actionButtonWidth, 20);
+        placeButton(btnDeleteWhitelistEntry, 11, editorFieldX + 2 * (actionButtonWidth + 4), actionButtonWidth, 20);
+        placeButton(btnWhitelistScrollUp, 12, editorFieldX, smallButtonWidth, 20);
+        placeButton(btnWhitelistScrollDown, 12, editorFieldX + smallButtonWidth + 4, smallButtonWidth, 20);
 
-        placeButton(btnToggleItemBlacklist, 16, editorFieldX, fullFieldWidth, 20);
-        placeButton(btnAddBlacklistEntry, 17, editorFieldX, actionButtonWidth, 20);
-        placeButton(btnEditBlacklistEntry, 17, editorFieldX + actionButtonWidth + 4, actionButtonWidth, 20);
-        placeButton(btnDeleteBlacklistEntry, 17, editorFieldX + 2 * (actionButtonWidth + 4), actionButtonWidth, 20);
-        placeButton(btnBlacklistScrollUp, 18, editorFieldX, smallButtonWidth, 20);
-        placeButton(btnBlacklistScrollDown, 18, editorFieldX + smallButtonWidth + 4, smallButtonWidth, 20);
+        placeButton(btnToggleItemBlacklist, 17, editorFieldX, fullFieldWidth, 20);
+        placeButton(btnAddBlacklistEntry, 18, editorFieldX, actionButtonWidth, 20);
+        placeButton(btnEditBlacklistEntry, 18, editorFieldX + actionButtonWidth + 4, actionButtonWidth, 20);
+        placeButton(btnDeleteBlacklistEntry, 18, editorFieldX + 2 * (actionButtonWidth + 4), actionButtonWidth, 20);
+        placeButton(btnBlacklistScrollUp, 19, editorFieldX, smallButtonWidth, 20);
+        placeButton(btnBlacklistScrollDown, 19, editorFieldX + smallButtonWidth + 4, smallButtonWidth, 20);
 
-        placeButton(btnAddPickupActionEntry, 23, editorFieldX, actionButtonWidth, 20);
-        placeButton(btnEditPickupActionEntry, 23, editorFieldX + actionButtonWidth + 4, actionButtonWidth, 20);
-        placeButton(btnDeletePickupActionEntry, 23, editorFieldX + 2 * (actionButtonWidth + 4), actionButtonWidth, 20);
-        placeButton(btnPickupActionScrollUp, 24, editorFieldX, smallButtonWidth, 20);
-        placeButton(btnPickupActionScrollDown, 24, editorFieldX + smallButtonWidth + 4, smallButtonWidth, 20);
-        placeButton(btnSelectSequence, 29, editorFieldX, fullFieldWidth, 20);
-        placeField(delayField, 30, editorFieldX, halfWidth);
-        placeButton(btnToggleStopOnExit, 31, editorFieldX, fullFieldWidth, 20);
+        placeButton(btnAddPickupActionEntry, 24, editorFieldX, actionButtonWidth, 20);
+        placeButton(btnEditPickupActionEntry, 24, editorFieldX + actionButtonWidth + 4, actionButtonWidth, 20);
+        placeButton(btnDeletePickupActionEntry, 24, editorFieldX + 2 * (actionButtonWidth + 4), actionButtonWidth, 20);
+        placeButton(btnPickupActionScrollUp, 25, editorFieldX, smallButtonWidth, 20);
+        placeButton(btnPickupActionScrollDown, 25, editorFieldX + smallButtonWidth + 4, smallButtonWidth, 20);
+        placeButton(btnSelectSequence, 30, editorFieldX, fullFieldWidth, 20);
+        placeField(delayField, 31, editorFieldX, halfWidth);
+        placeButton(btnToggleStopOnExit, 32, editorFieldX, fullFieldWidth, 20);
     }
 
     @Override
@@ -516,47 +523,49 @@ public class GuiAutoPickupConfig extends AbstractThreePaneRuleManager<AutoPickup
             case 5:
                 return "中心 Z / 半径";
             case 6:
-                return "到达距离 / 快捷定位";
+                return "到达距离 / 最大尝试次数";
             case 7:
-                return "防卡重启";
+                return "快捷定位";
             case 8:
-                return "卡住停留秒数 / 重启序列";
+                return "防卡重启";
             case 9:
-                return "启用掉落物白名单";
+                return "卡住停留秒数 / 重启序列";
             case 10:
-                return "白名单卡片操作";
+                return "启用掉落物白名单";
             case 11:
-                return "白名单滚动";
+                return "白名单卡片操作";
             case 12:
+                return "白名单滚动";
             case 13:
             case 14:
             case 15:
-                return "";
             case 16:
-                return "启用掉落物黑名单";
+                return "";
             case 17:
-                return "黑名单卡片操作";
+                return "启用掉落物黑名单";
             case 18:
-                return "黑名单滚动";
+                return "黑名单卡片操作";
             case 19:
+                return "黑名单滚动";
             case 20:
             case 21:
             case 22:
-                return "";
             case 23:
-                return "触发条件卡片操作";
+                return "";
             case 24:
-                return "触发条件卡片滚动";
+                return "触发条件卡片操作";
             case 25:
+                return "触发条件卡片滚动";
             case 26:
             case 27:
             case 28:
-                return "";
             case 29:
-                return "全部拾取后序列";
+                return "";
             case 30:
-                return I18n.format("gui.autopickup.delay");
+                return "全部拾取后序列";
             case 31:
+                return I18n.format("gui.autopickup.delay");
+            case 32:
                 return "离开区域停止后续";
             default:
                 return "";
@@ -586,6 +595,7 @@ public class GuiAutoPickupConfig extends AbstractThreePaneRuleManager<AutoPickup
         fields.add(zField);
         fields.add(radiusField);
         fields.add(reachDistanceField);
+        fields.add(maxPickupAttemptsField);
         fields.add(delayField);
         fields.add(antiStuckTimeoutField);
         return fields;
@@ -626,6 +636,7 @@ public class GuiAutoPickupConfig extends AbstractThreePaneRuleManager<AutoPickup
                 trimToWidth("中心: " + formatDouble(item.centerX) + ", " + formatDouble(item.centerY) + ", "
                                 + formatDouble(item.centerZ) + "  半径: " + formatDouble(item.radius)
                                 + "  到达: " + formatDouble(item.targetReachDistance)
+                                + "  尝试: " + Math.max(1, item.maxPickupAttempts)
                                 + "  显示: " + (item.visualizeRange ? "开" : "关"),
                         width - 12),
                 x + 6, y + 31, 0xFFBDBDBD);
@@ -676,6 +687,9 @@ public class GuiAutoPickupConfig extends AbstractThreePaneRuleManager<AutoPickup
         }
         if (item.targetReachDistance <= 0) {
             return "达到目标点距离必须大于 0";
+        }
+        if (item.maxPickupAttempts < 1) {
+            return "最大拾取尝试次数不能小于 1";
         }
         if (item.postPickupDelaySeconds < 0) {
             return "延迟秒数不能小于 0";
@@ -1108,7 +1122,7 @@ public class GuiAutoPickupConfig extends AbstractThreePaneRuleManager<AutoPickup
 
     private void drawEntryListBox(int mouseX, int mouseY, boolean whitelist) {
         int boxX = editorFieldX;
-        int boxY = getEditorRowY(whitelist ? 12 : 19);
+        int boxY = getEditorRowY(whitelist ? 13 : 20);
         if (boxY < 0) {
             return;
         }
@@ -1167,7 +1181,7 @@ public class GuiAutoPickupConfig extends AbstractThreePaneRuleManager<AutoPickup
 
     private int getEntryIndexAt(int mouseX, int mouseY, boolean whitelist) {
         int boxX = editorFieldX;
-        int boxY = getEditorRowY(whitelist ? 12 : 19);
+        int boxY = getEditorRowY(whitelist ? 13 : 20);
         if (boxY < 0) {
             return -1;
         }
@@ -1193,7 +1207,7 @@ public class GuiAutoPickupConfig extends AbstractThreePaneRuleManager<AutoPickup
 
     private void drawPickupActionEntryListBox(int mouseX, int mouseY) {
         int boxX = editorFieldX;
-        int boxY = getEditorRowY(25);
+        int boxY = getEditorRowY(26);
         if (boxY < 0) {
             return;
         }
@@ -1252,7 +1266,7 @@ public class GuiAutoPickupConfig extends AbstractThreePaneRuleManager<AutoPickup
 
     private int getPickupActionEntryIndexAt(int mouseX, int mouseY) {
         int boxX = editorFieldX;
-        int boxY = getEditorRowY(25);
+        int boxY = getEditorRowY(26);
         if (boxY < 0) {
             return -1;
         }
@@ -1275,11 +1289,11 @@ public class GuiAutoPickupConfig extends AbstractThreePaneRuleManager<AutoPickup
     }
 
     private boolean isMouseInEntryListBox(int mouseX, int mouseY, boolean whitelist) {
-        return isMouseInListBox(mouseX, mouseY, getEditorRowY(whitelist ? 12 : 19));
+        return isMouseInListBox(mouseX, mouseY, getEditorRowY(whitelist ? 13 : 20));
     }
 
     private boolean isMouseInPickupActionEntryListBox(int mouseX, int mouseY) {
-        return isMouseInListBox(mouseX, mouseY, getEditorRowY(25));
+        return isMouseInListBox(mouseX, mouseY, getEditorRowY(26));
     }
 
     private boolean isMouseInListBox(int mouseX, int mouseY, int boxY) {
@@ -1404,11 +1418,11 @@ public class GuiAutoPickupConfig extends AbstractThreePaneRuleManager<AutoPickup
     private int getListBoxYForType(int listType) {
         switch (listType) {
             case DRAG_LIST_WHITELIST:
-                return getEditorRowY(12);
+                return getEditorRowY(13);
             case DRAG_LIST_BLACKLIST:
-                return getEditorRowY(19);
+                return getEditorRowY(20);
             case DRAG_LIST_PICKUP_ACTION:
-                return getEditorRowY(25);
+                return getEditorRowY(26);
             default:
                 return -1;
         }
@@ -1838,6 +1852,7 @@ public class GuiAutoPickupConfig extends AbstractThreePaneRuleManager<AutoPickup
         snapshot.centerZ = zField == null ? "" : safe(zField.getText());
         snapshot.radius = radiusField == null ? "" : safe(radiusField.getText());
         snapshot.reachDistance = reachDistanceField == null ? "" : safe(reachDistanceField.getText());
+        snapshot.maxPickupAttempts = maxPickupAttemptsField == null ? "" : safe(maxPickupAttemptsField.getText());
         snapshot.delay = delayField == null ? "" : safe(delayField.getText());
         snapshot.antiStuckTimeout = antiStuckTimeoutField == null ? "" : safe(antiStuckTimeoutField.getText());
         snapshot.sequence = safe(editorSequence);
@@ -1881,6 +1896,7 @@ public class GuiAutoPickupConfig extends AbstractThreePaneRuleManager<AutoPickup
         setText(zField, snapshot.centerZ);
         setText(radiusField, snapshot.radius);
         setText(reachDistanceField, snapshot.reachDistance);
+        setText(maxPickupAttemptsField, snapshot.maxPickupAttempts);
         setText(delayField, snapshot.delay);
         setText(antiStuckTimeoutField, snapshot.antiStuckTimeout);
 
@@ -1930,20 +1946,20 @@ public class GuiAutoPickupConfig extends AbstractThreePaneRuleManager<AutoPickup
         switch (activeEditorSection) {
             case 0:
                 startRow = 0;
-                endRow = 8;
+                endRow = 9;
                 break;
             case 1:
-                startRow = 9;
-                endRow = 15;
+                startRow = 10;
+                endRow = 16;
                 break;
             case 2:
-                startRow = 16;
-                endRow = 22;
+                startRow = 17;
+                endRow = 23;
                 break;
             case 3:
             default:
-                startRow = 23;
-                endRow = 31;
+                startRow = 24;
+                endRow = 32;
                 break;
         }
         for (int row = startRow; row <= endRow; row++) {
@@ -2056,6 +2072,7 @@ public class GuiAutoPickupConfig extends AbstractThreePaneRuleManager<AutoPickup
         private String centerZ = "";
         private String radius = "";
         private String reachDistance = "";
+        private String maxPickupAttempts = "";
         private String delay = "";
         private String antiStuckTimeout = "";
         private String sequence = "";
