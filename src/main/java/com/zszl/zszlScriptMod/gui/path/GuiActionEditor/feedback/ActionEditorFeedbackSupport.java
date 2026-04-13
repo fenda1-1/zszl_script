@@ -36,6 +36,8 @@ public final class ActionEditorFeedbackSupport {
                         : "每次触发都执行";
                 return "会" + (background ? "在后台并行" : "在前台") + "执行序列 "
                         + (sequenceName.isEmpty() ? "（未选择）" : sequenceName) + "，当前为" + runMode + "。";
+            case "disconnect":
+                return "会立即断开当前连接，并触发断线后的状态清理与联动逻辑。";
             default:
                 if (isWaitActionType(type)) {
                     return "会在条件满足前保持等待，满足后继续执行后续动作。";
@@ -78,6 +80,9 @@ public final class ActionEditorFeedbackSupport {
                         + Math.max(1, getDraftInt(params, "executeEveryCount", 1)) + " 次执行一次。";
             }
             return "风险较低，建议确认目标序列本身不会递归或抢占关键资源。";
+        }
+        if ("disconnect".equals(type)) {
+            return "执行后当前会话会立刻断开；若启用了自动重连等功能，会继续按其现有配置处理。";
         }
         if (isWaitActionType(type)) {
             if (getDraftInt(params, "timeoutSkipCount", 0) > 0) {

@@ -27,6 +27,7 @@ import com.zszl.zszlScriptMod.shadowbaritone.api.process.PathingCommandType;
 import com.zszl.zszlScriptMod.shadowbaritone.api.utils.ShadowBaritoneI18n;
 import com.zszl.zszlScriptMod.shadowbaritone.utils.BaritoneProcessHelper;
 import com.zszl.zszlScriptMod.shadowbaritone.utils.GoalTargetNormalizer;
+import com.zszl.zszlScriptMod.utils.ModUtils;
 
 /**
  * As set by ExampleBaritoneControl or something idk
@@ -133,7 +134,7 @@ public final class CustomGoalProcess extends BaritoneProcessHelper implements IC
                         && this.goal.isInGoal(baritone.getPathingBehavior().pathStart()))) {
                     onLostControl(); // we're there xd
                     if (Baritone.settings().disconnectOnArrival.value) {
-                        ctx.world().sendQuittingDisconnectingPacket();
+                        ModUtils.disconnectFromCurrentWorld();
                     }
                     if (Baritone.settings().notificationOnPathComplete.value) {
                         logNotification(ShadowBaritoneI18n.trKey(

@@ -38,6 +38,7 @@ import com.zszl.zszlScriptMod.shadowbaritone.api.utils.RotationUtils;
 import com.zszl.zszlScriptMod.shadowbaritone.api.utils.ShadowBaritoneI18n;
 import com.zszl.zszlScriptMod.shadowbaritone.api.utils.input.Input;
 import com.zszl.zszlScriptMod.shadowbaritone.pathing.movement.CalculationContext;
+import com.zszl.zszlScriptMod.utils.ModUtils;
 import com.zszl.zszlScriptMod.shadowbaritone.pathing.movement.movements.MovementFall;
 import com.zszl.zszlScriptMod.shadowbaritone.process.elytra.ElytraBehavior;
 import com.zszl.zszlScriptMod.shadowbaritone.process.elytra.NetherPathfinderContext;
@@ -157,7 +158,7 @@ public class ElytraProcess extends BaritoneProcessHelper
                 if (Baritone.settings().disconnectOnArrival.value && !reachedGoal) {
                     // don't be active when the user logs back in
                     this.onLostControl();
-                    ctx.world().sendQuittingDisconnectingPacket();
+                    ModUtils.disconnectFromCurrentWorld();
                     return new PathingCommand(null, PathingCommandType.CANCEL_AND_SET_GOAL);
                 }
                 reachedGoal = true;

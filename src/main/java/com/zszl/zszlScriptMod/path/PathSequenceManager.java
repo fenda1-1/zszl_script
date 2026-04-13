@@ -306,6 +306,8 @@ public class PathSequenceManager {
                     case "system_message":
                         return I18n.format("path.action.desc.system_message",
                                 params.has("message") ? params.get("message").getAsString() : "");
+                    case "disconnect":
+                        return I18n.format("path.action.desc.disconnect");
                     case "delay":
                         return I18n.format("path.action.desc.delay", params.get("ticks").getAsInt())
                                 + getDelayNormalizationDescriptionSuffix(params);
@@ -1674,6 +1676,8 @@ public class PathSequenceManager {
                 case "system_message":
                     String rawMessage = params.has("message") ? params.get("message").getAsString() : "";
                     return player -> player.sendMessage(new TextComponentString(rawMessage));
+                case "disconnect":
+                    return player -> ModUtils.disconnectFromCurrentWorld();
                 case "delay":
                     return new ModUtils.DelayAction(
                             params.get("ticks").getAsInt(),

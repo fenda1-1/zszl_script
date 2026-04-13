@@ -1445,6 +1445,8 @@ public class GuiActionEditor extends ThemedGuiScreen {
                     registerScrollableButton(formatBtn, by);
                 }
                 break;
+            case "disconnect":
+                break;
             case "delay":
                 addTextField(I18n.format("gui.path.action_editor.label.delay_ticks"), "ticks",
                         I18n.format("gui.path.action_editor.help.delay_ticks"), fieldWidth, x, currentY);

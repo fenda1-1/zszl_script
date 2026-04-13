@@ -17,6 +17,7 @@
 
 package com.zszl.zszlScriptMod.shadowbaritone.behavior;
 
+import com.zszl.zszlScriptMod.utils.ModUtils;
 import com.zszl.zszlScriptMod.shadowbaritone.Baritone;
 import com.zszl.zszlScriptMod.shadowbaritone.api.behavior.IPathingBehavior;
 import com.zszl.zszlScriptMod.shadowbaritone.api.event.events.*;
@@ -180,7 +181,7 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
                     queuePathEvent(PathEvent.AT_GOAL);
                     next = null;
                     if (Baritone.settings().disconnectOnArrival.value) {
-                        ctx.world().sendQuittingDisconnectingPacket();
+                        ModUtils.disconnectFromCurrentWorld();
                     }
                     return;
                 }

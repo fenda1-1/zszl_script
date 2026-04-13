@@ -3,8 +3,11 @@ package com.zszl.zszlScriptMod.utils;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.entity.EntityPlayerSP;
+import net.minecraft.client.gui.GuiMainMenu;
 import net.minecraft.client.gui.GuiMerchant;
+import net.minecraft.client.gui.GuiMultiplayer;
 import net.minecraft.client.gui.inventory.GuiChest;
+import net.minecraft.client.multiplayer.WorldClient;
 import net.minecraft.entity.Entity;
 import net.minecraft.inventory.ClickType;
 import net.minecraft.inventory.Slot;
@@ -69,6 +72,47 @@ import java.lang.reflect.Field;
 
 public class ModUtils {
     ;
+    private static volatile boolean disconnectScheduled = false;
+
+    public static void disconnectFromCurrentWorld() {
+        if (disconnectScheduled) {
+            return;
+        }
+        disconnectScheduled = true;
+        Runnable task = () -> {
+            disconnectScheduled = false;
+            performDisconnectFromCurrentWorld();
+        };
+        if (DelayScheduler.instance != null) {
+            DelayScheduler.instance.schedule(task, 1, "disconnect_world");
+        } else {
+            task.run();
+        }
+    }
+
+    private static void performDisconnectFromCurrentWorld() {
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc == null) {
+            return;
+        }
+
+        boolean singleplayer = mc.isSingleplayer();
+        WorldClient world = mc.world;
+        if (world != null) {
+            try {
+                world.sendQuittingDisconnectingPacket();
+            } catch (Exception e) {
+                zszlScriptMod.LOGGER.warn("发送断开连接数据包失败", e);
+            }
+        }
+
+        mc.loadWorld(null);
+        if (singleplayer) {
+            mc.displayGuiScreen(new GuiMainMenu());
+        } else {
+            mc.displayGuiScreen(new GuiMultiplayer(new GuiMainMenu()));
+        }
+    }
 
     /**
      * 延迟任务调度器
