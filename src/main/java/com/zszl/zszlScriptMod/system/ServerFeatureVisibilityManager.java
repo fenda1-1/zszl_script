@@ -43,9 +43,6 @@ public final class ServerFeatureVisibilityManager {
     }
 
     private static void ensureDefaults() {
-        if (rules.stream().noneMatch(r -> Objects.equals(r.id, "zszl"))) {
-            rules.add(new ServerFeatureRule("zszl", "再生之路", true));
-        }
         if (rules.stream().noneMatch(r -> Objects.equals(r.id, "mota"))) {
             rules.add(new ServerFeatureRule("mota", "魔塔之巅", true));
         }
@@ -96,12 +93,7 @@ public final class ServerFeatureVisibilityManager {
     }
 
     public static boolean shouldHideRslFeatures() {
-        for (ServerFeatureRule r : rules) {
-            if ("zszl".equals(r.id)) {
-                return r.enabled;
-            }
-        }
-        return true;
+        return false;
     }
 
     public static boolean shouldHideMotaFeatures() {

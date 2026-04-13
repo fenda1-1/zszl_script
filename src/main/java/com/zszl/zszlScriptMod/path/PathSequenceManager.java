@@ -3034,8 +3034,6 @@ public class PathSequenceManager {
                 .filter(cat -> {
                     if ("魔塔之巅".equals(cat)) {
                         return !ServerFeatureVisibilityManager.shouldHideMotaFeatures();
-                    } else if ("再生之路".equals(cat)) {
-                        return !ServerFeatureVisibilityManager.shouldHideRslFeatures();
                     }
                     return true;
                 })
@@ -3065,8 +3063,6 @@ public class PathSequenceManager {
                     String cat = seq.getCategory();
                     if ("魔塔之巅".equals(cat)) {
                         return !ServerFeatureVisibilityManager.shouldHideMotaFeatures();
-                    } else if ("再生之路".equals(cat)) {
-                        return !ServerFeatureVisibilityManager.shouldHideRslFeatures();
                     }
                     return true;
                 })
@@ -3200,7 +3196,7 @@ public class PathSequenceManager {
     }
 
     private static void loadCategories() {
-        categories = new ArrayList<>(Arrays.asList(defaultCategoryName(), builtinCategoryName(), "魔塔之巅", "再生之路"));
+        categories = new ArrayList<>(Arrays.asList(defaultCategoryName(), builtinCategoryName(), "魔塔之巅"));
         hiddenCategories = new HashSet<>();
         Path categoriesFile = getCategoriesFile();
         if (Files.exists(categoriesFile)) {

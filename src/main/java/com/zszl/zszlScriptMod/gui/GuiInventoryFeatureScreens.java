@@ -137,11 +137,7 @@ abstract class GuiInventoryFeatureScreens extends GuiInventoryCustomSupport {
             return false;
         }
         String normalized = primaryCategory.trim();
-        if (ServerFeatureVisibilityManager.shouldHideMotaFeatures() && "魔塔之巅".equals(normalized)) {
-            return true;
-        }
-        return isRslFeaturesHidden()
-                && ("再生之路".equals(normalized) || normalized.equals(I18n.format("path.category.builtin")));
+        return ServerFeatureVisibilityManager.shouldHideMotaFeatures() && "魔塔之巅".equals(normalized);
     }
 
     protected static List<String> getBuiltinRouteSubCategoriesByPrimary(String primaryCategory) {

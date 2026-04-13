@@ -1025,13 +1025,9 @@ public final class ProfileShareCodeManager {
     private static Map<String, ProfileFileSpec> buildProfileFileSpecs() {
         LinkedHashMap<String, ProfileFileSpec> specs = new LinkedHashMap<>();
 
-        registerKnownShareableFile(specs, "ad_exp_panel_config.json", "经验数据面板设置");
         registerKnownShareableFile(specs, "arena_config.json", "竞技场设置");
         registerKnownShareableFile(specs, "auto_equip_sets_v5.json", "自动穿戴配置集");
         registerKnownShareableFile(specs, "auto_pickup_rules.json", "自动拾取规则");
-        registerKnownShareableFile(specs, "auto_signin_online_config.json", "签到/在线设置");
-        registerKnownShareableFile(specs, "auto_skills_v2.json", "自动技能配置");
-        registerKnownShareableFile(specs, "auto_stacking_config.json", "自动叠加配置");
         registerKnownShareableFile(specs, "auto_use_item_rules.json", "静默使用物品规则");
         registerKnownShareableFile(specs, "autofollow_rules.json", "自动追怪规则");
         registerKnownHiddenFile(specs, "baritone_settings.json", "旧版 Baritone 设置");
@@ -1047,7 +1043,6 @@ public final class ProfileShareCodeManager {
         registerKnownShareableFile(specs, "keybinds_v2.json", "快捷键绑定");
         registerKnownShareableFile(specs, "keycommand_autoeat.json", "自动进食设置");
         registerKnownShareableFile(specs, "keycommand_fastattack.json", "极限攻速设置");
-        registerKnownShareableFile(specs, "keycommand_leaveconfig.json", "撤离/重进设置");
         registerKnownShareableFile(specs, "kill_timer_config.json", "杀怪数据面板设置");
         registerKnownShareableFile(specs, "loop_execution.json", "循环执行设置");
         registerKnownShareableFile(specs, "mail_settings.json", "邮件助手设置");
@@ -1055,7 +1050,6 @@ public final class ProfileShareCodeManager {
         registerKnownShareableFile(specs, "packet_filter_config.json", "数据包过滤设置");
         registerKnownShareableFile(specs, "packet_intercept_rules.json", "数据包拦截规则");
         registerKnownShareableFile(specs, "path_categories.json", "路径分类");
-        registerKnownShareableFile(specs, "quick_exchange_config.json", "快速兑换设置");
         registerKnownShareableFile(specs, "scanner_settings.json", "地形扫描设置");
         registerKnownShareableFile(specs, "server_feature_visibility.json", "服务器功能隐藏");
         registerKnownShareableFile(specs, "shulker_mining_rebound_fix_config.json", "潜影盒回弹修复");

@@ -22,13 +22,10 @@ import com.zszl.zszlScriptMod.handlers.AutoFishingHandler;
 import com.zszl.zszlScriptMod.handlers.ChatEventHandler;
 import com.zszl.zszlScriptMod.handlers.ConditionalExecutionHandler;
 import com.zszl.zszlScriptMod.handlers.DungeonWarehouseHandler;
-import com.zszl.zszlScriptMod.handlers.AdExpPanelHandler;
 import com.zszl.zszlScriptMod.handlers.MailModGuiHandler;
 import com.zszl.zszlScriptMod.handlers.RefineModGuiHandler;
-import com.zszl.zszlScriptMod.handlers.QuickExchangeHandler;
 import com.zszl.zszlScriptMod.handlers.KillTimerHandler; // <-- 确保导入
 import com.zszl.zszlScriptMod.handlers.KillAuraHandler;
-import com.zszl.zszlScriptMod.handlers.FreecamHandler;
 import com.zszl.zszlScriptMod.handlers.FlyHandler;
 import com.zszl.zszlScriptMod.handlers.GuiBlockerHandler;
 import com.zszl.zszlScriptMod.otherfeatures.handler.block.BlockFeatureManager;
@@ -57,9 +54,7 @@ import com.zszl.zszlScriptMod.utils.TextureManagerHelper;
 import com.zszl.zszlScriptMod.handlers.WarehouseEventHandler; // 新增导入
 import com.zszl.zszlScriptMod.handlers.WarehouseManager; // 新增导入
 import com.zszl.zszlScriptMod.handlers.AutoEquipHandler;
-import com.zszl.zszlScriptMod.handlers.AutoSigninOnlineHandler;
 import com.zszl.zszlScriptMod.handlers.BlockReplacementHandler;
-import com.zszl.zszlScriptMod.handlers.ShulkerMiningReboundFixHandler;
 import com.zszl.zszlScriptMod.handlers.ShadowBaritoneForgeBridge;
 import com.zszl.zszlScriptMod.system.DebugKeybindManager;
 import com.zszl.zszlScriptMod.system.command.BaritoneChatCommand;
@@ -164,9 +159,6 @@ public class zszlScriptMod {
         ModUtils.DelayScheduler.init();
         NetworkRegistry.INSTANCE.registerGuiHandler(instance, new GuiHandler());
         LOGGER.info("GUI Handler registered!");
-        MinecraftForge.EVENT_BUS.register(FreecamHandler.INSTANCE);
-        LOGGER.info("Freecam Handler registered for tick events!");
-
         MinecraftForge.EVENT_BUS.register(FlyHandler.INSTANCE);
         FlyHandler.loadConfig();
         LOGGER.info("Fly Handler registered!");
@@ -199,10 +191,6 @@ public class zszlScriptMod {
         MiscFeatureManager.loadConfig();
         LOGGER.info("Misc Feature Handler registered!");
 
-        MinecraftForge.EVENT_BUS.register(QuickExchangeHandler.INSTANCE);
-        QuickExchangeHandler.loadConfig();
-        LOGGER.info("Quick Exchange Handler registered!");
-
         MinecraftForge.EVENT_BUS.register(DungeonWarehouseHandler.INSTANCE);
         DungeonWarehouseHandler.loadConfig();
         LOGGER.info("Dungeon Warehouse Handler registered!");
@@ -219,10 +207,6 @@ public class zszlScriptMod {
         MinecraftForge.EVENT_BUS.register(AutoFishingHandler.INSTANCE);
         AutoFishingHandler.loadConfig();
         LOGGER.info("Auto Fishing Handler registered!");
-
-        MinecraftForge.EVENT_BUS.register(AdExpPanelHandler.INSTANCE);
-        AdExpPanelHandler.loadConfig();
-        LOGGER.info("AD Exp Panel Handler registered!");
 
         MinecraftForge.EVENT_BUS.register(WarehouseEventHandler.INSTANCE);
         WarehouseManager.loadWarehouses();
@@ -252,10 +236,6 @@ public class zszlScriptMod {
         MinecraftForge.EVENT_BUS.register(BlockReplacementHandler.INSTANCE);
         BlockReplacementHandler.loadConfig();
         LOGGER.info("Block Replacement Handler registered!");
-
-        MinecraftForge.EVENT_BUS.register(ShulkerMiningReboundFixHandler.INSTANCE);
-        ShulkerMiningReboundFixHandler.loadConfig();
-        LOGGER.info("Shulker Mining Rebound Fix Handler registered!");
 
         MinecraftForge.EVENT_BUS.register(new MailModGuiHandler());
         MinecraftForge.EVENT_BUS.register(new RefineModGuiHandler());
@@ -326,12 +306,9 @@ public class zszlScriptMod {
         AutoEatHandler.originalHotbarSlot = -1;
         AutoEatHandler.swappedItem = net.minecraft.item.ItemStack.EMPTY;
 
-        AutoSigninOnlineHandler.stop();
         AutoEscapeHandler.resetRuntimeState();
         GuiBlockerHandler.reset();
         KillTimerHandler.clearRuntimeState();
-        AdExpPanelHandler.clearRuntimeState();
-        ShulkerMiningReboundFixHandler.INSTANCE.clearRuntimeState();
         KillAuraHandler.INSTANCE.resetRuntimeState();
         AutoFishingHandler.INSTANCE.resetRuntimeState();
         SpeedHandler.INSTANCE.onClientDisconnect();
@@ -354,7 +331,6 @@ public class zszlScriptMod {
         LegacySequenceTriggerManager.triggerEvent(LegacySequenceTriggerManager.TRIGGER_SERVER_DISCONNECT, triggerData);
         mc.addScheduledTask(zszlScriptMod::resetAllStates);
         mc.addScheduledTask(PacketCaptureHandler::resetOwlViewSessionID);
-        mc.addScheduledTask(FreecamHandler.INSTANCE::onClientDisconnect);
         mc.addScheduledTask(FlyHandler.INSTANCE::onClientDisconnect);
         mc.addScheduledTask(SpeedHandler.INSTANCE::onClientDisconnect);
         mc.addScheduledTask(MovementFeatureManager.INSTANCE::onClientDisconnect);

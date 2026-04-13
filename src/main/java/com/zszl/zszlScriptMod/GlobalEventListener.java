@@ -28,8 +28,6 @@ import com.zszl.zszlScriptMod.gui.OverlayGuiHandler;
 import com.zszl.zszlScriptMod.handlers.ArenaItemHandler;
 import com.zszl.zszlScriptMod.handlers.AutoEatHandler;
 import com.zszl.zszlScriptMod.handlers.AutoFollowHandler;
-import com.zszl.zszlScriptMod.handlers.AutoSigninOnlineHandler;
-import com.zszl.zszlScriptMod.handlers.AutoSkillHandler;
 import com.zszl.zszlScriptMod.handlers.AutoUseItemHandler;
 import com.zszl.zszlScriptMod.handlers.ConditionalExecutionHandler;
 import com.zszl.zszlScriptMod.handlers.DeathAutoRejoinHandler;
@@ -466,21 +464,11 @@ public class GlobalEventListener {
                 }
             });
 
-            // 每 tick：技能通常要求高时效
-            runGuarded("更新自动技能时出错", () -> {
-                AutoSkillHandler.updateAutoSkills();
-            });
-
             // 每 4 tick：进食检查可降频（约 0.2 秒）
             if (clientTickCounter % 4 == 0) {
                 runGuarded("执行自动进食检查时出错", () -> {
                     AutoEatHandler.checkAutoEat(mc.player);
                 });
-            }
-
-            // 每 20 tick：签到/在线后台逻辑降频
-            if (clientTickCounter % 20 == 0) {
-                runGuarded("执行签到/在线后台功能时出错", AutoSigninOnlineHandler::tick);
             }
 
             // 每 2 tick：静默使用物品降频（约 0.1 秒），减少主线程持续调用压力

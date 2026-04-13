@@ -33,7 +33,6 @@ import com.zszl.zszlScriptMod.gui.config.GuiChatOptimization;
 import com.zszl.zszlScriptMod.gui.config.GuiConditionalExecutionManager;
 import com.zszl.zszlScriptMod.gui.config.GuiDeathAutoRejoinConfig;
 import com.zszl.zszlScriptMod.gui.config.GuiDebugConfig;
-import com.zszl.zszlScriptMod.gui.config.GuiFastAttackConfig;
 import com.zszl.zszlScriptMod.gui.config.GuiKeybindManager;
 import com.zszl.zszlScriptMod.gui.config.GuiKillAuraConfig;
 import com.zszl.zszlScriptMod.gui.config.GuiKillTimerConfig;
@@ -63,11 +62,9 @@ import com.zszl.zszlScriptMod.handlers.AutoUseItemHandler;
 import com.zszl.zszlScriptMod.handlers.ConditionalExecutionHandler;
 import com.zszl.zszlScriptMod.handlers.DeathAutoRejoinHandler;
 import com.zszl.zszlScriptMod.handlers.EmbeddedNavigationHandler;
-import com.zszl.zszlScriptMod.handlers.FreecamHandler;
 import com.zszl.zszlScriptMod.handlers.KillAuraHandler;
 import com.zszl.zszlScriptMod.handlers.KillTimerHandler;
 import com.zszl.zszlScriptMod.handlers.ShulkerBoxStackingHandler;
-import com.zszl.zszlScriptMod.handlers.ShulkerMiningReboundFixHandler;
 import com.zszl.zszlScriptMod.handlers.WarehouseEventHandler;
 import com.zszl.zszlScriptMod.inventory.InventoryViewerManager;
 import com.zszl.zszlScriptMod.otherfeatures.OtherFeatureGroupManager;
@@ -573,10 +570,7 @@ abstract class GuiInventoryRenderInput extends GuiInventoryFeatureScreens {
                                 } else {
                                     itemNames.set(index, I18n.format("gui.inventory.item.auto_fishing.name"));
                                 }
-                            } else if (command.equals("toggle_fast_attack")
-                                    && FreecamHandler.INSTANCE.isFastAttackEnabled)
-                                bgColor = 0xFF33AA33;
-                            else if (command.equals("toggle_kill_aura")) {
+                            } else if (command.equals("toggle_kill_aura")) {
                                 if (KillAuraHandler.enabled) {
                                     bgColor = 0xFF33AA33;
                                     itemNames.set(index, I18n.format("gui.inventory.kill_aura.on"));
@@ -629,14 +623,6 @@ abstract class GuiInventoryRenderInput extends GuiInventoryFeatureScreens {
                                     itemNames.set(index, I18n.format("gui.inventory.ad_exp_panel.on"));
                                 } else {
                                     itemNames.set(index, I18n.format("gui.inventory.ad_exp_panel.name"));
-                                }
-                            } else if (command.equals("toggle_shulker_rebound_fix")) {
-                                boolean fix = ShulkerMiningReboundFixHandler.enabled;
-                                if (fix) {
-                                    bgColor = 0xFF33AA33;
-                                    itemNames.set(index, I18n.format("gui.inventory.shulker_rebound_fix.on"));
-                                } else {
-                                    itemNames.set(index, I18n.format("gui.inventory.shulker_rebound_fix.name"));
                                 }
                             } else if (command.equals("toggle_kill_timer") && KillTimerHandler.isEnabled)
                                 bgColor = 0xFF33AA33;
@@ -1432,14 +1418,6 @@ abstract class GuiInventoryRenderInput extends GuiInventoryFeatureScreens {
                             closeOverlay();
                             mc.displayGuiScreen(new GuiAutoSigninOnlineConfig(null));
                         }
-                    } else if (command.equals("toggle_fast_attack")) {
-                        if (mouseButton == 0) {
-                            FreecamHandler.INSTANCE.toggleFastAttack();
-                        } else if (mouseButton == 1) {
-                            closeOverlay();
-                            mc.displayGuiScreen(new GuiFastAttackConfig(null));
-                        }
-                        refreshGuiLists();
                     } else if (command.equals("toggle_kill_aura")) {
                         if (mouseButton == 0) {
                             KillAuraHandler.INSTANCE.toggleEnabled();
@@ -1463,9 +1441,6 @@ abstract class GuiInventoryRenderInput extends GuiInventoryFeatureScreens {
                             closeOverlay();
                             mc.displayGuiScreen(new GuiAdExpPanelConfig(null));
                         }
-                        refreshGuiLists();
-                    } else if (command.equals("toggle_shulker_rebound_fix")) {
-                        ShulkerMiningReboundFixHandler.toggleEnabled();
                         refreshGuiLists();
                     } else if (command.equals("toggle_mouse_detach")) {
                         ModConfig.isMouseDetached = !ModConfig.isMouseDetached;

@@ -3,7 +3,6 @@ package com.zszl.zszlScriptMod.otherfeatures.handler.movement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.zszl.zszlScriptMod.handlers.FlyHandler;
-import com.zszl.zszlScriptMod.handlers.FreecamHandler;
 import com.zszl.zszlScriptMod.handlers.KillAuraHandler;
 import com.zszl.zszlScriptMod.system.ProfileManager;
 import com.zszl.zszlScriptMod.zszlScriptMod;
@@ -650,7 +649,7 @@ public class MovementFeatureManager {
         }
 
         if (!active) {
-            if (!KillAuraHandler.enabled && !FreecamHandler.INSTANCE.isFastAttackEnabled && !FlyHandler.enabled) {
+            if (!KillAuraHandler.enabled && !FlyHandler.enabled) {
                 player.entityCollisionReduction = 0.0F;
                 player.noClip = false;
             }
@@ -663,7 +662,7 @@ public class MovementFeatureManager {
         if (applyNoCollision) {
             player.entityCollisionReduction = 1.0F;
             player.noClip = false;
-        } else if (!KillAuraHandler.enabled && !FreecamHandler.INSTANCE.isFastAttackEnabled && !FlyHandler.enabled) {
+        } else if (!KillAuraHandler.enabled && !FlyHandler.enabled) {
             player.entityCollisionReduction = 0.0F;
             player.noClip = false;
         }

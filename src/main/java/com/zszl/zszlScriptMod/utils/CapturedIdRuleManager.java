@@ -44,7 +44,7 @@ public class CapturedIdRuleManager {
     private static final Path CUSTOM_CONFIG_PATH = Paths.get(ModConfig.CONFIG_DIR, "captured_ids_custom.json");
     private static final String RESOURCE_NAME = "captured_ids.json";
     private static final String RULE_SHARE_PREFIX = "CIDR1.";
-    private static final String CATEGORY_RSL = "再生之路";
+    private static final String CATEGORY_RSL = "内置规则";
     private static final String CATEGORY_MOTA = "魔塔之巅";
     private static final String CATEGORY_UNGROUPED = "未分组";
 

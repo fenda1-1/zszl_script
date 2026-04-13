@@ -316,7 +316,7 @@ public class FlyHandler {
                 player.velocityChanged = true;
             }
 
-            if (!KillAuraHandler.enabled && !FreecamHandler.INSTANCE.isFastAttackEnabled) {
+            if (!KillAuraHandler.enabled) {
                 KillAuraHandler.INSTANCE.applyMovementProtection(player, false, false, false);
             }
         }

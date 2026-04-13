@@ -2,7 +2,6 @@
 package com.zszl.zszlScriptMod.config;
 import com.zszl.zszlScriptMod.zszlScriptMod;
 import com.zszl.zszlScriptMod.handlers.*;
-import com.zszl.zszlScriptMod.handlers.AutoSigninOnlineHandler;
 import com.zszl.zszlScriptMod.handlers.BlockReplacementHandler;
 import com.zszl.zszlScriptMod.path.PathSequenceManager;
 import com.zszl.zszlScriptMod.utils.CapturedIdRuleManager;
@@ -133,15 +132,12 @@ public class ModConfig {
     public static void loadAllConfigs() {
         AutoEatHandler.loadAutoEatConfig();
         ItemFilterHandler.loadFilterConfig();
-        AutoSkillHandler.loadSkillConfig();
         AutoFollowHandler.loadFollowConfig();
         KillTimerHandler.loadConfig();
-        DeathAutoRejoinHandler.loadConfig();
         ConditionalExecutionHandler.loadConfig();
         AutoPickupHandler.loadConfig();
         AutoUseItemHandler.loadConfig();
         BlockReplacementHandler.loadConfig();
-        AutoSigninOnlineHandler.loadConfig();
         ServerFeatureVisibilityManager.loadConfig();
         PerformanceMonitor.loadConfig();
         PathSequenceManager.initializePathSequences();

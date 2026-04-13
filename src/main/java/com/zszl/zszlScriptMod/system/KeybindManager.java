@@ -22,11 +22,9 @@ import com.zszl.zszlScriptMod.handlers.AutoSigninOnlineHandler;
 import com.zszl.zszlScriptMod.handlers.AutoSkillHandler;
 import com.zszl.zszlScriptMod.handlers.DeathAutoRejoinHandler;
 import com.zszl.zszlScriptMod.handlers.FlyHandler;
-import com.zszl.zszlScriptMod.handlers.FreecamHandler;
 import com.zszl.zszlScriptMod.handlers.KillAuraHandler;
 import com.zszl.zszlScriptMod.handlers.KillTimerHandler;
 import com.zszl.zszlScriptMod.handlers.ShulkerBoxStackingHandler;
-import com.zszl.zszlScriptMod.handlers.ShulkerMiningReboundFixHandler;
 import com.zszl.zszlScriptMod.otherfeatures.handler.block.BlockFeatureManager;
 import com.zszl.zszlScriptMod.otherfeatures.handler.item.ItemFeatureManager;
 import com.zszl.zszlScriptMod.otherfeatures.handler.movement.MovementFeatureManager;
@@ -163,9 +161,6 @@ public class KeybindManager {
                         new TextComponentString(
                                 TextFormatting.AQUA + I18n.format("msg.keybind.open_inventory_viewer")));
                 break;
-            case TOGGLE_FAST_ATTACK:
-                mc.addScheduledTask(() -> FreecamHandler.INSTANCE.toggleFastAttack());
-                break;
             case TOGGLE_AUTO_EAT:
                 AutoEatHandler.autoEatEnabled = !AutoEatHandler.autoEatEnabled;
                 AutoEatHandler.saveAutoEatConfig();
@@ -227,9 +222,6 @@ public class KeybindManager {
                 break;
             case TOGGLE_AD_EXP_PANEL:
                 AdExpPanelHandler.toggleEnabled();
-                break;
-            case TOGGLE_SHULKER_REBOUND_FIX:
-                ShulkerMiningReboundFixHandler.toggleEnabled();
                 break;
             case TOGGLE_AUTO_STACK_SHULKER:
                 ShulkerBoxStackingHandler.autoStackingEnabled = !ShulkerBoxStackingHandler.autoStackingEnabled;

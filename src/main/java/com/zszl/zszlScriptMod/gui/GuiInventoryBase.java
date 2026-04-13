@@ -27,12 +27,8 @@ import com.zszl.zszlScriptMod.path.PathSequenceManager;
 import com.zszl.zszlScriptMod.path.PathSequenceManager.PathSequence;
 import com.zszl.zszlScriptMod.system.ProfileManager;
 import com.zszl.zszlScriptMod.system.ServerFeatureVisibilityManager;
-import com.zszl.zszlScriptMod.utils.AdExpListManager;
 import com.zszl.zszlScriptMod.utils.DonationLeaderboardManager;
-import com.zszl.zszlScriptMod.utils.EnhancementAttrManager;
-import com.zszl.zszlScriptMod.utils.HallOfFameManager;
 import com.zszl.zszlScriptMod.utils.PacketCaptureHandler;
-import com.zszl.zszlScriptMod.utils.TitleCompendiumManager;
 import com.zszl.zszlScriptMod.utils.UpdateChecker;
 import com.zszl.zszlScriptMod.zszlScriptMod;
 
@@ -754,31 +750,12 @@ abstract class GuiInventoryBase {
     }
 
     protected static void rebuildSideButtons() {
-        boolean hideRsl = isRslFeaturesHidden();
         sideButtons.clear();
         // 始终显示：主题配置、更新脚本、打赏
         sideButtons.add(new ThemedButton(BTN_ID_THEME_CONFIG, 0, 0, 70, 20, I18n.format("gui.inventory.theme_config")));
         sideButtons.add(new ThemedButton(BTN_ID_UPDATE, 0, 0, 70, 20, I18n.format("gui.inventory.update_script")));
         sideButtons.add(new ThemedButton(BTN_ID_DONATE, 0, 0, 70, 20, I18n.format("gui.inventory.donate")));
-
-        if (!hideRsl) {
-            // --- 仅在显示再生之路内容时：预加载并显示其余侧栏按钮 ---
-            HallOfFameManager.fetchContent();
-            TitleCompendiumManager.fetchContent();
-            EnhancementAttrManager.fetchContent();
-            AdExpListManager.fetchContent();
-            DonationLeaderboardManager.fetchContent();
-
-            sideButtons.add(
-                    new ThemedButton(BTN_ID_HALL_OF_FAME, 0, 0, 70, 20, I18n.format("gui.inventory.hall_of_fame")));
-            sideButtons.add(new ThemedButton(BTN_ID_TITLE_COMPENDIUM, 0, 0, 70, 20,
-                    I18n.format("gui.inventory.title_compendium")));
-            sideButtons.add(new ThemedButton(BTN_ID_ENHANCEMENT_ATTR, 0, 0, 70, 20,
-                    I18n.format("gui.inventory.enhancement_attr")));
-            sideButtons
-                    .add(new ThemedButton(BTN_ID_AD_EXP_LIST, 0, 0, 70, 20, I18n.format("gui.inventory.ad_exp_list")));
-            sideButtons.add(new ThemedButton(BTN_ID_MERCHANT, 0, 0, 70, 20, I18n.format("gui.inventory.merchant")));
-        }
+        DonationLeaderboardManager.fetchContent();
         // --- 新增结束 ---
     }
 
@@ -1840,9 +1817,6 @@ abstract class GuiInventoryBase {
         itemTooltips.clear();
 
         categories.add(I18n.format("gui.inventory.category.common"));
-        if (!isRslFeaturesHidden()) {
-            categories.add(I18n.format("gui.inventory.category.rsl"));
-        }
         categories.add(I18n.format("gui.inventory.category.debug"));
 
         List<String> pathCategories = PathSequenceManager.getVisibleCategories();
@@ -1921,6 +1895,9 @@ abstract class GuiInventoryBase {
         setItems.add("profile_manager");
         setItemNames.add(I18n.format("gui.inventory.item.profile_manager.name"));
         itemTooltips.put("profile_manager", I18n.format("gui.inventory.item.profile_manager.tooltip"));
+        setItems.add("toggle_kill_timer");
+        setItemNames.add(I18n.format("gui.inventory.kill_timer.name"));
+        itemTooltips.put("toggle_kill_timer", I18n.format("gui.inventory.item.kill_timer.tooltip"));
         setItems.add("chat_optimization");
         setItemNames.add(I18n.format("gui.inventory.item.chat_optimization.name"));
         itemTooltips.put("chat_optimization", I18n.format("gui.inventory.item.chat_optimization.tooltip"));
@@ -1962,50 +1939,6 @@ abstract class GuiInventoryBase {
         categoryItemNames.put(I18n.format("gui.inventory.category.common"), setItemNames);
         GuiInventory.rebuildCommonSections(setItems);
 
-        List<String> rslItems = new ArrayList<>();
-        List<String> rslItemNames = new ArrayList<>();
-
-        rslItems.add("autoskill");
-        rslItemNames.add(I18n.format("gui.inventory.item.autoskill.name"));
-        itemTooltips.put("autoskill", I18n.format("gui.inventory.item.autoskill.tooltip"));
-
-        rslItems.add("signin_online_rewards");
-        rslItemNames.add(I18n.format("gui.inventory.item.signin_online.name"));
-        itemTooltips.put("signin_online_rewards", I18n.format("gui.inventory.item.signin_online.tooltip"));
-
-        rslItems.add("toggle_fast_attack");
-        rslItemNames.add(I18n.format("gui.inventory.item.fast_attack.name"));
-        itemTooltips.put("toggle_fast_attack", I18n.format("gui.inventory.item.fast_attack.tooltip"));
-
-        rslItems.add("toggle_ad_exp_panel");
-        rslItemNames.add(I18n.format("gui.inventory.ad_exp_panel.name"));
-        itemTooltips.put("toggle_ad_exp_panel", I18n.format("gui.inventory.item.ad_exp_panel.tooltip"));
-
-        rslItems.add("toggle_shulker_rebound_fix");
-        rslItemNames.add(I18n.format("gui.inventory.shulker_rebound_fix.name"));
-        itemTooltips.put("toggle_shulker_rebound_fix", I18n.format("gui.inventory.item.shulker_rebound_fix.tooltip"));
-
-        rslItems.add("toggle_kill_timer");
-        rslItemNames.add(I18n.format("gui.inventory.kill_timer.name"));
-        itemTooltips.put("toggle_kill_timer", I18n.format("gui.inventory.item.kill_timer.tooltip"));
-
-        rslItems.add("toggle_death_auto_rejoin");
-        rslItemNames.add(I18n.format("gui.inventory.item.death_auto_rejoin.name"));
-        itemTooltips.put("toggle_death_auto_rejoin", I18n.format("gui.inventory.item.death_auto_rejoin.tooltip"));
-
-        rslItems.add("quick_exchange_config");
-        rslItemNames.add(I18n.format("gui.inventory.item.quick_exchange.name"));
-        itemTooltips.put("quick_exchange_config", I18n.format("gui.inventory.item.quick_exchange.tooltip"));
-
-        rslItems.add("toggle_auto_stack_shulker_boxes");
-        rslItemNames.add(I18n.format("gui.inventory.item.auto_stack.name"));
-        itemTooltips.put("toggle_auto_stack_shulker_boxes", I18n.format("gui.inventory.item.auto_stack.tooltip"));
-
-        if (!isRslFeaturesHidden()) {
-            categoryItems.put(I18n.format("gui.inventory.category.rsl"), rslItems);
-            categoryItemNames.put(I18n.format("gui.inventory.category.rsl"), rslItemNames);
-        }
-
         List<String> debugItems = new ArrayList<>();
         List<String> debugItemNames = new ArrayList<>();
         debugItems.add("debug_settings");
@@ -2042,7 +1975,6 @@ abstract class GuiInventoryBase {
 
         for (String categoryName : categories) {
             if (categoryName.equals(I18n.format("gui.inventory.category.common"))
-                    || categoryName.equals(I18n.format("gui.inventory.category.rsl"))
                     || categoryName.equals(I18n.format("gui.inventory.category.debug")))
                 continue;
 

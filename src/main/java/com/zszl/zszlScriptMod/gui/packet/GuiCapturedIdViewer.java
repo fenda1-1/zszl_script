@@ -959,7 +959,7 @@ public class GuiCapturedIdViewer extends ThemedGuiScreen {
                 0xFFBDBDBD);
         drawString(fontRenderer, "2. 右键规则卡片可新增/删除/重载/复制值/导出分享/导入规则", hintBoxX + 6, hintBoxY + 31,
                 0xFF9FC3D9);
-        drawString(fontRenderer, "3. 内置规则默认分到“再生之路/魔塔之巅”，自定义规则可保存到任意分组", hintBoxX + 6,
+        drawString(fontRenderer, "3. 内置规则默认分到“内置规则/魔塔之巅”，自定义规则可保存到任意分组", hintBoxX + 6,
                 hintBoxY + 44, 0xFF9FC3D9);
     }
 
