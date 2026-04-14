@@ -1995,16 +1995,22 @@ public class PathSequenceEventListener {
         return true;
     }
 
-    private boolean inventoryHasMatchingItem(EntityPlayerSP player, String itemName, String matchMode,
-            List<String> requiredNbtTags, String requiredNbtTagMatchMode, int minCount,
+    private boolean inventoryHasMatchingItem(EntityPlayerSP player, JsonObject params,
             Set<Integer> selectedInventorySlots) {
         if (player == null) {
             return false;
         }
+        List<String> itemFilterExpressions = InventoryItemFilterExpressionEngine.readExpressions(params);
+        String itemName = params != null && params.has("itemName") ? params.get("itemName").getAsString() : "";
+        String matchMode = params != null && params.has("matchMode") ? params.get("matchMode").getAsString() : "CONTAINS";
+        List<String> requiredNbtTags = ItemFilterHandler.readTagFilters(params, "requiredNbtTags", "requiredNbtTagsText");
+        String requiredNbtTagMatchMode = ItemFilterHandler.readRequiredNbtTagMatchMode(params);
+        int minCount = params != null && params.has("count") ? params.get("count").getAsInt() : 1;
         String expected = itemName == null ? "" : itemName.trim().toLowerCase(java.util.Locale.ROOT);
+        boolean hasExpressionCondition = itemFilterExpressions != null && !itemFilterExpressions.isEmpty();
         boolean hasNameCondition = !expected.isEmpty();
         boolean hasNbtCondition = requiredNbtTags != null && !requiredNbtTags.isEmpty();
-        if (!hasNameCondition && !hasNbtCondition) {
+        if (!hasExpressionCondition && !hasNameCondition && !hasNbtCondition) {
             return false;
         }
         int totalCount = 0;
@@ -2019,20 +2025,37 @@ public class PathSequenceEventListener {
             if (stack == null || stack.isEmpty()) {
                 continue;
             }
-            String actual = net.minecraft.util.text.TextFormatting
-                    .getTextWithoutFormattingCodes(stack.getDisplayName());
-            if (actual == null) {
-                actual = stack.getDisplayName();
+            boolean matched;
+            if (hasExpressionCondition) {
+                matched = false;
+                for (String expression : itemFilterExpressions) {
+                    if (expression == null || expression.trim().isEmpty()) {
+                        continue;
+                    }
+                    try {
+                        if (InventoryItemFilterExpressionEngine.matches(stack, slotIndex, expression)) {
+                            matched = true;
+                            break;
+                        }
+                    } catch (Exception e) {
+                        zszlScriptMod.LOGGER.warn("[legacy_path] 物品过滤表达式解析失败: {}", expression, e);
+                    }
+                }
+            } else {
+                String actual = net.minecraft.util.text.TextFormatting
+                        .getTextWithoutFormattingCodes(stack.getDisplayName());
+                if (actual == null) {
+                    actual = stack.getDisplayName();
+                }
+                if (actual == null) {
+                    continue;
+                }
+                actual = actual.trim().toLowerCase(java.util.Locale.ROOT);
+                boolean matchedName = !hasNameCondition || (exact ? actual.equals(expected) : actual.contains(expected));
+                matched = matchedName
+                        && ItemFilterHandler.matchesRequiredNbtTags(stack, requiredNbtTags, requiredNbtTagMatchMode);
             }
-            if (actual == null) {
-                continue;
-            }
-            actual = actual.trim().toLowerCase(java.util.Locale.ROOT);
-            boolean matchedName = !hasNameCondition || (exact ? actual.equals(expected) : actual.contains(expected));
-            if (!matchedName) {
-                continue;
-            }
-            if (!ItemFilterHandler.matchesRequiredNbtTags(stack, requiredNbtTags, requiredNbtTagMatchMode)) {
+            if (!matched) {
                 continue;
             }
             totalCount += stack.getCount();
@@ -2165,14 +2188,7 @@ public class PathSequenceEventListener {
         switch (actionData.type.toLowerCase(java.util.Locale.ROOT)) {
             case "condition_inventory_item":
             case "wait_until_inventory_item":
-                return inventoryHasMatchingItem(player,
-                        actionData.params.has("itemName") ? actionData.params.get("itemName").getAsString() : "",
-                        actionData.params.has("matchMode") ? actionData.params.get("matchMode").getAsString()
-                                : "CONTAINS",
-                        ItemFilterHandler.readTagFilters(actionData.params, "requiredNbtTags", "requiredNbtTagsText"),
-                        ItemFilterHandler.readRequiredNbtTagMatchMode(actionData.params),
-                        actionData.params.has("count") ? actionData.params.get("count").getAsInt() : 1,
-                        readMainInventorySlotSelection(actionData.params));
+                return inventoryHasMatchingItem(player, actionData.params, readMainInventorySlotSelection(actionData.params));
             case "condition_gui_title":
             case "wait_until_gui_title":
                 String title = actionData.params.has("title") ? actionData.params.get("title").getAsString() : "";

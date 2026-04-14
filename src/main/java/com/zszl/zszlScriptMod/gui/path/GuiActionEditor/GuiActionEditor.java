@@ -33,6 +33,8 @@ import com.zszl.zszlScriptMod.handlers.ItemFilterHandler;
 import com.zszl.zszlScriptMod.handlers.KillAuraHandler;
 import com.zszl.zszlScriptMod.zszlScriptMod;
 import com.zszl.zszlScriptMod.path.PathSequenceEventListener;
+import com.zszl.zszlScriptMod.path.InventoryItemFilterExpressionEngine;
+import com.zszl.zszlScriptMod.path.ActionParameterVariableResolver;
 import com.zszl.zszlScriptMod.path.PathSequenceManager.ActionData;
 import com.zszl.zszlScriptMod.path.PathSequenceManager;
 import com.zszl.zszlScriptMod.path.PathSequenceManager.PathSequence;
@@ -124,6 +126,11 @@ public class GuiActionEditor extends ThemedGuiScreen {
     static final int BTN_ID_DELETE_BOOLEAN_EXPRESSION = 316;
     static final int BTN_ID_MOVE_BOOLEAN_EXPRESSION_UP = 317;
     static final int BTN_ID_MOVE_BOOLEAN_EXPRESSION_DOWN = 318;
+    static final int BTN_ID_ADD_INVENTORY_ITEM_FILTER_EXPRESSION = 625;
+    static final int BTN_ID_EDIT_INVENTORY_ITEM_FILTER_EXPRESSION = 626;
+    static final int BTN_ID_DELETE_INVENTORY_ITEM_FILTER_EXPRESSION = 627;
+    static final int BTN_ID_MOVE_INVENTORY_ITEM_FILTER_EXPRESSION_UP = 628;
+    static final int BTN_ID_MOVE_INVENTORY_ITEM_FILTER_EXPRESSION_DOWN = 629;
     private static final int BTN_ID_TOGGLE_SUMMARY_CARD = 610;
     private static final int BTN_ID_TOGGLE_VALIDATION_CARD = 611;
     private static final int BTN_ID_TOGGLE_HELP_CARD = 612;
@@ -195,6 +202,11 @@ public class GuiActionEditor extends ThemedGuiScreen {
     static final int BOOLEAN_EXPRESSION_CARD_ROW_GAP = 6;
     static final int BOOLEAN_EXPRESSION_EDIT_NONE = Integer.MIN_VALUE;
     static final int BOOLEAN_EXPRESSION_EDIT_NEW = -1;
+    static final int ITEM_FILTER_EXPRESSION_EDIT_NONE = Integer.MIN_VALUE;
+    static final int ITEM_FILTER_EXPRESSION_EDIT_NEW = -1;
+    static final String EXPRESSION_TEMPLATE_MODE_SET_VAR = "set_var";
+    static final String EXPRESSION_TEMPLATE_MODE_BOOLEAN = "boolean";
+    static final String EXPRESSION_TEMPLATE_MODE_ITEM_FILTER = "item_filter";
     private static final String PREFERENCES_FILE_NAME = "gui_action_editor_preferences.json";
     private static boolean preferencesLoaded = false;
     private static int savedActionListPreferredWidth = 220;
@@ -267,6 +279,11 @@ public class GuiActionEditor extends ThemedGuiScreen {
     GuiButton btnDeleteBooleanExpression;
     GuiButton btnMoveBooleanExpressionUp;
     GuiButton btnMoveBooleanExpressionDown;
+    GuiButton btnAddInventoryItemFilterExpression;
+    GuiButton btnEditInventoryItemFilterExpression;
+    GuiButton btnDeleteInventoryItemFilterExpression;
+    GuiButton btnMoveInventoryItemFilterExpressionUp;
+    GuiButton btnMoveInventoryItemFilterExpressionDown;
     private GuiButton btnToggleSummaryCard;
     private GuiButton btnToggleValidationCard;
     private GuiButton btnToggleHelpCard;
@@ -320,9 +337,13 @@ public class GuiActionEditor extends ThemedGuiScreen {
     int conditionInventoryNbtTagInputBaseY = -1;
     int booleanExpressionToolbarBaseY = -1;
     int booleanExpressionCardListBaseY = -1;
+    int inventoryItemFilterExpressionToolbarBaseY = -1;
+    int inventoryItemFilterExpressionCardListBaseY = -1;
     private int conditionInventoryNbtTagScrollOffset = 0;
     int booleanExpressionCardScrollOffset = 0;
+    int inventoryItemFilterExpressionCardScrollOffset = 0;
     int selectedBooleanExpressionIndex = -1;
+    int selectedInventoryItemFilterExpressionIndex = -1;
     private List<String> availableSequenceNames = new ArrayList<>();
     GuiTextField actionSearchField;
     private boolean actionLibraryCollapsed = false;
@@ -378,15 +399,20 @@ public class GuiActionEditor extends ThemedGuiScreen {
     int expressionPopupScrollOffset = 0;
     int expressionPopupMaxScroll = 0;
     int activeBooleanExpressionEditIndex = BOOLEAN_EXPRESSION_EDIT_NONE;
+    int activeInventoryItemFilterExpressionEditIndex = ITEM_FILTER_EXPRESSION_EDIT_NONE;
     String activeExpressionPopupTitle = "";
     boolean activeExpressionPopupBooleanOnly = false;
+    String activeExpressionPopupTemplateMode = EXPRESSION_TEMPLATE_MODE_SET_VAR;
     private List<PathConfigValidator.Issue> liveValidationIssues = Collections.emptyList();
     private int liveValidationErrorCount = 0;
     private int liveValidationWarningCount = 0;
     private String liveActionSummary = "";
     private String liveActionEffectHint = "";
     private String liveActionRiskHint = "";
+    private ActionParameterVariableResolver.Context paramVariableResolverContext = null;
+    private final Map<String, ActionParameterVariableResolver.ReferenceInfo> paramVariableReferenceInfo = new LinkedHashMap<>();
     final List<IndexedHitRegion> booleanExpressionCardRegions = new ArrayList<>();
+    final List<IndexedHitRegion> inventoryItemFilterExpressionCardRegions = new ArrayList<>();
     private boolean showSummaryInfoCard = true;
     private boolean showValidationInfoCard = true;
     private boolean showHelpInfoCard = true;
@@ -1009,6 +1035,11 @@ public class GuiActionEditor extends ThemedGuiScreen {
         this.btnDeleteBooleanExpression = null;
         this.btnMoveBooleanExpressionUp = null;
         this.btnMoveBooleanExpressionDown = null;
+        this.btnAddInventoryItemFilterExpression = null;
+        this.btnEditInventoryItemFilterExpression = null;
+        this.btnDeleteInventoryItemFilterExpression = null;
+        this.btnMoveInventoryItemFilterExpressionUp = null;
+        this.btnMoveInventoryItemFilterExpressionDown = null;
         this.btnToggleSummaryCard = null;
         this.btnToggleValidationCard = null;
         this.btnToggleHelpCard = null;
@@ -1033,8 +1064,10 @@ public class GuiActionEditor extends ThemedGuiScreen {
         this.expressionPopupMaxScroll = 0;
         this.isDraggingExpressionPopupScrollbar = false;
         this.activeBooleanExpressionEditIndex = BOOLEAN_EXPRESSION_EDIT_NONE;
+        this.activeInventoryItemFilterExpressionEditIndex = ITEM_FILTER_EXPRESSION_EDIT_NONE;
         this.activeExpressionPopupTitle = "";
         this.activeExpressionPopupBooleanOnly = false;
+        this.activeExpressionPopupTemplateMode = EXPRESSION_TEMPLATE_MODE_SET_VAR;
         this.nearbyBlockPosMap.clear();
         this.systemMessageField = null;
         this.moveChestItemNameInputField = null;
@@ -1074,12 +1107,20 @@ public class GuiActionEditor extends ThemedGuiScreen {
         this.conditionInventoryNbtTagInputBaseY = -1;
         this.booleanExpressionToolbarBaseY = -1;
         this.booleanExpressionCardListBaseY = -1;
+        this.inventoryItemFilterExpressionToolbarBaseY = -1;
+        this.inventoryItemFilterExpressionCardListBaseY = -1;
         this.conditionInventoryNbtTagScrollOffset = 0;
         this.booleanExpressionCardScrollOffset = 0;
+        this.inventoryItemFilterExpressionCardScrollOffset = 0;
+        this.selectedBooleanExpressionIndex = -1;
+        this.selectedInventoryItemFilterExpressionIndex = -1;
         this.booleanExpressionCardRegions.clear();
+        this.inventoryItemFilterExpressionCardRegions.clear();
         this.paramFieldBaseY.clear();
         this.paramDropdownBaseY.clear();
         this.scrollableButtonBaseY.clear();
+        this.paramVariableResolverContext = null;
+        this.paramVariableReferenceInfo.clear();
         this.nearbyEntityDropdownBaseY = -1;
         this.nearbyBlockDropdownBaseY = -1;
         this.systemMessageColorLabelBaseY = 0;
@@ -1168,12 +1209,14 @@ public class GuiActionEditor extends ThemedGuiScreen {
         this.paramViewBottom = getEditorPaneY() + getEditorPaneHeight() - 8;
         updateRightHeaderButtonLayout();
         updateBooleanExpressionControlLayout();
+        updateInventoryItemFilterExpressionControlLayout();
         updateConditionInventoryNbtControlLayout();
         updateMoveChestCustomControlLayout();
         recomputeParamScrollBounds();
         paramScrollOffset = Math.max(0, Math.min(paramScrollOffset, maxParamScroll));
         updateScrollableControlPositions();
         updateBooleanExpressionControlLayout();
+        updateInventoryItemFilterExpressionControlLayout();
         updateConditionInventoryNbtControlLayout();
         updateMoveChestCustomControlLayout();
     }
@@ -1848,6 +1891,36 @@ public class GuiActionEditor extends ThemedGuiScreen {
             case "set_var":
                 ActionUtilitySections.buildSetVarSection(this, x, currentY, fieldWidth);
                 break;
+            case "capture_nearby_entity":
+                ActionCaptureSections.buildCaptureNearbyEntitySection(this, x, currentY, fieldWidth);
+                break;
+            case "capture_gui_title":
+                ActionCaptureSections.buildCaptureGuiTitleSection(this, x, currentY, fieldWidth);
+                break;
+            case "capture_inventory_slot":
+                ActionCaptureSections.buildCaptureInventorySlotSection(this, x, currentY, fieldWidth);
+                break;
+            case "capture_hotbar":
+                ActionCaptureSections.buildCaptureHotbarSection(this, x, currentY, fieldWidth);
+                break;
+            case "capture_entity_list":
+                ActionCaptureSections.buildCaptureEntityListSection(this, selectedType, x, currentY, fieldWidth);
+                break;
+            case "capture_packet_field":
+                ActionCaptureSections.buildCapturePacketFieldSection(this, selectedType, x, currentY, fieldWidth);
+                break;
+            case "capture_gui_element":
+                ActionCaptureSections.buildCaptureGuiElementSection(this, selectedType, x, currentY, fieldWidth);
+                break;
+            case "capture_scoreboard":
+                ActionCaptureSections.buildCaptureScoreboardSection(this, x, currentY, fieldWidth);
+                break;
+            case "capture_screen_region":
+                ActionCaptureSections.buildCaptureScreenRegionSection(this, x, currentY, fieldWidth);
+                break;
+            case "capture_block_at":
+                ActionCaptureSections.buildCaptureBlockAtSection(this, x, currentY, fieldWidth);
+                break;
             case "goto_action":
                 ActionUtilitySections.buildGotoActionSection(this, x, currentY, fieldWidth);
                 break;
@@ -2270,13 +2343,12 @@ public class GuiActionEditor extends ThemedGuiScreen {
             pruneConditionInventorySelections();
             newParams.addProperty("inventoryRows", getConditionInventoryRows());
             newParams.addProperty("inventoryCols", getConditionInventoryCols());
-            JsonArray requiredTags = new JsonArray();
-            for (String tag : conditionInventoryRequiredNbtTags) {
-                if (tag != null && !tag.trim().isEmpty()) {
-                    requiredTags.add(tag.trim());
-                }
-            }
-            newParams.add("requiredNbtTags", requiredTags);
+            InventoryItemFilterExpressionEngine.writeExpressions(newParams, getInventoryItemFilterExpressionList());
+            newParams.remove("itemName");
+            newParams.remove("matchMode");
+            newParams.remove("requiredNbtTags");
+            newParams.remove("requiredNbtTagsText");
+            newParams.remove("requiredNbtTagsMode");
             JsonArray inventorySlots = new JsonArray();
             for (Integer slotIndex : new TreeSet<>(conditionInventorySelectedSlots)) {
                 inventorySlots.add(slotIndex);
@@ -2383,6 +2455,7 @@ public class GuiActionEditor extends ThemedGuiScreen {
             liveValidationIssues = Collections.emptyList();
         }
 
+        refreshParamVariableReferenceInfo();
         liveValidationErrorCount = 0;
         liveValidationWarningCount = 0;
         for (PathConfigValidator.Issue issue : liveValidationIssues) {
@@ -2397,6 +2470,45 @@ public class GuiActionEditor extends ThemedGuiScreen {
         }
         liveActionEffectHint = ActionEditorFeedbackSupport.buildActionEffectHint(draft);
         liveActionRiskHint = ActionEditorFeedbackSupport.buildActionRiskHint(draft, liveValidationErrorCount);
+    }
+
+    private void refreshParamVariableReferenceInfo() {
+        this.paramVariableResolverContext = ActionParameterVariableResolver.buildContext(currentSequenceName,
+                PathSequenceManager.getAllSequences());
+        this.paramVariableReferenceInfo.clear();
+        for (int i = 0; i < paramFields.size() && i < paramFieldKeys.size(); i++) {
+            String key = paramFieldKeys.get(i);
+            if (isSectionTitleKey(key)) {
+                continue;
+            }
+            GuiTextField field = paramFields.get(i);
+            if (field == null) {
+                continue;
+            }
+            this.paramVariableReferenceInfo.put(key,
+                    ActionParameterVariableResolver.inspect(paramVariableResolverContext, field.getText()));
+        }
+    }
+
+    private ActionParameterVariableResolver.ReferenceInfo getParamVariableReferenceInfo(String key) {
+        if (key == null || key.trim().isEmpty()) {
+            return null;
+        }
+        ActionParameterVariableResolver.ReferenceInfo info = this.paramVariableReferenceInfo.get(key);
+        if (info != null) {
+            return info;
+        }
+        GuiTextField field = getFieldByKey(key);
+        if (field == null) {
+            return null;
+        }
+        if (paramVariableResolverContext == null) {
+            paramVariableResolverContext = ActionParameterVariableResolver.buildContext(currentSequenceName,
+                    PathSequenceManager.getAllSequences());
+        }
+        info = ActionParameterVariableResolver.inspect(paramVariableResolverContext, field.getText());
+        this.paramVariableReferenceInfo.put(key, info);
+        return info;
     }
 
     private int getInfoPopupMinWidth() {
@@ -2996,7 +3108,13 @@ public class GuiActionEditor extends ThemedGuiScreen {
     void addTextField(String label, String paramKey, String helpText, int width, int x, int y,
             String defaultValue) {
         paramLabels.add(label + ":");
-        paramHelpTexts.add("§8" + helpText);
+        String normalizedHelp = safe(helpText).trim();
+        if (!normalizedHelp.isEmpty()) {
+            normalizedHelp += "；也支持直接填写变量引用，如 global.xxx / sequence.xxx / local.xxx / temp.xxx";
+        } else {
+            normalizedHelp = "支持直接填写变量引用，如 global.xxx / sequence.xxx / local.xxx / temp.xxx";
+        }
+        paramHelpTexts.add("§8" + normalizedHelp);
         paramFieldKeys.add(paramKey);
         GuiTextField field = new GuiTextField(paramFields.size() + 1, this.fontRenderer, x, y, width, 20);
 
@@ -3064,7 +3182,8 @@ public class GuiActionEditor extends ThemedGuiScreen {
         return expressionPopupSearchField != null
                 && expressionPopupInputField != null
                 && (activeExpressionEditorBinding != null
-                        || activeBooleanExpressionEditIndex != BOOLEAN_EXPRESSION_EDIT_NONE);
+                        || activeBooleanExpressionEditIndex != BOOLEAN_EXPRESSION_EDIT_NONE
+                        || activeInventoryItemFilterExpressionEditIndex != ITEM_FILTER_EXPRESSION_EDIT_NONE);
     }
 
     private void drawExpressionEditorButton(GuiTextField field, int mouseX, int mouseY) {
@@ -3083,8 +3202,13 @@ public class GuiActionEditor extends ThemedGuiScreen {
         ExpressionPopupSupport.openBoolean(this, editIndex);
     }
 
+    void openInventoryItemFilterExpressionPopup(int editIndex) {
+        ExpressionPopupSupport.openItemFilter(this, editIndex);
+    }
+
     void openExpressionEditorPopup(String initialValue, String title, boolean booleanOnly) {
-        ExpressionPopupSupport.open(this, initialValue, title, booleanOnly);
+        ExpressionPopupSupport.open(this, initialValue, title,
+                booleanOnly ? EXPRESSION_TEMPLATE_MODE_BOOLEAN : EXPRESSION_TEMPLATE_MODE_SET_VAR);
     }
 
     void closeExpressionEditorPopup() {
@@ -3451,8 +3575,32 @@ public class GuiActionEditor extends ThemedGuiScreen {
                 || "wait_until_inventory_item".equalsIgnoreCase(actionType);
     }
 
-    private boolean isConditionInventoryActionSelected() {
+    boolean isConditionInventoryActionSelected() {
         return isConditionInventoryActionType(getSelectedActionType());
+    }
+
+    void initializeInventoryItemFilterExpressionEditorState() {
+        InventoryItemFilterExpressionEditorSupport.initializeState(this);
+    }
+
+    List<String> getInventoryItemFilterExpressionList() {
+        return InventoryItemFilterExpressionEditorSupport.getExpressionList(this);
+    }
+
+    void applyInventoryItemFilterExpressionListToCurrentParams(List<String> expressions) {
+        InventoryItemFilterExpressionEditorSupport.applyExpressionListToCurrentParams(this, expressions);
+    }
+
+    int addInventoryItemFilterExpressionCardEditor(int width, int x, int y) {
+        return InventoryItemFilterExpressionEditorSupport.addCardEditor(this, width, x, y);
+    }
+
+    private void updateInventoryItemFilterExpressionControlLayout() {
+        InventoryItemFilterExpressionEditorSupport.updateControlLayout(this);
+    }
+
+    private int getInventoryItemFilterExpressionCustomBottomBaseY() {
+        return InventoryItemFilterExpressionEditorSupport.getCustomBottomBaseY(this);
     }
 
     boolean isBooleanExpressionActionSelected() {
@@ -3763,10 +3911,11 @@ public class GuiActionEditor extends ThemedGuiScreen {
     }
 
     private int getConditionInventoryCustomBottomBaseY() {
-        if (!isConditionInventoryActionSelected() || conditionInventoryNbtTagInputBaseY < 0) {
+        if (!isConditionInventoryActionSelected()) {
             return 0;
         }
-        return getConditionInventoryGridBaseY() + getConditionInventoryGridHeight() + 8;
+        return Math.max(getInventoryItemFilterExpressionCustomBottomBaseY(),
+                getConditionInventoryGridBaseY() + getConditionInventoryGridHeight() + 8);
     }
 
     private int getConditionInventoryRows() {
@@ -4085,6 +4234,10 @@ public class GuiActionEditor extends ThemedGuiScreen {
             return;
         }
 
+        if (InventoryItemFilterExpressionEditorSupport.handleButtonAction(this, button)) {
+            return;
+        }
+
         if (button.id == BTN_ID_ADD_HUNT_WHITELIST) {
             appendSelectedNearbyEntityToFilterField("nameWhitelistText", "enableNameWhitelist");
             return;
@@ -4297,6 +4450,7 @@ public class GuiActionEditor extends ThemedGuiScreen {
             boolean enabled = isFieldDependencyEnabled(key);
             String dependencyHint = getFieldDependencyHint(key);
             String displayLabel = dependencyHint.isEmpty() ? label : label + " §8(" + dependencyHint + ")";
+            displayLabel += ActionParameterVariableResolver.buildFieldStatusSuffix(getParamVariableReferenceInfo(key));
             this.drawString(fontRenderer, displayLabel, field.x, field.y - 12, enabled ? 0xFFDDDDDD : 0xFF9AA7B6);
             ExpressionEditorBinding expressionBinding = expressionEditorBindings.get(paramFieldKeys.get(i));
             if (expressionBinding != null) {
@@ -4489,78 +4643,15 @@ public class GuiActionEditor extends ThemedGuiScreen {
     }
 
     private void drawConditionInventoryCustomSection(int mouseX, int mouseY) {
-        conditionInventoryTagRemoveRegions.clear();
         conditionInventorySlotRegions.clear();
 
-        if (!isConditionInventoryActionSelected() || conditionInventoryNbtTagInputField == null) {
+        if (!isConditionInventoryActionSelected()) {
             return;
         }
 
         pruneConditionInventorySelections();
-
         int x = getParamContentX();
-        int fieldWidth = getParamFieldWidth();
-
-        if (conditionInventoryNbtTagInputField.getVisible()) {
-            this.drawString(fontRenderer, I18n.format("gui.path.action_editor.label.required_nbt_tags") + ":",
-                    conditionInventoryNbtTagInputField.x, conditionInventoryNbtTagInputField.y - 12, 0xFFDDDDDD);
-            drawThemedTextField(conditionInventoryNbtTagInputField);
-            if (conditionInventoryNbtTagInputField.getText().trim().isEmpty()
-                    && !conditionInventoryNbtTagInputField.isFocused()) {
-                this.drawString(fontRenderer, "§7输入要匹配或排除的 NBT 关键字", conditionInventoryNbtTagInputField.x + 4,
-                        conditionInventoryNbtTagInputField.y + 6, 0xFF7F8FA4);
-            }
-        }
-
-        int listY = getConditionInventoryNbtTagListBaseY() - paramScrollOffset;
-        int listHeight = getConditionInventoryNbtListHeight();
-        if (listY + listHeight >= paramViewTop && listY <= paramViewBottom) {
-            GuiTheme.drawInputFrameSafe(x, listY, fieldWidth, listHeight, false, true);
-
-            if (conditionInventoryRequiredNbtTags.isEmpty()) {
-                this.drawString(fontRenderer, "§7留空时不按 NBT 过滤；可只填 NBT，不填物品名", x + 6, listY + 6,
-                        0xFF9FB0C4);
-            } else {
-                int rowHeight = 18;
-                int visibleRows = Math.max(1, (listHeight - 4) / rowHeight);
-                int maxScroll = Math.max(0, conditionInventoryRequiredNbtTags.size() - visibleRows);
-                conditionInventoryNbtTagScrollOffset = MathHelper.clamp(conditionInventoryNbtTagScrollOffset, 0,
-                        maxScroll);
-
-                for (int i = 0; i < visibleRows; i++) {
-                    int tagIndex = i + conditionInventoryNbtTagScrollOffset;
-                    if (tagIndex >= conditionInventoryRequiredNbtTags.size()) {
-                        break;
-                    }
-                    int rowY = listY + 2 + i * rowHeight;
-                    boolean hovered = isPointInside(mouseX, mouseY, x + 2, rowY, fieldWidth - 8, rowHeight - 1);
-                    int bg = hovered ? 0xAA2E4258 : 0x77222222;
-                    int border = hovered ? 0xFF7EC8FF : 0xFF4B4B4B;
-                    drawRect(x + 2, rowY, x + fieldWidth - 8, rowY + rowHeight - 1, bg);
-                    drawHorizontalLine(x + 2, x + fieldWidth - 8, rowY, border);
-                    drawHorizontalLine(x + 2, x + fieldWidth - 8, rowY + rowHeight - 1, border);
-                    this.drawString(fontRenderer,
-                            this.fontRenderer.trimStringToWidth(conditionInventoryRequiredNbtTags.get(tagIndex),
-                                    fieldWidth - 30),
-                            x + 6, rowY + 5, 0xFFFFFFFF);
-                    int removeX = x + fieldWidth - 20;
-                    this.drawString(fontRenderer, "§c✕", removeX, rowY + 5, 0xFFFF8080);
-                    conditionInventoryTagRemoveRegions
-                            .add(new IndexedHitRegion(removeX - 2, rowY + 1, 16, rowHeight - 2,
-                                    tagIndex));
-                }
-
-                if (maxScroll > 0) {
-                    int thumbHeight = Math.max(12,
-                            (int) ((visibleRows / (float) conditionInventoryRequiredNbtTags.size())
-                                    * (listHeight - 4)));
-                    int trackHeight = Math.max(1, (listHeight - 4) - thumbHeight);
-                    int thumbY = listY + 2
-                            + (int) ((conditionInventoryNbtTagScrollOffset / (float) maxScroll) * trackHeight);
-                    GuiTheme.drawScrollbar(x + fieldWidth - 6, listY + 2, 4, listHeight - 4, thumbY, thumbHeight);
-                }
-            }
-        }
+        InventoryItemFilterExpressionEditorSupport.drawCustomSection(this, mouseX, mouseY);
 
         int gridTitleY = getConditionInventoryGridTitleBaseY() - paramScrollOffset;
         if (gridTitleY + 10 >= paramViewTop && gridTitleY <= paramViewBottom) {
@@ -4971,6 +5062,11 @@ public class GuiActionEditor extends ThemedGuiScreen {
             return;
         }
 
+        if (mouseButton == 0 && InventoryItemFilterExpressionEditorSupport.handleCustomClick(this, mouseX, mouseY)) {
+            refreshDynamicParamLayout();
+            return;
+        }
+
         if (mouseButton == 0 && handleConditionInventoryCustomClick(mouseX, mouseY)) {
             this.hasUnsavedChanges = true;
             this.pendingSwitchActionType = null;
@@ -5213,6 +5309,9 @@ public class GuiActionEditor extends ThemedGuiScreen {
                 if (handleBooleanExpressionCustomWheel(mouseScaledX, mouseScaledY, dWheel)) {
                     return;
                 }
+                if (InventoryItemFilterExpressionEditorSupport.handleCustomWheel(this, mouseScaledX, mouseScaledY, dWheel)) {
+                    return;
+                }
                 if (handleConditionInventoryCustomWheel(mouseScaledX, mouseScaledY, dWheel)) {
                     return;
                 }
@@ -5339,6 +5438,14 @@ public class GuiActionEditor extends ThemedGuiScreen {
         String text = paramFields.get(index).getText();
         if (text == null || text.trim().isEmpty()) {
             return defaultValue;
+        }
+        if (paramVariableResolverContext == null) {
+            paramVariableResolverContext = ActionParameterVariableResolver.buildContext(currentSequenceName,
+                    PathSequenceManager.getAllSequences());
+        }
+        Double resolvedNumber = ActionParameterVariableResolver.resolveStaticDouble(paramVariableResolverContext, text);
+        if (resolvedNumber != null) {
+            return resolvedNumber.doubleValue();
         }
         try {
             return Double.parseDouble(text.trim());
@@ -5674,7 +5781,10 @@ public class GuiActionEditor extends ThemedGuiScreen {
         for (int i = 0; i < paramFields.size(); i++) {
             GuiTextField field = paramFields.get(i);
             if (field.isFocused() || isPointInside(mouseX, mouseY, field.x, field.y, field.width, field.height)) {
-                return stripHelpFormatting(paramHelpTexts.get(i));
+                String key = i < paramFieldKeys.size() ? paramFieldKeys.get(i) : "";
+                return ActionParameterVariableResolver.appendHelpWithReference(
+                        stripHelpFormatting(paramHelpTexts.get(i)),
+                        getParamVariableReferenceInfo(key));
             }
         }
 
@@ -5772,6 +5882,39 @@ public class GuiActionEditor extends ThemedGuiScreen {
             return "把当前物品名 + NBT 输入保存为一条批量转移规则；命中任意规则的物品都会被转移";
         }
 
+        if (btnAddInventoryItemFilterExpression != null && btnAddInventoryItemFilterExpression.visible
+                && isPointInside(mouseX, mouseY, btnAddInventoryItemFilterExpression.x,
+                        btnAddInventoryItemFilterExpression.y, btnAddInventoryItemFilterExpression.width,
+                        btnAddInventoryItemFilterExpression.height)) {
+            return I18n.format("gui.path.action_editor.help.item_filter_expression_add");
+        }
+
+        if (btnEditInventoryItemFilterExpression != null && btnEditInventoryItemFilterExpression.visible
+                && isPointInside(mouseX, mouseY, btnEditInventoryItemFilterExpression.x,
+                        btnEditInventoryItemFilterExpression.y, btnEditInventoryItemFilterExpression.width,
+                        btnEditInventoryItemFilterExpression.height)) {
+            return I18n.format("gui.path.action_editor.help.item_filter_expression_edit");
+        }
+
+        if (btnDeleteInventoryItemFilterExpression != null && btnDeleteInventoryItemFilterExpression.visible
+                && isPointInside(mouseX, mouseY, btnDeleteInventoryItemFilterExpression.x,
+                        btnDeleteInventoryItemFilterExpression.y, btnDeleteInventoryItemFilterExpression.width,
+                        btnDeleteInventoryItemFilterExpression.height)) {
+            return I18n.format("gui.path.action_editor.help.item_filter_expression_delete");
+        }
+
+        if ((btnMoveInventoryItemFilterExpressionUp != null && btnMoveInventoryItemFilterExpressionUp.visible
+                && isPointInside(mouseX, mouseY, btnMoveInventoryItemFilterExpressionUp.x,
+                        btnMoveInventoryItemFilterExpressionUp.y, btnMoveInventoryItemFilterExpressionUp.width,
+                        btnMoveInventoryItemFilterExpressionUp.height))
+                || (btnMoveInventoryItemFilterExpressionDown != null && btnMoveInventoryItemFilterExpressionDown.visible
+                        && isPointInside(mouseX, mouseY, btnMoveInventoryItemFilterExpressionDown.x,
+                                btnMoveInventoryItemFilterExpressionDown.y,
+                                btnMoveInventoryItemFilterExpressionDown.width,
+                                btnMoveInventoryItemFilterExpressionDown.height))) {
+            return I18n.format("gui.path.action_editor.help.item_filter_expression_reorder");
+        }
+
         if (conditionInventoryNbtTagInputField != null
                 && conditionInventoryNbtTagInputField.getVisible()
                 && isPointInside(mouseX, mouseY, conditionInventoryNbtTagInputField.x,
@@ -5801,6 +5944,12 @@ public class GuiActionEditor extends ThemedGuiScreen {
         for (IndexedHitRegion region : moveChestTagRemoveRegions) {
             if (region.contains(mouseX, mouseY)) {
                 return "点击删除这一条批量转移规则";
+            }
+        }
+
+        for (IndexedHitRegion region : inventoryItemFilterExpressionCardRegions) {
+            if (region.contains(mouseX, mouseY)) {
+                return I18n.format("gui.path.action_editor.help.item_filter_expression_card");
             }
         }
 
@@ -5843,16 +5992,6 @@ public class GuiActionEditor extends ThemedGuiScreen {
         if (!isConditionInventoryActionSelected()) {
             return false;
         }
-
-        for (IndexedHitRegion region : conditionInventoryTagRemoveRegions) {
-            if (region.contains(mouseX, mouseY)
-                    && region.index >= 0
-                    && region.index < conditionInventoryRequiredNbtTags.size()) {
-                conditionInventoryRequiredNbtTags.remove(region.index);
-                conditionInventoryNbtTagScrollOffset = Math.max(0, conditionInventoryNbtTagScrollOffset - 1);
-                return true;
-            }
-        }
         for (IndexedHitRegion region : conditionInventorySlotRegions) {
             if (region.contains(mouseX, mouseY)) {
                 beginConditionInventoryGridDrag(region);
@@ -5863,31 +6002,7 @@ public class GuiActionEditor extends ThemedGuiScreen {
     }
 
     private boolean handleConditionInventoryCustomWheel(int mouseX, int mouseY, int dWheel) {
-        if (!isConditionInventoryActionSelected() || conditionInventoryRequiredNbtTags.isEmpty()) {
-            return false;
-        }
-
-        int x = getParamContentX();
-        int fieldWidth = getParamFieldWidth();
-        int listY = getConditionInventoryNbtTagListBaseY() - paramScrollOffset;
-        int listHeight = getConditionInventoryNbtListHeight();
-        if (!isPointInside(mouseX, mouseY, x, listY, fieldWidth, listHeight)) {
-            return false;
-        }
-
-        int rowHeight = 18;
-        int visibleRows = Math.max(1, (listHeight - 4) / rowHeight);
-        int maxScroll = Math.max(0, conditionInventoryRequiredNbtTags.size() - visibleRows);
-        if (maxScroll <= 0) {
-            return true;
-        }
-
-        if (dWheel > 0) {
-            conditionInventoryNbtTagScrollOffset = Math.max(0, conditionInventoryNbtTagScrollOffset - 1);
-        } else {
-            conditionInventoryNbtTagScrollOffset = Math.min(maxScroll, conditionInventoryNbtTagScrollOffset + 1);
-        }
-        return true;
+        return false;
     }
 
     private boolean handleMoveChestCustomClick(int mouseX, int mouseY) {

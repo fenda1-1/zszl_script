@@ -320,6 +320,10 @@ final class ActionVariableBindingSupport {
         templates.put("当前变量 -= 1", "-= 1");
         templates.put("当前变量 *= 2", "*= 2");
         templates.put("当前变量 /= 2", "/= 2");
+        templates.put("随机小数 0~1", "random()");
+        templates.put("随机整数 1~100", "random(1, 100)");
+        templates.put("随机浮点 1.5~3.0", "randomFloat(1.5, 3.0)");
+        templates.put("25% 概率布尔", "random() < 0.25");
         templates.put("数值大于阈值", "global.money > 100");
         templates.put("普通加法", "global.money + 1");
         templates.put("普通减法", "global.money - 1");

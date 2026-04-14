@@ -415,6 +415,7 @@ public class PathSequenceManager {
                         return "HUD 文本识别: "
                                 + (params.has("contains") ? params.get("contains").getAsString() : "");
                     case "condition_inventory_item":
+                        List<String> condInvExpressions = InventoryItemFilterExpressionEngine.readExpressions(params);
                         String condInvItem = params.has("itemName") ? params.get("itemName").getAsString() : "";
                         String condInvMatch = params.has("matchMode") ? params.get("matchMode").getAsString()
                                 : "CONTAINS";
@@ -426,10 +427,12 @@ public class PathSequenceManager {
                                 ? params.get("requiredNbtTagsMode").getAsString()
                                 : ItemFilterHandler.NBT_TAG_MATCH_MODE_CONTAINS;
                         return "条件分支-背包物品: "
-                                + (condInvItem == null || condInvItem.trim().isEmpty() ? "任意物品" : condInvItem) + " / "
-                                + ("EXACT".equalsIgnoreCase(condInvMatch) ? "完全相同" : "包含")
+                                + (!condInvExpressions.isEmpty()
+                                        ? InventoryItemFilterExpressionEngine.summarizeExpressions(condInvExpressions)
+                                        : (condInvItem == null || condInvItem.trim().isEmpty() ? "任意物品" : condInvItem)
+                                                + " / " + ("EXACT".equalsIgnoreCase(condInvMatch) ? "完全相同" : "包含"))
                                 + " / 数量>=" + Math.max(1, condInvCount)
-                                + (condInvNbtCount > 0
+                                + (condInvExpressions.isEmpty() && condInvNbtCount > 0
                                         ? " / NBT"
                                                 + (ItemFilterHandler.NBT_TAG_MATCH_MODE_NOT_CONTAINS
                                                         .equalsIgnoreCase(condInvNbtMode) ? "不包含" : "包含")
@@ -461,16 +464,19 @@ public class PathSequenceManager {
                         return "条件分支-表达式: " + describeBooleanExpressionSummary(conditionExpressions)
                                 + " / 失败跳过" + Math.max(0, exprSkip) + "个动作";
                     case "wait_until_inventory_item":
+                        List<String> waitInvExpressions = InventoryItemFilterExpressionEngine.readExpressions(params);
                         int waitInvNbtCount = countStringListParam(params, "requiredNbtTags", "requiredNbtTagsText");
                         int waitInvSlotCount = countIntListParam(params, "inventorySlots", "inventorySlotsText");
                         String waitInvNbtMode = params.has("requiredNbtTagsMode")
                                 ? params.get("requiredNbtTagsMode").getAsString()
                                 : ItemFilterHandler.NBT_TAG_MATCH_MODE_CONTAINS;
                         return "等待背包物品: "
-                                + (params.has("itemName") && !params.get("itemName").getAsString().trim().isEmpty()
-                                        ? params.get("itemName").getAsString()
-                                        : "任意物品")
-                                + (waitInvNbtCount > 0
+                                + (!waitInvExpressions.isEmpty()
+                                        ? InventoryItemFilterExpressionEngine.summarizeExpressions(waitInvExpressions)
+                                        : (params.has("itemName") && !params.get("itemName").getAsString().trim().isEmpty()
+                                                ? params.get("itemName").getAsString()
+                                                : "任意物品"))
+                                + (waitInvExpressions.isEmpty() && waitInvNbtCount > 0
                                         ? " / NBT"
                                                 + (ItemFilterHandler.NBT_TAG_MATCH_MODE_NOT_CONTAINS
                                                         .equalsIgnoreCase(waitInvNbtMode) ? "不包含" : "包含")

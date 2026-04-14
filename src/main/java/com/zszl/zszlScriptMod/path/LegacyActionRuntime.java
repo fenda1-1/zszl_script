@@ -4,6 +4,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonNull;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import com.zszl.zszlScriptMod.path.runtime.ScopedRuntimeVariables;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.entity.EntityPlayerSP;
@@ -22,6 +23,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -325,6 +327,10 @@ public final class LegacyActionRuntime {
                 "number",
                 "int",
                 "toint",
+                "random",
+                "rand",
+                "randomint",
+                "randomfloat",
                 "round",
                 "floor",
                 "ceil",
@@ -667,8 +673,16 @@ public final class LegacyActionRuntime {
 
         if (element.isJsonPrimitive()) {
             if (element.getAsJsonPrimitive().isString()) {
-                String resolvedText = resolveTemplate(element.getAsString(), runtimeVars, player, sequence, stepIndex,
-                        actionIndex);
+                String rawText = element.getAsString();
+                String normalizedReference = ActionParameterVariableResolver.normalizeReference(rawText);
+                if (!normalizedReference.isEmpty()) {
+                    Object resolvedValue = getRuntimeValue(normalizedReference, runtimeVars, player, sequence, stepIndex,
+                            actionIndex);
+                    if (resolvedValue != null) {
+                        return toJsonElement(resolvedValue);
+                    }
+                }
+                String resolvedText = resolveTemplate(rawText, runtimeVars, player, sequence, stepIndex, actionIndex);
                 return toJsonElementFromString(resolvedText);
             }
             if (element.getAsJsonPrimitive().isBoolean()) {
@@ -724,6 +738,53 @@ public final class LegacyActionRuntime {
         }
 
         return new com.google.gson.JsonPrimitive(text);
+    }
+
+    private static JsonElement toJsonElement(Object value) {
+        Object normalized = unwrapValue(value);
+        if (normalized == null) {
+            return JsonNull.INSTANCE;
+        }
+        if (normalized instanceof JsonElement) {
+            JsonElement element = (JsonElement) normalized;
+            return new JsonParser().parse(element.toString());
+        }
+        if (normalized instanceof Boolean) {
+            return new com.google.gson.JsonPrimitive((Boolean) normalized);
+        }
+        if (normalized instanceof Number) {
+            return new com.google.gson.JsonPrimitive((Number) normalized);
+        }
+        if (normalized instanceof String) {
+            return toJsonElementFromString((String) normalized);
+        }
+        if (normalized instanceof Map) {
+            JsonObject object = new JsonObject();
+            for (Map.Entry<?, ?> entry : ((Map<?, ?>) normalized).entrySet()) {
+                String key = entry == null || entry.getKey() == null ? "" : String.valueOf(entry.getKey());
+                if (key.trim().isEmpty()) {
+                    continue;
+                }
+                object.add(key, toJsonElement(entry.getValue()));
+            }
+            return object;
+        }
+        if (normalized instanceof Collection) {
+            JsonArray array = new JsonArray();
+            for (Object entry : (Collection<?>) normalized) {
+                array.add(toJsonElement(entry));
+            }
+            return array;
+        }
+        if (normalized.getClass().isArray()) {
+            JsonArray array = new JsonArray();
+            int length = Array.getLength(normalized);
+            for (int i = 0; i < length; i++) {
+                array.add(toJsonElement(Array.get(normalized, i)));
+            }
+            return array;
+        }
+        return new com.google.gson.JsonPrimitive(String.valueOf(normalized));
     }
 
     private static Map<String, Object> collectBuiltinValues(EntityPlayerSP player,
@@ -1459,6 +1520,13 @@ public final class LegacyActionRuntime {
                 case "pow":
                     requireArgCountAtLeast(name, args, 2);
                     return Math.pow(requireNumber(name, args.get(0)), requireNumber(name, args.get(1)));
+                case "random":
+                case "rand":
+                    return evaluateRandomFunction(name, args);
+                case "randomint":
+                    return evaluateRandomIntFunction(name, args);
+                case "randomfloat":
+                    return evaluateRandomFloatFunction(name, args);
                 case "clamp":
                     requireArgCountAtLeast(name, args, 3);
                     double value = requireNumber(name, args.get(0));
@@ -1586,6 +1654,86 @@ public final class LegacyActionRuntime {
             if (args == null || args.size() < expected) {
                 throw error("函数 " + functionName + " 至少需要 " + expected + " 个参数");
             }
+        }
+
+        private void requireExactArgCount(String functionName, List<Object> args, int expected) {
+            int size = args == null ? 0 : args.size();
+            if (size != expected) {
+                throw error("函数 " + functionName + " 需要 " + expected + " 个参数");
+            }
+        }
+
+        private Object evaluateRandomFunction(String functionName, List<Object> args) {
+            int size = args == null ? 0 : args.size();
+            if (size == 0) {
+                return ThreadLocalRandom.current().nextDouble();
+            }
+            if (size != 2) {
+                throw error("函数 " + functionName + " 只支持 0 或 2 个参数");
+            }
+            double min = requireNumber(functionName, args.get(0));
+            double max = requireNumber(functionName, args.get(1));
+            validateRandomRange(functionName, min, max);
+            if (Double.compare(min, max) == 0) {
+                return normalizeNumericResult(min);
+            }
+            if (isWholeNumberValue(min) && isWholeNumberValue(max)) {
+                long minValue = Math.round(min);
+                long maxValue = Math.round(max);
+                return normalizeNumericResult(nextInclusiveLong(minValue, maxValue));
+            }
+            return ThreadLocalRandom.current().nextDouble(min, max);
+        }
+
+        private Object evaluateRandomIntFunction(String functionName, List<Object> args) {
+            requireExactArgCount(functionName, args, 2);
+            double min = requireNumber(functionName, args.get(0));
+            double max = requireNumber(functionName, args.get(1));
+            if (!isWholeNumberValue(min) || !isWholeNumberValue(max)) {
+                throw error("函数 " + functionName + " 需要整数范围参数");
+            }
+            long minValue = Math.round(min);
+            long maxValue = Math.round(max);
+            if (minValue > maxValue) {
+                throw error("函数 " + functionName + " 的最小值不能大于最大值");
+            }
+            return normalizeNumericResult(nextInclusiveLong(minValue, maxValue));
+        }
+
+        private Object evaluateRandomFloatFunction(String functionName, List<Object> args) {
+            requireExactArgCount(functionName, args, 2);
+            double min = requireNumber(functionName, args.get(0));
+            double max = requireNumber(functionName, args.get(1));
+            validateRandomRange(functionName, min, max);
+            if (Double.compare(min, max) == 0) {
+                return min;
+            }
+            return ThreadLocalRandom.current().nextDouble(min, max);
+        }
+
+        private void validateRandomRange(String functionName, double min, double max) {
+            if (!Double.isFinite(min) || !Double.isFinite(max)) {
+                throw error("函数 " + functionName + " 的范围参数必须是有限数字");
+            }
+            if (min > max) {
+                throw error("函数 " + functionName + " 的最小值不能大于最大值");
+            }
+        }
+
+        private boolean isWholeNumberValue(double value) {
+            return Double.isFinite(value) && Math.rint(value) == value;
+        }
+
+        private long nextInclusiveLong(long minInclusive, long maxInclusive) {
+            if (minInclusive == maxInclusive) {
+                return minInclusive;
+            }
+            double range = (double) maxInclusive - (double) minInclusive + 1D;
+            long sampled = minInclusive + (long) Math.floor(ThreadLocalRandom.current().nextDouble() * range);
+            if (sampled > maxInclusive) {
+                return maxInclusive;
+            }
+            return sampled;
         }
 
         private double requireNumber(String functionName, Object value) {

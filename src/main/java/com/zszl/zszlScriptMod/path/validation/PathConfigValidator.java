@@ -5,7 +5,10 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.zszl.zszlScriptMod.handlers.ItemFilterHandler;
 import com.zszl.zszlScriptMod.handlers.KillAuraHandler;
+import com.zszl.zszlScriptMod.path.ActionParameterVariableResolver;
+import com.zszl.zszlScriptMod.path.InventoryItemFilterExpressionEngine;
 import com.zszl.zszlScriptMod.path.LegacyActionRuntime;
+import com.zszl.zszlScriptMod.path.ActionVariableRegistry;
 import com.zszl.zszlScriptMod.path.PathSequenceManager.ActionData;
 import com.zszl.zszlScriptMod.path.PathSequenceManager.PathSequence;
 import com.zszl.zszlScriptMod.path.PathSequenceManager.PathStep;
@@ -125,7 +128,61 @@ public final class PathConfigValidator {
         private boolean effectiveResolved = false;
     }
 
+    private static final class ResolvedParamValue {
+        private final Object value;
+        private final ActionParameterVariableResolver.ReferenceInfo referenceInfo;
+
+        private ResolvedParamValue(Object value, ActionParameterVariableResolver.ReferenceInfo referenceInfo) {
+            this.value = value;
+            this.referenceInfo = referenceInfo;
+        }
+
+        private boolean isDynamicReference() {
+            return referenceInfo != null && referenceInfo.isDynamic();
+        }
+
+        private boolean isMissingReference() {
+            return referenceInfo != null && referenceInfo.isMissing();
+        }
+
+        private boolean isReference() {
+            return referenceInfo != null && referenceInfo.isReference();
+        }
+    }
+
     private PathConfigValidator() {
+    }
+
+    private static Map<String, ActionParameterVariableResolver.Context> buildVariableContexts(
+            Collection<PathSequence> sequences) {
+        LinkedHashMap<String, ActionParameterVariableResolver.Context> contexts = new LinkedHashMap<>();
+        contexts.put("", ActionParameterVariableResolver.buildContext("", sequences));
+        if (sequences == null) {
+            return contexts;
+        }
+        for (PathSequence sequence : sequences) {
+            if (sequence == null || sequence.getName() == null || sequence.getName().trim().isEmpty()) {
+                continue;
+            }
+            String sequenceName = sequence.getName().trim();
+            contexts.put(sequenceName, ActionParameterVariableResolver.buildContext(sequenceName, sequences));
+        }
+        return contexts;
+    }
+
+    private static ActionParameterVariableResolver.Context getVariableContext(
+            Map<String, ActionParameterVariableResolver.Context> contexts, String sequenceName) {
+        if (contexts == null || contexts.isEmpty()) {
+            return ActionParameterVariableResolver.buildContext(sequenceName, Collections.<PathSequence>emptyList());
+        }
+        String normalizedSequenceName = safe(sequenceName).trim();
+        ActionParameterVariableResolver.Context context = contexts.get(normalizedSequenceName);
+        if (context != null) {
+            return context;
+        }
+        context = contexts.get("");
+        return context != null ? context : ActionParameterVariableResolver.buildContext(sequenceName,
+                Collections.<PathSequence>emptyList());
     }
 
     public static List<Issue> validateSequences(Collection<PathSequence> sequences) {
@@ -137,6 +194,7 @@ public final class PathConfigValidator {
         List<PathSequence> sequenceList = new ArrayList<>(sequences);
         Set<String> sequenceNames = new LinkedHashSet<>();
         Map<String, PathSequence> sequenceMap = new LinkedHashMap<>();
+        Map<String, ActionParameterVariableResolver.Context> variableContexts = buildVariableContexts(sequenceList);
         for (PathSequence sequence : sequenceList) {
             if (sequence != null && sequence.getName() != null && !sequence.getName().trim().isEmpty()) {
                 String name = sequence.getName().trim();
@@ -164,7 +222,8 @@ public final class PathConfigValidator {
                 List<ActionData> actions = step.getActions() == null ? Collections.emptyList() : step.getActions();
                 for (int actionIndex = 0; actionIndex < actions.size(); actionIndex++) {
                     ActionData action = actions.get(actionIndex);
-                    validateAction(sequenceName, stepIndex, actionIndex, action, actions, sequenceNames, issues);
+                    validateAction(sequenceName, stepIndex, actionIndex, action, actions, sequenceNames,
+                            getVariableContext(variableContexts, sequenceName), issues);
                     collectPersistentUuidOwner(sequenceName, stepIndex, actionIndex, action, uuidOwners);
                     collectGraphEdge(sequenceName, action, graph);
                 }
@@ -192,7 +251,8 @@ public final class PathConfigValidator {
                 }
             }
         }
-        validateAction(safe(currentSequenceName).trim(), -1, -1, action, null, sequenceNames, issues);
+        validateAction(safe(currentSequenceName).trim(), -1, -1, action, null, sequenceNames,
+                ActionParameterVariableResolver.buildContext(currentSequenceName, sequences), issues);
         return issues;
     }
 
@@ -256,23 +316,171 @@ public final class PathConfigValidator {
         return issues;
     }
 
+    private static void validateParameterVariableReferences(String sequenceName, int stepIndex, int actionIndex,
+            ActionData action, JsonObject params, ActionParameterVariableResolver.Context variableContext,
+            List<Issue> issues) {
+        if (params == null || variableContext == null) {
+            return;
+        }
+        LinkedHashSet<String> reportedPaths = new LinkedHashSet<>();
+        String targetVariableKey = ActionVariableRegistry.resolveVariableParamKey(action);
+        validateVariableReferencesInElement(sequenceName, stepIndex, actionIndex, params, "", targetVariableKey,
+                variableContext, issues, reportedPaths);
+    }
+
+    private static void validateVariableReferencesInElement(String sequenceName, int stepIndex, int actionIndex,
+            JsonElement element, String path, String targetVariableKey,
+            ActionParameterVariableResolver.Context variableContext, List<Issue> issues, Set<String> reportedPaths) {
+        if (element == null || element.isJsonNull()) {
+            return;
+        }
+        if (element.isJsonObject()) {
+            for (Map.Entry<String, JsonElement> entry : element.getAsJsonObject().entrySet()) {
+                String childPath = path.isEmpty() ? safe(entry.getKey()) : path + "." + safe(entry.getKey());
+                validateVariableReferencesInElement(sequenceName, stepIndex, actionIndex, entry.getValue(), childPath,
+                        targetVariableKey, variableContext, issues, reportedPaths);
+            }
+            return;
+        }
+        if (element.isJsonArray()) {
+            JsonArray array = element.getAsJsonArray();
+            for (int i = 0; i < array.size(); i++) {
+                String childPath = path + "[" + i + "]";
+                validateVariableReferencesInElement(sequenceName, stepIndex, actionIndex, array.get(i), childPath,
+                        targetVariableKey, variableContext, issues, reportedPaths);
+            }
+            return;
+        }
+        if (!element.isJsonPrimitive() || !element.getAsJsonPrimitive().isString()) {
+            return;
+        }
+
+        String currentKey = extractLeafKey(path);
+        if (shouldSkipVariableReferenceValidation(currentKey, path, targetVariableKey)) {
+            return;
+        }
+
+        ActionParameterVariableResolver.ReferenceInfo info = ActionParameterVariableResolver.inspect(variableContext,
+                element.getAsString());
+        if (!info.isMissing()) {
+            return;
+        }
+
+        String signature = path + "|" + info.getNormalizedReference();
+        if (!reportedPaths.add(signature)) {
+            return;
+        }
+        issues.add(new Issue(Severity.ERROR, "param_variable_missing", sequenceName, stepIndex, actionIndex,
+                "参数变量未定义",
+                (path.isEmpty() ? "当前参数" : "参数 " + path)
+                        + " 使用了变量 " + info.getNormalizedReference() + "，但当前没有找到已定义值。"));
+    }
+
+    private static boolean shouldSkipVariableReferenceValidation(String currentKey, String path, String targetVariableKey) {
+        String normalizedKey = safe(currentKey).trim();
+        if (normalizedKey.isEmpty()) {
+            return false;
+        }
+        if (path.indexOf('.') < 0 && path.indexOf('[') < 0
+                && normalizedKey.equalsIgnoreCase(safe(targetVariableKey).trim())) {
+            return true;
+        }
+        return "expression".equalsIgnoreCase(normalizedKey)
+                || "conditionstext".equalsIgnoreCase(normalizedKey)
+                || "cancelexpression".equalsIgnoreCase(normalizedKey)
+                || "itemfilterexpression".equalsIgnoreCase(normalizedKey)
+                || "itemfilterexpressions".equalsIgnoreCase(normalizedKey)
+                || "expressions".equalsIgnoreCase(normalizedKey)
+                || "fromvar".equalsIgnoreCase(normalizedKey);
+    }
+
+    private static String extractLeafKey(String path) {
+        String safePath = safe(path).trim();
+        if (safePath.isEmpty()) {
+            return "";
+        }
+        int dotIndex = safePath.lastIndexOf('.');
+        int bracketIndex = safePath.lastIndexOf('[');
+        int start = Math.max(dotIndex, bracketIndex);
+        return start < 0 ? safePath : safePath.substring(start + 1).replace("]", "");
+    }
+
+    private static ResolvedParamValue resolveParamValue(ActionParameterVariableResolver.Context variableContext,
+            JsonObject params, String key) {
+        if (params == null || key == null || !params.has(key) || params.get(key).isJsonNull()) {
+            return new ResolvedParamValue(null, null);
+        }
+        JsonElement element = params.get(key);
+        if (element.isJsonPrimitive()) {
+            if (element.getAsJsonPrimitive().isString()) {
+                String raw = element.getAsString();
+                ActionParameterVariableResolver.ReferenceInfo info = ActionParameterVariableResolver.inspect(variableContext,
+                        raw);
+                if (info.isResolved()) {
+                    return new ResolvedParamValue(info.getResolvedValue(), info);
+                }
+                return new ResolvedParamValue(raw, info.isReference() ? info : null);
+            }
+            if (element.getAsJsonPrimitive().isNumber()) {
+                return new ResolvedParamValue(element.getAsDouble(), null);
+            }
+            if (element.getAsJsonPrimitive().isBoolean()) {
+                return new ResolvedParamValue(element.getAsBoolean(), null);
+            }
+        }
+        return new ResolvedParamValue(element, null);
+    }
+
+    private static Integer readResolvedInt(ResolvedParamValue resolvedValue) {
+        if (resolvedValue == null || resolvedValue.isDynamicReference() || resolvedValue.isMissingReference()) {
+            return null;
+        }
+        Double numeric = ActionParameterVariableResolver.toNumber(resolvedValue.value);
+        if (numeric == null) {
+            return null;
+        }
+        return Integer.valueOf((int) Math.round(numeric.doubleValue()));
+    }
+
+    private static Double readResolvedDouble(ResolvedParamValue resolvedValue) {
+        if (resolvedValue == null || resolvedValue.isDynamicReference() || resolvedValue.isMissingReference()) {
+            return null;
+        }
+        return ActionParameterVariableResolver.toNumber(resolvedValue.value);
+    }
+
+    private static boolean shouldReportNumericParseIssue(ResolvedParamValue resolvedValue) {
+        if (resolvedValue == null || resolvedValue.isDynamicReference() || resolvedValue.isMissingReference()) {
+            return false;
+        }
+        return resolvedValue.value != null && !safe(LegacyActionRuntime.stringifyValue(resolvedValue.value)).trim().isEmpty();
+    }
+
+    private static void addNumericParseIssue(String sequenceName, int stepIndex, int actionIndex, String code,
+            String label, String detail, List<Issue> issues) {
+        issues.add(new Issue(Severity.ERROR, code, sequenceName, stepIndex, actionIndex,
+                label + "格式无效", detail));
+    }
+
     private static void validateAction(String sequenceName, int stepIndex, int actionIndex, ActionData action,
-            List<ActionData> stepActions, Set<String> sequenceNames, List<Issue> issues) {
+            List<ActionData> stepActions, Set<String> sequenceNames,
+            ActionParameterVariableResolver.Context variableContext, List<Issue> issues) {
         if (action == null) {
             return;
         }
 
         String type = safe(action.type).trim().toLowerCase(Locale.ROOT);
         JsonObject params = action.params == null ? new JsonObject() : action.params;
+        validateParameterVariableReferences(sequenceName, stepIndex, actionIndex, action, params, variableContext, issues);
         switch (type) {
             case "run_sequence":
-                validateRunSequence(sequenceName, stepIndex, actionIndex, params, sequenceNames, issues);
+                validateRunSequence(sequenceName, stepIndex, actionIndex, params, sequenceNames, variableContext, issues);
                 break;
             case "stop_current_sequence":
                 validateStopCurrentSequence(sequenceName, stepIndex, actionIndex, params, issues);
                 break;
             case "run_template":
-                validateRunTemplate(sequenceName, stepIndex, actionIndex, params, sequenceNames, issues);
+                validateRunTemplate(sequenceName, stepIndex, actionIndex, params, sequenceNames, variableContext, issues);
                 break;
             case "send_packet":
                 if (isBlank(getString(params, "hex"))) {
@@ -286,21 +494,32 @@ public final class PathConfigValidator {
                 break;
             case "goto_action":
                 if (stepActions != null && !stepActions.isEmpty()) {
-                    int targetIndex = getInt(params, "targetActionIndex", -1);
-                    if (targetIndex < 0 || targetIndex >= stepActions.size()) {
+                    ResolvedParamValue targetIndexValue = resolveParamValue(variableContext, params, "targetActionIndex");
+                    Integer targetIndex = readResolvedInt(targetIndexValue);
+                    if (targetIndex == null) {
+                        if (shouldReportNumericParseIssue(targetIndexValue)) {
+                            addNumericParseIssue(sequenceName, stepIndex, actionIndex, "goto_action_parse",
+                                    "跳转动作序号", "目标动作序号需要填写整数。", issues);
+                        }
+                        break;
+                    }
+                    if (targetIndex.intValue() < 0 || targetIndex.intValue() >= stepActions.size()) {
                         issues.add(new Issue(Severity.ERROR, "goto_action_range", sequenceName, stepIndex, actionIndex,
                                 "跳转动作序号越界", "目标动作序号必须在 0 到 " + Math.max(0, stepActions.size() - 1) + " 之间。"));
-                    } else if (targetIndex == actionIndex) {
+                    } else if (targetIndex.intValue() == actionIndex) {
                         issues.add(new Issue(Severity.WARNING, "goto_action_self", sequenceName, stepIndex, actionIndex,
                                 "跳转到当前动作", "这会让当前动作原地循环，建议确认是否需要配合条件或计数器使用。"));
                     }
                 }
                 break;
             case "skip_actions":
-                validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "count", "跳过动作数", issues);
+                validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "count", "跳过动作数",
+                        variableContext, issues);
                 if (stepActions != null && !stepActions.isEmpty()) {
-                    int skipActionCount = getInt(params, "count", 1);
-                    if (actionIndex >= 0 && actionIndex + Math.max(0, skipActionCount) + 1 >= stepActions.size()) {
+                    Integer skipActionCount = readResolvedInt(resolveParamValue(variableContext, params, "count"));
+                    if (skipActionCount != null
+                            && actionIndex >= 0
+                            && actionIndex + Math.max(0, skipActionCount.intValue()) + 1 >= stepActions.size()) {
                         issues.add(new Issue(Severity.WARNING, "skip_actions_reach_end", sequenceName, stepIndex,
                                 actionIndex,
                                 "跳过动作将直接到步骤末尾", "运行时会直接结束当前步骤并进入后续步骤，请确认这正是你想要的控制流。"));
@@ -308,14 +527,21 @@ public final class PathConfigValidator {
                 }
                 break;
             case "skip_steps":
-                validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "count", "跳过步骤数", issues);
+                validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "count", "跳过步骤数",
+                        variableContext, issues);
                 break;
             case "repeat_actions":
-                int bodyCount = getInt(params, "bodyCount", 0);
-                if (bodyCount <= 0) {
+                ResolvedParamValue bodyCountValue = resolveParamValue(variableContext, params, "bodyCount");
+                Integer bodyCount = readResolvedInt(bodyCountValue);
+                if (bodyCount == null && shouldReportNumericParseIssue(bodyCountValue)) {
+                    addNumericParseIssue(sequenceName, stepIndex, actionIndex, "repeat_actions_body_parse",
+                            "循环体动作数", "循环体动作数需要填写整数。", issues);
+                }
+                if (bodyCount != null && bodyCount.intValue() <= 0) {
                     issues.add(new Issue(Severity.ERROR, "repeat_actions_body", sequenceName, stepIndex, actionIndex,
                             "循环体动作数无效", "循环体动作数必须大于 0。"));
-                } else if (stepActions != null && actionIndex >= 0 && actionIndex + bodyCount >= stepActions.size()) {
+                } else if (bodyCount != null && stepActions != null && actionIndex >= 0
+                        && actionIndex + bodyCount.intValue() >= stepActions.size()) {
                     issues.add(new Issue(Severity.WARNING, "repeat_actions_truncate", sequenceName, stepIndex, actionIndex,
                             "循环体超出剩余动作", "运行时会截断到当前步骤末尾，建议显式调整循环体动作数。"));
                 }
@@ -332,11 +558,12 @@ public final class PathConfigValidator {
                     validateBooleanExpression(sequenceName, stepIndex, actionIndex,
                             getString(params, "cancelExpression"), params, "取消表达式", issues);
                 }
-                validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "timeoutTicks", "超时", issues);
+                validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "timeoutTicks", "超时",
+                        variableContext, issues);
                 validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "timeoutSkipCount",
-                        "超时跳过动作数", issues);
+                        "超时跳过动作数", variableContext, issues);
                 validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "preExecuteCount", "先执行动作数",
-                        issues);
+                        variableContext, issues);
                 break;
             case "condition_expression":
             case "wait_until_expression":
@@ -350,12 +577,12 @@ public final class PathConfigValidator {
                 }
                 if ("wait_until_expression".equals(type)) {
                     validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "timeoutTicks", "超时",
-                            issues);
+                            variableContext, issues);
                     validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "timeoutSkipCount",
-                            "超时跳过动作数", issues);
+                            "超时跳过动作数", variableContext, issues);
                 } else {
                     validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "skipCount", "失败跳过动作数",
-                        issues);
+                            variableContext, issues);
                 }
                 break;
             case "set_var":
@@ -366,18 +593,31 @@ public final class PathConfigValidator {
                 }
                 break;
             case "delay":
-                validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "ticks", "延迟", issues);
+                validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "ticks", "延迟",
+                        variableContext, issues);
                 break;
             case "capture_inventory_slot":
-                validateCaptureInventorySlot(sequenceName, stepIndex, actionIndex, params, issues);
+                validateCaptureVarName(sequenceName, stepIndex, actionIndex, params, issues);
+                validateCaptureInventorySlot(sequenceName, stepIndex, actionIndex, params, variableContext, issues);
+                break;
+            case "capture_nearby_entity":
+                validateCaptureVarName(sequenceName, stepIndex, actionIndex, params, issues);
+                validatePositiveDoubleParam(sequenceName, stepIndex, actionIndex, params, "radius", "范围", false,
+                        variableContext, issues);
+                break;
+            case "capture_gui_title":
+            case "capture_hotbar":
+                validateCaptureVarName(sequenceName, stepIndex, actionIndex, params, issues);
                 break;
             case "capture_entity_list":
+                validateCaptureVarName(sequenceName, stepIndex, actionIndex, params, issues);
                 validatePositiveIntParam(sequenceName, stepIndex, actionIndex, params, "maxCount", "最大采集数量",
-                        1, issues);
+                        1, variableContext, issues);
                 validatePositiveDoubleParam(sequenceName, stepIndex, actionIndex, params, "radius", "范围", false,
-                        issues);
+                        variableContext, issues);
                 break;
             case "capture_packet_field":
+                validateCaptureVarName(sequenceName, stepIndex, actionIndex, params, issues);
                 String lookupMode = getString(params, "lookupMode");
                 String fieldKey = getString(params, "fieldKey");
                 if ("VARIABLE".equalsIgnoreCase(lookupMode) && isBlank(fieldKey)) {
@@ -385,23 +625,50 @@ public final class PathConfigValidator {
                             actionIndex, "包字段采集缺少变量键", "运行时变量模式下必须填写变量键。"));
                 }
                 break;
+            case "capture_gui_element":
+                validateCaptureVarName(sequenceName, stepIndex, actionIndex, params, issues);
+                break;
             case "capture_scoreboard":
-                int lineIndex = getInt(params, "lineIndex", -1);
-                if (lineIndex < -1) {
+                validateCaptureVarName(sequenceName, stepIndex, actionIndex, params, issues);
+                ResolvedParamValue lineIndexValue = resolveParamValue(variableContext, params, "lineIndex");
+                Integer lineIndex = readResolvedInt(lineIndexValue);
+                if (lineIndex == null && shouldReportNumericParseIssue(lineIndexValue)) {
+                    addNumericParseIssue(sequenceName, stepIndex, actionIndex, "capture_scoreboard_line_parse",
+                            "指定行索引", "指定行索引需要填写整数。", issues);
+                }
+                if (lineIndex != null && lineIndex.intValue() < -1) {
                     issues.add(new Issue(Severity.ERROR, "capture_scoreboard_line", sequenceName, stepIndex, actionIndex,
                             "记分板指定行索引无效", "指定行索引只能填写 -1 或更大的值。"));
                 }
                 break;
+            case "capture_block_at":
+                validateCaptureVarName(sequenceName, stepIndex, actionIndex, params, issues);
+                validateCoordinateTriplet(sequenceName, stepIndex, actionIndex, params, "pos", "方块坐标",
+                        variableContext, issues);
+                break;
             case "capture_screen_region":
-                validateVisionRegionRect(sequenceName, stepIndex, actionIndex, params, issues);
+                validateCaptureVarName(sequenceName, stepIndex, actionIndex, params, issues);
+                validateVisionRegionRect(sequenceName, stepIndex, actionIndex, params, variableContext, issues);
                 break;
             case "condition_inventory_item":
             case "wait_until_inventory_item":
-                validatePositiveIntParam(sequenceName, stepIndex, actionIndex, params, "count", "最少数量", 1, issues);
-                validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "timeoutTicks", "超时", issues);
+                List<String> itemFilterExpressions = InventoryItemFilterExpressionEngine.readExpressions(params);
+                if (!itemFilterExpressions.isEmpty()) {
+                    validateItemFilterExpressionList(sequenceName, stepIndex, actionIndex,
+                            itemFilterExpressions, "物品过滤表达式", issues);
+                } else if (isBlank(getString(params, "itemName"))
+                        && ItemFilterHandler.readTagFilters(params, "requiredNbtTags", "requiredNbtTagsText").isEmpty()) {
+                    issues.add(new Issue(Severity.ERROR, "inventory_item_filter_missing", sequenceName, stepIndex,
+                            actionIndex, "缺少物品过滤条件", "请至少添加一条物品过滤表达式，或保留旧版物品名/NBT条件。"));
+                }
+                validatePositiveIntParam(sequenceName, stepIndex, actionIndex, params, "count", "最少数量", 1,
+                        variableContext, issues);
+                validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "timeoutTicks", "超时",
+                        variableContext, issues);
                 validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "timeoutSkipCount", "超时跳过动作数",
-                        issues);
-                validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "skipCount", "失败跳过动作数", issues);
+                        variableContext, issues);
+                validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "skipCount", "失败跳过动作数",
+                        variableContext, issues);
                 break;
             case "wait_until_gui_title":
             case "wait_until_player_in_area":
@@ -409,85 +676,109 @@ public final class PathConfigValidator {
             case "wait_until_hud_text":
             case "wait_until_captured_id":
             case "wait_until_packet_text":
-                validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "timeoutTicks", "超时", issues);
+                validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "timeoutTicks", "超时",
+                        variableContext, issues);
                 validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "timeoutSkipCount", "超时跳过动作数",
-                        issues);
+                        variableContext, issues);
                 validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "preExecuteCount", "先执行动作数",
-                        issues);
+                        variableContext, issues);
                 break;
             case "wait_until_screen_region":
-                validateVisionRegionRect(sequenceName, stepIndex, actionIndex, params, issues);
-                validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "timeoutTicks", "超时", issues);
+                validateVisionRegionRect(sequenceName, stepIndex, actionIndex, params, variableContext, issues);
+                validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "timeoutTicks", "超时",
+                        variableContext, issues);
                 validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "timeoutSkipCount", "超时跳过动作数",
-                        issues);
+                        variableContext, issues);
                 validatePositiveDoubleParam(sequenceName, stepIndex, actionIndex, params, "colorTolerance", "颜色容差",
-                        false, issues);
+                        false, variableContext, issues);
                 validatePositiveDoubleParam(sequenceName, stepIndex, actionIndex, params, "similarityThreshold", "相似度阈值",
-                        false, issues);
+                        false, variableContext, issues);
                 break;
             case "condition_gui_title":
             case "condition_player_in_area":
             case "condition_entity_nearby":
-                validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "skipCount", "失败跳过动作数", issues);
+                validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "skipCount", "失败跳过动作数",
+                        variableContext, issues);
                 break;
             case "move_inventory_item_to_hotbar":
-                int hotbarSlot = getInt(params, "targetHotbarSlot", -1);
-                if (hotbarSlot < 1 || hotbarSlot > 9) {
+                ResolvedParamValue hotbarSlotValue = resolveParamValue(variableContext, params, "targetHotbarSlot");
+                Integer hotbarSlot = readResolvedInt(hotbarSlotValue);
+                if (hotbarSlot == null && shouldReportNumericParseIssue(hotbarSlotValue)) {
+                    addNumericParseIssue(sequenceName, stepIndex, actionIndex, "hotbar_slot_parse",
+                            "目标快捷栏位", "目标快捷栏位需要填写 1-9 的整数。", issues);
+                }
+                if (hotbarSlot != null && (hotbarSlot.intValue() < 1 || hotbarSlot.intValue() > 9)) {
                     issues.add(new Issue(Severity.ERROR, "hotbar_slot_range", sequenceName, stepIndex, actionIndex,
                             "快捷栏位超出范围", "目标快捷栏位必须填写 1-9。"));
                 }
                 break;
             case "switch_hotbar_slot":
-                int switchHotbarSlot = getInt(params, "targetHotbarSlot", -1);
-                if (switchHotbarSlot < 1 || switchHotbarSlot > 9) {
+                ResolvedParamValue switchHotbarSlotValue = resolveParamValue(variableContext, params, "targetHotbarSlot");
+                Integer switchHotbarSlot = readResolvedInt(switchHotbarSlotValue);
+                if (switchHotbarSlot == null && shouldReportNumericParseIssue(switchHotbarSlotValue)) {
+                    addNumericParseIssue(sequenceName, stepIndex, actionIndex, "switch_hotbar_slot_parse",
+                            "目标快捷栏位", "目标快捷栏位需要填写 1-9 的整数。", issues);
+                }
+                if (switchHotbarSlot != null
+                        && (switchHotbarSlot.intValue() < 1 || switchHotbarSlot.intValue() > 9)) {
                     issues.add(new Issue(Severity.ERROR, "hotbar_slot_range", sequenceName, stepIndex, actionIndex,
                             "快捷栏位超出范围", "目标快捷栏位必须填写 1-9。"));
                 }
                 validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "useAfterSwitchDelayTicks",
-                        "切换后使用延迟", issues);
+                        "切换后使用延迟", variableContext, issues);
                 break;
             case "silentuse":
-                int tempHotbarSlot = getInt(params, "tempslot", 0);
-                if (tempHotbarSlot < 0 || tempHotbarSlot > 8) {
+                ResolvedParamValue tempHotbarSlotValue = resolveParamValue(variableContext, params, "tempslot");
+                Integer tempHotbarSlot = readResolvedInt(tempHotbarSlotValue);
+                if (tempHotbarSlot == null && shouldReportNumericParseIssue(tempHotbarSlotValue)) {
+                    addNumericParseIssue(sequenceName, stepIndex, actionIndex, "temp_hotbar_slot_parse",
+                            "临时槽位", "临时槽位需要填写 0-8 的整数。", issues);
+                }
+                if (tempHotbarSlot != null && (tempHotbarSlot.intValue() < 0 || tempHotbarSlot.intValue() > 8)) {
                     issues.add(new Issue(Severity.ERROR, "temp_hotbar_slot_range", sequenceName, stepIndex, actionIndex,
                             "临时槽位超出范围", "临时槽位必须填写 0-8。"));
                 }
                 validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "switchDelayTicks",
-                        "切换物品延迟", issues);
+                        "切换物品延迟", variableContext, issues);
                 validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "useDelayTicks",
-                        "切后使用延迟", issues);
+                        "切后使用延迟", variableContext, issues);
                 validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "switchBackDelayTicks",
-                        "切回延迟", issues);
+                        "切回延迟", variableContext, issues);
                 break;
             case "use_hotbar_item":
-                validatePositiveIntParam(sequenceName, stepIndex, actionIndex, params, "count", "使用次数", 1, issues);
+                validatePositiveIntParam(sequenceName, stepIndex, actionIndex, params, "count", "使用次数", 1,
+                        variableContext, issues);
                 validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "switchItemDelayTicks",
-                        "切换物品延迟", issues);
+                        "切换物品延迟", variableContext, issues);
                 validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "switchDelayTicks",
-                        "切后使用延迟", issues);
+                        "切后使用延迟", variableContext, issues);
                 validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "switchBackDelayTicks",
-                        "切回延迟", issues);
+                        "切回延迟", variableContext, issues);
                 validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "intervalTicks", "使用间隔",
-                        issues);
+                        variableContext, issues);
                 break;
             case "use_held_item":
-                validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "delayTicks", "延迟", issues);
+                validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "delayTicks", "延迟",
+                        variableContext, issues);
                 break;
             case "hunt":
                 validatePositiveDoubleParam(sequenceName, stepIndex, actionIndex, params, "radius", "搜索半径", false,
-                        issues);
+                        variableContext, issues);
                 validatePositiveDoubleParam(sequenceName, stepIndex, actionIndex, params, "trackingDistance", "追踪距离",
-                        false, issues);
-                validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "attackCount", "攻击次数", issues);
+                        false, variableContext, issues);
+                validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "attackCount", "攻击次数",
+                        variableContext, issues);
                 validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "noTargetSkipCount",
-                        "无目标时跳过动作数", issues);
+                        "无目标时跳过动作数", variableContext, issues);
                 validatePositiveDoubleParam(sequenceName, stepIndex, actionIndex, params, "huntChaseIntervalSeconds",
-                        "追怪间隔秒数", true, issues);
-                validateHuntAttackSequence(sequenceName, stepIndex, actionIndex, params, sequenceNames, issues);
+                        "追怪间隔秒数", true, variableContext, issues);
+                validateHuntAttackSequence(sequenceName, stepIndex, actionIndex, params, sequenceNames, variableContext,
+                        issues);
                 break;
             case "autochestclick":
             case "move_inventory_items_to_chest_slots":
-                validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "delayTicks", "延迟", issues);
+                validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "delayTicks", "延迟",
+                        variableContext, issues);
                 if (ItemFilterHandler.readMoveChestFilterRules(params).isEmpty()) {
                     issues.add(new Issue(Severity.ERROR, "move_chest_filter_missing", sequenceName, stepIndex,
                             actionIndex,
@@ -507,15 +798,21 @@ public final class PathConfigValidator {
     }
 
     private static void validateRunSequence(String sequenceName, int stepIndex, int actionIndex, JsonObject params,
-            Set<String> sequenceNames, List<Issue> issues) {
-        String target = getString(params, "sequenceName").trim();
+            Set<String> sequenceNames, ActionParameterVariableResolver.Context variableContext, List<Issue> issues) {
+        ResolvedParamValue targetValue = resolveParamValue(variableContext, params, "sequenceName");
+        String target = targetValue.isDynamicReference() || targetValue.isMissingReference()
+                ? ""
+                : safe(LegacyActionRuntime.stringifyValue(targetValue.value)).trim();
         if (isBlank(getString(params, "uuid"))) {
             issues.add(new Issue(Severity.WARNING, "persistent_uuid_missing", sequenceName, stepIndex, actionIndex,
                     "动作 UUID 缺失", "保存后建议重新确认该动作已生成稳定 UUID，避免计数或状态冲突。"));
         }
-        if (target.isEmpty()) {
+        if (!targetValue.isDynamicReference() && !targetValue.isMissingReference() && target.isEmpty()) {
             issues.add(new Issue(Severity.ERROR, "run_sequence_missing", sequenceName, stepIndex, actionIndex,
                     "执行序列未选择目标", "请先选择要执行的目标序列。"));
+            return;
+        }
+        if (targetValue.isDynamicReference() || targetValue.isMissingReference()) {
             return;
         }
         if (target.equalsIgnoreCase(sequenceName)) {
@@ -526,8 +823,10 @@ public final class PathConfigValidator {
             issues.add(new Issue(Severity.ERROR, "run_sequence_missing_target", sequenceName, stepIndex, actionIndex,
                     "执行序列目标不存在", "找不到目标序列: " + target));
         }
+        Integer executeEveryCount = readResolvedInt(resolveParamValue(variableContext, params, "executeEveryCount"));
         if ("interval".equalsIgnoreCase(getString(params, "executeMode"))
-                && getInt(params, "executeEveryCount", 1) <= 1) {
+                && executeEveryCount != null
+                && executeEveryCount.intValue() <= 1) {
             issues.add(new Issue(Severity.WARNING, "run_sequence_interval_one", sequenceName, stepIndex, actionIndex,
                     "间隔执行次数等于 1", "这与“每次执行”效果一致，建议改回每次执行或把次数调大。"));
         }
@@ -547,15 +846,21 @@ public final class PathConfigValidator {
     }
 
     private static void validateRunTemplate(String sequenceName, int stepIndex, int actionIndex, JsonObject params,
-            Set<String> sequenceNames, List<Issue> issues) {
-        String templateName = getString(params, "templateName").trim();
+            Set<String> sequenceNames, ActionParameterVariableResolver.Context variableContext, List<Issue> issues) {
+        ResolvedParamValue templateNameValue = resolveParamValue(variableContext, params, "templateName");
+        String templateName = templateNameValue.isDynamicReference() || templateNameValue.isMissingReference()
+                ? ""
+                : safe(LegacyActionRuntime.stringifyValue(templateNameValue.value)).trim();
         if (isBlank(getString(params, "uuid"))) {
             issues.add(new Issue(Severity.WARNING, "persistent_uuid_missing", sequenceName, stepIndex, actionIndex,
                     "动作 UUID 缺失", "保存后建议重新确认该动作已生成稳定 UUID，避免计数或状态冲突。"));
         }
-        if (templateName.isEmpty()) {
+        if (!templateNameValue.isDynamicReference() && !templateNameValue.isMissingReference() && templateName.isEmpty()) {
             issues.add(new Issue(Severity.ERROR, "run_template_missing", sequenceName, stepIndex, actionIndex,
                     "执行模板未选择目标", "请先选择模板。"));
+            return;
+        }
+        if (templateNameValue.isDynamicReference() || templateNameValue.isMissingReference()) {
             return;
         }
         LegacyActionTemplateManager.TemplateEditModel model = LegacyActionTemplateManager.getTemplate(templateName);
@@ -578,22 +883,30 @@ public final class PathConfigValidator {
             issues.add(new Issue(Severity.ERROR, "run_template_missing_sequence", sequenceName, stepIndex, actionIndex,
                     "模板目标序列不存在", "模板 " + templateName + " 指向的序列不存在: " + targetSequence));
         }
+        Integer executeEveryCount = readResolvedInt(resolveParamValue(variableContext, params, "executeEveryCount"));
         if ("interval".equalsIgnoreCase(getString(params, "executeMode"))
-                && getInt(params, "executeEveryCount", 1) <= 1) {
+                && executeEveryCount != null
+                && executeEveryCount.intValue() <= 1) {
             issues.add(new Issue(Severity.WARNING, "run_template_interval_one", sequenceName, stepIndex, actionIndex,
                     "模板间隔执行次数等于 1", "这与“每次执行”效果一致，建议改回每次执行或把次数调大。"));
         }
     }
 
     private static void validateHuntAttackSequence(String sequenceName, int stepIndex, int actionIndex, JsonObject params,
-            Set<String> sequenceNames, List<Issue> issues) {
+            Set<String> sequenceNames, ActionParameterVariableResolver.Context variableContext, List<Issue> issues) {
         if (!KillAuraHandler.ATTACK_MODE_SEQUENCE.equalsIgnoreCase(getString(params, "attackMode").trim())) {
             return;
         }
-        String target = getString(params, "attackSequenceName").trim();
-        if (target.isEmpty()) {
+        ResolvedParamValue targetValue = resolveParamValue(variableContext, params, "attackSequenceName");
+        String target = targetValue.isDynamicReference() || targetValue.isMissingReference()
+                ? ""
+                : safe(LegacyActionRuntime.stringifyValue(targetValue.value)).trim();
+        if (!targetValue.isDynamicReference() && !targetValue.isMissingReference() && target.isEmpty()) {
             issues.add(new Issue(Severity.ERROR, "hunt_attack_sequence_missing", sequenceName, stepIndex, actionIndex,
                     "搜怪击杀未选择攻击序列", "当攻击方式为“执行序列攻击”时，必须选择一条攻击序列。"));
+            return;
+        }
+        if (targetValue.isDynamicReference() || targetValue.isMissingReference()) {
             return;
         }
         if (target.equalsIgnoreCase(sequenceName)) {
@@ -607,38 +920,46 @@ public final class PathConfigValidator {
     }
 
     private static void validateCaptureInventorySlot(String sequenceName, int stepIndex, int actionIndex,
-            JsonObject params, List<Issue> issues) {
+            JsonObject params, ActionParameterVariableResolver.Context variableContext, List<Issue> issues) {
         String area = getString(params, "slotArea").trim().toUpperCase(Locale.ROOT);
         if (area.isEmpty()) {
             area = "MAIN";
         }
-        int slotIndex = getInt(params, "slotIndex", -1);
-        if (slotIndex < 0) {
+        ResolvedParamValue slotIndexValue = resolveParamValue(variableContext, params, "slotIndex");
+        Integer slotIndex = readResolvedInt(slotIndexValue);
+        if (slotIndex == null) {
+            if (shouldReportNumericParseIssue(slotIndexValue)) {
+                addNumericParseIssue(sequenceName, stepIndex, actionIndex, "capture_slot_parse",
+                        "槽位索引", "请填写合法的整数槽位索引。", issues);
+            }
+            return;
+        }
+        if (slotIndex.intValue() < 0) {
             issues.add(new Issue(Severity.ERROR, "capture_slot_negative", sequenceName, stepIndex, actionIndex,
                     "槽位索引不能小于 0", "请填写合法的槽位索引。"));
             return;
         }
         switch (area) {
             case "MAIN":
-                if (slotIndex > 35) {
+                if (slotIndex.intValue() > 35) {
                     issues.add(new Issue(Severity.WARNING, "capture_slot_main_range", sequenceName, stepIndex, actionIndex,
                             "主背包槽位超出常规范围", "主背包模式通常建议填写 0-35。"));
                 }
                 break;
             case "HOTBAR":
-                if (slotIndex > 8) {
+                if (slotIndex.intValue() > 8) {
                     issues.add(new Issue(Severity.ERROR, "capture_slot_hotbar_range", sequenceName, stepIndex, actionIndex,
                             "快捷栏槽位超出范围", "快捷栏模式下槽位索引必须是 0-8。"));
                 }
                 break;
             case "ARMOR":
-                if (slotIndex > 3) {
+                if (slotIndex.intValue() > 3) {
                     issues.add(new Issue(Severity.ERROR, "capture_slot_armor_range", sequenceName, stepIndex, actionIndex,
                             "护甲栏槽位超出范围", "护甲栏模式下槽位索引必须是 0-3。"));
                 }
                 break;
             case "OFFHAND":
-                if (slotIndex > 0) {
+                if (slotIndex.intValue() > 0) {
                     issues.add(new Issue(Severity.ERROR, "capture_slot_offhand_range", sequenceName, stepIndex, actionIndex,
                             "副手槽位超出范围", "副手模式下槽位索引只能是 0。"));
                 }
@@ -650,8 +971,66 @@ public final class PathConfigValidator {
         }
     }
 
-    private static void validateVisionRegionRect(String sequenceName, int stepIndex, int actionIndex, JsonObject params,
+    private static void validateCaptureVarName(String sequenceName, int stepIndex, int actionIndex, JsonObject params,
             List<Issue> issues) {
+        if (isBlank(getString(params, "varName"))) {
+            issues.add(new Issue(Severity.WARNING, "capture_var_name_missing", sequenceName, stepIndex, actionIndex,
+                    "采集变量名为空", "未填写时会回退到动作默认变量名，建议显式填写，避免和其他采集动作撞名。"));
+        }
+    }
+
+    private static void validateCoordinateTriplet(String sequenceName, int stepIndex, int actionIndex, JsonObject params,
+            String key, String label, ActionParameterVariableResolver.Context variableContext, List<Issue> issues) {
+        if (params == null || !params.has(key)) {
+            issues.add(new Issue(Severity.ERROR, key + "_missing", sequenceName, stepIndex, actionIndex,
+                    label + "未配置", "请按 [x,y,z] 格式填写。"));
+            return;
+        }
+        try {
+            double[] values = new double[3];
+            ResolvedParamValue resolved = resolveParamValue(variableContext, params, key);
+            if (resolved.isDynamicReference() || resolved.isMissingReference()) {
+                return;
+            }
+            if (resolved.value instanceof JsonArray) {
+                JsonArray array = (JsonArray) resolved.value;
+                if (array.size() < 3) {
+                    throw new IllegalArgumentException("size");
+                }
+                for (int i = 0; i < 3; i++) {
+                    values[i] = array.get(i).getAsDouble();
+                }
+            } else if (resolved.value instanceof JsonElement && ((JsonElement) resolved.value).isJsonArray()) {
+                JsonArray array = ((JsonElement) resolved.value).getAsJsonArray();
+                if (array.size() < 3) {
+                    throw new IllegalArgumentException("size");
+                }
+                for (int i = 0; i < 3; i++) {
+                    values[i] = array.get(i).getAsDouble();
+                }
+            } else {
+                String text = safe(LegacyActionRuntime.stringifyValue(resolved.value)).replace("[", "").replace("]", "");
+                String[] parts = text.split(",");
+                if (parts.length < 3) {
+                    throw new IllegalArgumentException("size");
+                }
+                for (int i = 0; i < 3; i++) {
+                    values[i] = Double.parseDouble(parts[i].trim());
+                }
+            }
+            for (double value : values) {
+                if (Double.isNaN(value) || Double.isInfinite(value)) {
+                    throw new IllegalArgumentException("nan");
+                }
+            }
+        } catch (Exception e) {
+            issues.add(new Issue(Severity.ERROR, key + "_parse", sequenceName, stepIndex, actionIndex,
+                    label + "格式无效", "请按 [x,y,z] 填写。"));
+        }
+    }
+
+    private static void validateVisionRegionRect(String sequenceName, int stepIndex, int actionIndex, JsonObject params,
+            ActionParameterVariableResolver.Context variableContext, List<Issue> issues) {
         if (params == null || !params.has("regionRect")) {
             issues.add(new Issue(Severity.ERROR, "vision_region_missing", sequenceName, stepIndex, actionIndex,
                     "视觉区域未配置", "请填写 [x,y,width,height] 区域。"));
@@ -659,15 +1038,28 @@ public final class PathConfigValidator {
         }
         try {
             int[] values = new int[4];
-            if (params.get("regionRect").isJsonArray()) {
-                if (params.getAsJsonArray("regionRect").size() < 4) {
+            ResolvedParamValue resolved = resolveParamValue(variableContext, params, "regionRect");
+            if (resolved.isDynamicReference() || resolved.isMissingReference()) {
+                return;
+            }
+            if (resolved.value instanceof JsonArray) {
+                JsonArray array = (JsonArray) resolved.value;
+                if (array.size() < 4) {
                     throw new IllegalArgumentException("size");
                 }
                 for (int i = 0; i < 4; i++) {
-                    values[i] = (int) Math.round(params.getAsJsonArray("regionRect").get(i).getAsDouble());
+                    values[i] = (int) Math.round(array.get(i).getAsDouble());
+                }
+            } else if (resolved.value instanceof JsonElement && ((JsonElement) resolved.value).isJsonArray()) {
+                JsonArray array = ((JsonElement) resolved.value).getAsJsonArray();
+                if (array.size() < 4) {
+                    throw new IllegalArgumentException("size");
+                }
+                for (int i = 0; i < 4; i++) {
+                    values[i] = (int) Math.round(array.get(i).getAsDouble());
                 }
             } else {
-                String text = getString(params, "regionRect").replace("[", "").replace("]", "");
+                String text = safe(LegacyActionRuntime.stringifyValue(resolved.value)).replace("[", "").replace("]", "");
                 String[] parts = text.split(",");
                 if (parts.length < 4) {
                     throw new IllegalArgumentException("size");
@@ -1014,40 +1406,82 @@ public final class PathConfigValidator {
 
     private static void validateNonNegativeIntParam(String sequenceName, int stepIndex, int actionIndex,
             JsonObject params, String key, String label, List<Issue> issues) {
+        validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, key, label,
+                ActionParameterVariableResolver.buildContext(sequenceName, Collections.<PathSequence>emptyList()), issues);
+    }
+
+    private static void validateNonNegativeIntParam(String sequenceName, int stepIndex, int actionIndex,
+            JsonObject params, String key, String label, ActionParameterVariableResolver.Context variableContext,
+            List<Issue> issues) {
         if (params == null || key == null || !params.has(key)) {
             return;
         }
-        int value = getInt(params, key, 0);
-        if (value < 0) {
+        ResolvedParamValue resolvedValue = resolveParamValue(variableContext, params, key);
+        Integer value = readResolvedInt(resolvedValue);
+        if (value == null) {
+            if (shouldReportNumericParseIssue(resolvedValue)) {
+                addNumericParseIssue(sequenceName, stepIndex, actionIndex, key + "_parse", label,
+                        "参数 " + key + " 需要填写数字。", issues);
+            }
+            return;
+        }
+        if (value != null && value.intValue() < 0) {
             issues.add(new Issue(Severity.ERROR, key + "_negative", sequenceName, stepIndex, actionIndex,
-                    label + "不能小于 0", "参数 " + key + " 当前值为 " + value + "。"));
+                    label + "不能小于 0", "参数 " + key + " 当前值为 " + value.intValue() + "。"));
         }
     }
 
     private static void validatePositiveIntParam(String sequenceName, int stepIndex, int actionIndex,
             JsonObject params, String key, String label, int minimum, List<Issue> issues) {
+        validatePositiveIntParam(sequenceName, stepIndex, actionIndex, params, key, label, minimum,
+                ActionParameterVariableResolver.buildContext(sequenceName, Collections.<PathSequence>emptyList()), issues);
+    }
+
+    private static void validatePositiveIntParam(String sequenceName, int stepIndex, int actionIndex,
+            JsonObject params, String key, String label, int minimum,
+            ActionParameterVariableResolver.Context variableContext, List<Issue> issues) {
         if (params == null || key == null || !params.has(key)) {
             return;
         }
-        int value = getInt(params, key, minimum);
-        if (value < minimum) {
+        ResolvedParamValue resolvedValue = resolveParamValue(variableContext, params, key);
+        Integer value = readResolvedInt(resolvedValue);
+        if (value == null) {
+            if (shouldReportNumericParseIssue(resolvedValue)) {
+                addNumericParseIssue(sequenceName, stepIndex, actionIndex, key + "_parse", label,
+                        "参数 " + key + " 需要填写整数。", issues);
+            }
+            return;
+        }
+        if (value != null && value.intValue() < minimum) {
             issues.add(new Issue(Severity.ERROR, key + "_range", sequenceName, stepIndex, actionIndex,
-                    label + "过小", "参数 " + key + " 至少应为 " + minimum + "，当前为 " + value + "。"));
+                    label + "过小", "参数 " + key + " 至少应为 " + minimum + "，当前为 " + value.intValue() + "。"));
         }
     }
 
     private static void validatePositiveDoubleParam(String sequenceName, int stepIndex, int actionIndex,
             JsonObject params, String key, String label, boolean allowZero, List<Issue> issues) {
+        validatePositiveDoubleParam(sequenceName, stepIndex, actionIndex, params, key, label, allowZero,
+                ActionParameterVariableResolver.buildContext(sequenceName, Collections.<PathSequence>emptyList()), issues);
+    }
+
+    private static void validatePositiveDoubleParam(String sequenceName, int stepIndex, int actionIndex,
+            JsonObject params, String key, String label, boolean allowZero,
+            ActionParameterVariableResolver.Context variableContext, List<Issue> issues) {
         if (params == null || key == null || !params.has(key) || params.get(key).isJsonNull()) {
             return;
         }
-        try {
-            double value = params.get(key).getAsDouble();
-            if (allowZero ? value < 0D : value <= 0D) {
-                issues.add(new Issue(Severity.ERROR, key + "_range", sequenceName, stepIndex, actionIndex,
-                        label + "无效", "参数 " + key + " 当前值为 " + value + "。"));
+        ResolvedParamValue resolvedValue = resolveParamValue(variableContext, params, key);
+        Double value = readResolvedDouble(resolvedValue);
+        if (value == null) {
+            if (shouldReportNumericParseIssue(resolvedValue)) {
+                addNumericParseIssue(sequenceName, stepIndex, actionIndex, key + "_parse", label,
+                        "参数 " + key + " 需要填写数字。", issues);
             }
-        } catch (Exception ignored) {
+            return;
+        }
+        if (value != null && (allowZero ? value.doubleValue() < 0D : value.doubleValue() <= 0D)) {
+            issues.add(new Issue(Severity.ERROR, key + "_range", sequenceName, stepIndex, actionIndex,
+                    label + "无效", "参数 " + key + " 当前值为 " + value + "。"));
         }
     }
 
@@ -1058,6 +1492,27 @@ public final class PathConfigValidator {
         } catch (Exception e) {
             issues.add(new Issue(Severity.ERROR, "expression_invalid_value", sequenceName, stepIndex, actionIndex,
                     label + "无效", safe(e.getMessage())));
+        }
+    }
+
+    private static void validateItemFilterExpressionList(String sequenceName, int stepIndex, int actionIndex,
+            List<String> expressions, String label, List<Issue> issues) {
+        if (expressions == null || expressions.isEmpty()) {
+            return;
+        }
+        int count = 0;
+        for (String expression : expressions) {
+            String value = safe(expression).trim();
+            if (value.isEmpty()) {
+                continue;
+            }
+            count++;
+            try {
+                InventoryItemFilterExpressionEngine.validate(value);
+            } catch (Exception e) {
+                issues.add(new Issue(Severity.ERROR, "item_filter_expression_invalid", sequenceName, stepIndex,
+                        actionIndex, label + "#" + count + " 无效", safe(e.getMessage())));
+            }
         }
     }
 
