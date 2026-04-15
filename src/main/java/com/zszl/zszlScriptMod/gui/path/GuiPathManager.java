@@ -3342,6 +3342,16 @@ public class GuiPathManager extends ThemedGuiScreen {
         } else if (step.getPathRetryTimeoutSeconds() <= 0 || step.getRetryCount() <= 0) {
             suffix.append(" §7| §8不重试");
         }
+        if ("RESTART_SEQUENCE".equalsIgnoreCase(step.getRetryExhaustedPolicy())) {
+            suffix.append(" §7| §b耗尽后重头");
+        } else if ("RUN_SEQUENCE".equalsIgnoreCase(step.getRetryExhaustedPolicy())) {
+            String target = step.getRetryExhaustedSequenceName();
+            suffix.append(" §7| §d失败转序列");
+            if (target != null && !target.trim().isEmpty()) {
+                suffix.append("§f:")
+                        .append(target.trim().length() > 8 ? target.trim().substring(0, 8) + "..." : target.trim());
+            }
+        }
         return suffix.toString();
     }
 

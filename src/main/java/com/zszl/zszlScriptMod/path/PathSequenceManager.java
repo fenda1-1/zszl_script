@@ -1315,6 +1315,7 @@ public class PathSequenceManager {
         private int retryCount = 3;
         private int pathRetryTimeoutSeconds = 5;
         private String retryExhaustedPolicy = "END_SEQUENCE";
+        private String retryExhaustedSequenceName = "";
 
         public PathStep(double[] gotoPoint) {
             this.gotoPoint = gotoPoint;
@@ -1326,6 +1327,7 @@ public class PathSequenceManager {
             this.retryCount = other.retryCount;
             this.pathRetryTimeoutSeconds = other.pathRetryTimeoutSeconds;
             this.retryExhaustedPolicy = other.retryExhaustedPolicy;
+            this.retryExhaustedSequenceName = other.retryExhaustedSequenceName;
             for (ActionData action : other.actions) {
                 this.actions.add(new ActionData(action));
             }
@@ -1379,6 +1381,14 @@ public class PathSequenceManager {
             this.retryExhaustedPolicy = normalizeRetryExhaustedPolicy(retryExhaustedPolicy);
         }
 
+        public String getRetryExhaustedSequenceName() {
+            return retryExhaustedSequenceName == null ? "" : retryExhaustedSequenceName.trim();
+        }
+
+        public void setRetryExhaustedSequenceName(String retryExhaustedSequenceName) {
+            this.retryExhaustedSequenceName = retryExhaustedSequenceName == null ? "" : retryExhaustedSequenceName.trim();
+        }
+
         public boolean hasGotoTarget() {
             return gotoPoint != null && gotoPoint.length >= 3 && !Double.isNaN(gotoPoint[0]);
         }
@@ -1387,6 +1397,7 @@ public class PathSequenceManager {
             String normalized = policy == null ? "" : policy.trim().toUpperCase(Locale.ROOT);
             switch (normalized) {
                 case "RESTART_SEQUENCE":
+                case "RUN_SEQUENCE":
                     return normalized;
                 default:
                     return "END_SEQUENCE";
@@ -1648,6 +1659,9 @@ public class PathSequenceManager {
                         }
                         if (stepObj.has("retryExhaustedPolicy")) {
                             step.setRetryExhaustedPolicy(stepObj.get("retryExhaustedPolicy").getAsString());
+                        }
+                        if (stepObj.has("retryExhaustedSequenceName")) {
+                            step.setRetryExhaustedSequenceName(stepObj.get("retryExhaustedSequenceName").getAsString());
                         }
                         if (stepObj.has("actions")) {
                             JsonArray actionsArray = stepObj.getAsJsonArray("actions");
@@ -2376,6 +2390,9 @@ public class PathSequenceManager {
                 stepObj.addProperty("retryCount", step.getRetryCount());
                 stepObj.addProperty("pathRetryTimeoutSeconds", step.getPathRetryTimeoutSeconds());
                 stepObj.addProperty("retryExhaustedPolicy", step.getRetryExhaustedPolicy());
+                if (!step.getRetryExhaustedSequenceName().isEmpty()) {
+                    stepObj.addProperty("retryExhaustedSequenceName", step.getRetryExhaustedSequenceName());
+                }
                 JsonArray actionsArray = new JsonArray();
                 for (ActionData action : step.getActions()) {
                     JsonObject actionObj = new JsonObject();
@@ -2883,6 +2900,52 @@ public class PathSequenceManager {
         }
 
         runPathSequenceInternal(target, true, null, initialSequenceVariables);
+        return true;
+    }
+
+    public static boolean executeSequenceByConfiguredMode(String targetSequenceName, EntityPlayerSP player,
+            String callerSequenceName, Map<String, Object> initialSequenceVariables) {
+        if (targetSequenceName == null || targetSequenceName.trim().isEmpty()) {
+            if (player != null) {
+                player.sendMessage(new TextComponentString("§c失败后执行序列未设置目标序列。"));
+            }
+            return false;
+        }
+
+        String target = targetSequenceName.trim();
+        if (!hasSequence(target)) {
+            zszlScriptMod.LOGGER.warn("[run_sequence] 目标序列不存在: {}", target);
+            if (player != null) {
+                player.sendMessage(
+                        new TextComponentString(I18n.format("msg.path.run_sequence.target_not_found", target)));
+            }
+            return false;
+        }
+
+        PathSequence targetSequence = getSequence(target);
+        if (targetSequence == null || targetSequence.getSteps().isEmpty()) {
+            zszlScriptMod.LOGGER.warn("[run_sequence] 目标序列为空或无效: {}", target);
+            if (player != null) {
+                player.sendMessage(new TextComponentString("§c目标序列为空或无有效步骤: " + target));
+            }
+            return false;
+        }
+
+        String caller = callerSequenceName == null ? "" : callerSequenceName.trim();
+        if (!caller.isEmpty() && !canInvokeSequence(caller, target)) {
+            zszlScriptMod.LOGGER.warn("[run_sequence] 拒绝循环调用: {} -> {}", caller, target);
+            if (player != null) {
+                player.sendMessage(
+                        new TextComponentString(I18n.format("msg.path.run_sequence.cycle_blocked", caller, target)));
+            }
+            return false;
+        }
+
+        if (targetSequence.isNonInterruptingExecution()) {
+            return PathSequenceEventListener.startBackgroundSequence(targetSequence, 0, initialSequenceVariables);
+        }
+
+        runPathSequenceInternal(target, false, 1, initialSequenceVariables);
         return true;
     }
 

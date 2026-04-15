@@ -908,7 +908,7 @@ public class PathSequenceEventListener {
     private Map<String, String> buildVariablePreview(int limit) {
         LinkedHashMap<String, String> preview = new LinkedHashMap<>();
         int count = 0;
-        for (Map.Entry<String, Object> entry : runtimeVariables.entrySet()) {
+        for (Map.Entry<String, Object> entry : runtimeVariables.getCanonicalSnapshot().entrySet()) {
             if (entry == null || entry.getKey() == null) {
                 continue;
             }
@@ -1833,9 +1833,7 @@ public class PathSequenceEventListener {
         if (varName == null || varName.trim().isEmpty() || rawParams == null) {
             return;
         }
-        Object existing = LegacyActionRuntime.getRuntimeValue(varName, runtimeVariables, player, currentSequence,
-                currentStepIndex, actionIndex);
-        if (existing != null) {
+        if (runtimeVariables.containsInDeclaredScope(varName)) {
             return;
         }
         runtimeVariables.put(varName, LegacyActionRuntime.inferAssignedValueDefault(rawParams));
@@ -1913,6 +1911,32 @@ public class PathSequenceEventListener {
         return true;
     }
 
+    private boolean runRetryExhaustedSequence(EntityPlayerSP player, PathStep step) {
+        String callerSequenceName = currentSequence == null ? "" : currentSequence.getName();
+        String targetSequenceName = step == null ? "" : step.getRetryExhaustedSequenceName();
+        if (targetSequenceName == null || targetSequenceName.trim().isEmpty()) {
+            sendPathRetryMessage("步骤 " + (currentStepIndex + 1) + " 寻路重试已耗尽，但未配置失败后执行序列，序列已停止。",
+                    net.minecraft.util.text.TextFormatting.RED);
+            markExecutionResult(false, "寻路重试耗尽，但未配置失败后执行序列");
+            stopTracking();
+            return true;
+        }
+
+        String target = targetSequenceName.trim();
+        sendPathRetryMessage("步骤 " + (currentStepIndex + 1) + " 寻路重试已耗尽，按设置执行序列: " + target + "。",
+                net.minecraft.util.text.TextFormatting.RED);
+        recordDebugTrace("步骤寻路重试耗尽后执行序列: step=" + currentStepIndex + ", target=" + target);
+        markExecutionResult(false, "寻路重试耗尽，转执行序列: " + target);
+        stopTracking();
+
+        boolean started = PathSequenceManager.executeSequenceByConfiguredMode(target, player, callerSequenceName, null);
+        if (!started && mc.player != null) {
+            mc.player.sendMessage(new TextComponentString(
+                    net.minecraft.util.text.TextFormatting.RED + "[路径序列] 启动失败后执行序列失败: " + target));
+        }
+        return true;
+    }
+
     private boolean handleCurrentStepPathRetry(EntityPlayerSP player, PathStep step) {
         if (player == null || step == null || !stepHasGotoTarget(step)) {
             resetStepPathRetryMonitor();
@@ -1982,10 +2006,14 @@ public class PathSequenceEventListener {
 
         currentStepRetryUsed = 0;
         recordDebugTrace("步骤寻路重试耗尽: step=" + currentStepIndex);
-        if ("RESTART_SEQUENCE".equalsIgnoreCase(step.getRetryExhaustedPolicy())) {
+        String exhaustedPolicy = step.getRetryExhaustedPolicy();
+        if ("RESTART_SEQUENCE".equalsIgnoreCase(exhaustedPolicy)) {
             sendPathRetryMessage("步骤 " + (currentStepIndex + 1) + " 寻路重试已耗尽，按设置从序列开头重新执行。",
                     net.minecraft.util.text.TextFormatting.RED);
             return restartSequenceFromBeginning("path_retry_exhausted_restart_sequence");
+        }
+        if ("RUN_SEQUENCE".equalsIgnoreCase(exhaustedPolicy)) {
+            return runRetryExhaustedSequence(player, step);
         }
 
         sendPathRetryMessage("步骤 " + (currentStepIndex + 1) + " 寻路重试已耗尽，序列已停止。",
@@ -2559,8 +2587,29 @@ public class PathSequenceEventListener {
                 player,
                 currentSequence,
                 currentStepIndex,
-                actionIndex);
+                actionIndex,
+                getLiteralParamKeysForAction(actionData.type));
         return new ActionData(actionData.type, resolvedParams);
+    }
+
+    private static Set<String> getLiteralParamKeysForAction(String actionType) {
+        String normalizedType = actionType == null ? "" : actionType.trim().toLowerCase(Locale.ROOT);
+        if ("set_var".equals(normalizedType)) {
+            return Collections.singleton("name");
+        }
+        if ("capture_nearby_entity".equals(normalizedType)
+                || "capture_gui_title".equals(normalizedType)
+                || "capture_inventory_slot".equals(normalizedType)
+                || "capture_hotbar".equals(normalizedType)
+                || "capture_entity_list".equals(normalizedType)
+                || "capture_packet_field".equals(normalizedType)
+                || "capture_gui_element".equals(normalizedType)
+                || "capture_scoreboard".equals(normalizedType)
+                || "capture_screen_region".equals(normalizedType)
+                || "capture_block_at".equals(normalizedType)) {
+            return Collections.singleton("varName");
+        }
+        return Collections.emptySet();
     }
 
     private boolean handleRuntimeControlAction(EntityPlayerSP player,
@@ -4860,7 +4909,8 @@ public class PathSequenceEventListener {
             this.runtimeVariables.beginAction(this.stepIndex, this.actionIndex);
 
             JsonObject resolvedParams = LegacyActionRuntime.resolveParams(actionData.params, this.runtimeVariables,
-                    player, this.sequence, this.stepIndex, this.actionIndex);
+                    player, this.sequence, this.stepIndex, this.actionIndex,
+                    getLiteralParamKeysForAction(actionData.type));
             return new ActionData(actionData.type, resolvedParams);
         }
 

@@ -3,6 +3,7 @@ package com.zszl.zszlScriptMod.path.runtime;
 import java.util.AbstractMap;
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
@@ -142,6 +143,38 @@ public class ScopedRuntimeVariables extends AbstractMap<String, Object> {
                 return Collections.unmodifiableMap(new LinkedHashMap<>(tempScope));
             default:
                 return Collections.emptyMap();
+        }
+    }
+
+    public Map<String, Object> getCanonicalSnapshot() {
+        LinkedHashMap<String, Object> snapshot = new LinkedHashMap<>();
+        synchronized (GLOBAL_LOCK) {
+            appendCanonicalEntries(snapshot, Scope.GLOBAL, GLOBAL_SCOPE);
+        }
+        appendCanonicalEntries(snapshot, Scope.SEQUENCE, sequenceScope);
+        appendCanonicalEntries(snapshot, Scope.LOCAL, localScope);
+        appendCanonicalEntries(snapshot, Scope.TEMP, tempScope);
+        return Collections.unmodifiableMap(snapshot);
+    }
+
+    public boolean containsInDeclaredScope(String variableName) {
+        ScopedKey scopedKey = parseScopedKey(variableName);
+        String normalizedKey = normalizeVariableKey(scopedKey.key);
+        if (normalizedKey.isEmpty()) {
+            return false;
+        }
+        switch (scopedKey.scope) {
+            case GLOBAL:
+                synchronized (GLOBAL_LOCK) {
+                    return GLOBAL_SCOPE.containsKey(normalizedKey);
+                }
+            case LOCAL:
+                return localScope.containsKey(normalizedKey);
+            case TEMP:
+                return tempScope.containsKey(normalizedKey);
+            case SEQUENCE:
+            default:
+                return sequenceScope.containsKey(normalizedKey);
         }
     }
 
@@ -336,6 +369,19 @@ public class ScopedRuntimeVariables extends AbstractMap<String, Object> {
     private int globalSize() {
         synchronized (GLOBAL_LOCK) {
             return GLOBAL_SCOPE.size();
+        }
+    }
+
+    private void appendCanonicalEntries(Map<String, Object> target, Scope scope, Map<String, Object> values) {
+        if (target == null || scope == null || values == null || values.isEmpty()) {
+            return;
+        }
+        String prefix = scope.name().toLowerCase(Locale.ROOT);
+        for (Map.Entry<String, Object> entry : values.entrySet()) {
+            if (entry == null || entry.getKey() == null || entry.getKey().trim().isEmpty()) {
+                continue;
+            }
+            target.put(prefix + "." + entry.getKey().trim(), entry.getValue());
         }
     }
 

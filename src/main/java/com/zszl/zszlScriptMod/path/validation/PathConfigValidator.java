@@ -218,7 +218,8 @@ public final class PathConfigValidator {
                 if (step == null) {
                     continue;
                 }
-                validateStep(sequenceName, stepIndex, steps.size(), step, issues);
+                validateStep(sequenceName, stepIndex, steps.size(), step, sequenceNames, issues);
+                collectStepGraphEdge(sequenceName, step, graph);
                 List<ActionData> actions = step.getActions() == null ? Collections.emptyList() : step.getActions();
                 for (int actionIndex = 0; actionIndex < actions.size(); actionIndex++) {
                     ActionData action = actions.get(actionIndex);
@@ -274,10 +275,33 @@ public final class PathConfigValidator {
     }
 
     private static void validateStep(String sequenceName, int stepIndex, int stepCount, PathStep step,
-            List<Issue> issues) {
+            Set<String> sequenceNames, List<Issue> issues) {
         if (step.getGotoPoint() == null || step.getGotoPoint().length < 3) {
             issues.add(new Issue(Severity.WARNING, "step_goto_point", sequenceName, stepIndex, -1,
                     "步骤坐标不完整", "GOTO 坐标建议始终保持 3 个分量。"));
+        }
+        validateRetryExhaustedRunSequence(sequenceName, stepIndex, step, sequenceNames, issues);
+    }
+
+    private static void validateRetryExhaustedRunSequence(String sequenceName, int stepIndex, PathStep step,
+            Set<String> sequenceNames, List<Issue> issues) {
+        if (step == null || !"RUN_SEQUENCE".equalsIgnoreCase(step.getRetryExhaustedPolicy())) {
+            return;
+        }
+        String target = safe(step.getRetryExhaustedSequenceName()).trim();
+        if (target.isEmpty()) {
+            issues.add(new Issue(Severity.ERROR, "step_retry_run_sequence_missing", sequenceName, stepIndex, -1,
+                    "失败后执行序列未设置", "重试耗尽策略为执行序列时，必须选择一个目标序列。"));
+            return;
+        }
+        if (sequenceNames == null || !sequenceNames.contains(target)) {
+            issues.add(new Issue(Severity.ERROR, "step_retry_run_sequence_not_found", sequenceName, stepIndex, -1,
+                    "失败后执行序列不存在", "目标序列 " + target + " 不存在，运行时无法执行。"));
+            return;
+        }
+        if (target.equalsIgnoreCase(sequenceName)) {
+            issues.add(new Issue(Severity.WARNING, "step_retry_run_sequence_self", sequenceName, stepIndex, -1,
+                    "失败后执行序列指向当前序列", "当前序列失败后会重新启动自己，建议确认不会形成无限失败重试。"));
         }
     }
 
@@ -1125,6 +1149,18 @@ public final class PathConfigValidator {
         } else if ("run_template".equals(type)) {
             target = safe(LegacyActionTemplateManager.resolveTemplateTargetSequence(getString(action.params, "templateName"))).trim();
         }
+        if (target.isEmpty()) {
+            return;
+        }
+        graph.computeIfAbsent(sequenceName, key -> new ArrayList<>()).add(target);
+        graph.putIfAbsent(target, new ArrayList<>());
+    }
+
+    private static void collectStepGraphEdge(String sequenceName, PathStep step, Map<String, List<String>> graph) {
+        if (step == null || graph == null || !"RUN_SEQUENCE".equalsIgnoreCase(step.getRetryExhaustedPolicy())) {
+            return;
+        }
+        String target = safe(step.getRetryExhaustedSequenceName()).trim();
         if (target.isEmpty()) {
             return;
         }

@@ -61,11 +61,36 @@ public final class LegacyActionRuntime {
             PathSequenceManager.PathSequence sequence,
             int stepIndex,
             int actionIndex) {
+        return resolveParams(params, runtimeVars, player, sequence, stepIndex, actionIndex,
+                Collections.<String>emptySet());
+    }
+
+    public static JsonObject resolveParams(JsonObject params,
+            Map<String, Object> runtimeVars,
+            EntityPlayerSP player,
+            PathSequenceManager.PathSequence sequence,
+            int stepIndex,
+            int actionIndex,
+            Collection<String> literalParamKeys) {
         JsonObject resolved = new JsonObject();
         if (params == null) {
             return resolved;
         }
+        LinkedHashMap<String, Boolean> literalKeys = new LinkedHashMap<>();
+        if (literalParamKeys != null) {
+            for (String key : literalParamKeys) {
+                String normalized = key == null ? "" : key.trim().toLowerCase(Locale.ROOT);
+                if (!normalized.isEmpty()) {
+                    literalKeys.put(normalized, Boolean.TRUE);
+                }
+            }
+        }
         for (Map.Entry<String, JsonElement> entry : params.entrySet()) {
+            String key = entry == null || entry.getKey() == null ? "" : entry.getKey().trim().toLowerCase(Locale.ROOT);
+            if (!key.isEmpty() && literalKeys.containsKey(key)) {
+                resolved.add(entry.getKey(), copyElement(entry.getValue()));
+                continue;
+            }
             resolved.add(entry.getKey(),
                     resolveElement(entry.getValue(), runtimeVars, player, sequence, stepIndex, actionIndex));
         }
@@ -696,6 +721,13 @@ public final class LegacyActionRuntime {
         return JsonNull.INSTANCE;
     }
 
+    private static JsonElement copyElement(JsonElement element) {
+        if (element == null || element.isJsonNull()) {
+            return JsonNull.INSTANCE;
+        }
+        return new JsonParser().parse(element.toString());
+    }
+
     private static JsonElement toJsonElementFromString(String text) {
         if (text == null) {
             return JsonNull.INSTANCE;
@@ -1061,22 +1093,6 @@ public final class LegacyActionRuntime {
         }
 
         private Object parseComparison() {
-            skipWhitespace();
-            if (match("!")) {
-                return !toBoolean(parseComparison());
-            }
-            if (match("(")) {
-                Object value = parseConditional();
-                skipWhitespace();
-                if (!match(")")) {
-                    throw error("缺少右括号");
-                }
-                return value;
-            }
-            return parseComparator();
-        }
-
-        private Object parseComparator() {
             Object left = parseAdditive();
             skipWhitespace();
             String operator = tryParseOperator();
@@ -1120,11 +1136,27 @@ public final class LegacyActionRuntime {
 
         private Object parseUnary() {
             skipWhitespace();
+            if (match("!")) {
+                return !toBoolean(parseUnary());
+            }
             if (match("+")) {
                 return normalizeNumericResult(requireNumber("一元正号", parseUnary()));
             }
             if (match("-")) {
                 return normalizeNumericResult(-requireNumber("一元负号", parseUnary()));
+            }
+            return parsePrimary();
+        }
+
+        private Object parsePrimary() {
+            skipWhitespace();
+            if (match("(")) {
+                Object value = parseConditional();
+                skipWhitespace();
+                if (!match(")")) {
+                    throw error("缺少右括号");
+                }
+                return value;
             }
             return parseValueToken();
         }

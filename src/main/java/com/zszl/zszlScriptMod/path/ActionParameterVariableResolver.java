@@ -329,28 +329,29 @@ public final class ActionParameterVariableResolver {
 
                 List<String> producedNames = ActionVariableRegistry.collectProducedVariableNames(variableName, action.type);
                 for (String producedName : producedNames) {
-                    registerDefinedVariable(variableStates, scopeKey, producedName);
+                    registerDefinedVariable(variableStates, producedName);
                 }
 
                 if (!"set_var".equalsIgnoreCase(safe(action.type).trim())) {
                     continue;
                 }
 
-                String baseVariableName = ActionVariableRegistry.extractBaseName(variableName);
-                if (baseVariableName.isEmpty()) {
+                String canonicalVariableName = ActionVariableRegistry
+                        .buildCanonicalVariableName(scopeKey, ActionVariableRegistry.extractBaseName(variableName));
+                if (canonicalVariableName.isEmpty()) {
                     continue;
                 }
 
                 Object resolvedValue = tryResolveAssignedValue(action.params, runtimeValues, sequence, stepIndex,
                         actionIndex);
                 if (resolvedValue == null) {
-                    registerDefinedVariable(variableStates, scopeKey, baseVariableName);
+                    registerDefinedVariable(variableStates, canonicalVariableName);
                     continue;
                 }
 
-                writeStaticValue(scopeKey, baseVariableName, resolvedValue, runtimeValues, globalScope, sequenceScope,
+                writeStaticValue(canonicalVariableName, resolvedValue, runtimeValues, globalScope, sequenceScope,
                         localScope, tempScope);
-                registerResolvedVariable(variableStates, scopeKey, baseVariableName, resolvedValue);
+                registerResolvedVariable(variableStates, canonicalVariableName, resolvedValue);
             }
         }
     }
@@ -367,17 +368,17 @@ public final class ActionParameterVariableResolver {
         }
     }
 
-    private static void writeStaticValue(String scopeKey, String baseVariableName, Object value,
+    private static void writeStaticValue(String canonicalVariableName, Object value,
             Map<String, Object> runtimeValues,
             Map<String, Object> globalScope,
             Map<String, Object> sequenceScope,
             Map<String, Object> localScope,
             Map<String, Object> tempScope) {
-        String normalizedBaseName = safe(baseVariableName).trim();
+        String normalizedScope = ActionVariableRegistry.extractScopeKey(canonicalVariableName);
+        String normalizedBaseName = ActionVariableRegistry.extractBaseName(canonicalVariableName);
         if (normalizedBaseName.isEmpty()) {
             return;
         }
-        String normalizedScope = normalizeScopeToken(scopeKey);
         if ("global".equals(normalizedScope)) {
             globalScope.put(normalizedBaseName, value);
         } else if ("local".equals(normalizedScope)) {
@@ -386,20 +387,19 @@ public final class ActionParameterVariableResolver {
             tempScope.put(normalizedBaseName, value);
         } else {
             sequenceScope.put(normalizedBaseName, value);
+            runtimeValues.put(normalizedBaseName, value);
         }
-        runtimeValues.put(normalizedBaseName, value);
     }
 
-    private static void registerDefinedVariable(Map<String, VariableState> variableStates, String scopeKey,
-            String baseVariableName) {
-        VariableState state = variableStates.computeIfAbsent(buildCanonicalReference(scopeKey, baseVariableName),
+    private static void registerDefinedVariable(Map<String, VariableState> variableStates, String canonicalReference) {
+        VariableState state = variableStates.computeIfAbsent(safe(canonicalReference).trim(),
                 VariableState::new);
         state.defined = true;
     }
 
-    private static void registerResolvedVariable(Map<String, VariableState> variableStates, String scopeKey,
-            String baseVariableName, Object value) {
-        VariableState state = variableStates.computeIfAbsent(buildCanonicalReference(scopeKey, baseVariableName),
+    private static void registerResolvedVariable(Map<String, VariableState> variableStates, String canonicalReference,
+            Object value) {
+        VariableState state = variableStates.computeIfAbsent(safe(canonicalReference).trim(),
                 VariableState::new);
         state.defined = true;
         state.hasStaticValue = true;

@@ -823,7 +823,10 @@ public class GuiActionVariableManager extends ThemedGuiScreen {
                         + "  ·  字段 " + safe(source.getParamKey()),
                 x + 10, y + 38, 0xFF9CB5C8);
 
-        List<String> extra = wrapText("变量名 " + safe(source.getVariableName()), width - 20, 1);
+        String canonicalVariableName = ActionVariableRegistry.buildCanonicalVariableName(
+                ActionVariableRegistry.extractScopeKey(source.getVariableName()),
+                ActionVariableRegistry.extractBaseName(source.getVariableName()));
+        List<String> extra = wrapText("变量名 " + safe(canonicalVariableName), width - 20, 1);
         if (!extra.isEmpty()) {
             drawString(fontRenderer, extra.get(0), x + 10, y + 52, 0xFFDEECF7);
         }
@@ -895,7 +898,9 @@ public class GuiActionVariableManager extends ThemedGuiScreen {
     }
 
     private SourcePopupState buildSourcePopupState(ActionVariableRegistry.VariableSource source) {
-        String prefix = ActionVariableRegistry.extractBaseName(source == null ? "" : source.getVariableName());
+        String prefix = ActionVariableRegistry.buildCanonicalVariableName(
+                ActionVariableRegistry.extractScopeKey(source == null ? "" : source.getVariableName()),
+                ActionVariableRegistry.extractBaseName(source == null ? "" : source.getVariableName()));
         LinkedHashSet<String> variableNames = new LinkedHashSet<>(
                 ActionVariableRegistry.collectProducedVariableNames(source));
         SessionSnapshot matchedSession = null;
