@@ -24,7 +24,8 @@ public enum DebugModule {
     MAIL_GUI("邮件GUI调试"),
     PASSWORD_MANAGER("密码管理"),
     BARITONE("调试Baritone"),
-    KILL_AURA_ORBIT("杀戮绕圈");
+    KILL_AURA_ORBIT("杀戮绕圈摘要"),
+    KILL_AURA_ORBIT_TRACE("杀戮绕圈深度跟踪");
 
     private final String displayName;
 

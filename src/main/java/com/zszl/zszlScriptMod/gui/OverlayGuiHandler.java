@@ -80,19 +80,6 @@ public class OverlayGuiHandler {
             return;
         }
 
-        if (mc.currentScreen == null && ModConfig.showMouseCoordinates && !zszlScriptMod.isGuiVisible) {
-            int rawMouseX = Mouse.getX();
-            int rawMouseY = mc.displayHeight - Mouse.getY() - 1;
-            ScaledResolution scaledResolution = new ScaledResolution(mc);
-            int scaledMouseX = rawMouseX * scaledResolution.getScaledWidth() / mc.displayWidth;
-            int scaledMouseY = rawMouseY * scaledResolution.getScaledHeight() / mc.displayHeight;
-            String coordText = I18n.format("gui.overlay.debug.coords",
-                    rawMouseX, rawMouseY, scaledMouseX, scaledMouseY);
-            int screenWidth = scaledResolution.getScaledWidth();
-            int textWidth = mc.fontRenderer.getStringWidth(coordText);
-            mc.fontRenderer.drawStringWithShadow(coordText, (screenWidth - textWidth) / 2, 5, 0xFFFFFF);
-        }
-
         if (mc.currentScreen == null && !zszlScriptMod.isGuiVisible) {
             drawMasterStatusHud(false);
         }
@@ -115,6 +102,10 @@ public class OverlayGuiHandler {
             // 绘制主UI覆盖层
             ScaledResolution scaledResolution = new ScaledResolution(mc);
             GuiInventory.drawOverlay(scaledResolution.getScaledWidth(), scaledResolution.getScaledHeight());
+        }
+
+        if (mc.currentScreen == null) {
+            drawMouseCoordinateDebugHud();
         }
     }
 
@@ -434,6 +425,24 @@ public class OverlayGuiHandler {
                 }
             }
         }
+
+        drawMouseCoordinateDebugHud();
+    }
+
+    private void drawMouseCoordinateDebugHud() {
+        if (!ModConfig.showMouseCoordinates || mc == null || mc.fontRenderer == null) {
+            return;
+        }
+        ScaledResolution scaledResolution = new ScaledResolution(mc);
+        int rawMouseX = Mouse.getX();
+        int rawMouseY = mc.displayHeight - Mouse.getY() - 1;
+        int scaledMouseX = rawMouseX * scaledResolution.getScaledWidth() / mc.displayWidth;
+        int scaledMouseY = rawMouseY * scaledResolution.getScaledHeight() / mc.displayHeight;
+        String coordText = I18n.format("gui.overlay.debug.coords",
+                rawMouseX, rawMouseY, scaledMouseX, scaledMouseY);
+        int screenWidth = scaledResolution.getScaledWidth();
+        int textWidth = mc.fontRenderer.getStringWidth(coordText);
+        mc.fontRenderer.drawStringWithShadow(coordText, (screenWidth - textWidth) / 2, 5, 0xFFFFFF);
     }
 
     private void performChestAnalysis(GuiChest gui) {

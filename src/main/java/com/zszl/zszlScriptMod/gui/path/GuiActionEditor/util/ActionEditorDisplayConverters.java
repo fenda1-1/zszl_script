@@ -7,6 +7,8 @@ import com.zszl.zszlScriptMod.utils.locator.ActionTargetLocator;
 
 import net.minecraft.client.resources.I18n;
 
+import java.util.Locale;
+
 public final class ActionEditorDisplayConverters {
     private ActionEditorDisplayConverters() {
     }
@@ -381,6 +383,57 @@ public final class ActionEditorDisplayConverters {
             return ActionTargetLocator.SLOT_MODE_DIRECT;
         }
         return ActionTargetLocator.CLICK_MODE_COORDINATE;
+    }
+
+    public static String displayToClickLocatorMode(String display) {
+        if (I18n.format("gui.path.action_editor.option.locator.click.button_text").equals(display)) {
+            return ActionTargetLocator.CLICK_MODE_BUTTON_TEXT;
+        }
+        if (I18n.format("gui.path.action_editor.option.locator.click.slot_text").equals(display)) {
+            return ActionTargetLocator.CLICK_MODE_SLOT_TEXT;
+        }
+        if (I18n.format("gui.path.action_editor.option.locator.click.element_path").equals(display)) {
+            return ActionTargetLocator.CLICK_MODE_ELEMENT_PATH;
+        }
+        return ActionTargetLocator.CLICK_MODE_COORDINATE;
+    }
+
+    public static String displayToSlotLocatorMode(String display) {
+        if (I18n.format("gui.path.action_editor.option.locator.slot.item_text").equals(display)) {
+            return ActionTargetLocator.SLOT_MODE_ITEM_TEXT;
+        }
+        if (I18n.format("gui.path.action_editor.option.locator.slot.empty").equals(display)) {
+            return ActionTargetLocator.SLOT_MODE_EMPTY;
+        }
+        if (I18n.format("gui.path.action_editor.option.locator.slot.path").equals(display)) {
+            return ActionTargetLocator.SLOT_MODE_PATH;
+        }
+        return ActionTargetLocator.SLOT_MODE_DIRECT;
+    }
+
+    public static String displayToWorldLocatorMode(String display) {
+        return I18n.format("gui.path.action_editor.option.locator.world.name").equals(display)
+                ? ActionTargetLocator.TARGET_MODE_NAME
+                : ActionTargetLocator.TARGET_MODE_POSITION;
+    }
+
+    public static String displayToLocatorMode(String display, String actionType) {
+        String normalizedActionType = actionType == null
+                ? ""
+                : actionType.trim().toLowerCase(Locale.ROOT);
+        if ("click".equals(normalizedActionType)) {
+            return displayToClickLocatorMode(display);
+        }
+        if ("window_click".equals(normalizedActionType)
+                || "conditional_window_click".equals(normalizedActionType)
+                || "autochestclick".equals(normalizedActionType)) {
+            return displayToSlotLocatorMode(display);
+        }
+        if ("rightclickblock".equals(normalizedActionType)
+                || "rightclickentity".equals(normalizedActionType)) {
+            return displayToWorldLocatorMode(display);
+        }
+        return displayToLocatorMode(display);
     }
 
     public static String boolToDisplayYesNo(boolean value) {

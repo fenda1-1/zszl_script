@@ -873,7 +873,9 @@ public class GuiDebugConfig extends ThemedGuiScreen {
             case BARITONE:
                 return "查看 Baritone 指令派发、路径反馈与状态切换。";
             case KILL_AURA_ORBIT:
-                return "记录杀戮绕圈的采样点、路径决策与跟随细节。";
+                return "记录杀戮绕圈的性能摘要、重建原因与接管状态。";
+            case KILL_AURA_ORBIT_TRACE:
+                return "输出杀戮绕圈的 nodePlan、arcPlan 与 routeTraverse 深度跟踪日志。";
             default:
                 return "该模块会输出对应功能的详细调试信息。";
         }

@@ -4,6 +4,8 @@ import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.google.gson.reflect.TypeToken;
+import com.zszl.zszlScriptMod.config.DebugModule;
+import com.zszl.zszlScriptMod.config.ModConfig;
 import com.zszl.zszlScriptMod.path.LegacyActionRuntime;
 import com.zszl.zszlScriptMod.path.PathSequenceEventListener;
 import com.zszl.zszlScriptMod.path.PathSequenceManager;
@@ -19,6 +21,7 @@ import com.zszl.zszlScriptMod.shadowbaritone.api.event.events.PacketEvent;
 import com.zszl.zszlScriptMod.shadowbaritone.api.event.events.type.EventState;
 import com.zszl.zszlScriptMod.shadowbaritone.api.event.listener.AbstractGameEventListener;
 import com.zszl.zszlScriptMod.shadowbaritone.api.event.listener.IEventBus;
+import com.zszl.zszlScriptMod.shadowbaritone.api.utils.BetterBlockPos;
 import com.zszl.zszlScriptMod.shadowbaritone.api.utils.Rotation;
 import com.zszl.zszlScriptMod.shadowbaritone.api.utils.RotationUtils;
 import com.zszl.zszlScriptMod.shadowbaritone.process.KillAuraOrbitProcess;
@@ -52,6 +55,7 @@ import net.minecraft.item.ItemSword;
 import net.minecraft.network.play.client.CPacketPlayer;
 import net.minecraft.network.play.client.CPacketUseEntity;
 import net.minecraft.network.play.server.SPacketPlayerPosLook;
+import net.minecraft.util.EnumFacing;
 import net.minecraft.util.EnumHand;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.MathHelper;
@@ -148,6 +152,9 @@ public class KillAuraHandler implements AbstractGameEventListener {
     private static final double HUNT_CONTINUOUS_ORBIT_ENTRY_BUFFER = 1.25D;
     private static final double HUNT_CONTINUOUS_ORBIT_EXIT_BUFFER = 2.25D;
     private static final double HUNT_CONTINUOUS_ORBIT_LOOP_ENTRY_MAX_DISTANCE = 0.90D;
+    private static final double HUNT_ORBIT_ENTRY_RADIUS_BAND = 0.45D;
+    private static final int HUNT_ORBIT_ENTRY_SAFE_SEARCH_RADIUS = 1;
+    private static final double HUNT_ORBIT_ENTRY_POINT_TOLERANCE = 0.85D;
     private static final int HUNT_PICKUP_GOTO_INTERVAL_TICKS = 5;
     private static final int HUNT_PICKUP_SEARCH_INTERVAL_TICKS = 3;
     private static final double HUNT_PICKUP_OVERLAP_GROWTH = 0.05D;
@@ -1915,7 +1922,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
             this.lastOrbitProcessRequestedRadius = radius;
             return orbitProcess.requestOrbit(target, radius);
         }
-        return orbitProcess.isActive();
+        return orbitProcess.hasUsableLoop();
     }
 
     private boolean isHuntOrbitProcessActive() {
@@ -1923,7 +1930,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
             return false;
         }
         KillAuraOrbitProcess orbitProcess = getKillAuraOrbitProcess();
-        return orbitProcess != null && orbitProcess.isActive();
+        return orbitProcess != null && orbitProcess.hasUsableLoop();
     }
 
     private void stopHuntOrbitProcess() {
@@ -1998,7 +2005,6 @@ public class KillAuraHandler implements AbstractGameEventListener {
             }
 
             this.huntOrbitController.stop();
-            stopHuntOrbitProcess();
         }
 
         int targetId = target.getEntityId();
@@ -2195,8 +2201,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
         if (Math.abs(player.posY - target.posY) > HUNT_ORBIT_MAX_ENTRY_VERTICAL_DELTA) {
             return false;
         }
-        double maxEntryDistance = Math.max(getEffectiveHuntFixedDistance() + HUNT_CONTINUOUS_ORBIT_ENTRY_BUFFER,
-                attackRange + 0.9D);
+        double maxEntryDistance = getEffectiveHuntFixedDistance() + HUNT_CONTINUOUS_ORBIT_ENTRY_BUFFER;
         double allowedDistance = this.huntOrbitController.isActive()
                 ? maxEntryDistance + HUNT_CONTINUOUS_ORBIT_EXIT_BUFFER
                 : maxEntryDistance;
@@ -2204,12 +2209,6 @@ public class KillAuraHandler implements AbstractGameEventListener {
     }
 
     private boolean shouldUseContinuousOrbitController(EntityPlayerSP player, EntityLivingBase target) {
-        if (!huntJumpOrbitEnabled) {
-            return false;
-        }
-        if (!isHuntOrbitSampleCountAtMaximum()) {
-            return false;
-        }
         if (!canStartOrbitHunt(player, target)) {
             return false;
         }
@@ -2313,6 +2312,12 @@ public class KillAuraHandler implements AbstractGameEventListener {
         if (player == null || target == null) {
             return null;
         }
+        if (isHuntOrbitEnabled()) {
+            double[] orbitAligned = findOrbitAlignedHuntNavigationDestination(player, target);
+            if (orbitAligned != null) {
+                return orbitAligned;
+            }
+        }
         double preferredRadius = Math.max(HUNT_APPROACH_MIN_STAND_RADIUS, getEffectiveHuntFixedDistance());
         double minRadius = Math.max(HUNT_APPROACH_MIN_STAND_RADIUS, preferredRadius - 1.0D);
         double maxRadius = Math.max(minRadius, preferredRadius + 1.0D);
@@ -2325,8 +2330,154 @@ public class KillAuraHandler implements AbstractGameEventListener {
         return findSafeHuntNavigationDestination(player, fallback[0], fallback[1], fallback[2]);
     }
 
+    private double[] findOrbitAlignedHuntNavigationDestination(EntityPlayerSP player, EntityLivingBase target) {
+        if (player == null || target == null) {
+            return null;
+        }
+        KillAuraOrbitProcess orbitProcess = getKillAuraOrbitProcess();
+        if (orbitProcess != null) {
+            double[] plannedEntry = findOrbitEntryFromLoopNodes(player, target, orbitProcess.getNavigationLoopSnapshot());
+            if (plannedEntry != null) {
+                orbitDebug("huntOrbitEntry source=planned_nodes dest=%s radius=%.3f", formatVec3(plannedEntry),
+                        getHorizontalRadiusToTarget(target, plannedEntry));
+                return plannedEntry;
+            }
+            double[] renderedEntry = findOrbitEntryFromRenderLoop(player, target, orbitProcess.getRenderedLoopView());
+            if (renderedEntry != null) {
+                orbitDebug("huntOrbitEntry source=process_render dest=%s radius=%.3f", formatVec3(renderedEntry),
+                        getHorizontalRadiusToTarget(target, renderedEntry));
+                return renderedEntry;
+            }
+        }
+
+        double[] previewEntry = findOrbitEntryFromRenderLoop(player, target,
+                HuntOrbitController.buildPreviewLoop(target, getEffectiveHuntFixedDistance(),
+                        getConfiguredHuntOrbitSamplePoints()));
+        if (previewEntry != null) {
+            orbitDebug("huntOrbitEntry source=preview_render dest=%s radius=%.3f", formatVec3(previewEntry),
+                    getHorizontalRadiusToTarget(target, previewEntry));
+            return previewEntry;
+        }
+
+        double[] exactOrbitPoint = computeFixedDistanceHuntDestination(player, target);
+        double[] directSafeDestination = findSafeHuntNavigationDestination(player, exactOrbitPoint[0], exactOrbitPoint[1],
+                exactOrbitPoint[2], HUNT_ORBIT_ENTRY_SAFE_SEARCH_RADIUS);
+        double preferredRadius = Math.max(HUNT_APPROACH_MIN_STAND_RADIUS, getEffectiveHuntFixedDistance());
+        double orbitBand = Math.max(HUNT_FIXED_DISTANCE_TOLERANCE, HUNT_ORBIT_ENTRY_RADIUS_BAND);
+        if (directSafeDestination != null
+                && isDestinationNearOrbitBand(target, directSafeDestination, preferredRadius, orbitBand)
+                && centerDistSq(directSafeDestination[0], directSafeDestination[2], exactOrbitPoint[0], exactOrbitPoint[2]) <= 0.65D * 0.65D) {
+            orbitDebug("huntOrbitEntry source=exact_safe dest=%s radius=%.3f exact=%s", formatVec3(directSafeDestination),
+                    getHorizontalRadiusToTarget(target, directSafeDestination), formatVec3(exactOrbitPoint));
+            return directSafeDestination;
+        }
+
+        orbitDebug("huntOrbitEntry source=exact_xz dest=%s radius=%.3f", formatVec3(exactOrbitPoint),
+                getHorizontalRadiusToTarget(target, exactOrbitPoint));
+        return null;
+    }
+
+    private double[] findOrbitEntryFromLoopNodes(EntityPlayerSP player, EntityLivingBase target,
+            List<BetterBlockPos> loopNodes) {
+        if (player == null || target == null || loopNodes == null || loopNodes.isEmpty()) {
+            return null;
+        }
+        double[] bestVisibleDestination = null;
+        double bestVisibleScore = Double.POSITIVE_INFINITY;
+        double[] bestFallbackDestination = null;
+        double bestFallbackScore = Double.POSITIVE_INFINITY;
+        double preferredRadius = Math.max(HUNT_APPROACH_MIN_STAND_RADIUS, getEffectiveHuntFixedDistance());
+        double orbitBand = Math.max(HUNT_FIXED_DISTANCE_TOLERANCE, HUNT_ORBIT_ENTRY_RADIUS_BAND);
+
+        for (BetterBlockPos node : loopNodes) {
+            if (node == null) {
+                continue;
+            }
+            double[] destination = new double[] { node.x + 0.5D, node.y, node.z + 0.5D };
+            if (!isDestinationNearOrbitBand(target, destination, preferredRadius, orbitBand + 0.35D)) {
+                continue;
+            }
+            BlockPos standPos = new BlockPos(node.x, node.y, node.z);
+            boolean hasLineOfSight = hasHuntLineOfSightFromStandPos(standPos, target);
+            double score = scoreHuntNavigationDestination(player, target, destination, preferredRadius, hasLineOfSight);
+            if (hasLineOfSight && score < bestVisibleScore) {
+                bestVisibleScore = score;
+                bestVisibleDestination = destination;
+            }
+            if (score < bestFallbackScore) {
+                bestFallbackScore = score;
+                bestFallbackDestination = destination;
+            }
+        }
+
+        return bestVisibleDestination != null ? bestVisibleDestination : bestFallbackDestination;
+    }
+
+    private double[] findOrbitEntryFromRenderLoop(EntityPlayerSP player, EntityLivingBase target, List<Vec3d> renderLoop) {
+        if (player == null || target == null || renderLoop == null || renderLoop.isEmpty()) {
+            return null;
+        }
+        double[] bestVisibleDestination = null;
+        double bestVisibleScore = Double.POSITIVE_INFINITY;
+        double[] bestFallbackDestination = null;
+        double bestFallbackScore = Double.POSITIVE_INFINITY;
+        double preferredRadius = Math.max(HUNT_APPROACH_MIN_STAND_RADIUS, getEffectiveHuntFixedDistance());
+        double orbitBand = Math.max(HUNT_FIXED_DISTANCE_TOLERANCE, HUNT_ORBIT_ENTRY_RADIUS_BAND);
+        int candidateCount = getOrbitRenderCandidateCount(renderLoop);
+
+        for (int i = 0; i < candidateCount; i++) {
+            Vec3d point = renderLoop.get(i);
+            if (point == null) {
+                continue;
+            }
+            double[] safeDestination = findSafeHuntNavigationDestination(player, point.x, target.posY, point.z,
+                    HUNT_ORBIT_ENTRY_SAFE_SEARCH_RADIUS);
+            if (safeDestination == null) {
+                continue;
+            }
+            if (!isDestinationNearOrbitBand(target, safeDestination, preferredRadius, orbitBand)) {
+                continue;
+            }
+            if (centerDistSq(safeDestination[0], safeDestination[2], point.x, point.z)
+                    > HUNT_ORBIT_ENTRY_POINT_TOLERANCE * HUNT_ORBIT_ENTRY_POINT_TOLERANCE) {
+                continue;
+            }
+
+            BlockPos standPos = new BlockPos(safeDestination[0], safeDestination[1], safeDestination[2]);
+            boolean hasLineOfSight = hasHuntLineOfSightFromStandPos(standPos, target);
+            double score = scoreOrbitEntryDestination(player, target, safeDestination, point, preferredRadius, hasLineOfSight);
+            if (hasLineOfSight && score < bestVisibleScore) {
+                bestVisibleScore = score;
+                bestVisibleDestination = safeDestination;
+            }
+            if (score < bestFallbackScore) {
+                bestFallbackScore = score;
+                bestFallbackDestination = safeDestination;
+            }
+        }
+
+        return bestVisibleDestination != null ? bestVisibleDestination : bestFallbackDestination;
+    }
+
+    private int getOrbitRenderCandidateCount(List<Vec3d> renderLoop) {
+        if (renderLoop == null || renderLoop.isEmpty()) {
+            return 0;
+        }
+        if (renderLoop.size() >= 2 && renderLoop.get(0) != null && renderLoop.get(renderLoop.size() - 1) != null
+                && renderLoop.get(0).squareDistanceTo(renderLoop.get(renderLoop.size() - 1)) <= 1.0E-4D) {
+            return renderLoop.size() - 1;
+        }
+        return renderLoop.size();
+    }
+
     private double[] findHuntNavigationDestinationAroundTarget(EntityPlayerSP player, EntityLivingBase target,
             double preferredRadius, double minRadius, double maxRadius) {
+        return findHuntNavigationDestinationAroundTarget(player, target, preferredRadius, minRadius, maxRadius, true, 2);
+    }
+
+    private double[] findHuntNavigationDestinationAroundTarget(EntityPlayerSP player, EntityLivingBase target,
+            double preferredRadius, double minRadius, double maxRadius, boolean allowCenterFallback,
+            int safeSearchRadius) {
         if (player == null || player.world == null || target == null) {
             return null;
         }
@@ -2357,7 +2508,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
                 double desiredZ = target.posZ + Math.sin(baseAngle + angleOffset) * radius;
                 double[] clippedDestination = clipHuntDestinationXZ(target.posX, target.posZ, desiredX, desiredZ);
                 double[] safeDestination = findSafeHuntNavigationDestination(player, clippedDestination[0], target.posY,
-                        clippedDestination[1]);
+                        clippedDestination[1], safeSearchRadius);
                 if (safeDestination == null) {
                     continue;
                 }
@@ -2382,6 +2533,9 @@ public class KillAuraHandler implements AbstractGameEventListener {
         }
         if (bestFallbackDestination != null) {
             return bestFallbackDestination;
+        }
+        if (!allowCenterFallback) {
+            return null;
         }
         return findSafeHuntNavigationDestination(player, target.posX, target.posY, target.posZ);
     }
@@ -2432,6 +2586,49 @@ public class KillAuraHandler implements AbstractGameEventListener {
         return radiusPenalty * 4.0D + playerDistancePenalty * 0.18D + verticalPenalty * 0.7D + visibilityPenalty;
     }
 
+    private double scoreOrbitEntryDestination(EntityPlayerSP player, EntityLivingBase target, double[] destination,
+            Vec3d desiredPoint, double preferredRadius, boolean hasLineOfSight) {
+        double score = scoreHuntNavigationDestination(player, target, destination, preferredRadius, hasLineOfSight);
+        if (destination == null || desiredPoint == null) {
+            return score;
+        }
+        return score + centerDistSq(destination[0], destination[2], desiredPoint.x, desiredPoint.z) * 4.5D;
+    }
+
+    private boolean isDestinationNearOrbitBand(EntityLivingBase target, double[] destination, double preferredRadius,
+            double orbitBand) {
+        if (target == null || destination == null || destination.length < 3) {
+            return false;
+        }
+        double actualRadius = Math.sqrt(centerDistSq(destination[0], destination[2], target.posX, target.posZ));
+        return Math.abs(actualRadius - preferredRadius) <= Math.max(0.1D, orbitBand);
+    }
+
+    private double getHorizontalRadiusToTarget(EntityLivingBase target, double[] destination) {
+        if (target == null || destination == null || destination.length < 3) {
+            return 0.0D;
+        }
+        return Math.sqrt(centerDistSq(destination[0], destination[2], target.posX, target.posZ));
+    }
+
+    private boolean isOrbitDebugEnabled() {
+        return ModConfig.isDebugFlagEnabled(DebugModule.KILL_AURA_ORBIT);
+    }
+
+    private void orbitDebug(String format, Object... args) {
+        if (!isOrbitDebugEnabled()) {
+            return;
+        }
+        ModConfig.debugLog(DebugModule.KILL_AURA_ORBIT, String.format(Locale.ROOT, format, args));
+    }
+
+    private String formatVec3(double[] pos) {
+        if (pos == null || pos.length < 3) {
+            return "null";
+        }
+        return String.format(Locale.ROOT, "(%.3f, %.3f, %.3f)", pos[0], pos[1], pos[2]);
+    }
+
     private double[] clipHuntDestinationXZ(double centerX, double centerZ, double destinationX, double destinationZ) {
         if (!AutoFollowHandler.hasActiveLockChaseRestriction()
                 || AutoFollowHandler.isPositionWithinActiveLockChaseBounds(destinationX, destinationZ)) {
@@ -2450,6 +2647,11 @@ public class KillAuraHandler implements AbstractGameEventListener {
 
     private double[] findSafeHuntNavigationDestination(EntityPlayerSP player, double desiredX, double desiredY,
             double desiredZ) {
+        return findSafeHuntNavigationDestination(player, desiredX, desiredY, desiredZ, 2);
+    }
+
+    private double[] findSafeHuntNavigationDestination(EntityPlayerSP player, double desiredX, double desiredY,
+            double desiredZ, int horizontalSearchRadius) {
         if (player == null || player.world == null) {
             return null;
         }
@@ -2459,8 +2661,9 @@ public class KillAuraHandler implements AbstractGameEventListener {
         int baseZ = MathHelper.floor(desiredZ);
         BlockPos bestStandPos = null;
         double bestScore = Double.MAX_VALUE;
+        int maxHorizontalSearchRadius = Math.max(0, horizontalSearchRadius);
 
-        for (int radius = 0; radius <= 2; radius++) {
+        for (int radius = 0; radius <= maxHorizontalSearchRadius; radius++) {
             for (int dx = -radius; dx <= radius; dx++) {
                 for (int dz = -radius; dz <= radius; dz++) {
                     if (radius > 0 && Math.max(Math.abs(dx), Math.abs(dz)) != radius) {
@@ -2538,8 +2741,24 @@ public class KillAuraHandler implements AbstractGameEventListener {
 
         boolean feetPassable = !feetState.getMaterial().blocksMovement();
         boolean headPassable = !headState.getMaterial().blocksMovement();
-        boolean hasGround = belowState.getMaterial().blocksMovement();
+        boolean hasGround = hasStandableTopSurface(mc.world, standPos.down(), belowState);
         return feetPassable && headPassable && hasGround;
+    }
+
+    private boolean hasStandableTopSurface(net.minecraft.world.World world, BlockPos supportPos, IBlockState supportState) {
+        if (world == null || supportPos == null || supportState == null || !supportState.getMaterial().blocksMovement()) {
+            return false;
+        }
+        try {
+            if (supportState.isSideSolid(world, supportPos, EnumFacing.UP)) {
+                return true;
+            }
+        } catch (Throwable ignored) {
+        }
+        net.minecraft.util.math.AxisAlignedBB collisionBox = supportState.getCollisionBoundingBox(world, supportPos);
+        return collisionBox != null
+                && collisionBox != net.minecraft.block.Block.NULL_AABB
+                && collisionBox.maxY >= 1.0D - 1.0E-4D;
     }
 
     private int getPreferredAttackHotbarSlot(EntityPlayerSP player) {

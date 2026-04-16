@@ -139,7 +139,7 @@ public class MovementRouteTraverse extends Movement implements IRoutePointMoveme
     }
 
     private OrbitDebugContext getOrbitDebugContext() {
-        if (!ModConfig.isDebugFlagEnabled(DebugModule.KILL_AURA_ORBIT)) {
+        if (!ModConfig.isDebugFlagEnabled(DebugModule.KILL_AURA_ORBIT_TRACE)) {
             return null;
         }
         PathingBehavior pathingBehavior = (PathingBehavior) baritone.getPathingBehavior();
@@ -160,7 +160,7 @@ public class MovementRouteTraverse extends Movement implements IRoutePointMoveme
             return;
         }
         RouteGeometryStats stats = analyzeRoute(routePoints);
-        ModConfig.debugLog(DebugModule.KILL_AURA_ORBIT,
+        ModConfig.debugLog(DebugModule.KILL_AURA_ORBIT_TRACE,
                 String.format(Locale.ROOT,
                         "routeTraverse geometry routeKey=%s pathPos=%d src=%s dest=%s points=%d length=%.3f maxStep=%.3f maxStepIndex=%d stepStart=%s stepEnd=%s",
                         debugContext.path.getRouteKey(), debugContext.executor.getPosition(), formatPos(src),
@@ -186,7 +186,7 @@ public class MovementRouteTraverse extends Movement implements IRoutePointMoveme
         double lookAhead = followCommand == null ? 0.0D : followCommand.getLookAheadDistance();
         double lateralError = followCommand == null ? 0.0D : followCommand.getLateralError();
         double lateralVelocity = followCommand == null ? 0.0D : followCommand.getLateralVelocity();
-        ModConfig.debugLog(DebugModule.KILL_AURA_ORBIT,
+        ModConfig.debugLog(DebugModule.KILL_AURA_ORBIT_TRACE,
                 String.format(Locale.ROOT,
                         "routeTraverse %s routeKey=%s pathPos=%d src=%s dest=%s feet=%s player=%s routeDist=%.3f preview=%s desired=%s lookAhead=%.3f lateralError=%.3f lateralVelocity=%.3f",
                         event, debugContext.path.getRouteKey(), debugContext.executor.getPosition(), formatPos(src),

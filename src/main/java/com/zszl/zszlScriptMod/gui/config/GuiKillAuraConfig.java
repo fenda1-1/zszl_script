@@ -448,9 +448,7 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
         huntOrbitButton.setEnabledState(KillAuraHandler.huntOrbitEnabled);
         huntOrbitButton.displayString = "自动绕圈攻击: " + stateText(KillAuraHandler.huntOrbitEnabled);
         huntJumpOrbitButton.setEnabledState(KillAuraHandler.huntJumpOrbitEnabled);
-        boolean maxOrbitSamples = KillAuraHandler.isHuntOrbitSampleCountAtMaximum();
-        huntJumpOrbitButton.displayString = "跳跃绕圈: " + stateText(KillAuraHandler.huntJumpOrbitEnabled)
-                + (maxOrbitSamples ? "" : " (多边形停用)");
+        huntJumpOrbitButton.displayString = "跳跃绕圈: " + stateText(KillAuraHandler.huntJumpOrbitEnabled);
         huntOrbitSamplePointsButton.displayString = "轨道采样点: "
                 + KillAuraHandler.getConfiguredHuntOrbitSamplePoints() + " 点";
 
@@ -492,8 +490,7 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
         huntOrbitButton.enabled = huntEnabled && KillAuraHandler.isHuntFixedDistanceMode();
         huntJumpOrbitButton.enabled = huntEnabled
                 && KillAuraHandler.isHuntFixedDistanceMode()
-                && KillAuraHandler.huntOrbitEnabled
-                && maxOrbitSamples;
+                && KillAuraHandler.huntOrbitEnabled;
         huntOrbitSamplePointsButton.enabled = huntEnabled
                 && KillAuraHandler.isHuntFixedDistanceMode()
                 && KillAuraHandler.huntOrbitEnabled;
@@ -1766,8 +1763,8 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
                     "§7遇到障碍会优先微调半径并改选可站立的平地方块。", "§7候选位置不会高于你当前脚底一格。"), mouseX, mouseY);
         } else if (huntJumpOrbitButton.visible && isMouseOver(mouseX, mouseY, huntJumpOrbitButton)) {
             drawHoveringText(Arrays.asList("§e跳跃绕圈", "§7默认开启。", "§7开启后，进入绕圈轨道后会切换到内置的本地跳跃绕圈。",
-                    "§7关闭后，不再使用内置跳跃绕圈，而是继续依赖 Baritone 的绕圈路径。",
-                    "§7当轨道采样点小于最大值时，为保证多边形轨道不被圆化，本项会自动停用接管。"), mouseX, mouseY);
+                    "§7关闭后，仍然使用同一套本地绕圈接管逻辑，只是不再持续按跳。",
+                    "§7现在所有轨道采样点配置都会允许本地绕圈接管，不再只限定最大值。"), mouseX, mouseY);
         } else if (huntOrbitSamplePointsButton.visible && isMouseOver(mouseX, mouseY, huntOrbitSamplePointsButton)) {
             drawHoveringText(Arrays.asList("§e轨道采样点", "§7仅在自动绕圈攻击开启时生效。", "§7决定绕圈轨道一圈采多少个等间隔点。",
                     "§7例如设为 3 时，会按三角形轨道渲染并沿三角形节点绕圈。", "§7默认最大值会尽量保持接近当前的圆形平滑效果。",

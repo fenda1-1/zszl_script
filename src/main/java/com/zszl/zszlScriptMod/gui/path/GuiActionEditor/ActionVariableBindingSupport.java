@@ -455,7 +455,7 @@ final class ActionVariableBindingSupport {
             } else if ("onlyOnSlotChange".equals(key)) {
                 draft.addProperty(key, displayOnOffToBool(value));
             } else if ("locatorMode".equals(key)) {
-                draft.addProperty(key, displayToLocatorMode(value));
+                draft.addProperty(key, displayToLocatorMode(value, editor.getSelectedActionType()));
             } else if ("locatorMatchMode".equals(key)) {
                 draft.addProperty(key, displayToMatchMode(value));
             } else if ("huntMode".equals(key)) {

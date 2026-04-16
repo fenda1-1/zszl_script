@@ -21,6 +21,7 @@ import com.zszl.zszlScriptMod.shadowbaritone.utils.BaritoneProcessHelper;
 import com.zszl.zszlScriptMod.shadowbaritone.utils.PathingCommandPath;
 import net.minecraft.block.Block;
 import net.minecraft.init.Blocks;
+import net.minecraft.util.EnumFacing;
 import net.minecraft.util.math.AxisAlignedBB;
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.entity.Entity;
@@ -33,6 +34,7 @@ import net.minecraft.util.math.Vec3d;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -45,7 +47,7 @@ public final class KillAuraOrbitProcess extends BaritoneProcessHelper {
     private static final int MAX_SEARCH_RADIUS = 2;
     private static final double MAX_TARGET_MOVE_BEFORE_REPLAN = 0.65D;
     private static final double MAX_RADIUS_DELTA_BEFORE_REPLAN = 0.15D;
-    private static final int MAX_PLAN_AGE_TICKS = 20;
+    private static final int MAX_PLAYER_FEET_Y_DELTA_BEFORE_REPLAN = 2;
     private static final int REQUEST_STALE_TICKS = 8;
     private static final int MIN_REBUILD_INTERVAL_TICKS = 6;
     private static final int PREBUILD_NEXT_ROUTE_REMAINING_MOVEMENTS = 2;
@@ -62,6 +64,9 @@ public final class KillAuraOrbitProcess extends BaritoneProcessHelper {
     private static final int GUIDE_ANGLE_ADJUST_STEPS = 3;
     private static final double ROUTE_SAMPLE_STEP = 0.16D;
     private static final double MAX_VERTICAL_STEP_BETWEEN_NODES = 1.25D;
+    private static final long REBUILD_BUDGET_NANOS = 2_000_000L;
+    private static final double CACHE_POSITION_QUANTIZATION = 0.0625D;
+    private static final double CACHE_SCAN_BOUNDS_QUANTIZATION = 0.25D;
 
     private State state = State.IDLE;
     private int targetEntityId = Integer.MIN_VALUE;
@@ -85,6 +90,9 @@ public final class KillAuraOrbitProcess extends BaritoneProcessHelper {
     private List<OrbitArcPlan> orbitArcs = Collections.emptyList();
     private List<Vec3d> renderLoop = Collections.emptyList();
     private RebuildCache rebuildCache = null;
+    private PendingRebuild pendingRebuild = null;
+    private RebuildCache retainedRebuildCache = null;
+    private CollisionCacheKey retainedRebuildCacheKey = null;
 
     public KillAuraOrbitProcess(Baritone baritone) {
         super(baritone);
@@ -98,7 +106,7 @@ public final class KillAuraOrbitProcess extends BaritoneProcessHelper {
             return false;
         }
         if (shouldRejectAirborneOrbit()) {
-            orbitDebug("requestOrbit rejected_airborne state=%s target=%s radius=%.3f playerFeet=%s", this.state,
+            orbitDebug("requestOrbit rejected_hard_airborne state=%s target=%s radius=%.3f playerFeet=%s", this.state,
                     Integer.toString(target.getEntityId()), radius, formatPos(ctx.playerFeet()));
             requestStop();
             return false;
@@ -108,23 +116,10 @@ public final class KillAuraOrbitProcess extends BaritoneProcessHelper {
         double clampedRadius = Math.max(0.5D, radius);
         boolean sameTarget = this.state == State.ACTIVE && this.targetEntityId == target.getEntityId();
         boolean sameRadius = Math.abs(this.desiredRadius - clampedRadius) <= 0.001D;
-        if (sameTarget && sameRadius && hasUsableLoop()) {
-            this.lastRequestTick = nowTick;
-            return true;
-        }
-        if (isRecentFailedRebuild(target, clampedRadius, nowTick) && !hasUsableLoop()) {
-            orbitDebug("requestOrbit rejected_recent_failure target=%d radius=%.3f playerFeet=%s", target.getEntityId(),
-                    clampedRadius, formatPos(ctx.playerFeet()));
-            this.state = State.IDLE;
-            this.targetEntityId = Integer.MIN_VALUE;
-            this.currentGoal = null;
-            this.lastRequestTick = nowTick;
-            return false;
-        }
 
-        if (sameTarget && sameRadius) {
-            this.lastRequestTick = nowTick;
-            return hasUsableLoop();
+        if (!sameTarget) {
+            clearPublishedLoop();
+            this.pendingRebuild = null;
         }
 
         this.state = State.ACTIVE;
@@ -132,12 +127,22 @@ public final class KillAuraOrbitProcess extends BaritoneProcessHelper {
         this.desiredRadius = clampedRadius;
         this.lastRequestTick = nowTick;
 
+        if (sameTarget && sameRadius && hasUsableLoop() && this.pendingRebuild == null) {
+            return true;
+        }
+        if (isRecentFailedRebuild(target, clampedRadius, nowTick) && !hasUsableLoop()) {
+            orbitDebug("requestOrbit deferred_recent_failure target=%d radius=%.3f playerFeet=%s", target.getEntityId(),
+                    clampedRadius, formatPos(ctx.playerFeet()));
+            return false;
+        }
+
         String rebuildReason = getRebuildReason(target);
         orbitDebug("requestOrbit target=%d targetPos=%s radius=%.3f playerFeet=%s rebuildReason=%s",
                 target.getEntityId(), formatEntityXZ(target), this.desiredRadius, formatPos(ctx.playerFeet()),
                 rebuildReason == null ? "none" : rebuildReason);
         if (rebuildReason != null && shouldRebuildNow(nowTick, true)) {
-            rebuildLoop(target);
+            queueRebuild(target, rebuildReason);
+            processPendingRebuild(target);
         }
         return hasUsableLoop();
     }
@@ -191,26 +196,44 @@ public final class KillAuraOrbitProcess extends BaritoneProcessHelper {
             clearRuntime();
             return new PathingCommand(null, PathingCommandType.CANCEL_AND_SET_GOAL);
         }
+        if (shouldRejectAirborneOrbit()) {
+            orbitDebug("tick cancel hard_airborne state=%s playerFeet=%s", this.state, formatPos(ctx.playerFeet()));
+            clearRuntime();
+            return new PathingCommand(null, PathingCommandType.CANCEL_AND_SET_GOAL);
+        }
+
+        processPendingRebuild(target);
 
         boolean rebuilt = false;
         int nowTick = ctx.player() == null ? Integer.MIN_VALUE : ctx.player().ticksExisted;
-        String rebuildReason = calcFailed ? "calc_failed" : getRebuildReason(target);
-        boolean recentFailedRebuild = hasUsableLoop() && isRecentFailedRebuild(target, this.desiredRadius, nowTick);
+        String rebuildReason = calcFailed
+                ? (shouldDeferRebuildWhileAirborne() ? null : "calc_failed")
+                : getRebuildReason(target);
+        boolean recentFailedRebuild = isRecentFailedRebuild(target, this.desiredRadius, nowTick);
         if (rebuildReason != null && !recentFailedRebuild && shouldRebuildNow(nowTick, !hasUsableLoop())) {
             orbitDebug("tick rebuild target=%d reason=%s currentGoal=%s", target.getEntityId(), rebuildReason,
                     this.currentGoal);
-            rebuildLoop(target);
-            rebuilt = true;
+            queueRebuild(target, rebuildReason);
+            processPendingRebuild(target);
+            rebuilt = this.pendingRebuild == null;
         } else if (rebuildReason != null && recentFailedRebuild && isOrbitDebugEnabled()) {
             orbitDebug("tick deferRebuildRecentFailure target=%d reason=%s currentGoal=%s", target.getEntityId(),
                     rebuildReason, this.currentGoal);
         } else if (rebuildReason != null && isOrbitDebugEnabled()) {
             orbitDebug("tick deferRebuild target=%d reason=%s currentGoal=%s", target.getEntityId(), rebuildReason,
                     this.currentGoal);
+        } else if (this.pendingRebuild != null && shouldDeferRebuildWhileAirborne() && isOrbitDebugEnabled()) {
+            orbitDebug("tick deferPendingAirborne target=%d reason=%s playerFeet=%s", target.getEntityId(),
+                    this.pendingRebuild.reason, formatPos(ctx.playerFeet()));
         }
         if (!hasUsableLoop()) {
-            orbitDebug("tick cancel unusableLoop nodes=%d arcs=%d render=%d", this.orbitLoop.size(), this.orbitArcs.size(),
-                    this.renderLoop.size());
+            if (this.pendingRebuild != null) {
+                orbitTrace("tick defer pendingRebuild reason=%s phase=%s", this.pendingRebuild.reason,
+                        this.pendingRebuild.phase);
+                return new PathingCommand(null, PathingCommandType.DEFER);
+            }
+            orbitDebug("tick cancel unusableLoop nodes=%d arcs=%d render=%d pending=%s", this.orbitLoop.size(),
+                    this.orbitArcs.size(), this.renderLoop.size(), this.pendingRebuild != null);
             clearRuntime();
             return new PathingCommand(null, PathingCommandType.CANCEL_AND_SET_GOAL);
         }
@@ -224,7 +247,7 @@ public final class KillAuraOrbitProcess extends BaritoneProcessHelper {
         if (desiredPath != null) {
             Goal commandGoal = getActiveOrbitCommandGoal(desiredPath);
             this.currentGoal = commandGoal;
-            orbitDebug("tick route goal=%s pathGoal=%s routeKey=%s startNode=%d endNode=%d movements=%d", commandGoal,
+            orbitTrace("tick route goal=%s pathGoal=%s routeKey=%s startNode=%d endNode=%d movements=%d", commandGoal,
                     desiredPath.getGoal(),
                     desiredPath.getRouteKey(), desiredPath.getStartNodeIndex(), desiredPath.getEndNodeIndex(),
                     desiredPath.movements().size());
@@ -243,7 +266,7 @@ public final class KillAuraOrbitProcess extends BaritoneProcessHelper {
                 ? PathingCommandType.FORCE_REVALIDATE_GOAL_AND_PATH
                 : PathingCommandType.SET_GOAL_AND_PATH;
         this.currentGoal = fallbackGoal;
-        orbitDebug("tick fallback goal=%s node=%s command=%s", fallbackGoal, formatPos(fallbackNode), commandType);
+        orbitTrace("tick fallback goal=%s node=%s command=%s", fallbackGoal, formatPos(fallbackNode), commandType);
         return new PathingCommand(fallbackGoal, commandType);
     }
 
@@ -295,11 +318,14 @@ public final class KillAuraOrbitProcess extends BaritoneProcessHelper {
         if (target == null || ctx.player() == null) {
             return "missing_target_or_player";
         }
-        if (shouldRejectAirborneOrbit()) {
-            return "player_airborne";
-        }
         if (!hasUsableLoop()) {
+            if (shouldDeferRebuildWhileAirborne()) {
+                return null;
+            }
             return "missing_usable_loop";
+        }
+        if (shouldDeferRebuildWhileAirborne()) {
+            return null;
         }
         double radiusDelta = Math.abs(this.lastPlannedRadius - this.desiredRadius);
         if (radiusDelta > MAX_RADIUS_DELTA_BEFORE_REPLAN) {
@@ -312,12 +338,10 @@ public final class KillAuraOrbitProcess extends BaritoneProcessHelper {
             return String.format(Locale.ROOT, "target_move=%.3f", Math.sqrt(targetMoveSq));
         }
         int currentFeetY = ctx.playerFeet() == null ? Integer.MIN_VALUE : ctx.playerFeet().getY();
-        if (currentFeetY != Integer.MIN_VALUE && currentFeetY > this.lastPlannedFeetY + 1) {
-            return "player_feet_y_rise";
-        }
-        int planAge = ctx.player().ticksExisted - this.lastPlanTick;
-        if (planAge > MAX_PLAN_AGE_TICKS) {
-            return "plan_age=" + planAge;
+        if (currentFeetY != Integer.MIN_VALUE
+                && this.lastPlannedFeetY != Integer.MIN_VALUE
+                && Math.abs(currentFeetY - this.lastPlannedFeetY) > MAX_PLAYER_FEET_Y_DELTA_BEFORE_REPLAN) {
+            return "player_feet_y_shift=" + (currentFeetY - this.lastPlannedFeetY);
         }
         return null;
     }
@@ -332,7 +356,11 @@ public final class KillAuraOrbitProcess extends BaritoneProcessHelper {
         if (ctx.player().isElytraFlying()) {
             return true;
         }
-        return !ctx.player().onGround;
+        return false;
+    }
+
+    private boolean shouldDeferRebuildWhileAirborne() {
+        return ctx.player() != null && !ctx.player().onGround && !shouldRejectAirborneOrbit();
     }
 
     private boolean isRecentFailedRebuild(EntityLivingBase target, double radius, int nowTick) {
@@ -377,113 +405,342 @@ public final class KillAuraOrbitProcess extends BaritoneProcessHelper {
         this.lastFailedTargetZ = Double.NaN;
     }
 
-    private void rebuildLoop(EntityLivingBase target) {
-        int playerFeetY = ctx.playerFeet() == null ? MathHelper.floor(ctx.player().posY) : ctx.playerFeet().getY();
-        long rebuildStartNanos = System.nanoTime();
-        this.rebuildCache = createRebuildCache(target, playerFeetY);
-        boolean hadUsableLoop = hasUsableLoop();
-        try {
-            List<Vec3d> guideLoop = buildGuideLoop(target, playerFeetY);
-            List<OrbitNodePlan> nodePlans = buildOrbitLoop(target, guideLoop, playerFeetY);
-            List<BetterBlockPos> rebuiltLoop = extractOrbitPositions(nodePlans);
-            List<OrbitArcPlan> rebuiltArcs = buildOrbitArcs(nodePlans);
-            List<Vec3d> rebuiltRenderLoop = buildRenderLoop(guideLoop);
-            boolean rebuiltUsable = isUsableLoop(rebuiltLoop, rebuiltArcs);
-
-            if (rebuiltUsable) {
-                this.orbitLoop = rebuiltLoop;
-                this.orbitArcs = rebuiltArcs;
-                this.renderLoop = rebuiltRenderLoop;
-                this.currentGoal = null;
-                this.lastPlannedRadius = this.desiredRadius;
-                this.lastPlannedTargetX = target.posX;
-                this.lastPlannedTargetZ = target.posZ;
-                this.lastPlannedFeetY = ctx.playerFeet() == null ? Integer.MIN_VALUE : ctx.playerFeet().getY();
-                this.lastPlanTick = ctx.player() == null ? Integer.MIN_VALUE : ctx.player().ticksExisted;
-                this.lastRebuildTick = this.lastPlanTick;
-                this.planRevision++;
-                clearFailedRebuild();
-            } else {
-                if (!hadUsableLoop) {
-                    this.orbitLoop = rebuiltLoop;
-                    this.orbitArcs = rebuiltArcs;
-                    this.renderLoop = rebuiltRenderLoop;
-                    this.currentGoal = null;
-                }
-                recordFailedRebuild(target);
-            }
-            orbitDebug(
-                    "rebuildLoop target=%d targetPos=%s radius=%.3f guide=%d nodes=%d arcs=%d render=%d usable=%s retainedPrevious=%s revision=%d",
-                    target.getEntityId(), formatEntityXZ(target), this.desiredRadius, guideLoop.size(),
-                    rebuiltLoop.size(), rebuiltArcs.size(), rebuiltRenderLoop.size(), rebuiltUsable, hadUsableLoop && !rebuiltUsable,
-                    this.planRevision);
-            logOrbitNodePlans(target, nodePlans);
-            logOrbitArcs(target, rebuiltArcs);
-        } finally {
-            logRebuildPerf(System.nanoTime() - rebuildStartNanos);
-            this.rebuildCache = null;
-        }
-    }
-
     private boolean isUsableLoop(List<BetterBlockPos> loop, List<OrbitArcPlan> arcs) {
         return loop != null && arcs != null && loop.size() >= getRequiredLoopPointCount() && arcs.size() == loop.size();
     }
 
-    private RebuildCache createRebuildCache(EntityLivingBase target, int playerFeetY) {
+    private void queueRebuild(EntityLivingBase target, String reason) {
+        if (ctx.player() == null || target == null) {
+            return;
+        }
+        int playerFeetY = ctx.playerFeet() == null ? MathHelper.floor(ctx.player().posY) : ctx.playerFeet().getY();
+        if (this.pendingRebuild != null
+                && this.pendingRebuild.matches(target.getEntityId(), this.desiredRadius, playerFeetY, target.posX, target.posZ)) {
+            return;
+        }
+        RebuildCache cache = prepareRebuildCache(target, playerFeetY);
+        this.pendingRebuild = new PendingRebuild(target.getEntityId(), target.posX, target.posZ, this.desiredRadius,
+                playerFeetY, reason, hasUsableLoop(), ctx.player().ticksExisted, getGuidePointCount(),
+                Math.atan2(ctx.player().posZ - target.posZ, ctx.player().posX - target.posX), cache);
+        this.lastRebuildTick = ctx.player().ticksExisted;
+        orbitDebug("rebuildQueued target=%d targetPos=%s radius=%.3f playerFeet=%s reason=%s reusedCollisionIndex=%s",
+                target.getEntityId(), formatEntityXZ(target), this.desiredRadius, formatPos(ctx.playerFeet()), reason,
+                cache != null && cache.reusedFromSession);
+    }
+
+    private void processPendingRebuild(EntityLivingBase target) {
+        PendingRebuild pending = this.pendingRebuild;
+        if (pending == null || target == null || ctx.player() == null) {
+            return;
+        }
+        if (pending.targetEntityId != target.getEntityId()) {
+            this.pendingRebuild = null;
+            return;
+        }
+        if (shouldDeferRebuildWhileAirborne()) {
+            return;
+        }
+
+        long budgetEnd = System.nanoTime() + REBUILD_BUDGET_NANOS;
+        this.rebuildCache = pending.cache;
+        try {
+            boolean progressed = false;
+            while (!pending.isFinished() && (System.nanoTime() < budgetEnd || !progressed)) {
+                progressed = true;
+                switch (pending.phase) {
+                    case COLLECT_COLLISIONS:
+                        continueCollisionCollection(pending, budgetEnd);
+                        break;
+                    case BUILD_GUIDE:
+                        continueGuideLoopBuild(pending, target, budgetEnd);
+                        break;
+                    case BUILD_NODES:
+                        continueOrbitNodeBuild(pending, target, budgetEnd);
+                        break;
+                    case BUILD_ARCS:
+                        continueOrbitArcBuild(pending, target, budgetEnd);
+                        break;
+                    case FINALIZE:
+                        finalizePendingRebuild(pending, target);
+                        break;
+                    case COMPLETE:
+                    case FAILED:
+                    default:
+                        break;
+                }
+            }
+        } finally {
+            this.rebuildCache = null;
+        }
+
+        if (pending.isFinished()) {
+            this.pendingRebuild = null;
+        }
+    }
+
+    private RebuildCache prepareRebuildCache(EntityLivingBase target, int playerFeetY) {
         if (ctx.world() == null || target == null) {
-            return new RebuildCache(null, Collections.emptyList(), 0L);
+            return new RebuildCache(null, null);
         }
         double scanRadius = Math.max(1.25D, this.desiredRadius + GUIDE_MAX_RADIUS_SHRINK + MAX_SEARCH_RADIUS + 1.25D);
         AxisAlignedBB scanBounds = new AxisAlignedBB(
                 target.posX - scanRadius, playerFeetY - 4.0D, target.posZ - scanRadius,
                 target.posX + scanRadius, playerFeetY + 2.85D, target.posZ + scanRadius);
-        long collectStartNanos = System.nanoTime();
-        List<AxisAlignedBB> blockingBoxes = collectOrbitCollisionBoxes(scanBounds);
-        return new RebuildCache(scanBounds, blockingBoxes, System.nanoTime() - collectStartNanos);
+        CollisionCacheKey cacheKey = CollisionCacheKey.of(target, this.desiredRadius, playerFeetY, scanBounds);
+        if (cacheKey.equals(this.retainedRebuildCacheKey)
+                && this.retainedRebuildCache != null
+                && this.retainedRebuildCache.isCollisionCollectionComplete()) {
+            this.retainedRebuildCache.resetPlanningSession(true);
+            return this.retainedRebuildCache;
+        }
+        return new RebuildCache(scanBounds, cacheKey);
     }
 
-    private List<AxisAlignedBB> collectOrbitCollisionBoxes(AxisAlignedBB scanBounds) {
-        if (ctx.world() == null || scanBounds == null) {
-            return Collections.emptyList();
+    private void continueCollisionCollection(PendingRebuild pending, long budgetEnd) {
+        RebuildCache cache = pending.cache;
+        if (cache == null || cache.isCollisionCollectionComplete() || ctx.world() == null) {
+            pending.phase = RebuildPhase.BUILD_GUIDE;
+            return;
         }
-        List<AxisAlignedBB> blockingBoxes = new ArrayList<>();
-        BlockPos.MutableBlockPos mutablePos = new BlockPos.MutableBlockPos();
-        int minX = MathHelper.floor(scanBounds.minX) - 1;
-        int maxX = MathHelper.floor(scanBounds.maxX) + 1;
-        int minY = MathHelper.floor(scanBounds.minY) - 1;
-        int maxY = MathHelper.floor(scanBounds.maxY) + 1;
-        int minZ = MathHelper.floor(scanBounds.minZ) - 1;
-        int maxZ = MathHelper.floor(scanBounds.maxZ) + 1;
-        for (int x = minX; x <= maxX; x++) {
-            for (int y = minY; y <= maxY; y++) {
-                for (int z = minZ; z <= maxZ; z++) {
-                    mutablePos.setPos(x, y, z);
-                    IBlockState state = ctx.world().getBlockState(mutablePos);
-                    if (state == null) {
-                        continue;
+        long collectStartNanos = System.nanoTime();
+        boolean processed = false;
+        while (!cache.isCollisionCollectionComplete() && (System.nanoTime() < budgetEnd || !processed)) {
+            processed = true;
+            cache.mutablePos.setPos(cache.cursorX, cache.cursorY, cache.cursorZ);
+            IBlockState state = ctx.world().getBlockState(cache.mutablePos);
+            if (state != null) {
+                Block block = state.getBlock();
+                if (block != null
+                        && block != Blocks.CARPET
+                        && !state.getMaterial().isReplaceable()
+                        && state.getCollisionBoundingBox(ctx.world(), cache.mutablePos) != Block.NULL_AABB) {
+                    cache.collisionScratch.clear();
+                    state.addCollisionBoxToList(ctx.world(), cache.mutablePos, cache.scanBounds, cache.collisionScratch,
+                            null, false);
+                    for (AxisAlignedBB box : cache.collisionScratch) {
+                        cache.addBlockingBox(box);
                     }
-                    Block block = state.getBlock();
-                    if (block == null
-                            || block == Blocks.CARPET
-                            || state.getMaterial().isReplaceable()
-                            || state.getCollisionBoundingBox(ctx.world(), mutablePos) == Block.NULL_AABB) {
-                        continue;
-                    }
-                    state.addCollisionBoxToList(ctx.world(), mutablePos, scanBounds, blockingBoxes, null, false);
                 }
             }
+            cache.advanceCollisionCursor();
         }
-        return blockingBoxes;
+        cache.collisionCollectNanos += System.nanoTime() - collectStartNanos;
+        if (cache.isCollisionCollectionComplete()) {
+            if (cache.cacheKey != null) {
+                this.retainedRebuildCache = cache;
+                this.retainedRebuildCacheKey = cache.cacheKey;
+            }
+            pending.phase = RebuildPhase.BUILD_GUIDE;
+        }
     }
 
-    private void logRebuildPerf(long rebuildDurationNanos) {
-        RebuildCache cache = this.rebuildCache;
+    private void continueGuideLoopBuild(PendingRebuild pending, EntityLivingBase target, long budgetEnd) {
+        boolean processed = false;
+        while (pending.guideIndex < pending.sampleCount && (System.nanoTime() < budgetEnd || !processed)) {
+            processed = true;
+            double angle = wrapRadians(pending.startAngle + pending.guideIndex * pending.step);
+            GuidePointPlan plan = resolveGuidePoint(target, angle, pending.step, pending.routeY, pending.playerFeetY,
+                    pending.previousGuidePoint);
+            Vec3d guidePoint;
+            if (plan == null) {
+                double[] fallbackPoint = getClippedGuidePoint(target.posX, target.posZ, this.desiredRadius, angle);
+                guidePoint = new Vec3d(fallbackPoint[0], pending.routeY, fallbackPoint[1]);
+            } else {
+                guidePoint = plan.point;
+            }
+            double sampledRadius = Math.sqrt(horizontalDistSq(guidePoint.x, guidePoint.z, target.posX, target.posZ));
+            double clipLoss = Math.max(0.0D, this.desiredRadius - sampledRadius);
+            if (clipLoss > 1.0E-3D) {
+                pending.clippedCount++;
+            }
+            if (plan != null && plan.obstacleAdjusted) {
+                pending.obstacleAdjustedCount++;
+            }
+            if (clipLoss > pending.maxClipLoss) {
+                pending.maxClipLoss = clipLoss;
+                pending.maxClipLossIndex = pending.guideIndex;
+            }
+            pending.minRadius = Math.min(pending.minRadius, sampledRadius);
+            pending.maxRadius = Math.max(pending.maxRadius, sampledRadius);
+            pending.guideLoop.add(guidePoint);
+            pending.previousGuidePoint = guidePoint;
+            pending.guideIndex++;
+        }
+        if (pending.guideIndex >= pending.sampleCount) {
+            orbitDebug(
+                    "guideLoop samples=%d startAngleDeg=%.2f stepDeg=%.2f radius=%.3f clipped=%d obstacleAdjusted=%d minRadius=%.3f maxRadius=%.3f maxClipLoss=%.3f@%d",
+                    pending.sampleCount, Math.toDegrees(pending.startAngle), Math.toDegrees(pending.step), this.desiredRadius,
+                    pending.clippedCount, pending.obstacleAdjustedCount,
+                    pending.minRadius == Double.POSITIVE_INFINITY ? 0.0D : pending.minRadius,
+                    pending.maxRadius, pending.maxClipLoss, pending.maxClipLossIndex);
+            pending.renderLoop = buildRenderLoop(pending.guideLoop);
+            pending.phase = RebuildPhase.BUILD_NODES;
+        }
+    }
+
+    private void continueOrbitNodeBuild(PendingRebuild pending, EntityLivingBase target, long budgetEnd) {
+        boolean processed = false;
+        while (pending.nodeGuideIndex < pending.guideLoop.size() && (System.nanoTime() < budgetEnd || !processed)) {
+            processed = true;
+            Vec3d guidePoint = pending.guideLoop.get(pending.nodeGuideIndex);
+            BetterBlockPos candidate = findNodeForGuidePoint(target, guidePoint, pending.previousNode, pending.playerFeetY);
+            if (candidate == null) {
+                pending.nullGuideCount++;
+                if (pending.currentNullStreak == 0) {
+                    pending.nullRunStart = pending.nodeGuideIndex;
+                }
+                pending.currentNullStreak++;
+                if (pending.nodePlans.isEmpty()) {
+                    pending.deferredLeadingGuidePoints.add(guidePoint);
+                } else {
+                    pending.nodePlans.get(pending.nodePlans.size() - 1).appendGuidePoint(guidePoint);
+                }
+                pending.nodeGuideIndex++;
+                continue;
+            }
+            if (pending.currentNullStreak > 0) {
+                pending.maxNullStreak = Math.max(pending.maxNullStreak, pending.currentNullStreak);
+                orbitTrace("guideNullRun start=%d end=%d count=%d previousNode=%s resumedNode=%s", pending.nullRunStart,
+                        pending.nodeGuideIndex - 1, pending.currentNullStreak, formatPos(pending.previousNode),
+                        formatPos(candidate));
+                pending.currentNullStreak = 0;
+                pending.nullRunStart = -1;
+            }
+            if (pending.previousNode != null) {
+                double nodeJump = Math.sqrt(horizontalDistSq(candidate.x + 0.5D, candidate.z + 0.5D,
+                        pending.previousNode.x + 0.5D, pending.previousNode.z + 0.5D));
+                if (nodeJump > 1.5D) {
+                    pending.largeNodeJumpCount++;
+                    orbitTrace("guideNodeJump index=%d jump=%.3f previous=%s candidate=%s guide=%s",
+                            pending.nodeGuideIndex, nodeJump, formatPos(pending.previousNode),
+                            formatPos(candidate), formatVec2(guidePoint));
+                }
+            }
+            if (!pending.nodePlans.isEmpty() && candidate.equals(pending.nodePlans.get(pending.nodePlans.size() - 1).position)) {
+                pending.nodePlans.get(pending.nodePlans.size() - 1).appendGuidePoint(guidePoint);
+            } else {
+                OrbitNodePlan nodePlan = new OrbitNodePlan(candidate);
+                nodePlan.appendGuidePoint(guidePoint);
+                pending.nodePlans.add(nodePlan);
+            }
+            pending.previousNode = candidate;
+            pending.nodeGuideIndex++;
+        }
+        if (pending.nodeGuideIndex >= pending.guideLoop.size()) {
+            finalizePendingNodeBuild(pending);
+        }
+    }
+
+    private void finalizePendingNodeBuild(PendingRebuild pending) {
+        if (pending.currentNullStreak > 0) {
+            pending.maxNullStreak = Math.max(pending.maxNullStreak, pending.currentNullStreak);
+            orbitTrace("guideNullRun start=%d end=%d count=%d previousNode=%s resumedNode=end_of_loop",
+                    pending.nullRunStart, pending.guideLoop.size() - 1, pending.currentNullStreak,
+                    formatPos(pending.previousNode));
+            pending.currentNullStreak = 0;
+        }
+
+        if (!pending.nodePlans.isEmpty() && !pending.deferredLeadingGuidePoints.isEmpty()) {
+            pending.nodePlans.get(pending.nodePlans.size() - 1).appendGuidePoints(pending.deferredLeadingGuidePoints);
+        }
+
+        if (pending.nodePlans.size() > 1
+                && pending.nodePlans.get(0).position.equals(pending.nodePlans.get(pending.nodePlans.size() - 1).position)) {
+            OrbitNodePlan tail = pending.nodePlans.get(pending.nodePlans.size() - 1);
+            tail.appendGuidePoints(pending.nodePlans.get(0).guidePoints);
+            pending.nodePlans.remove(0);
+            pending.mergedEndpoints = true;
+        }
+        orbitDebug(
+                "orbitLoopSummary guide=%d plannedNodes=%d deferredLeading=%d nullGuides=%d maxNullStreak=%d largeNodeJumps=%d mergedEndpoints=%s",
+                pending.guideLoop.size(), pending.nodePlans.size(), pending.deferredLeadingGuidePoints.size(),
+                pending.nullGuideCount, pending.maxNullStreak, pending.largeNodeJumpCount, pending.mergedEndpoints);
+        if (pending.nodePlans.size() < getRequiredLoopPointCount()) {
+            orbitDebug("orbitLoopRejected plannedNodes=%d minRequired=%d", pending.nodePlans.size(),
+                    getRequiredLoopPointCount());
+            pending.phase = RebuildPhase.FINALIZE;
+            return;
+        }
+        pending.phase = RebuildPhase.BUILD_ARCS;
+    }
+
+    private void continueOrbitArcBuild(PendingRebuild pending, EntityLivingBase target, long budgetEnd) {
+        boolean processed = false;
+        while (pending.arcIndex < pending.nodePlans.size() && (System.nanoTime() < budgetEnd || !processed)) {
+            processed = true;
+            int index = pending.arcIndex++;
+            OrbitNodePlan current = pending.nodePlans.get(index);
+            OrbitNodePlan next = pending.nodePlans.get((index + 1) % pending.nodePlans.size());
+            if (current.position.equals(next.position)) {
+                continue;
+            }
+
+            List<Vec3d> routePoints = new ArrayList<>();
+            appendRoutePoints(routePoints, current.guidePoints);
+            appendRoutePoint(routePoints, getFirstGuidePoint(next));
+            routePoints = sanitizeArcRoutePoints(current.position, next.position, routePoints);
+            if (routePoints.size() < 2) {
+                orbitTrace("buildArc skipped index=%d src=%s dest=%s routePoints=%d", index, formatPos(current.position),
+                        formatPos(next.position), routePoints.size());
+                continue;
+            }
+            pending.arcs.add(new OrbitArcPlan(current.position, next.position, routePoints.toArray(new Vec3d[0])));
+        }
+        if (pending.arcIndex >= pending.nodePlans.size()) {
+            if (pending.arcs.size() != pending.nodePlans.size()) {
+                orbitDebug("buildArcs rejected arcCount=%d nodePlans=%d", pending.arcs.size(), pending.nodePlans.size());
+            }
+            pending.phase = RebuildPhase.FINALIZE;
+        }
+    }
+
+    private void finalizePendingRebuild(PendingRebuild pending, EntityLivingBase target) {
+        List<BetterBlockPos> rebuiltLoop = extractOrbitPositions(pending.nodePlans);
+        List<OrbitArcPlan> rebuiltArcs = pending.arcs.size() == pending.nodePlans.size() ? pending.arcs
+                : Collections.emptyList();
+        List<Vec3d> rebuiltRenderLoop = pending.renderLoop == null ? Collections.emptyList() : pending.renderLoop;
+        boolean rebuiltUsable = isUsableLoop(rebuiltLoop, rebuiltArcs);
+
+        if (rebuiltUsable) {
+            this.orbitLoop = rebuiltLoop;
+            this.orbitArcs = rebuiltArcs;
+            this.renderLoop = rebuiltRenderLoop;
+            this.currentGoal = null;
+            this.lastPlannedRadius = this.desiredRadius;
+            this.lastPlannedTargetX = target.posX;
+            this.lastPlannedTargetZ = target.posZ;
+            this.lastPlannedFeetY = ctx.playerFeet() == null ? Integer.MIN_VALUE : ctx.playerFeet().getY();
+            this.lastPlanTick = ctx.player() == null ? Integer.MIN_VALUE : ctx.player().ticksExisted;
+            this.lastRebuildTick = this.lastPlanTick;
+            this.planRevision++;
+            clearFailedRebuild();
+        } else if (!pending.hadUsableLoop) {
+            clearPublishedLoop();
+            recordFailedRebuild(target);
+        } else {
+            recordFailedRebuild(target);
+        }
+
+        orbitDebug(
+                "rebuildLoop target=%d targetPos=%s radius=%.3f guide=%d nodes=%d arcs=%d render=%d usable=%s retainedPrevious=%s revision=%d reason=%s reusedCollisionIndex=%s",
+                target.getEntityId(), formatEntityXZ(target), this.desiredRadius, pending.guideLoop.size(),
+                rebuiltLoop.size(), rebuiltArcs.size(), rebuiltRenderLoop.size(), rebuiltUsable,
+                pending.hadUsableLoop && !rebuiltUsable, this.planRevision, pending.reason,
+                pending.cache != null && pending.cache.reusedFromSession);
+        logOrbitNodePlans(target, pending.nodePlans);
+        logOrbitArcs(target, rebuiltArcs);
+        logRebuildPerf(pending);
+        pending.phase = rebuiltUsable ? RebuildPhase.COMPLETE : RebuildPhase.FAILED;
+    }
+
+    private void logRebuildPerf(PendingRebuild pending) {
+        RebuildCache cache = pending == null ? null : pending.cache;
         if (!isOrbitDebugEnabled() || cache == null) {
             return;
         }
         orbitDebug(
-                "rebuildPerf durationMs=%.2f collectMs=%.2f boxes=%d boxChecks=%d boxHits=%d segmentChecks=%d segmentHits=%d baseStandChecks=%d baseStandHits=%d losChecks=%d losHits=%d",
-                rebuildDurationNanos / 1_000_000.0D,
+                "rebuildPerf durationMs=%.2f collectMs=%.2f boxes=%d boxChecks=%d boxHits=%d segmentChecks=%d segmentHits=%d baseStandChecks=%d baseStandHits=%d losChecks=%d losHits=%d reusedCollisionIndex=%s",
+                pending.getDurationNanos() / 1_000_000.0D,
                 cache.collisionCollectNanos / 1_000_000.0D,
                 cache.blockingBoxes.size(),
                 cache.boxClearChecks,
@@ -493,7 +750,8 @@ public final class KillAuraOrbitProcess extends BaritoneProcessHelper {
                 cache.baseStandableChecks,
                 cache.baseStandableHits,
                 cache.lineOfSightChecks,
-                cache.lineOfSightHits);
+                cache.lineOfSightHits,
+                cache.reusedFromSession);
     }
 
     private List<Vec3d> buildGuideLoop(EntityLivingBase target, int playerFeetY) {
@@ -819,8 +1077,7 @@ public final class KillAuraOrbitProcess extends BaritoneProcessHelper {
         IBlockState supportState = ctx.world().getBlockState(standPos.down());
         boolean standable = !feetState.getMaterial().blocksMovement()
                 && !headState.getMaterial().blocksMovement()
-                && supportState.getMaterial().blocksMovement()
-                && supportState.isFullCube()
+                && hasStandableTopSurface(standPos.down(), supportState)
                 && isOrbitPlayerBoxClear(standPos.x + 0.5D, standPos.y, standPos.z + 0.5D,
                         ORBIT_PLAYER_HALF_WIDTH, ORBIT_CLEARANCE_MARGIN);
         if (standable && AutoFollowHandler.hasActiveLockChaseRestriction()) {
@@ -832,9 +1089,26 @@ public final class KillAuraOrbitProcess extends BaritoneProcessHelper {
         return standable;
     }
 
+    private boolean hasStandableTopSurface(BetterBlockPos supportPos, IBlockState supportState) {
+        if (ctx.world() == null || supportPos == null || supportState == null || !supportState.getMaterial().blocksMovement()) {
+            return false;
+        }
+        BlockPos blockPos = new BlockPos(supportPos.x, supportPos.y, supportPos.z);
+        try {
+            if (supportState.isSideSolid(ctx.world(), blockPos, EnumFacing.UP)) {
+                return true;
+            }
+        } catch (Throwable ignored) {
+        }
+        AxisAlignedBB collisionBox = supportState.getCollisionBoundingBox(ctx.world(), blockPos);
+        return collisionBox != null
+                && collisionBox != Block.NULL_AABB
+                && collisionBox.maxY >= 1.0D - 1.0E-4D;
+    }
+
     private boolean hasLineOfSightFromStandPosCached(BetterBlockPos standPos, EntityLivingBase target) {
         RebuildCache cache = this.rebuildCache;
-        long key = BetterBlockPos.longHash(standPos);
+        LineOfSightKey key = cache == null ? null : LineOfSightKey.of(standPos, target);
         if (cache != null) {
             Boolean cached = cache.lineOfSightCache.get(key);
             if (cached != null) {
@@ -924,12 +1198,9 @@ public final class KillAuraOrbitProcess extends BaritoneProcessHelper {
                 centerX + halfWidth, feetY + 1.799D, centerZ + halfWidth)
                 .grow(extraMargin, 0.0D, extraMargin);
         boolean clear;
-        if (cache != null && cache.scanBounds != null
-                && cache.scanBounds.minX <= playerBox.minX && cache.scanBounds.maxX >= playerBox.maxX
-                && cache.scanBounds.minY <= playerBox.minY && cache.scanBounds.maxY >= playerBox.maxY
-                && cache.scanBounds.minZ <= playerBox.minZ && cache.scanBounds.maxZ >= playerBox.maxZ) {
+        if (cache != null && cache.canQueryCollisionIndex(playerBox)) {
             clear = true;
-            for (AxisAlignedBB blockingBox : cache.blockingBoxes) {
+            for (AxisAlignedBB blockingBox : cache.collectCandidateBoxes(playerBox)) {
                 if (playerBox.intersects(blockingBox)) {
                     clear = false;
                     break;
@@ -1036,12 +1307,12 @@ public final class KillAuraOrbitProcess extends BaritoneProcessHelper {
     private OrbitRoutePath determineDesiredRoutePath() {
         int startIndex = chooseNearestLoopNodeIndex(ctx.playerFeet());
         if (startIndex < 0) {
-            orbitDebug("determineRoute source=nearest failed playerFeet=%s", formatPos(ctx.playerFeet()));
+            orbitTrace("determineRoute source=nearest failed playerFeet=%s", formatPos(ctx.playerFeet()));
             return null;
         }
         double loopDistance = getPlayerDistanceToLoop();
         if (loopDistance > MAX_LOOP_ENTRY_DISTANCE) {
-            orbitDebug(
+            orbitTrace(
                     "determineRoute source=approach startIndex=%d playerFeet=%s loopDistance=%.3f threshold=%.3f",
                     startIndex, formatPos(ctx.playerFeet()), loopDistance, MAX_LOOP_ENTRY_DISTANCE);
             return null;
@@ -1053,7 +1324,7 @@ public final class KillAuraOrbitProcess extends BaritoneProcessHelper {
             OrbitRoutePath currentRoute = (OrbitRoutePath) currentExecutor.getPath();
             OrbitRoutePath desiredNext = buildOrbitRoutePath(currentRoute.getEndNodeIndex());
             if (desiredNext != null) {
-                orbitDebug("determineRoute source=current currentKey=%s currentEndNode=%d nextKey=%s",
+                orbitTrace("determineRoute source=current currentKey=%s currentEndNode=%d nextKey=%s",
                         currentRoute.getRouteKey(), currentRoute.getEndNodeIndex(), desiredNext.getRouteKey());
                 return desiredNext;
             }
@@ -1062,12 +1333,12 @@ public final class KillAuraOrbitProcess extends BaritoneProcessHelper {
         PathExecutor nextExecutor = pathingBehavior.getNext();
         if (nextExecutor != null && nextExecutor.getPath() instanceof OrbitRoutePath) {
             OrbitRoutePath nextRoute = (OrbitRoutePath) nextExecutor.getPath();
-            orbitDebug("determineRoute source=next nextKey=%s startNode=%d endNode=%d", nextRoute.getRouteKey(),
+            orbitTrace("determineRoute source=next nextKey=%s startNode=%d endNode=%d", nextRoute.getRouteKey(),
                     nextRoute.getStartNodeIndex(), nextRoute.getEndNodeIndex());
             return nextRoute;
         }
 
-        orbitDebug("determineRoute source=nearest startIndex=%d playerFeet=%s", startIndex, formatPos(ctx.playerFeet()));
+        orbitTrace("determineRoute source=nearest startIndex=%d playerFeet=%s", startIndex, formatPos(ctx.playerFeet()));
         return buildOrbitRoutePath(startIndex);
     }
 
@@ -1087,7 +1358,7 @@ public final class KillAuraOrbitProcess extends BaritoneProcessHelper {
 
     private OrbitRoutePath buildOrbitRoutePath(int startIndex) {
         if (startIndex < 0 || startIndex >= this.orbitLoop.size() || this.orbitArcs.size() != this.orbitLoop.size()) {
-            orbitDebug("buildRoute rejected startIndex=%d nodes=%d arcs=%d", startIndex, this.orbitLoop.size(),
+            orbitTrace("buildRoute rejected startIndex=%d nodes=%d arcs=%d", startIndex, this.orbitLoop.size(),
                     this.orbitArcs.size());
             return null;
         }
@@ -1128,7 +1399,7 @@ public final class KillAuraOrbitProcess extends BaritoneProcessHelper {
         }
 
         if (movements.isEmpty()) {
-            orbitDebug("buildRoute failed startIndex=%d maxArcCount=%d breakReason=%s", startIndex, maxArcCount,
+            orbitTrace("buildRoute failed startIndex=%d maxArcCount=%d breakReason=%s", startIndex, maxArcCount,
                     breakReason);
             return null;
         }
@@ -1137,7 +1408,7 @@ public final class KillAuraOrbitProcess extends BaritoneProcessHelper {
         int endNodeIndex = (startIndex + movements.size()) % this.orbitLoop.size();
         String routeKey = this.planRevision + ":" + startIndex + ":" + endNodeIndex + ":" + movements.size();
         Goal goal = new GoalBlock(dest);
-        orbitDebug("buildRoute startIndex=%d endNodeIndex=%d positions=%d movements=%d dest=%s routeKey=%s breakReason=%s",
+        orbitTrace("buildRoute startIndex=%d endNodeIndex=%d positions=%d movements=%d dest=%s routeKey=%s breakReason=%s",
                 startIndex, endNodeIndex, positions.size(), movements.size(), formatPos(dest), routeKey, breakReason);
         return new OrbitRoutePath(goal, positions, movements, 0, routeKey, startIndex, endNodeIndex);
     }
@@ -1289,7 +1560,7 @@ public final class KillAuraOrbitProcess extends BaritoneProcessHelper {
             }
         }
         if (nearestIndex >= 0) {
-            orbitDebug("nearestLoopNode playerFeet=%s index=%d dist=%.3f node=%s", formatPos(playerFeet), nearestIndex,
+            orbitTrace("nearestLoopNode playerFeet=%s index=%d dist=%.3f node=%s", formatPos(playerFeet), nearestIndex,
                     Math.sqrt(bestDistSq), formatPos(this.orbitLoop.get(nearestIndex)));
         }
         return nearestIndex;
@@ -1309,19 +1580,28 @@ public final class KillAuraOrbitProcess extends BaritoneProcessHelper {
         return this.orbitArcs.size() > 1 ? 1 : 0;
     }
 
-    private void clearRuntime() {
-        orbitDebug("clearRuntime state=%s targetEntityId=%d nodes=%d arcs=%d render=%d", this.state, this.targetEntityId,
-                this.orbitLoop.size(), this.orbitArcs.size(), this.renderLoop.size());
-        this.state = State.IDLE;
-        this.targetEntityId = Integer.MIN_VALUE;
-        this.rebuildCache = null;
+    private void clearPublishedLoop() {
         this.currentGoal = null;
         this.orbitLoop = Collections.emptyList();
         this.orbitArcs = Collections.emptyList();
         this.renderLoop = Collections.emptyList();
         this.lastPlanTick = Integer.MIN_VALUE;
+    }
+
+    private void clearRuntime() {
+        orbitDebug("clearRuntime state=%s targetEntityId=%d nodes=%d arcs=%d render=%d", this.state, this.targetEntityId,
+                this.orbitLoop.size(), this.orbitArcs.size(), this.renderLoop.size());
+        this.state = State.IDLE;
+        this.targetEntityId = Integer.MIN_VALUE;
+        this.pendingRebuild = null;
+        this.retainedRebuildCache = null;
+        this.retainedRebuildCacheKey = null;
+        this.rebuildCache = null;
+        clearPublishedLoop();
+        this.lastPlanTick = Integer.MIN_VALUE;
         this.lastRequestTick = Integer.MIN_VALUE;
         this.lastRebuildTick = Integer.MIN_VALUE;
+        clearFailedRebuild();
     }
 
     private double horizontalDistSq(double leftX, double leftZ, double rightX, double rightZ) {
@@ -1372,7 +1652,7 @@ public final class KillAuraOrbitProcess extends BaritoneProcessHelper {
     }
 
     private void logOrbitNodePlans(EntityLivingBase target, List<OrbitNodePlan> nodePlans) {
-        if (!isOrbitDebugEnabled() || target == null || nodePlans == null || nodePlans.isEmpty()) {
+        if (!isOrbitTraceEnabled() || target == null || nodePlans == null || nodePlans.isEmpty()) {
             return;
         }
         for (int i = 0; i < nodePlans.size(); i++) {
@@ -1380,7 +1660,7 @@ public final class KillAuraOrbitProcess extends BaritoneProcessHelper {
             RouteStats guideStats = analyzeRoute(nodePlan.guidePoints);
             Vec3d firstGuide = nodePlan.guidePoints.isEmpty() ? null : nodePlan.guidePoints.get(0);
             Vec3d lastGuide = nodePlan.guidePoints.isEmpty() ? null : nodePlan.guidePoints.get(nodePlan.guidePoints.size() - 1);
-            orbitDebug(
+            orbitTrace(
                     "nodePlan idx=%d node=%s nodeAngleDeg=%.2f guideCount=%d guideLength=%.3f maxGuideStep=%.3f maxGuideStepIndex=%d first=%s last=%s",
                     i, formatPos(nodePlan.position), angleDegFromTarget(target, nodeCenter(nodePlan.position)),
                     nodePlan.guidePoints.size(), guideStats.length, guideStats.maxStep, guideStats.maxStepIndex,
@@ -1389,13 +1669,13 @@ public final class KillAuraOrbitProcess extends BaritoneProcessHelper {
     }
 
     private void logOrbitArcs(EntityLivingBase target, List<OrbitArcPlan> arcs) {
-        if (!isOrbitDebugEnabled() || target == null || arcs == null || arcs.isEmpty()) {
+        if (!isOrbitTraceEnabled() || target == null || arcs == null || arcs.isEmpty()) {
             return;
         }
         for (int i = 0; i < arcs.size(); i++) {
             OrbitArcPlan arc = arcs.get(i);
             RouteStats stats = analyzeRoute(arc.routePoints);
-            orbitDebug(
+            orbitTrace(
                     "arcPlan idx=%d src=%s srcAngleDeg=%.2f dest=%s destAngleDeg=%.2f routePoints=%d length=%.3f maxStep=%.3f maxStepIndex=%d suspicious=%s start=%s end=%s",
                     i, formatPos(arc.src), angleDegFromTarget(target, nodeCenter(arc.src)), formatPos(arc.dest),
                     angleDegFromTarget(target, nodeCenter(arc.dest)), arc.routePoints.length, stats.length, stats.maxStep,
@@ -1437,11 +1717,22 @@ public final class KillAuraOrbitProcess extends BaritoneProcessHelper {
         return ModConfig.isDebugFlagEnabled(DebugModule.KILL_AURA_ORBIT);
     }
 
+    private boolean isOrbitTraceEnabled() {
+        return ModConfig.isDebugFlagEnabled(DebugModule.KILL_AURA_ORBIT_TRACE);
+    }
+
     private void orbitDebug(String format, Object... args) {
         if (!isOrbitDebugEnabled()) {
             return;
         }
         ModConfig.debugLog(DebugModule.KILL_AURA_ORBIT, String.format(Locale.ROOT, format, args));
+    }
+
+    private void orbitTrace(String format, Object... args) {
+        if (!isOrbitTraceEnabled()) {
+            return;
+        }
+        ModConfig.debugLog(DebugModule.KILL_AURA_ORBIT_TRACE, String.format(Locale.ROOT, format, args));
     }
 
     private Vec3d nodeCenter(BetterBlockPos pos) {
@@ -1481,12 +1772,29 @@ public final class KillAuraOrbitProcess extends BaritoneProcessHelper {
 
     private static final class RebuildCache {
         private final AxisAlignedBB scanBounds;
-        private final List<AxisAlignedBB> blockingBoxes;
-        private final long collisionCollectNanos;
+        private final CollisionCacheKey cacheKey;
+        private final List<AxisAlignedBB> blockingBoxes = new ArrayList<>();
+        private final Map<Long, List<AxisAlignedBB>> blockingBuckets = new HashMap<>();
+        private final BlockPos.MutableBlockPos mutablePos = new BlockPos.MutableBlockPos();
+        private final List<AxisAlignedBB> collisionScratch = new ArrayList<>(4);
+        private final List<AxisAlignedBB> candidateScratch = new ArrayList<>();
+        private final IdentityHashMap<AxisAlignedBB, Boolean> candidateSeen = new IdentityHashMap<>();
         private final Map<Long, Boolean> baseStandableCache = new HashMap<>();
-        private final Map<Long, Boolean> lineOfSightCache = new HashMap<>();
+        private final Map<LineOfSightKey, Boolean> lineOfSightCache = new HashMap<>();
         private final Map<BoxKey, Boolean> boxClearCache = new HashMap<>();
         private final Map<SegmentKey, Boolean> segmentClearCache = new HashMap<>();
+        private final int minX;
+        private final int maxX;
+        private final int minY;
+        private final int maxY;
+        private final int minZ;
+        private final int maxZ;
+        private int cursorX;
+        private int cursorY;
+        private int cursorZ;
+        private boolean collisionCollectionComplete;
+        private boolean reusedFromSession;
+        private long collisionCollectNanos;
         private int baseStandableChecks;
         private int baseStandableHits;
         private int lineOfSightChecks;
@@ -1496,26 +1804,314 @@ public final class KillAuraOrbitProcess extends BaritoneProcessHelper {
         private int segmentChecks;
         private int segmentHits;
 
-        private RebuildCache(AxisAlignedBB scanBounds, List<AxisAlignedBB> blockingBoxes, long collisionCollectNanos) {
+        private RebuildCache(AxisAlignedBB scanBounds, CollisionCacheKey cacheKey) {
             this.scanBounds = scanBounds;
-            this.blockingBoxes = blockingBoxes == null ? Collections.emptyList() : blockingBoxes;
-            this.collisionCollectNanos = collisionCollectNanos;
+            this.cacheKey = cacheKey;
+            if (scanBounds == null) {
+                this.minX = 0;
+                this.maxX = 0;
+                this.minY = 0;
+                this.maxY = 0;
+                this.minZ = 0;
+                this.maxZ = 0;
+                this.cursorX = 0;
+                this.cursorY = 0;
+                this.cursorZ = 0;
+                this.collisionCollectionComplete = true;
+            } else {
+                this.minX = MathHelper.floor(scanBounds.minX) - 1;
+                this.maxX = MathHelper.floor(scanBounds.maxX) + 1;
+                this.minY = MathHelper.floor(scanBounds.minY) - 1;
+                this.maxY = MathHelper.floor(scanBounds.maxY) + 1;
+                this.minZ = MathHelper.floor(scanBounds.minZ) - 1;
+                this.maxZ = MathHelper.floor(scanBounds.maxZ) + 1;
+                this.cursorX = this.minX;
+                this.cursorY = this.minY;
+                this.cursorZ = this.minZ;
+                this.collisionCollectionComplete = false;
+            }
+            resetPlanningSession(false);
+        }
+
+        private void resetPlanningSession(boolean reusedFromSession) {
+            this.reusedFromSession = reusedFromSession;
+            this.collisionCollectNanos = 0L;
+            this.baseStandableChecks = 0;
+            this.baseStandableHits = 0;
+            this.lineOfSightChecks = 0;
+            this.lineOfSightHits = 0;
+            this.boxClearChecks = 0;
+            this.boxClearHits = 0;
+            this.segmentChecks = 0;
+            this.segmentHits = 0;
+            this.candidateScratch.clear();
+            this.candidateSeen.clear();
+        }
+
+        private boolean isCollisionCollectionComplete() {
+            return this.collisionCollectionComplete;
+        }
+
+        private void advanceCollisionCursor() {
+            if (this.collisionCollectionComplete) {
+                return;
+            }
+            if (this.cursorZ < this.maxZ) {
+                this.cursorZ++;
+                return;
+            }
+            this.cursorZ = this.minZ;
+            if (this.cursorY < this.maxY) {
+                this.cursorY++;
+                return;
+            }
+            this.cursorY = this.minY;
+            if (this.cursorX < this.maxX) {
+                this.cursorX++;
+                return;
+            }
+            this.collisionCollectionComplete = true;
+        }
+
+        private void addBlockingBox(AxisAlignedBB box) {
+            if (box == null) {
+                return;
+            }
+            this.blockingBoxes.add(box);
+            int bucketMinX = MathHelper.floor(box.minX - 1.0E-4D);
+            int bucketMaxX = MathHelper.floor(box.maxX + 1.0E-4D);
+            int bucketMinY = MathHelper.floor(box.minY - 1.0E-4D);
+            int bucketMaxY = MathHelper.floor(box.maxY + 1.0E-4D);
+            int bucketMinZ = MathHelper.floor(box.minZ - 1.0E-4D);
+            int bucketMaxZ = MathHelper.floor(box.maxZ + 1.0E-4D);
+            for (int x = bucketMinX; x <= bucketMaxX; x++) {
+                for (int y = bucketMinY; y <= bucketMaxY; y++) {
+                    for (int z = bucketMinZ; z <= bucketMaxZ; z++) {
+                        this.blockingBuckets.computeIfAbsent(bucketKey(x, y, z), ignored -> new ArrayList<>()).add(box);
+                    }
+                }
+            }
+        }
+
+        private boolean canQueryCollisionIndex(AxisAlignedBB queryBox) {
+            return this.collisionCollectionComplete
+                    && this.scanBounds != null
+                    && queryBox != null
+                    && this.scanBounds.minX <= queryBox.minX && this.scanBounds.maxX >= queryBox.maxX
+                    && this.scanBounds.minY <= queryBox.minY && this.scanBounds.maxY >= queryBox.maxY
+                    && this.scanBounds.minZ <= queryBox.minZ && this.scanBounds.maxZ >= queryBox.maxZ;
+        }
+
+        private List<AxisAlignedBB> collectCandidateBoxes(AxisAlignedBB queryBox) {
+            this.candidateScratch.clear();
+            this.candidateSeen.clear();
+            if (queryBox == null) {
+                return this.candidateScratch;
+            }
+            int bucketMinX = MathHelper.floor(queryBox.minX - 1.0E-4D);
+            int bucketMaxX = MathHelper.floor(queryBox.maxX + 1.0E-4D);
+            int bucketMinY = MathHelper.floor(queryBox.minY - 1.0E-4D);
+            int bucketMaxY = MathHelper.floor(queryBox.maxY + 1.0E-4D);
+            int bucketMinZ = MathHelper.floor(queryBox.minZ - 1.0E-4D);
+            int bucketMaxZ = MathHelper.floor(queryBox.maxZ + 1.0E-4D);
+            for (int x = bucketMinX; x <= bucketMaxX; x++) {
+                for (int y = bucketMinY; y <= bucketMaxY; y++) {
+                    for (int z = bucketMinZ; z <= bucketMaxZ; z++) {
+                        List<AxisAlignedBB> bucket = this.blockingBuckets.get(bucketKey(x, y, z));
+                        if (bucket == null || bucket.isEmpty()) {
+                            continue;
+                        }
+                        for (AxisAlignedBB candidate : bucket) {
+                            if (this.candidateSeen.put(candidate, Boolean.TRUE) == null) {
+                                this.candidateScratch.add(candidate);
+                            }
+                        }
+                    }
+                }
+            }
+            return this.candidateScratch;
+        }
+
+        private static long bucketKey(int x, int y, int z) {
+            long hash = 1469598103934665603L;
+            hash = (hash ^ x) * 1099511628211L;
+            hash = (hash ^ y) * 1099511628211L;
+            hash = (hash ^ z) * 1099511628211L;
+            return hash;
+        }
+    }
+
+    private static final class PendingRebuild {
+        private final int targetEntityId;
+        private final double targetX;
+        private final double targetZ;
+        private final double radius;
+        private final int playerFeetY;
+        private final String reason;
+        private final boolean hadUsableLoop;
+        private final int requestTick;
+        private final int sampleCount;
+        private final double startAngle;
+        private final double step;
+        private final double routeY;
+        private final RebuildCache cache;
+        private final long startNanos = System.nanoTime();
+        private final List<Vec3d> guideLoop = new ArrayList<>();
+        private final List<OrbitNodePlan> nodePlans = new ArrayList<>();
+        private final List<Vec3d> deferredLeadingGuidePoints = new ArrayList<>();
+        private final List<OrbitArcPlan> arcs = new ArrayList<>();
+        private List<Vec3d> renderLoop = Collections.emptyList();
+        private RebuildPhase phase;
+        private Vec3d previousGuidePoint;
+        private int guideIndex;
+        private int clippedCount;
+        private int obstacleAdjustedCount;
+        private double minRadius = Double.POSITIVE_INFINITY;
+        private double maxRadius;
+        private double maxClipLoss;
+        private int maxClipLossIndex = -1;
+        private BetterBlockPos previousNode;
+        private int nodeGuideIndex;
+        private int nullGuideCount;
+        private int currentNullStreak;
+        private int maxNullStreak;
+        private int nullRunStart = -1;
+        private int largeNodeJumpCount;
+        private boolean mergedEndpoints;
+        private int arcIndex;
+
+        private PendingRebuild(int targetEntityId, double targetX, double targetZ, double radius, int playerFeetY,
+                String reason, boolean hadUsableLoop, int requestTick, int sampleCount, double startAngle,
+                RebuildCache cache) {
+            this.targetEntityId = targetEntityId;
+            this.targetX = targetX;
+            this.targetZ = targetZ;
+            this.radius = radius;
+            this.playerFeetY = playerFeetY;
+            this.reason = reason == null ? "unknown" : reason;
+            this.hadUsableLoop = hadUsableLoop;
+            this.requestTick = requestTick;
+            this.sampleCount = Math.max(MIN_GUIDE_POINTS, sampleCount);
+            this.startAngle = startAngle;
+            this.step = (Math.PI * 2.0D) / this.sampleCount;
+            this.routeY = playerFeetY + GUIDE_ROUTE_Y_OFFSET;
+            this.cache = cache;
+            this.phase = cache == null || cache.isCollisionCollectionComplete()
+                    ? RebuildPhase.BUILD_GUIDE
+                    : RebuildPhase.COLLECT_COLLISIONS;
+        }
+
+        private boolean matches(int entityId, double desiredRadius, int feetY, double targetX, double targetZ) {
+            if (this.targetEntityId != entityId) {
+                return false;
+            }
+            if (Math.abs(this.radius - desiredRadius) > MAX_RADIUS_DELTA_BEFORE_REPLAN) {
+                return false;
+            }
+            if (Math.abs(this.playerFeetY - feetY) > MAX_PLAYER_FEET_Y_DELTA_BEFORE_REPLAN) {
+                return false;
+            }
+            double dx = this.targetX - targetX;
+            double dz = this.targetZ - targetZ;
+            return dx * dx + dz * dz <= MAX_TARGET_MOVE_BEFORE_REPLAN * MAX_TARGET_MOVE_BEFORE_REPLAN;
+        }
+
+        private boolean isFinished() {
+            return this.phase == RebuildPhase.COMPLETE || this.phase == RebuildPhase.FAILED;
+        }
+
+        private long getDurationNanos() {
+            return System.nanoTime() - this.startNanos;
+        }
+    }
+
+    private static final class CollisionCacheKey {
+        private final int targetBlockX;
+        private final int targetBlockZ;
+        private final long radiusBand;
+        private final int feetYBand;
+        private final long minX;
+        private final long minY;
+        private final long minZ;
+        private final long maxX;
+        private final long maxY;
+        private final long maxZ;
+
+        private CollisionCacheKey(int targetBlockX, int targetBlockZ, long radiusBand, int feetYBand,
+                long minX, long minY, long minZ, long maxX, long maxY, long maxZ) {
+            this.targetBlockX = targetBlockX;
+            this.targetBlockZ = targetBlockZ;
+            this.radiusBand = radiusBand;
+            this.feetYBand = feetYBand;
+            this.minX = minX;
+            this.minY = minY;
+            this.minZ = minZ;
+            this.maxX = maxX;
+            this.maxY = maxY;
+            this.maxZ = maxZ;
+        }
+
+        private static CollisionCacheKey of(EntityLivingBase target, double radius, int playerFeetY, AxisAlignedBB scanBounds) {
+            return new CollisionCacheKey(MathHelper.floor(target.posX), MathHelper.floor(target.posZ),
+                    quantize(radius, CACHE_SCAN_BOUNDS_QUANTIZATION), playerFeetY,
+                    quantize(scanBounds.minX, CACHE_SCAN_BOUNDS_QUANTIZATION),
+                    quantize(scanBounds.minY, CACHE_SCAN_BOUNDS_QUANTIZATION),
+                    quantize(scanBounds.minZ, CACHE_SCAN_BOUNDS_QUANTIZATION),
+                    quantize(scanBounds.maxX, CACHE_SCAN_BOUNDS_QUANTIZATION),
+                    quantize(scanBounds.maxY, CACHE_SCAN_BOUNDS_QUANTIZATION),
+                    quantize(scanBounds.maxZ, CACHE_SCAN_BOUNDS_QUANTIZATION));
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (this == obj) {
+                return true;
+            }
+            if (!(obj instanceof CollisionCacheKey)) {
+                return false;
+            }
+            CollisionCacheKey other = (CollisionCacheKey) obj;
+            return this.targetBlockX == other.targetBlockX
+                    && this.targetBlockZ == other.targetBlockZ
+                    && this.radiusBand == other.radiusBand
+                    && this.feetYBand == other.feetYBand
+                    && this.minX == other.minX
+                    && this.minY == other.minY
+                    && this.minZ == other.minZ
+                    && this.maxX == other.maxX
+                    && this.maxY == other.maxY
+                    && this.maxZ == other.maxZ;
+        }
+
+        @Override
+        public int hashCode() {
+            long hash = this.targetBlockX;
+            hash = 31L * hash + this.targetBlockZ;
+            hash = 31L * hash + this.radiusBand;
+            hash = 31L * hash + this.feetYBand;
+            hash = 31L * hash + this.minX;
+            hash = 31L * hash + this.minY;
+            hash = 31L * hash + this.minZ;
+            hash = 31L * hash + this.maxX;
+            hash = 31L * hash + this.maxY;
+            hash = 31L * hash + this.maxZ;
+            return (int) (hash ^ (hash >>> 32));
         }
     }
 
     private static final class BoxKey {
-        private final long xBits;
-        private final long yBits;
-        private final long zBits;
-        private final long halfWidthBits;
-        private final long marginBits;
+        private final long x;
+        private final long y;
+        private final long z;
+        private final long halfWidth;
+        private final long margin;
 
         private BoxKey(double centerX, double feetY, double centerZ, double halfWidth, double margin) {
-            this.xBits = Double.doubleToLongBits(centerX);
-            this.yBits = Double.doubleToLongBits(feetY);
-            this.zBits = Double.doubleToLongBits(centerZ);
-            this.halfWidthBits = Double.doubleToLongBits(halfWidth);
-            this.marginBits = Double.doubleToLongBits(margin);
+            this.x = quantize(centerX, CACHE_POSITION_QUANTIZATION);
+            this.y = quantize(feetY, CACHE_POSITION_QUANTIZATION);
+            this.z = quantize(centerZ, CACHE_POSITION_QUANTIZATION);
+            this.halfWidth = quantize(halfWidth, CACHE_POSITION_QUANTIZATION);
+            this.margin = quantize(margin, CACHE_POSITION_QUANTIZATION);
         }
 
         @Override
@@ -1527,39 +2123,39 @@ public final class KillAuraOrbitProcess extends BaritoneProcessHelper {
                 return false;
             }
             BoxKey other = (BoxKey) obj;
-            return this.xBits == other.xBits
-                    && this.yBits == other.yBits
-                    && this.zBits == other.zBits
-                    && this.halfWidthBits == other.halfWidthBits
-                    && this.marginBits == other.marginBits;
+            return this.x == other.x
+                    && this.y == other.y
+                    && this.z == other.z
+                    && this.halfWidth == other.halfWidth
+                    && this.margin == other.margin;
         }
 
         @Override
         public int hashCode() {
-            long hash = this.xBits;
-            hash = 31L * hash + this.yBits;
-            hash = 31L * hash + this.zBits;
-            hash = 31L * hash + this.halfWidthBits;
-            hash = 31L * hash + this.marginBits;
+            long hash = this.x;
+            hash = 31L * hash + this.y;
+            hash = 31L * hash + this.z;
+            hash = 31L * hash + this.halfWidth;
+            hash = 31L * hash + this.margin;
             return (int) (hash ^ (hash >>> 32));
         }
     }
 
     private static final class SegmentKey {
-        private final long axBits;
-        private final long ayBits;
-        private final long azBits;
-        private final long bxBits;
-        private final long byBits;
-        private final long bzBits;
+        private final long ax;
+        private final long ay;
+        private final long az;
+        private final long bx;
+        private final long by;
+        private final long bz;
 
         private SegmentKey(Vec3d first, Vec3d second) {
-            this.axBits = Double.doubleToLongBits(first.x);
-            this.ayBits = Double.doubleToLongBits(first.y);
-            this.azBits = Double.doubleToLongBits(first.z);
-            this.bxBits = Double.doubleToLongBits(second.x);
-            this.byBits = Double.doubleToLongBits(second.y);
-            this.bzBits = Double.doubleToLongBits(second.z);
+            this.ax = quantize(first.x, CACHE_POSITION_QUANTIZATION);
+            this.ay = quantize(first.y, CACHE_POSITION_QUANTIZATION);
+            this.az = quantize(first.z, CACHE_POSITION_QUANTIZATION);
+            this.bx = quantize(second.x, CACHE_POSITION_QUANTIZATION);
+            this.by = quantize(second.y, CACHE_POSITION_QUANTIZATION);
+            this.bz = quantize(second.z, CACHE_POSITION_QUANTIZATION);
         }
 
         private static SegmentKey of(Vec3d start, Vec3d end) {
@@ -1567,15 +2163,18 @@ public final class KillAuraOrbitProcess extends BaritoneProcessHelper {
         }
 
         private static int compare(Vec3d left, Vec3d right) {
-            int cmp = Double.compare(left.x, right.x);
+            int cmp = Long.compare(quantize(left.x, CACHE_POSITION_QUANTIZATION),
+                    quantize(right.x, CACHE_POSITION_QUANTIZATION));
             if (cmp != 0) {
                 return cmp;
             }
-            cmp = Double.compare(left.y, right.y);
+            cmp = Long.compare(quantize(left.y, CACHE_POSITION_QUANTIZATION),
+                    quantize(right.y, CACHE_POSITION_QUANTIZATION));
             if (cmp != 0) {
                 return cmp;
             }
-            return Double.compare(left.z, right.z);
+            return Long.compare(quantize(left.z, CACHE_POSITION_QUANTIZATION),
+                    quantize(right.z, CACHE_POSITION_QUANTIZATION));
         }
 
         @Override
@@ -1587,30 +2186,93 @@ public final class KillAuraOrbitProcess extends BaritoneProcessHelper {
                 return false;
             }
             SegmentKey other = (SegmentKey) obj;
-            return this.axBits == other.axBits
-                    && this.ayBits == other.ayBits
-                    && this.azBits == other.azBits
-                    && this.bxBits == other.bxBits
-                    && this.byBits == other.byBits
-                    && this.bzBits == other.bzBits;
+            return this.ax == other.ax
+                    && this.ay == other.ay
+                    && this.az == other.az
+                    && this.bx == other.bx
+                    && this.by == other.by
+                    && this.bz == other.bz;
         }
 
         @Override
         public int hashCode() {
-            long hash = this.axBits;
-            hash = 31L * hash + this.ayBits;
-            hash = 31L * hash + this.azBits;
-            hash = 31L * hash + this.bxBits;
-            hash = 31L * hash + this.byBits;
-            hash = 31L * hash + this.bzBits;
+            long hash = this.ax;
+            hash = 31L * hash + this.ay;
+            hash = 31L * hash + this.az;
+            hash = 31L * hash + this.bx;
+            hash = 31L * hash + this.by;
+            hash = 31L * hash + this.bz;
             return (int) (hash ^ (hash >>> 32));
         }
+    }
+
+    private static final class LineOfSightKey {
+        private final long standPos;
+        private final int targetEntityId;
+        private final long targetX;
+        private final long targetY;
+        private final long targetZ;
+
+        private LineOfSightKey(long standPos, int targetEntityId, long targetX, long targetY, long targetZ) {
+            this.standPos = standPos;
+            this.targetEntityId = targetEntityId;
+            this.targetX = targetX;
+            this.targetY = targetY;
+            this.targetZ = targetZ;
+        }
+
+        private static LineOfSightKey of(BetterBlockPos standPos, EntityLivingBase target) {
+            return new LineOfSightKey(BetterBlockPos.longHash(standPos), target == null ? Integer.MIN_VALUE : target.getEntityId(),
+                    quantize(target == null ? 0.0D : target.posX, CACHE_POSITION_QUANTIZATION),
+                    quantize(target == null ? 0.0D : target.posY, CACHE_POSITION_QUANTIZATION),
+                    quantize(target == null ? 0.0D : target.posZ, CACHE_POSITION_QUANTIZATION));
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (this == obj) {
+                return true;
+            }
+            if (!(obj instanceof LineOfSightKey)) {
+                return false;
+            }
+            LineOfSightKey other = (LineOfSightKey) obj;
+            return this.standPos == other.standPos
+                    && this.targetEntityId == other.targetEntityId
+                    && this.targetX == other.targetX
+                    && this.targetY == other.targetY
+                    && this.targetZ == other.targetZ;
+        }
+
+        @Override
+        public int hashCode() {
+            long hash = this.standPos;
+            hash = 31L * hash + this.targetEntityId;
+            hash = 31L * hash + this.targetX;
+            hash = 31L * hash + this.targetY;
+            hash = 31L * hash + this.targetZ;
+            return (int) (hash ^ (hash >>> 32));
+        }
+    }
+
+    private static long quantize(double value, double step) {
+        return Math.round(value / step);
     }
 
     private enum State {
         IDLE,
         ACTIVE,
         STOPPING
+    }
+
+    private enum RebuildPhase {
+        COLLECT_COLLISIONS,
+        BUILD_GUIDE,
+        BUILD_NODES,
+        BUILD_ARCS,
+        FINALIZE,
+        COMPLETE,
+        FAILED
     }
 
     private static final class GuidePointPlan {

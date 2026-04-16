@@ -2296,7 +2296,7 @@ public class GuiActionEditor extends ThemedGuiScreen {
             } else if ("visionCompareMode".equals(key)) {
                 newParams.addProperty(key, displayToVisionCompareMode(value));
             } else if ("locatorMode".equals(key)) {
-                newParams.addProperty(key, displayToLocatorMode(value));
+                newParams.addProperty(key, displayToLocatorMode(value, selectedType));
             } else if ("locatorMatchMode".equals(key)) {
                 newParams.addProperty(key, displayToMatchMode(value));
             } else if ("elementType".equals(key)) {
@@ -3483,7 +3483,7 @@ public class GuiActionEditor extends ThemedGuiScreen {
     private String getDraftSlotLocatorMode() {
         int dropdownIndex = paramDropdownKeys.indexOf("locatorMode");
         if (dropdownIndex >= 0 && dropdownIndex < paramDropdowns.size()) {
-            return displayToLocatorMode(paramDropdowns.get(dropdownIndex).getValue());
+            return displayToLocatorMode(paramDropdowns.get(dropdownIndex).getValue(), getSelectedActionType());
         }
         return currentParams.has("locatorMode")
                 ? currentParams.get("locatorMode").getAsString()

@@ -3998,9 +3998,6 @@ public class PathSequenceEventListener {
         if (!isHuntOrbitMode() || player == null || target == null) {
             return false;
         }
-        if (!KillAuraHandler.isHuntOrbitSampleCountAtMaximum()) {
-            return false;
-        }
         if (player.isElytraFlying()
                 || (player.capabilities != null && player.capabilities.isFlying)
                 || Math.abs(player.posY - target.posY) > HUNT_CONTINUOUS_ORBIT_MAX_VERTICAL_DELTA) {
@@ -4028,8 +4025,7 @@ public class PathSequenceEventListener {
 
     private boolean requestHuntOrbitProcess(EntityLivingBase target) {
         if (mc.player == null || mc.player.isElytraFlying()
-                || (mc.player.capabilities != null && mc.player.capabilities.isFlying)
-                || !mc.player.onGround) {
+                || (mc.player.capabilities != null && mc.player.capabilities.isFlying)) {
             return false;
         }
         KillAuraOrbitProcess process = getHuntOrbitProcess();

@@ -118,6 +118,20 @@ public class PathSequenceManager {
         return I18n.format("path.sequence.stop.tail");
     }
 
+    private static String normalizeClickLocatorMode(String locatorMode) {
+        if (ActionTargetLocator.TARGET_MODE_POSITION.equalsIgnoreCase(locatorMode)) {
+            return ActionTargetLocator.CLICK_MODE_COORDINATE;
+        }
+        return locatorMode == null || locatorMode.trim().isEmpty()
+                ? ActionTargetLocator.CLICK_MODE_COORDINATE
+                : locatorMode;
+    }
+
+    private static boolean isClickCoordinateMode(String locatorMode) {
+        return ActionTargetLocator.CLICK_MODE_COORDINATE
+                .equalsIgnoreCase(normalizeClickLocatorMode(locatorMode));
+    }
+
     private static synchronized void ensureWindowClickMapLoaded() {
         if (windowClickMapLoaded) {
             return;
@@ -324,17 +338,18 @@ public class PathSequenceManager {
                         return I18n.format("path.action.desc.jump", Math.max(1, jumpCountDesc),
                                 Math.max(0, jumpIntervalDesc));
                     case "click":
-                        if (params.has("locatorMode")
-                                && !ActionTargetLocator.CLICK_MODE_COORDINATE
-                                        .equalsIgnoreCase(params.get("locatorMode").getAsString())) {
+                        String clickLocatorModeDesc = params.has("locatorMode")
+                                ? params.get("locatorMode").getAsString()
+                                : ActionTargetLocator.CLICK_MODE_COORDINATE;
+                        if (!isClickCoordinateMode(clickLocatorModeDesc)) {
                             return "点击元素: "
                                     + (params.has("locatorText") ? params.get("locatorText").getAsString() : "")
                                     + " / "
                                     + (ActionTargetLocator.CLICK_MODE_BUTTON_TEXT
-                                            .equalsIgnoreCase(params.get("locatorMode").getAsString())
+                                            .equalsIgnoreCase(clickLocatorModeDesc)
                                                     ? "按钮文本"
                                                     : (ActionTargetLocator.CLICK_MODE_SLOT_TEXT
-                                                            .equalsIgnoreCase(params.get("locatorMode").getAsString())
+                                                            .equalsIgnoreCase(clickLocatorModeDesc)
                                                                     ? "槽位文本"
                                                                     : "元素路径"));
                         }
@@ -1731,9 +1746,9 @@ public class PathSequenceManager {
                     final int x = params.get("x").getAsInt();
                     final int y = params.get("y").getAsInt();
                     final boolean isLeft = params.get("left").getAsBoolean();
-                    final String clickLocatorMode = params.has("locatorMode")
+                    final String clickLocatorMode = normalizeClickLocatorMode(params.has("locatorMode")
                             ? params.get("locatorMode").getAsString()
-                            : ActionTargetLocator.CLICK_MODE_COORDINATE;
+                            : ActionTargetLocator.CLICK_MODE_COORDINATE);
                     final String clickLocatorText = params.has("locatorText")
                             ? params.get("locatorText").getAsString()
                             : "";
@@ -1746,7 +1761,7 @@ public class PathSequenceManager {
                             : 1334;
 
                     return player -> {
-                        if (!ActionTargetLocator.CLICK_MODE_COORDINATE.equalsIgnoreCase(clickLocatorMode)) {
+                        if (!isClickCoordinateMode(clickLocatorMode)) {
                             if (ActionTargetLocator.tryInvokeCurrentScreenClick(clickLocatorMode, clickLocatorText,
                                     clickLocatorMatchMode, isLeft)) {
                                 return;
