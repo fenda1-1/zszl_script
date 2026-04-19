@@ -584,7 +584,9 @@ public class PathSequenceManager {
                                 + (params.has("name") ? params.get("name").getAsString() : "")
                                 + " = "
                                 + (params.has("expression")
-                                        ? params.get("expression").getAsString()
+                                        ? (params.get("expression").isJsonPrimitive()
+                                                ? params.get("expression").getAsString()
+                                                : params.get("expression").toString())
                                         : (params.has("value") ? params.get("value").toString() : ""));
                     case "capture_nearby_entity":
                         return "捕获附近实体 -> "

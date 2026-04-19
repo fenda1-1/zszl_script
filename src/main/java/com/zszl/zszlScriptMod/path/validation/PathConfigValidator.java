@@ -1686,7 +1686,11 @@ public final class PathConfigValidator {
             return "";
         }
         try {
-            return params.get(key).getAsString();
+            JsonElement element = params.get(key);
+            if (element == null || element.isJsonNull()) {
+                return "";
+            }
+            return element.isJsonPrimitive() ? element.getAsString() : element.toString();
         } catch (Exception ignored) {
             return "";
         }

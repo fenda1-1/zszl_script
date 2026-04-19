@@ -24,6 +24,8 @@ import net.minecraft.block.state.IBlockState;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.entity.EntityPlayerSP;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.AxisAlignedBB;
+import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.RayTraceResult;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.World;
@@ -51,6 +53,10 @@ public interface IPlayerContext {
     default BetterBlockPos playerFeet() {
         // TODO find a better way to deal with soul sand!!!!!
         BetterBlockPos feet = new BetterBlockPos(player().posX, player().posY + 0.1251, player().posZ);
+        BetterBlockPos footprintFeet = resolveFootprintStandingPos(feet);
+        if (footprintFeet != null) {
+            feet = footprintFeet;
+        }
 
         // sometimes when calling this from another thread or while world is null, it'll
         // throw a NullPointerException
@@ -74,6 +80,107 @@ public interface IPlayerContext {
         }
 
         return feet;
+    }
+
+    default BetterBlockPos resolveFootprintStandingPos(BetterBlockPos defaultFeet) {
+        if (player() == null) {
+            return defaultFeet;
+        }
+        AxisAlignedBB boundingBox = player().getEntityBoundingBox();
+        if (boundingBox == null) {
+            return defaultFeet;
+        }
+
+        double epsilon = 1.0E-4D;
+        double minX = boundingBox.minX + epsilon;
+        double maxX = boundingBox.maxX - epsilon;
+        double minZ = boundingBox.minZ + epsilon;
+        double maxZ = boundingBox.maxZ - epsilon;
+        if (maxX < minX) {
+            minX = maxX = player().posX;
+        }
+        if (maxZ < minZ) {
+            minZ = maxZ = player().posZ;
+        }
+
+        int minBlockX = MathHelper.floor(minX);
+        int maxBlockX = MathHelper.floor(maxX);
+        int minBlockZ = MathHelper.floor(minZ);
+        int maxBlockZ = MathHelper.floor(maxZ);
+
+        BetterBlockPos best = null;
+        double bestOverlap = -1.0D;
+        double bestDistanceSq = Double.POSITIVE_INFINITY;
+        boolean bestMatchesDefault = false;
+
+        for (int x = minBlockX; x <= maxBlockX; x++) {
+            for (int z = minBlockZ; z <= maxBlockZ; z++) {
+                BetterBlockPos candidate = adjustStandingCandidate(new BetterBlockPos(x, defaultFeet.y, z));
+                if (!isUsableStandingCandidate(candidate)) {
+                    continue;
+                }
+
+                double overlapX = overlapLength(minX, maxX, x, x + 1.0D);
+                double overlapZ = overlapLength(minZ, maxZ, z, z + 1.0D);
+                double overlapArea = overlapX * overlapZ;
+                double dx = (candidate.x + 0.5D) - player().posX;
+                double dz = (candidate.z + 0.5D) - player().posZ;
+                double distanceSq = dx * dx + dz * dz;
+                boolean matchesDefault = candidate.equals(defaultFeet);
+
+                if (best == null
+                        || overlapArea > bestOverlap + 1.0E-6D
+                        || (Math.abs(overlapArea - bestOverlap) <= 1.0E-6D
+                                && (matchesDefault && !bestMatchesDefault
+                                        || (matchesDefault == bestMatchesDefault
+                                                && distanceSq < bestDistanceSq - 1.0E-6D)))) {
+                    best = candidate;
+                    bestOverlap = overlapArea;
+                    bestDistanceSq = distanceSq;
+                    bestMatchesDefault = matchesDefault;
+                }
+            }
+        }
+
+        return best;
+    }
+
+    static double overlapLength(double minA, double maxA, double minB, double maxB) {
+        return Math.max(0.0D, Math.min(maxA, maxB) - Math.max(minA, minB));
+    }
+
+    default BetterBlockPos adjustStandingCandidate(BetterBlockPos candidate) {
+        if (candidate == null) {
+            return null;
+        }
+        try {
+            IBlockState standingState = world().getBlockState(candidate);
+            if (standingState.getBlock() instanceof BlockSlab
+                    || standingState.getBlock() instanceof BlockStairs) {
+                return candidate.up();
+            }
+        } catch (NullPointerException ignored) {
+        }
+        return candidate;
+    }
+
+    default boolean isUsableStandingCandidate(BetterBlockPos candidate) {
+        if (candidate == null) {
+            return false;
+        }
+        try {
+            IBlockState feetState = world().getBlockState(candidate);
+            IBlockState headState = world().getBlockState(candidate.up());
+            IBlockState groundState = world().getBlockState(candidate.down());
+            boolean feetPassable = !feetState.getMaterial().blocksMovement();
+            boolean headPassable = !headState.getMaterial().blocksMovement();
+            boolean hasGround = groundState.getMaterial().blocksMovement()
+                    || groundState.getBlock() instanceof BlockSlab
+                    || groundState.getBlock() instanceof BlockStairs;
+            return feetPassable && headPassable && hasGround;
+        } catch (NullPointerException ignored) {
+            return false;
+        }
     }
 
     default Vec3d playerFeetAsVec() {

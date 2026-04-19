@@ -107,7 +107,7 @@ final class ActionVariableBindingSupport {
     static int addExpressionTemplateEditor(GuiActionEditor editor, String label, String actualParamKey, int width,
             int x, int y) {
         String currentValue = editor.currentParams.has(actualParamKey)
-                ? editor.currentParams.get(actualParamKey).getAsString()
+                ? editor.stringifyJsonElementForEditor(editor.currentParams.get(actualParamKey))
                 : "";
         editor.addTextField(label, actualParamKey,
                 I18n.format("gui.path.action_editor.help.set_var_expression"),

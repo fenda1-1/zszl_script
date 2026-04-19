@@ -2167,7 +2167,7 @@ public class GuiActionEditor extends ThemedGuiScreen {
                 continue;
             }
 
-            if ("message".equals(key) || "locatorText".equals(key) || "channel".equals(key) || "hex".equals(key)) {
+            if (shouldPreserveRawTextValue(key)) {
                 newParams.addProperty(key, value);
                 continue;
             }
@@ -2185,18 +2185,12 @@ public class GuiActionEditor extends ThemedGuiScreen {
                     if (value.equalsIgnoreCase("true") || value.equalsIgnoreCase("false")) {
                         newParams.addProperty(key, Boolean.parseBoolean(value));
                     } else if (value.startsWith("[") && value.endsWith("]")) {
-                        JsonArray array = new JsonArray();
-                        String[] parts = value.replace("[", "").replace("]", "").split(",");
-                        for (String part : parts) {
-                            try {
-                                array.add(Double.parseDouble(part.trim()));
-                            } catch (NumberFormatException e) {
-                                zszlScriptMod.LOGGER.error("Failed to parse coordinate array '{}' part '{}'", value,
-                                        part);
-                                array.add(0.0);
-                            }
+                        JsonElement parsedArray = tryParseJsonArrayLiteral(value);
+                        if (parsedArray != null) {
+                            newParams.add(key, parsedArray);
+                        } else {
+                            newParams.addProperty(key, value);
                         }
-                        newParams.add(key, array);
                     } else {
                         newParams.addProperty(key, value);
                     }
@@ -3061,7 +3055,7 @@ public class GuiActionEditor extends ThemedGuiScreen {
         field.setMaxStringLength(Integer.MAX_VALUE);
 
         if (currentParams.has(paramKey)) {
-            field.setText(currentParams.get(paramKey).toString().replace("\"", ""));
+            field.setText(stringifyJsonElementForEditor(currentParams.get(paramKey)));
         } else {
             field.setText(defaultValue);
         }
@@ -6553,6 +6547,41 @@ public class GuiActionEditor extends ThemedGuiScreen {
 
     String safe(String value) {
         return value == null ? "" : value;
+    }
+
+    String stringifyJsonElementForEditor(JsonElement element) {
+        if (element == null || element.isJsonNull()) {
+            return "";
+        }
+        if (element.isJsonPrimitive()) {
+            return element.getAsString();
+        }
+        return element.toString();
+    }
+
+    private boolean shouldPreserveRawTextValue(String key) {
+        String normalizedKey = safe(key).trim();
+        return "message".equals(normalizedKey)
+                || "locatorText".equals(normalizedKey)
+                || "channel".equals(normalizedKey)
+                || "hex".equals(normalizedKey)
+                || "command".equals(normalizedKey)
+                || "expression".equals(normalizedKey)
+                || "conditionsText".equals(normalizedKey)
+                || "cancelExpression".equals(normalizedKey);
+    }
+
+    private JsonElement tryParseJsonArrayLiteral(String value) {
+        String text = safe(value).trim();
+        if (!text.startsWith("[") || !text.endsWith("]")) {
+            return null;
+        }
+        try {
+            JsonElement parsed = new JsonParser().parse(text);
+            return parsed != null && parsed.isJsonArray() ? parsed : null;
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 }
 
