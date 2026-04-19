@@ -1,12 +1,14 @@
 package com.zszl.zszlScriptMod.handlers;
 
 import com.zszl.zszlScriptMod.config.BaritoneSettingsConfig;
+import com.zszl.zszlScriptMod.config.DebugModule;
 import com.zszl.zszlScriptMod.config.ModConfig;
 import com.zszl.zszlScriptMod.shadowbaritone.api.BaritoneAPI;
 import com.zszl.zszlScriptMod.shadowbaritone.api.IBaritone;
 import com.zszl.zszlScriptMod.shadowbaritone.api.pathing.goals.Goal;
 import com.zszl.zszlScriptMod.shadowbaritone.api.pathing.goals.GoalBlock;
 import com.zszl.zszlScriptMod.shadowbaritone.api.pathing.goals.GoalXZ;
+import com.zszl.zszlScriptMod.zszlScriptMod;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.entity.Entity;
@@ -22,6 +24,49 @@ import net.minecraft.util.text.TextComponentString;
  * 2. 继续走命令桥接模式
  */
 public class EmbeddedNavigationHandler {
+    public static class NavigationDispatchTrace {
+        private final boolean dispatched;
+        private final String command;
+        private final String normalizedCommand;
+        private final String reasonKey;
+        private final boolean bypassGotoThrottle;
+        private final boolean directBuiltinMode;
+
+        private NavigationDispatchTrace(boolean dispatched, String command, String normalizedCommand, String reasonKey,
+                boolean bypassGotoThrottle, boolean directBuiltinMode) {
+            this.dispatched = dispatched;
+            this.command = command;
+            this.normalizedCommand = normalizedCommand;
+            this.reasonKey = reasonKey;
+            this.bypassGotoThrottle = bypassGotoThrottle;
+            this.directBuiltinMode = directBuiltinMode;
+        }
+
+        public boolean isDispatched() {
+            return dispatched;
+        }
+
+        public String getCommand() {
+            return command;
+        }
+
+        public String getNormalizedCommand() {
+            return normalizedCommand;
+        }
+
+        public String getReasonKey() {
+            return reasonKey;
+        }
+
+        public boolean isBypassGotoThrottle() {
+            return bypassGotoThrottle;
+        }
+
+        public boolean isDirectBuiltinMode() {
+            return directBuiltinMode;
+        }
+    }
+
     public static final EmbeddedNavigationHandler INSTANCE = new EmbeddedNavigationHandler();
     private static final Minecraft mc = Minecraft.getMinecraft();
     private static final long SAME_COMMAND_MIN_INTERVAL_MS = 250L;
@@ -32,6 +77,8 @@ public class EmbeddedNavigationHandler {
     private long lastStopCommandAt = 0L;
     private long lastGotoCommandAt = 0L;
     private String lastCommandSent = "";
+    private volatile NavigationDispatchTrace lastDispatchTrace = new NavigationDispatchTrace(false, "", "",
+            "never_dispatched", false, BaritoneSettingsConfig.isUseBuiltinBaritone());
 
     private EmbeddedNavigationHandler() {
     }
@@ -46,8 +93,7 @@ public class EmbeddedNavigationHandler {
         }
 
         if (isNavigationCommand(c)) {
-            dispatchNavigationCommand(c, false);
-            return true;
+            return dispatchNavigationCommand(c, false).isDispatched();
         }
 
         return false;
@@ -63,31 +109,44 @@ public class EmbeddedNavigationHandler {
                 || lower.startsWith(".goto ");
     }
 
-    private void dispatchNavigationCommand(String rawCommand, boolean bypassGotoThrottle) {
-        if (mc.player == null || mc.player.isSpectator()) {
-            return;
-        }
+    public NavigationDispatchTrace getLastDispatchTrace() {
+        return lastDispatchTrace;
+    }
 
-        if (shouldThrottle(rawCommand, bypassGotoThrottle)) {
-            return;
-        }
-
+    private NavigationDispatchTrace dispatchNavigationCommand(String rawCommand, boolean bypassGotoThrottle) {
+        String normalized = normalizeCommand(rawCommand);
         boolean directBuiltinMode = BaritoneSettingsConfig.isUseBuiltinBaritone();
+        if (mc.player == null || mc.player.isSpectator()) {
+            return recordDispatchTrace(false, rawCommand, normalized, "player_null_or_spectator", bypassGotoThrottle,
+                    directBuiltinMode);
+        }
+
+        String blockReason = getThrottleReason(normalized, bypassGotoThrottle);
+        if (!blockReason.isEmpty()) {
+            return recordDispatchTrace(false, rawCommand, normalized, blockReason, bypassGotoThrottle,
+                    directBuiltinMode);
+        }
+
         boolean executed = directBuiltinMode
-                ? executeBuiltinNavigationCommand(rawCommand)
+                ? executeBuiltinNavigationCommand(rawCommand, bypassGotoThrottle)
                 : InternalBaritoneBridge.executeRawChatLikeCommand(rawCommand);
         if (!executed) {
-            return;
+            return recordDispatchTrace(false, rawCommand, normalized,
+                    directBuiltinMode ? "builtin_execute_failed" : "bridge_execute_failed",
+                    bypassGotoThrottle, directBuiltinMode);
         }
 
         rememberCommand(rawCommand);
-        if (ModConfig.isDebugModeEnabled) {
+        NavigationDispatchTrace trace = recordDispatchTrace(true, rawCommand, normalized, "dispatched",
+                bypassGotoThrottle, directBuiltinMode);
+        if (ModConfig.isDebugModeEnabled && mc.player != null) {
             String route = directBuiltinMode ? "内置直调" : "命令桥接";
             mc.player.sendMessage(new TextComponentString("§d[DEBUG] §7发送导航命令(" + route + "): §f" + rawCommand));
         }
+        return trace;
     }
 
-    private boolean executeBuiltinNavigationCommand(String rawCommand) {
+    private boolean executeBuiltinNavigationCommand(String rawCommand, boolean bypassGotoThrottle) {
         String normalized = normalizeCommand(rawCommand);
 
         try {
@@ -100,7 +159,7 @@ public class EmbeddedNavigationHandler {
             }
 
             if (normalized.startsWith("!goto ") || normalized.startsWith(".goto ")) {
-                return executeBuiltinGotoCommand(normalized);
+                return executeBuiltinGotoCommand(normalized, bypassGotoThrottle);
             }
 
             if (normalized.equals("!pause") || normalized.equals("!resume")) {
@@ -114,7 +173,7 @@ public class EmbeddedNavigationHandler {
         return false;
     }
 
-    private boolean executeBuiltinGotoCommand(String normalizedCommand) {
+    private boolean executeBuiltinGotoCommand(String normalizedCommand, boolean forceRestart) {
         String[] parts = normalizedCommand.split("\\s+");
         if (parts.length == 0) {
             return false;
@@ -124,13 +183,13 @@ public class EmbeddedNavigationHandler {
             if (parts.length == 3) {
                 double x = Double.parseDouble(parts[1]);
                 double z = Double.parseDouble(parts[2]);
-                return executeBuiltinGoto(x, Double.NaN, z);
+                return executeBuiltinGoto(x, Double.NaN, z, forceRestart);
             }
             if (parts.length == 4) {
                 double x = Double.parseDouble(parts[1]);
                 double y = Double.parseDouble(parts[2]);
                 double z = Double.parseDouble(parts[3]);
-                return executeBuiltinGoto(x, y, z);
+                return executeBuiltinGoto(x, y, z, forceRestart);
             }
             return false;
         }
@@ -139,13 +198,13 @@ public class EmbeddedNavigationHandler {
             if (parts.length == 3) {
                 double x = Double.parseDouble(parts[1]);
                 double z = Double.parseDouble(parts[2]);
-                return executeBuiltinGoto(x, Double.NaN, z);
+                return executeBuiltinGoto(x, Double.NaN, z, forceRestart);
             }
             if (parts.length == 4) {
                 double x = Double.parseDouble(parts[1]);
                 double z = Double.parseDouble(parts[2]);
                 double y = Double.parseDouble(parts[3]);
-                return executeBuiltinGoto(x, y, z);
+                return executeBuiltinGoto(x, y, z, forceRestart);
             }
             return false;
         }
@@ -153,11 +212,17 @@ public class EmbeddedNavigationHandler {
         return false;
     }
 
-    private boolean executeBuiltinGoto(double x, double y, double z) {
+    private boolean executeBuiltinGoto(double x, double y, double z, boolean forceRestart) {
         IBaritone baritone = getPrimaryBaritone();
         Goal goal = Double.isNaN(y)
                 ? new GoalXZ(MathHelper.floor(x), MathHelper.floor(z))
                 : new GoalBlock(MathHelper.floor(x), MathHelper.floor(y), MathHelper.floor(z));
+        if (forceRestart && baritone.getPathingBehavior() != null) {
+            baritone.getPathingBehavior().cancelEverything();
+            if (shouldLogDispatchDebug()) {
+                zszlScriptMod.LOGGER.info("[navigation] 强制 goto 前已清理旧路径状态: goal={}", goal);
+            }
+        }
         baritone.getCustomGoalProcess().setGoalAndPath(goal);
         return true;
     }
@@ -182,23 +247,26 @@ public class EmbeddedNavigationHandler {
         return BaritoneAPI.getProvider().getPrimaryBaritone();
     }
 
-    private boolean shouldThrottle(String cmd, boolean bypassGotoThrottle) {
+    private String getThrottleReason(String normalizedCommand, boolean bypassGotoThrottle) {
         long now = System.currentTimeMillis();
-        String normalized = normalizeCommand(cmd);
+        boolean gotoCommand = isGotoCommand(normalizedCommand);
+        boolean bypassSameCommandThrottle = bypassGotoThrottle && gotoCommand;
 
-        if (normalized.equals(lastCommandSent) && (now - lastAnyCommandAt) < SAME_COMMAND_MIN_INTERVAL_MS) {
-            return true;
+        if (!bypassSameCommandThrottle
+                && normalizedCommand.equals(lastCommandSent)
+                && (now - lastAnyCommandAt) < SAME_COMMAND_MIN_INTERVAL_MS) {
+            return "same_command_throttle";
         }
 
-        if (normalized.endsWith(" stop") && (now - lastStopCommandAt) < STOP_COMMAND_MIN_INTERVAL_MS) {
-            return true;
+        if (normalizedCommand.endsWith(" stop") && (now - lastStopCommandAt) < STOP_COMMAND_MIN_INTERVAL_MS) {
+            return "stop_command_throttle";
         }
 
-        if (!bypassGotoThrottle && normalized.contains(" goto ") && (now - lastGotoCommandAt) < GOTO_COMMAND_MIN_INTERVAL_MS) {
-            return true;
+        if (gotoCommand && !bypassGotoThrottle && (now - lastGotoCommandAt) < GOTO_COMMAND_MIN_INTERVAL_MS) {
+            return "goto_cooldown_throttle";
         }
 
-        return false;
+        return "";
     }
 
     private void rememberCommand(String cmd) {
@@ -219,40 +287,73 @@ public class EmbeddedNavigationHandler {
         return cmd == null ? "" : cmd.trim().toLowerCase();
     }
 
-    public void startGoto(double x, double y, double z) {
-        startGoto(x, y, z, false);
+    private boolean isGotoCommand(String normalizedCommand) {
+        return normalizedCommand.startsWith("!goto ") || normalizedCommand.startsWith(".goto ");
     }
 
-    public void startGoto(double x, double y, double z, boolean bypassGotoThrottle) {
-        if (Double.isNaN(y)) {
-            dispatchNavigationCommand(String.format("!goto %.2f %.2f", x, z), bypassGotoThrottle);
-        } else {
-            dispatchNavigationCommand(String.format("!goto %.2f %.2f %.2f", x, y, z), bypassGotoThrottle);
+    private NavigationDispatchTrace recordDispatchTrace(boolean dispatched, String command, String normalizedCommand,
+            String reasonKey, boolean bypassGotoThrottle, boolean directBuiltinMode) {
+        NavigationDispatchTrace trace = new NavigationDispatchTrace(dispatched,
+                command == null ? "" : command.trim(),
+                normalizedCommand == null ? "" : normalizedCommand,
+                reasonKey == null || reasonKey.trim().isEmpty() ? "unknown" : reasonKey.trim(),
+                bypassGotoThrottle,
+                directBuiltinMode);
+        lastDispatchTrace = trace;
+        if (!dispatched && shouldLogDispatchDebug()) {
+            zszlScriptMod.LOGGER.info(
+                    "[navigation] 命令未发送: reason={}, command={}, bypassGotoThrottle={}, route={}",
+                    trace.getReasonKey(),
+                    trace.getCommand(),
+                    trace.isBypassGotoThrottle(),
+                    trace.isDirectBuiltinMode() ? "builtin" : "bridge");
         }
+        return trace;
     }
 
-    public void startGotoXZ(double x, double z) {
-        startGotoXZ(x, z, false);
+    private boolean shouldLogDispatchDebug() {
+        return ModConfig.isDebugModeEnabled
+                || ModConfig.isDebugFlagEnabled(DebugModule.PATH_SEQUENCE)
+                || ModConfig.isDebugFlagEnabled(DebugModule.CONDITIONAL_EXECUTION)
+                || ModConfig.isDebugFlagEnabled(DebugModule.BARITONE);
     }
 
-    public void startGotoXZ(double x, double z, boolean bypassGotoThrottle) {
-        dispatchNavigationCommand(String.format("!goto %.2f %.2f", x, z), bypassGotoThrottle);
+    public boolean startGoto(double x, double y, double z) {
+        return startGoto(x, y, z, false);
     }
 
-    public void startFollowEntities() {
-        dispatchNavigationCommand("!follow entities", false);
+    public boolean startGoto(double x, double y, double z, boolean bypassGotoThrottle) {
+        if (Double.isNaN(y)) {
+            return dispatchNavigationCommand(String.format("!goto %.2f %.2f", x, z), bypassGotoThrottle)
+                    .isDispatched();
+        }
+        return dispatchNavigationCommand(String.format("!goto %.2f %.2f %.2f", x, y, z), bypassGotoThrottle)
+                .isDispatched();
     }
 
-    public void stop() {
-        dispatchNavigationCommand("!stop", false);
+    public boolean startGotoXZ(double x, double z) {
+        return startGotoXZ(x, z, false);
     }
 
-    public void pause() {
-        dispatchNavigationCommand("!pause", false);
+    public boolean startGotoXZ(double x, double z, boolean bypassGotoThrottle) {
+        return dispatchNavigationCommand(String.format("!goto %.2f %.2f", x, z), bypassGotoThrottle)
+                .isDispatched();
     }
 
-    public void resume() {
-        dispatchNavigationCommand("!resume", false);
+    public boolean startFollowEntities() {
+        return dispatchNavigationCommand("!follow entities", false).isDispatched();
+    }
+
+    public boolean stop() {
+        return dispatchNavigationCommand("!stop", false).isDispatched();
+    }
+
+    public boolean pause() {
+        return dispatchNavigationCommand("!pause", false).isDispatched();
+    }
+
+    public boolean resume() {
+        return dispatchNavigationCommand("!resume", false).isDispatched();
     }
 
     public boolean isPathingOrCalculating() {

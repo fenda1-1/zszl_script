@@ -278,6 +278,7 @@ public class PathSequenceEventListener {
     private double explicitDelayRemainingBaselineTicks = 0.0D;
     private boolean pausedByGui = false;
     private boolean pendingLoopRestart = false;
+    private boolean eventBusRegistered = false;
     private final Minecraft mc = Minecraft.getMinecraft();
     private final boolean backgroundRunner;
     private final String lockOwnerId = UUID.randomUUID().toString();
@@ -412,6 +413,22 @@ public class PathSequenceEventListener {
     private PathSequenceEventListener(boolean backgroundRunner) {
         this.backgroundRunner = backgroundRunner;
         // 运行时配置改为首次使用时再加载，避免静态字段初始化顺序导致的 NPE。
+    }
+
+    private void ensureEventBusRegistered() {
+        if (eventBusRegistered) {
+            return;
+        }
+        MinecraftForge.EVENT_BUS.register(this);
+        eventBusRegistered = true;
+    }
+
+    private void ensureEventBusUnregistered() {
+        if (!eventBusRegistered) {
+            return;
+        }
+        MinecraftForge.EVENT_BUS.unregister(this);
+        eventBusRegistered = false;
     }
 
     static PathSequenceEventListener getCurrentExecutionContext() {
@@ -688,7 +705,8 @@ public class PathSequenceEventListener {
         }
         double[] target = currentSequence.getSteps().get(currentStepIndex).getGotoPoint();
         if (target != null && target.length >= 3 && !Double.isNaN(target[0])) {
-            EmbeddedNavigationHandler.INSTANCE.startGoto(target[0], target[1], target[2]);
+            prepareForSequenceStartDispatch("restoreNavigationStateIfNeeded");
+            EmbeddedNavigationHandler.INSTANCE.startGoto(target[0], target[1], target[2], true);
             return true;
         }
         return false;
@@ -717,7 +735,8 @@ public class PathSequenceEventListener {
         int firstStepIndex = Math.max(0, Math.min(runner.currentStepIndex, sequence.getSteps().size() - 1));
         double[] firstTarget = sequence.getSteps().get(firstStepIndex).getGotoPoint();
         if (firstTarget != null && firstTarget.length >= 3 && !Double.isNaN(firstTarget[0])) {
-            EmbeddedNavigationHandler.INSTANCE.startGoto(firstTarget[0], firstTarget[1], firstTarget[2]);
+            runner.prepareForSequenceStartDispatch("primeBackgroundNavigation");
+            EmbeddedNavigationHandler.INSTANCE.startGoto(firstTarget[0], firstTarget[1], firstTarget[2], true);
         }
     }
 
@@ -1051,7 +1070,12 @@ public class PathSequenceEventListener {
         this.pausedByGui = false;
         this.pausedForDebug = false;
         EmbeddedNavigationHandler.INSTANCE.resume();
+        stripPauseStatusSuffix();
+        zszlScriptMod.LOGGER.info(I18n.format("log.path.resumed"));
+        recordDebugTrace("序列恢复");
+    }
 
+    private void stripPauseStatusSuffix() {
         String pausedGuiSuffix = " | " + I18n.format("status.path.paused_gui");
         String pausedSuffix = " | " + I18n.format("status.path.paused");
         if (getStatus().contains(pausedGuiSuffix)) {
@@ -1059,8 +1083,24 @@ public class PathSequenceEventListener {
         } else if (getStatus().contains(pausedSuffix)) {
             setStatus(getStatus().replace(pausedSuffix, ""));
         }
-        zszlScriptMod.LOGGER.info(I18n.format("log.path.resumed"));
-        recordDebugTrace("序列恢复");
+    }
+
+    private boolean resetPauseStateForSequenceLifecycle(String reason, boolean resumeNavigation) {
+        boolean wasPaused = this.isPaused || this.pausedByGui || this.pausedForDebug;
+        this.isPaused = false;
+        this.pausedByGui = false;
+        this.pausedForDebug = false;
+        this.debugStepArmed = false;
+        stripPauseStatusSuffix();
+        if (wasPaused && resumeNavigation) {
+            EmbeddedNavigationHandler.INSTANCE.resume();
+            recordDebugTrace("清理暂停状态: " + (reason == null ? "unknown" : reason));
+        }
+        return wasPaused;
+    }
+
+    void prepareForSequenceStartDispatch(String reason) {
+        resetPauseStateForSequenceLifecycle(reason, true);
     }
 
     public void startTracking(PathSequence sequence, int remainingLoops) {
@@ -1069,6 +1109,8 @@ public class PathSequenceEventListener {
 
     public void startTracking(PathSequence sequence, int remainingLoops, Map<String, Object> initialSequenceVariables) {
         releaseResources();
+        resetPauseStateForSequenceLifecycle("startTracking:" + (sequence == null ? "unknown" : sequence.getName()),
+                true);
         this.currentSequence = sequence;
         this.currentStepIndex = 0;
         this.actionIndex = 0;
@@ -1124,7 +1166,7 @@ public class PathSequenceEventListener {
 
         initializeStepPathRetryMonitor(mc.player);
 
-        MinecraftForge.EVENT_BUS.register(this);
+        ensureEventBusRegistered();
         zszlScriptMod.LOGGER.info(I18n.format("log.path.tracking_started") + sequence.getName());
     }
 
@@ -1134,16 +1176,15 @@ public class PathSequenceEventListener {
                 mc.player.sendMessage(new TextComponentString(I18n.format("msg.path.debug.sequence_stop",
                         currentSequence != null ? currentSequence.getName() : I18n.format("msg.common.unknown"))));
             }
+            resetPauseStateForSequenceLifecycle("stopTracking", false);
             this.tracking = false;
             this.pendingLoopRestart = false;
-            this.pausedForDebug = false;
-            this.debugStepArmed = false;
             this.debugIgnoreBreakpointKey = "";
             resetStepPathRetryMonitor();
             recordDebugTrace("序列停止: " + (currentSequence != null ? currentSequence.getName() : "unknown"));
             finishExecutionLogSessionIfNeeded();
             this.currentSequence = null;
-            MinecraftForge.EVENT_BUS.unregister(this);
+            ensureEventBusUnregistered();
             status = I18n.format("status.path.stopped");
             resetHuntState();
             resetHotbarUseActionState();
@@ -1199,10 +1240,7 @@ public class PathSequenceEventListener {
         this.explicitDelayNormalizeTo20Tps = false;
         this.explicitDelayRemainingBaselineTicks = this.tickDelay;
         this.currentStepRetryUsed = Math.max(0, snapshot.getStepRetryUsed());
-        this.isPaused = false;
-        this.pausedByGui = false;
-        this.pausedForDebug = false;
-        this.debugStepArmed = false;
+        resetPauseStateForSequenceLifecycle("resumeFromSnapshot:" + sequence.getName(), true);
         this.debugIgnoreBreakpointKey = "";
         resetStepPathRetryMonitor();
         resetHuntState();
@@ -1227,7 +1265,8 @@ public class PathSequenceEventListener {
         if (!this.atTarget) {
             double[] target = sequence.getSteps().get(this.currentStepIndex).getGotoPoint();
             if (!Double.isNaN(target[0])) {
-                EmbeddedNavigationHandler.INSTANCE.startGoto(target[0], target[1], target[2]);
+                prepareForSequenceStartDispatch("resumeFromSnapshot.goto");
+                EmbeddedNavigationHandler.INSTANCE.startGoto(target[0], target[1], target[2], true);
                 initializeStepPathRetryMonitor(mc.player);
             } else {
                 EmbeddedNavigationHandler.INSTANCE.stop();
@@ -1238,7 +1277,7 @@ public class PathSequenceEventListener {
             resetStepPathRetryMonitor();
         }
 
-        MinecraftForge.EVENT_BUS.register(this);
+        ensureEventBusRegistered();
         return true;
     }
 
@@ -1448,7 +1487,7 @@ public class PathSequenceEventListener {
                     status = I18n.format("status.path.wait_next_loop");
                     tracking = false;
                     pendingLoopRestart = true;
-                    MinecraftForge.EVENT_BUS.unregister(this);
+                    ensureEventBusUnregistered();
 
                     int delay = currentSequence.getLoopDelayTicks();
                     PathSequence loopingSequence = currentSequence;
@@ -3537,7 +3576,8 @@ public class PathSequenceEventListener {
             if (shouldStopNavigationForStepTransition()) {
                 EmbeddedNavigationHandler.INSTANCE.stop();
             }
-            EmbeddedNavigationHandler.INSTANCE.startGoto(target[0], target[1], target[2]);
+            prepareForSequenceStartDispatch("restartCurrentStepTarget");
+            EmbeddedNavigationHandler.INSTANCE.startGoto(target[0], target[1], target[2], true);
             initializeStepPathRetryMonitor(mc.player);
         } else {
             atTarget = true;

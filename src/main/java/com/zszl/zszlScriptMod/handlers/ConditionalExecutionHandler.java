@@ -25,6 +25,7 @@ import net.minecraft.util.text.TextComponentString;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import net.minecraftforge.client.event.RenderWorldLastEvent;
 import net.minecraftforge.fml.common.gameevent.TickEvent;
+import net.minecraftforge.fml.relauncher.Side;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
@@ -444,7 +445,12 @@ public class ConditionalExecutionHandler {
 
     @SubscribeEvent
     public void onPlayerTick(TickEvent.PlayerTickEvent event) {
-        if (event.phase != TickEvent.Phase.START || mc.player == null || mc.world == null) {
+        if (event == null
+                || event.phase != TickEvent.Phase.START
+                || event.side != Side.CLIENT
+                || mc.player == null
+                || mc.world == null
+                || event.player != mc.player) {
             return;
         }
 
@@ -514,9 +520,11 @@ public class ConditionalExecutionHandler {
 
         if (activeRule != null) {
             if (!activeRule.enabled) {
+                stopActiveSequence();
                 activeRule = null;
             } else if (!PathSequenceEventListener.instance.isTracking()
                     && !activeRule.isInRange(mc.player.posX, mc.player.posY, mc.player.posZ)) {
+                stopActiveSequence();
                 activeRule = null;
             }
         }
@@ -605,9 +613,7 @@ public class ConditionalExecutionHandler {
 
     private void stopActiveSequence() {
         EmbeddedNavigationHandler.INSTANCE.stop();
-        if (PathSequenceEventListener.instance.isTracking()) {
-            PathSequenceEventListener.instance.stopTracking();
-        }
+        PathSequenceEventListener.instance.stopTracking();
         GuiInventory.isLooping = false;
     }
 
@@ -723,10 +729,15 @@ public class ConditionalExecutionHandler {
             return;
         }
 
-        stopActiveSequence();
-        activeRule = rule;
-        activeRule.hasBeenTriggered = true;
-        runRuleSequence(activeRule, true);
+        runOnClientThread(() -> {
+            if (mc.player == null || mc.world == null) {
+                return;
+            }
+            stopActiveSequence();
+            activeRule = rule;
+            activeRule.hasBeenTriggered = true;
+            runRuleSequence(activeRule, true);
+        });
     }
 
     private void runRuleSequence(ConditionalRule rule, boolean forceSingleExecution) {
@@ -737,16 +748,32 @@ public class ConditionalExecutionHandler {
         if (sequenceName.isEmpty()) {
             return;
         }
-        if (forceSingleExecution) {
-            PathSequenceManager.runPathSequenceOnce(sequenceName);
-            return;
-        }
+        runOnClientThread(() -> {
+            if (mc.player == null || mc.world == null) {
+                return;
+            }
+            if (forceSingleExecution) {
+                PathSequenceManager.runPathSequenceOnce(sequenceName);
+                return;
+            }
 
-        int explicitLoopCount = rule.loopCount;
-        if (explicitLoopCount == 0) {
+            int explicitLoopCount = rule.loopCount;
+            if (explicitLoopCount == 0) {
+                return;
+            }
+            PathSequenceManager.runPathSequenceWithLoopCount(sequenceName, explicitLoopCount);
+        });
+    }
+
+    private void runOnClientThread(Runnable task) {
+        if (task == null) {
             return;
         }
-        PathSequenceManager.runPathSequenceWithLoopCount(sequenceName, explicitLoopCount);
+        if (mc.isCallingFromMinecraftThread()) {
+            task.run();
+            return;
+        }
+        mc.addScheduledTask(task);
     }
 
     private void sendAntiStuckWarning(ConditionalRule rule, int elapsedSeconds, int remainSeconds) {

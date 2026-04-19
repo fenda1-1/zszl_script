@@ -3090,7 +3090,8 @@ public class PathSequenceManager {
         }
 
         if (!Double.isNaN(firstTarget[0])) {
-            EmbeddedNavigationHandler.INSTANCE.startGoto(firstTarget[0], firstTarget[1], firstTarget[2]);
+            PathSequenceEventListener.instance.prepareForSequenceStartDispatch("startNextLoopInternal:" + sequenceName);
+            EmbeddedNavigationHandler.INSTANCE.startGoto(firstTarget[0], firstTarget[1], firstTarget[2], true);
         } else {
             zszlScriptMod.LOGGER.warn(I18n.format("log.path.first_step_no_target"), sequenceName);
         }
@@ -3119,8 +3120,6 @@ public class PathSequenceManager {
                 initialSequenceVariables);
 
         PathSequenceEventListener.instance.resume();
-
-        MinecraftForge.EVENT_BUS.register(PathSequenceEventListener.instance);
         zszlScriptMod.LOGGER.info(I18n.format("log.path.start_running") + sequenceName);
     }
 
