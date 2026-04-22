@@ -57,7 +57,7 @@ final class InventoryItemFilterExpressionEditorSupport {
                 I18n.format("gui.path.manager.add"));
         editor.btnEditInventoryItemFilterExpression = new ThemedButton(
                 GuiActionEditor.BTN_ID_EDIT_INVENTORY_ITEM_FILTER_EXPRESSION, x, y, 72, 20,
-                I18n.format("gui.auto_skill.edit"));
+                I18n.format("gui.common.edit"));
         editor.btnDeleteInventoryItemFilterExpression = new ThemedButton(
                 GuiActionEditor.BTN_ID_DELETE_INVENTORY_ITEM_FILTER_EXPRESSION, x, y, 72, 20,
                 I18n.format("gui.common.delete"));

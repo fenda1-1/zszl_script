@@ -56,10 +56,10 @@ public class GuiCategoryManager extends ThemedGuiScreen {
         int panelWidth = PANEL_WIDTH;
 
         this.buttonList
-                .add(new ThemedButton(0, panelX + 12, panelY + 204, 84, 20, "§a" + I18n.format("gui.auto_skill.add")));
+                .add(new ThemedButton(0, panelX + 12, panelY + 204, 84, 20, "§a" + I18n.format("gui.common.add")));
         btnRename = new ThemedButton(1, panelX + 108, panelY + 204, 84, 20, "§e" + I18n.format("gui.path.rename"));
         btnDelete = new ThemedButton(2, panelX + 204, panelY + 204, 84, 20,
-                "§c" + I18n.format("gui.auto_skill.delete"));
+                "§c" + I18n.format("gui.common.delete"));
         this.buttonList.add(btnRename);
         this.buttonList.add(btnDelete);
 

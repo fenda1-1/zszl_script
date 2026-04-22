@@ -82,7 +82,7 @@ final class BooleanExpressionEditorSupport {
         editor.btnAddBooleanExpression = new ThemedButton(GuiActionEditor.BTN_ID_ADD_BOOLEAN_EXPRESSION, x, y, 72, 20,
                 I18n.format("gui.path.manager.add"));
         editor.btnEditBooleanExpression = new ThemedButton(GuiActionEditor.BTN_ID_EDIT_BOOLEAN_EXPRESSION, x, y, 72, 20,
-                I18n.format("gui.auto_skill.edit"));
+                I18n.format("gui.common.edit"));
         editor.btnDeleteBooleanExpression = new ThemedButton(GuiActionEditor.BTN_ID_DELETE_BOOLEAN_EXPRESSION, x, y, 72,
                 20, I18n.format("gui.common.delete"));
         editor.btnMoveBooleanExpressionUp = new ThemedButton(GuiActionEditor.BTN_ID_MOVE_BOOLEAN_EXPRESSION_UP, x, y,

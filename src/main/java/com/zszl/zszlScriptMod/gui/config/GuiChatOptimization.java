@@ -207,11 +207,11 @@ public class GuiChatOptimization extends ThemedGuiScreen {
 
         int listButtonWidth = (controlWidth - 20) / 3;
         this.scrollableButtons.add(new ThemedButton(BTN_TIMED_ADD, controlX, currentY + 90, listButtonWidth, 20,
-                "§a" + I18n.format("gui.auto_skill.add")));
+                "§a" + I18n.format("gui.common.add")));
         this.scrollableButtons.add(new ThemedButton(BTN_TIMED_EDIT, controlX + listButtonWidth + 10, currentY + 90,
-                listButtonWidth, 20, "§e" + I18n.format("gui.auto_skill.edit")));
+                listButtonWidth, 20, "§e" + I18n.format("gui.common.edit")));
         this.scrollableButtons.add(new ThemedButton(BTN_TIMED_DELETE, controlX + 2 * (listButtonWidth + 10),
-                currentY + 90, listButtonWidth, 20, "§c" + I18n.format("gui.auto_skill.delete")));
+                currentY + 90, listButtonWidth, 20, "§c" + I18n.format("gui.common.delete")));
         currentY += 120;
 
         ToggleGuiButton btnBlacklist = new ToggleGuiButton(BTN_BLACKLIST, controlX, currentY, halfWidth, 20,
@@ -232,7 +232,7 @@ public class GuiChatOptimization extends ThemedGuiScreen {
 
         ToggleGuiButton btnSmooth = new ToggleGuiButton(BTN_SMOOTH, controlX, currentY, controlWidth, 20,
                 I18n.format("gui.chatopt.smooth",
-                        I18n.format(settings.smooth ? "gui.auto_skill.state_on" : "gui.auto_skill.state_off")),
+                        I18n.format(settings.smooth ? "gui.common.enabled" : "gui.common.disabled")),
                 settings.smooth);
         this.scrollableButtons.add(btnSmooth);
         this.tooltips.put(btnSmooth, I18n.format("gui.chatopt.tip.smooth"));
@@ -302,7 +302,7 @@ public class GuiChatOptimization extends ThemedGuiScreen {
             toggle.setEnabledState(!toggle.getEnabledState());
             if (button.id == BTN_SMOOTH) {
                 button.displayString = I18n.format("gui.chatopt.smooth",
-                        I18n.format(toggle.getEnabledState() ? "gui.auto_skill.state_on" : "gui.auto_skill.state_off"));
+                        I18n.format(toggle.getEnabledState() ? "gui.common.enabled" : "gui.common.disabled"));
             }
             return;
         }

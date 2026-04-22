@@ -201,7 +201,7 @@ public class NBTListElement extends Gui {
         options.add(new NBTOption() {
             @Override
             public String getText() {
-                return I18n.format("gui.auto_skill.delete");
+                return I18n.format("gui.common.delete");
             }
 
             @Override
