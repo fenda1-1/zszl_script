@@ -24,7 +24,6 @@ import com.zszl.zszlScriptMod.shadowbaritone.api.command.argument.IArgConsumer;
 import com.zszl.zszlScriptMod.shadowbaritone.api.command.datatypes.ForBlockOptionalMeta;
 import com.zszl.zszlScriptMod.shadowbaritone.api.command.exception.CommandException;
 import com.zszl.zszlScriptMod.shadowbaritone.api.utils.BlockOptionalMeta;
-import com.zszl.zszlScriptMod.shadowbaritone.api.utils.ShadowBaritoneI18n;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -46,9 +45,7 @@ public class MineCommand extends Command {
             boms.add(args.getDatatypeFor(ForBlockOptionalMeta.INSTANCE));
         }
         BaritoneAPI.getProvider().getWorldScanner().repack(ctx);
-        logDirect(ShadowBaritoneI18n.trKey(
-                "shadowbaritone.command.mine.status.mining",
-                boms.toString()));
+        logDirect(String.format("Mining %s", boms.toString()));
         baritone.getMineProcess().mine(quantity, boms.toArray(new BlockOptionalMeta[0]));
     }
 
@@ -63,29 +60,21 @@ public class MineCommand extends Command {
 
     @Override
     public String getShortDesc() {
-        return ShadowBaritoneI18n.trKey(
-                "shadowbaritone.command.mine.short_desc");
+        return "Mine some blocks";
     }
 
     @Override
     public List<String> getLongDesc() {
         return Arrays.asList(
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.mine.long_desc.1"),
+                "The mine command allows you to tell Baritone to search for and mine individual blocks.",
                 "",
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.mine.long_desc.2"),
+                "The specified blocks can be ores, or any other block.",
                 "",
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.mine.long_desc.3"),
+                "Also see the legitMine settings (see #set l legitMine).",
                 "",
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.mine.long_desc.usage"),
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.mine.long_desc.example.diamond"),
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.mine.long_desc.example.redstone"),
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.mine.long_desc.example.log"));
+                "Usage:",
+                "> mine diamond_ore - Mines all diamonds it can find."
+        );
     }
 }
+

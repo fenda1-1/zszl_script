@@ -15,16 +15,13 @@ import java.nio.file.Path;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.zszl.zszlScriptMod.gui.path.GuiActionEditor.GuiActionEditor;
-import net.minecraft.client.gui.GuiButton;
 import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
-import net.minecraft.client.gui.GuiTextField;
-import net.minecraft.client.entity.EntityPlayerSP;
-import net.minecraft.client.resources.I18n;
-import net.minecraft.util.math.MathHelper;
-import net.minecraft.util.math.AxisAlignedBB;
-import net.minecraft.util.text.TextFormatting;
-import org.lwjgl.input.Keyboard;
-import org.lwjgl.input.Mouse;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiTextField;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.util.math.MathHelper;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Keyboard;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Mouse;
 
 import com.zszl.zszlScriptMod.gui.MainUiLayoutManager;
 import com.zszl.zszlScriptMod.gui.components.GuiTextInput;
@@ -38,8 +35,10 @@ import com.zszl.zszlScriptMod.path.PathSequenceManager.PathStep;
 import com.zszl.zszlScriptMod.path.runtime.locks.ResourceLockManager;
 import com.zszl.zszlScriptMod.path.validation.PathConfigValidator;
 import com.zszl.zszlScriptMod.system.ProfileManager;
-import com.zszl.zszlScriptMod.shadowbaritone.utils.GuiPathingPolicy;
 import com.zszl.zszlScriptMod.utils.PinyinSearchHelper;
+import net.minecraft.ChatFormatting;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.world.phys.AABB;
 
 import java.util.ArrayList;
 import java.util.ArrayDeque;
@@ -229,19 +228,19 @@ public class GuiPathManager extends ThemedGuiScreen {
         }
     }
 
-    private static final Map<String, TextFormatting> ACTION_COLORS = new HashMap<>();
+    private static final Map<String, ChatFormatting> ACTION_COLORS = new HashMap<>();
     static {
-        ACTION_COLORS.put("delay", TextFormatting.YELLOW);
-        ACTION_COLORS.put("command", TextFormatting.AQUA);
-        ACTION_COLORS.put("key", TextFormatting.LIGHT_PURPLE);
-        ACTION_COLORS.put("click", TextFormatting.GREEN);
-        ACTION_COLORS.put("setview", TextFormatting.GOLD);
-        ACTION_COLORS.put("rightclickblock", TextFormatting.BLUE);
-        ACTION_COLORS.put("rightclickentity", TextFormatting.DARK_AQUA);
-        ACTION_COLORS.put("takeallitems", TextFormatting.WHITE);
-        ACTION_COLORS.put("dropfiltereditems", TextFormatting.RED);
-        ACTION_COLORS.put("autochestclick", TextFormatting.DARK_GREEN);
-        ACTION_COLORS.put("hunt", TextFormatting.DARK_RED); // 为 hunt 添加颜色
+        ACTION_COLORS.put("delay", ChatFormatting.YELLOW);
+        ACTION_COLORS.put("command", ChatFormatting.AQUA);
+        ACTION_COLORS.put("key", ChatFormatting.LIGHT_PURPLE);
+        ACTION_COLORS.put("click", ChatFormatting.GREEN);
+        ACTION_COLORS.put("setview", ChatFormatting.GOLD);
+        ACTION_COLORS.put("rightclickblock", ChatFormatting.BLUE);
+        ACTION_COLORS.put("rightclickentity", ChatFormatting.DARK_AQUA);
+        ACTION_COLORS.put("takeallitems", ChatFormatting.WHITE);
+        ACTION_COLORS.put("dropfiltereditems", ChatFormatting.RED);
+        ACTION_COLORS.put("autochestclick", ChatFormatting.DARK_GREEN);
+        ACTION_COLORS.put("hunt", ChatFormatting.DARK_RED); // 为 hunt 添加颜色
     }
 
     private static final class CategoryTreeRow {
@@ -331,7 +330,6 @@ public class GuiPathManager extends ThemedGuiScreen {
     private GuiButton btnDebugClearTrace;
     private GuiButton btnDebugStep;
     private GuiButton btnToggleActionBreakpoint;
-    private GuiButton btnNodeEditor;
     private GuiButton btnLegacyTriggerRules;
     private GuiButton btnExecutionLogs;
     private GuiButton btnSafetySettings;
@@ -534,7 +532,7 @@ public class GuiPathManager extends ThemedGuiScreen {
                 continue;
             }
             if (button.mousePressed(this.mc, mouseX, mouseY)) {
-                button.playPressSound(this.mc.getSoundHandler());
+                button.playPressSound(this.mc.getSoundManager());
                 this.actionPerformed(button);
                 return true;
             }
@@ -782,7 +780,7 @@ public class GuiPathManager extends ThemedGuiScreen {
 
     private List<GuiButton> getHeaderToolbarButtons() {
         return Arrays.asList(btnSafetySettings, btnExecutionLogs, btnDebugPanel, btnLegacyTriggerRules,
-                btnActionVariableManager, btnNodeEditor);
+                btnActionVariableManager);
     }
 
     private void layoutHeaderToolbarButtons() {
@@ -804,7 +802,7 @@ public class GuiPathManager extends ThemedGuiScreen {
         List<Integer> buttonWidths = new ArrayList<>();
         int totalWidth = 0;
         for (GuiButton button : buttons) {
-            String plainLabel = TextFormatting.getTextWithoutFormattingCodes(button.displayString);
+            String plainLabel = ChatFormatting.stripFormatting(button.displayString);
             int width = MathHelper.clamp(fontRenderer.getStringWidth(plainLabel == null ? "" : plainLabel) + s(18),
                     s(74), s(124));
             buttonWidths.add(width);
@@ -1121,35 +1119,11 @@ public class GuiPathManager extends ThemedGuiScreen {
         return Math.round(value * 1000.0D) / 1000.0D;
     }
 
-    private double resolveSafeStandingY(EntityPlayerSP player) {
-        if (player == null || player.world == null || player.getEntityBoundingBox() == null) {
+    private double resolveSafeStandingY(LocalPlayer player) {
+        if (player == null) {
             return Double.NaN;
         }
-
-        AxisAlignedBB playerBox = player.getEntityBoundingBox();
-        AxisAlignedBB supportProbe = playerBox.grow(-0.05D, 0.0D, -0.05D).offset(0.0D, -0.20D, 0.0D);
-        List<AxisAlignedBB> collisions = player.world.getCollisionBoxes(player, supportProbe);
-        double feetY = playerBox.minY;
-        double supportTop = Double.NEGATIVE_INFINITY;
-
-        for (AxisAlignedBB collision : collisions) {
-            if (collision == null) {
-                continue;
-            }
-            if (collision.maxY > feetY + 0.25D) {
-                continue;
-            }
-            if (collision.maxY < feetY - 1.25D) {
-                continue;
-            }
-            supportTop = Math.max(supportTop, collision.maxY);
-        }
-
-        if (supportTop == Double.NEGATIVE_INFINITY) {
-            return feetY;
-        }
-
-        return Math.max(feetY, supportTop + 0.01D);
+        return player.getY();
     }
 
     private double[] captureCurrentSafeGotoPoint() {
@@ -1157,12 +1131,12 @@ public class GuiPathManager extends ThemedGuiScreen {
             return new double[] { Double.NaN, Double.NaN, Double.NaN };
         }
 
-        EntityPlayerSP player = mc.player;
+        LocalPlayer player = mc.player;
         double safeY = resolveSafeStandingY(player);
         return new double[] {
-                roundCoordinate(player.posX),
-                roundCoordinate(Double.isNaN(safeY) ? player.posY : safeY),
-                roundCoordinate(player.posZ)
+                roundCoordinate(player.getX()),
+                roundCoordinate(Double.isNaN(safeY) ? player.getY() : safeY),
+                roundCoordinate(player.getZ())
         };
     }
 
@@ -1410,7 +1384,6 @@ public class GuiPathManager extends ThemedGuiScreen {
         btnSafetySettings = new ThemedButton(44, 0, 0, s(88), s(18), "§6安全模式");
         btnExecutionLogs = new ThemedButton(43, 0, 0, s(88), s(18), "§a执行日志");
         btnLegacyTriggerRules = new ThemedButton(40, 0, 0, s(98), s(18), "§d触发器规则");
-        btnNodeEditor = new ThemedButton(34, 0, 0, s(96), s(18), "§b节点编辑区");
         btnToolbarPrev = new ThemedButton(47, 0, 0, s(18), s(18), "<");
         btnToolbarNext = new ThemedButton(48, 0, 0, s(18), s(18), ">");
         btnDebugPanel = new ThemedButton(49, 0, 0, s(106), s(18), "§b显示调试面板");
@@ -1423,7 +1396,6 @@ public class GuiPathManager extends ThemedGuiScreen {
         this.buttonList.add(btnSafetySettings);
         this.buttonList.add(btnExecutionLogs);
         this.buttonList.add(btnLegacyTriggerRules);
-        this.buttonList.add(btnNodeEditor);
         this.buttonList.add(btnToolbarPrev);
         this.buttonList.add(btnToolbarNext);
         this.buttonList.add(btnDebugPanel);
@@ -1651,7 +1623,7 @@ public class GuiPathManager extends ThemedGuiScreen {
             btnDebugClearTrace.enabled = debugButtonsVisible;
         }
         if (btnDebugStep != null) {
-            btnDebugStep.enabled = debuggingSelectedSequence && debugSnapshot.isPausedForDebug();
+            btnDebugStep.enabled = debuggingSelectedSequence && debugSnapshot.isPaused();
         }
         if (btnToggleActionBreakpoint != null) {
             boolean actionSelected = selectedSequence != null && selectedStep != null && selectedAction != null
@@ -1726,10 +1698,10 @@ public class GuiPathManager extends ThemedGuiScreen {
         // ... (case 0 to 5, and case 10 to 18, case 30 to 32, case 100 to 101 保持不变)
         switch (button.id) {
             case 0: // 管理分类
-                mc.displayGuiScreen(new GuiCategoryManager(this));
+                mc.setScreen(new GuiCategoryManager(this));
                 break;
             case 1: // 新增序列
-                mc.displayGuiScreen(
+                mc.setScreen(
                         new GuiTextInput(this, I18n.format("gui.path.manager.input_new_sequence"), newName -> {
                             if (newName != null && !newName.trim().isEmpty()
                                     && allSequences.stream().noneMatch(s -> s.getName().equalsIgnoreCase(newName))) {
@@ -1745,7 +1717,7 @@ public class GuiPathManager extends ThemedGuiScreen {
                                 filterSequencesByCategory();
                                 selectSequence(sequencesInCategory.indexOf(newSequence));
                             }
-                            mc.displayGuiScreen(this);
+                            mc.setScreen(this);
                         }));
                 break;
             case 2: // 删除序列
@@ -1757,14 +1729,14 @@ public class GuiPathManager extends ThemedGuiScreen {
                 break;
             case 3: // 移动序列
                 if (btnMoveSeq.enabled) {
-                    mc.displayGuiScreen(new GuiCategorySelect(this, selectedCategory, newCategory -> {
+                    mc.setScreen(new GuiCategorySelect(this, selectedCategory, newCategory -> {
                         pushUndoHistory("move-sequence");
                         selectedSequence.setCategory(newCategory);
                         if (!isBlank(selectedSequence.getSubCategory())) {
                             MainUiLayoutManager.addSubCategory(newCategory, selectedSequence.getSubCategory());
                         }
                         filterSequencesByCategory();
-                        mc.displayGuiScreen(this);
+                        mc.setScreen(this);
                     }));
                 }
                 break;
@@ -1779,7 +1751,7 @@ public class GuiPathManager extends ThemedGuiScreen {
                     }
                     final String resolvedName = newName;
 
-                    mc.displayGuiScreen(new GuiCategorySelect(this, builtinCategory(), newCategory -> {
+                    mc.setScreen(new GuiCategorySelect(this, builtinCategory(), newCategory -> {
                         pushUndoHistory("copy-sequence");
                         PathSequence copiedSequence = new PathSequence(sourceSequence);
                         copiedSequence.setName(resolvedName);
@@ -1793,7 +1765,7 @@ public class GuiPathManager extends ThemedGuiScreen {
                         selectedCategory = newCategory;
                         filterSequencesByCategory();
                         selectSequence(sequencesInCategory.indexOf(copiedSequence));
-                        mc.displayGuiScreen(this);
+                        mc.setScreen(this);
                     }));
                 }
                 break;
@@ -1801,7 +1773,7 @@ public class GuiPathManager extends ThemedGuiScreen {
                 if (btnRenameSeq.enabled) {
                     final PathSequence renameTarget = selectedSequence;
                     String oldName = renameTarget.getName();
-                    mc.displayGuiScreen(new GuiTextInput(this, I18n.format("gui.path.manager.input_new_name"), oldName,
+                    mc.setScreen(new GuiTextInput(this, I18n.format("gui.path.manager.input_new_name"), oldName,
                             newName -> {
                                 String trimmedNewName = newName == null ? "" : newName.trim();
                             if (!trimmedNewName.isEmpty() && !trimmedNewName.equals(oldName)
@@ -1812,7 +1784,7 @@ public class GuiPathManager extends ThemedGuiScreen {
                                             renameTarget);
                                     filterSequencesByCategory();
                                 }
-                                mc.displayGuiScreen(this);
+                                mc.setScreen(this);
                             }));
                 }
                 break;
@@ -1856,7 +1828,7 @@ public class GuiPathManager extends ThemedGuiScreen {
                 break;
             case 26:
                 if (btnEditStepFailure.enabled && selectedStep != null) {
-                    mc.displayGuiScreen(new GuiStepFailureEditor(this, selectedStep));
+                    mc.setScreen(new GuiStepFailureEditor(this, selectedStep));
                 }
                 break;
             case 17: // 获取坐标
@@ -1879,7 +1851,7 @@ public class GuiPathManager extends ThemedGuiScreen {
                     final PathStep editingStep = selectedStep;
                     final int editingActionIndex = selectedActionIndex;
                     final ActionData editingAction = selectedAction;
-                    mc.displayGuiScreen(new GuiActionEditor(this, editingAction, sa -> {
+                    mc.setScreen(new GuiActionEditor(this, editingAction, sa -> {
                         if (editingStep != null
                                 && editingActionIndex >= 0
                                 && editingActionIndex < editingStep.getActions().size()) {
@@ -1906,7 +1878,7 @@ public class GuiPathManager extends ThemedGuiScreen {
                 break;
             case 21: // 添加动作
                 if (btnAddAction.enabled)
-                    mc.displayGuiScreen(new GuiActionEditor(this, null, sa -> {
+                    mc.setScreen(new GuiActionEditor(this, null, sa -> {
                         pushUndoHistory("add-action");
                         selectedStep.getActions().add(sa);
                         selectAction(selectedStep.getActions().size() - 1);
@@ -1946,7 +1918,7 @@ public class GuiPathManager extends ThemedGuiScreen {
                 break;
             case 32:
                 if (btnLoopDelay.enabled) {
-                    mc.displayGuiScreen(new GuiTextInput(this, I18n.format("gui.path.manager.input_loop_delay"),
+                    mc.setScreen(new GuiTextInput(this, I18n.format("gui.path.manager.input_loop_delay"),
                             String.valueOf(selectedSequence.getLoopDelayTicks()), newTicksStr -> {
                                 try {
                                     pushUndoHistory("loop-delay");
@@ -1954,17 +1926,17 @@ public class GuiPathManager extends ThemedGuiScreen {
                                     selectedSequence.setLoopDelayTicks(Math.max(0, newTicks));
                                 } catch (NumberFormatException e) {
                                 }
-                                mc.displayGuiScreen(this);
+                                mc.setScreen(this);
                             }));
                 }
                 break;
             case 33:
                 if (btnSetNote.enabled) {
-                    mc.displayGuiScreen(new GuiTextInput(this, I18n.format("gui.path.manager.input_note"),
+                    mc.setScreen(new GuiTextInput(this, I18n.format("gui.path.manager.input_note"),
                             selectedSequence.getNote(), newNote -> {
                                 pushUndoHistory("sequence-note");
                                 selectedSequence.setNote(newNote == null ? "" : newNote);
-                                mc.displayGuiScreen(this);
+                                mc.setScreen(this);
                             }));
                 }
                 break;
@@ -2012,19 +1984,16 @@ public class GuiPathManager extends ThemedGuiScreen {
                 initGui();
                 break;
             case 40:
-                mc.displayGuiScreen(new GuiLegacySequenceTriggerRules(this));
+                mc.setScreen(new GuiLegacySequenceTriggerRules(this));
                 break;
             case 43:
-                mc.displayGuiScreen(new GuiExecutionLogViewer(this));
+                mc.setScreen(new GuiExecutionLogViewer(this));
                 break;
             case 44:
-                mc.displayGuiScreen(new GuiPathSafetySettings(this));
+                mc.setScreen(new GuiPathSafetySettings(this));
                 break;
             case 46:
-                mc.displayGuiScreen(new GuiActionVariableManager(this, this.allSequences));
-                break;
-            case 34:
-                mc.displayGuiScreen(new GuiNodeEditor(this));
+                mc.setScreen(new GuiActionVariableManager(this, this.allSequences));
                 break;
             case 47:
                 headerToolbarScrollIndex = Math.max(0, headerToolbarScrollIndex - 1);
@@ -2048,17 +2017,17 @@ public class GuiPathManager extends ThemedGuiScreen {
                 List<PathConfigValidator.Issue> promptIssues = GuiPathValidationReport.filterIssuesForPrompt(issues);
                 if (promptIssues.isEmpty()) {
                     PathSequenceManager.saveAllSequences(this.allSequences);
-                    this.mc.displayGuiScreen(null);
+                    this.mc.setScreen(null);
                 } else {
-                    this.mc.displayGuiScreen(new GuiPathValidationReport(this, "保存前配置检查", "忽略并保存",
+                    this.mc.setScreen(new GuiPathValidationReport(this, "保存前配置检查", "忽略并保存",
                             promptIssues, () -> {
                                 PathSequenceManager.saveAllSequences(this.allSequences);
-                                this.mc.displayGuiScreen(null);
+                                this.mc.setScreen(null);
                             }));
                 }
                 break;
             case 101:
-                this.mc.displayGuiScreen(null);
+                this.mc.setScreen(null);
                 break;
         }
         updateButtonStates();
@@ -2417,14 +2386,14 @@ public class GuiPathManager extends ThemedGuiScreen {
             }
         }
 
-        Map<String, String> variables = snapshot.getVariablePreview();
+        Map<String, Object> variables = snapshot.getVariablePreview();
         if (variables == null || variables.isEmpty()) {
             lines.add("§7变量预览: (空)");
         } else {
             lines.add("§e变量预览:");
             int count = 0;
-            for (Map.Entry<String, String> entry : variables.entrySet()) {
-                lines.add("§7- §f" + entry.getKey() + "§7=§f" + safeText(entry.getValue()));
+            for (Map.Entry<String, Object> entry : variables.entrySet()) {
+                lines.add("§7- §f" + entry.getKey() + "§7=§f" + safeText(String.valueOf(entry.getValue())));
                 if (++count >= 6) {
                     break;
                 }
@@ -2723,13 +2692,6 @@ public class GuiPathManager extends ThemedGuiScreen {
         if (tooltip != null) {
             return tooltip;
         }
-        tooltip = tooltipForButton(btnNodeEditor, mouseX, mouseY,
-                "节点编辑器",
-                "打开节点式路径编辑器。",
-                "适合做更复杂的条件、变量和流程编排。");
-        if (tooltip != null) {
-            return tooltip;
-        }
         tooltip = tooltipForButton(btnActionVariableManager, mouseX, mouseY,
                 "动作全局变量",
                 "查看和管理动作变量注册表。",
@@ -3005,7 +2967,7 @@ public class GuiPathManager extends ThemedGuiScreen {
 
     private String getActionCardDetail(ActionData action, boolean hasBreakpoint) {
         String detail = action == null ? "" : normalize(action.getDescription());
-        detail = TextFormatting.getTextWithoutFormattingCodes(detail);
+        detail = ChatFormatting.stripFormatting(detail);
         if (detail.isEmpty()) {
             detail = "当前动作无额外说明";
         }
@@ -3342,6 +3304,17 @@ public class GuiPathManager extends ThemedGuiScreen {
         } else if (step.getPathRetryTimeoutSeconds() <= 0 || step.getRetryCount() <= 0) {
             suffix.append(" §7| §8不重试");
         }
+        if ("RESTART_SEQUENCE".equalsIgnoreCase(step.getRetryExhaustedPolicy())) {
+            suffix.append(" §7| §b耗尽后重头");
+        } else if ("RUN_SEQUENCE".equalsIgnoreCase(step.getRetryExhaustedPolicy())) {
+            String target = step.getRetryExhaustedSequenceName();
+            suffix.append(" §7| §d失败转序列");
+            if (target != null && !target.trim().isEmpty()) {
+                String trimmed = target.trim();
+                suffix.append("§f:")
+                        .append(trimmed.length() > 8 ? trimmed.substring(0, 8) + "..." : trimmed);
+            }
+        }
         return suffix.toString();
     }
 
@@ -3372,14 +3345,14 @@ public class GuiPathManager extends ThemedGuiScreen {
             Rectangle itemBounds = new Rectangle(actionListX + 3, itemY, actionListWidth - 11, itemHeight - 1);
             boolean isHovered = itemBounds.contains(mouseX, mouseY);
             boolean selected = selectedActionIndices.contains(index);
-            TextFormatting color = ACTION_COLORS.getOrDefault(normalize(action.type).toLowerCase(Locale.ROOT),
-                    TextFormatting.WHITE);
+            ChatFormatting color = ACTION_COLORS.getOrDefault(normalize(action.type).toLowerCase(Locale.ROOT),
+                    ChatFormatting.WHITE);
             int accentColor = 0xFF9EC9E9;
-            if (TextFormatting.RED.equals(color) || TextFormatting.DARK_RED.equals(color)) {
+            if (ChatFormatting.RED.equals(color) || ChatFormatting.DARK_RED.equals(color)) {
                 accentColor = 0xFFE38D8D;
-            } else if (TextFormatting.GREEN.equals(color) || TextFormatting.DARK_GREEN.equals(color)) {
+            } else if (ChatFormatting.GREEN.equals(color) || ChatFormatting.DARK_GREEN.equals(color)) {
                 accentColor = 0xFF94D9A2;
-            } else if (TextFormatting.GOLD.equals(color) || TextFormatting.YELLOW.equals(color)) {
+            } else if (ChatFormatting.GOLD.equals(color) || ChatFormatting.YELLOW.equals(color)) {
                 accentColor = 0xFFE2C778;
             }
             drawEditorListCard(itemBounds, index == selectedActionIndex || selected, isHovered, accentColor);
@@ -3404,14 +3377,14 @@ public class GuiPathManager extends ThemedGuiScreen {
             }
 
             ActionData draggedAction = selectedStep.getActions().get(draggingActionIndex);
-            TextFormatting color = ACTION_COLORS.getOrDefault(normalize(draggedAction.type).toLowerCase(Locale.ROOT),
-                    TextFormatting.WHITE);
+            ChatFormatting color = ACTION_COLORS.getOrDefault(normalize(draggedAction.type).toLowerCase(Locale.ROOT),
+                    ChatFormatting.WHITE);
             int accentColor = 0xFF9EC9E9;
-            if (TextFormatting.RED.equals(color) || TextFormatting.DARK_RED.equals(color)) {
+            if (ChatFormatting.RED.equals(color) || ChatFormatting.DARK_RED.equals(color)) {
                 accentColor = 0xFFE38D8D;
-            } else if (TextFormatting.GREEN.equals(color) || TextFormatting.DARK_GREEN.equals(color)) {
+            } else if (ChatFormatting.GREEN.equals(color) || ChatFormatting.DARK_GREEN.equals(color)) {
                 accentColor = 0xFF94D9A2;
-            } else if (TextFormatting.GOLD.equals(color) || TextFormatting.YELLOW.equals(color)) {
+            } else if (ChatFormatting.GOLD.equals(color) || ChatFormatting.YELLOW.equals(color)) {
                 accentColor = 0xFFE2C778;
             }
             int draggedY = mouseY
@@ -3564,7 +3537,7 @@ public class GuiPathManager extends ThemedGuiScreen {
             currentText = "";
         }
         int cursorPos = MathHelper.clamp(stepNotePopupField.getCursorPosition(), 0, currentText.length());
-        int selectionPos = MathHelper.clamp(stepNotePopupField.getSelectionEnd(), 0, currentText.length());
+        int selectionPos = MathHelper.clamp(stepNotePopupField.getCursorPosition(), 0, currentText.length());
         int start = Math.min(cursorPos, selectionPos);
         int end = Math.max(cursorPos, selectionPos);
         String newText = currentText.substring(0, start) + text + currentText.substring(end);
@@ -3978,7 +3951,7 @@ public class GuiPathManager extends ThemedGuiScreen {
         }
 
         super.mouseClicked(mouseX, mouseY, mouseButton);
-        if (mc.currentScreen != this) {
+        if (mc.screen != this) {
             return;
         }
         gotoX.mouseClicked(mouseX, mouseY, mouseButton);
@@ -4536,8 +4509,8 @@ public class GuiPathManager extends ThemedGuiScreen {
         super.handleMouseInput();
         int dWheel = Mouse.getDWheel();
         if (dWheel != 0) {
-            int mouseX = Mouse.getX() * this.width / this.mc.displayWidth;
-            int mouseY = this.height - Mouse.getY() * this.height / this.mc.displayHeight - 1;
+            int mouseX = Mouse.getX() * this.width / Math.max(1, this.mc.getWindow().getScreenWidth());
+            int mouseY = this.height - Mouse.getY() * this.height / Math.max(1, this.mc.getWindow().getScreenHeight()) - 1;
 
             if (debugMonitorVisible && debugMonitorBounds != null && debugMonitorBounds.contains(mouseX, mouseY)) {
                 if (!debugMonitorMinimized && debugMonitorMaxScroll > 0) {
@@ -4625,7 +4598,7 @@ public class GuiPathManager extends ThemedGuiScreen {
 
     @Override
     public boolean doesGuiPauseGame() {
-        return !GuiPathingPolicy.shouldKeepPathingDuringGui(this.mc);
+        return false;
     }
 }
 

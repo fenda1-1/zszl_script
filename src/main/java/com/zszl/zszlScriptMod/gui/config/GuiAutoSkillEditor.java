@@ -7,15 +7,16 @@ import com.zszl.zszlScriptMod.gui.components.GuiTheme;
 import com.zszl.zszlScriptMod.gui.components.ThemedButton;
 import com.zszl.zszlScriptMod.handlers.AutoSkillHandler;
 import com.zszl.zszlScriptMod.handlers.AutoSkillHandler.Skill;
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
 import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
-import net.minecraft.client.gui.GuiTextField;
-import net.minecraft.client.resources.I18n;
-import org.lwjgl.input.Keyboard;
-import org.lwjgl.input.Mouse;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiTextField;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Keyboard;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Mouse;
 
 import com.zszl.zszlScriptMod.utils.PacketCaptureHandler; // 导入
+import net.minecraft.ChatFormatting; // 导入
 
 import java.io.IOException;
 import java.util.Collections;
@@ -138,19 +139,19 @@ public class GuiAutoSkillEditor extends ThemedGuiScreen {
                     I18n.format(selectedSkill.enabled ? "gui.auto_skill.state_on" : "gui.auto_skill.state_off"));
             skillEnabledButton.setEnabledState(selectedSkill.enabled);
         } else if (button.id == 20) { // Add HEX
-            mc.displayGuiScreen(new GuiTextInput(this, I18n.format("gui.auto_skill.input_new_hex"), newHex -> {
+            mc.setScreen(new GuiTextInput(this, I18n.format("gui.auto_skill.input_new_hex"), newHex -> {
                 if (newHex != null && !newHex.trim().isEmpty()) {
                     selectedSkill.hexPayloads.add(newHex.trim());
                 }
-                mc.displayGuiScreen(this);
+                mc.setScreen(this);
             }));
         } else if (button.id == 21 && selectedHexIndex > 0) { // Edit HEX (skip default)
             String oldHex = selectedSkill.hexPayloads.get(selectedHexIndex);
-            mc.displayGuiScreen(new GuiTextInput(this, I18n.format("gui.auto_skill.edit_hex"), oldHex, newHex -> {
+            mc.setScreen(new GuiTextInput(this, I18n.format("gui.auto_skill.edit_hex"), oldHex, newHex -> {
                 if (newHex != null && !newHex.trim().isEmpty()) {
                     selectedSkill.hexPayloads.set(selectedHexIndex, newHex.trim());
                 }
-                mc.displayGuiScreen(this);
+                mc.setScreen(this);
             }));
         } else if (button.id == 22 && selectedHexIndex > 0) { // Remove HEX (skip default)
             selectedSkill.hexPayloads.remove(selectedHexIndex);
@@ -171,10 +172,10 @@ public class GuiAutoSkillEditor extends ThemedGuiScreen {
                 selectedSkill.cooldownSeconds = 1;
             }
             AutoSkillHandler.saveSkillConfig();
-            mc.displayGuiScreen(parentScreen);
+            mc.setScreen(parentScreen);
         } else if (button.id == 101) { // Cancel
             AutoSkillHandler.loadSkillConfig(); // Reload to discard changes
-            mc.displayGuiScreen(parentScreen);
+            mc.setScreen(parentScreen);
         }
     }
 
@@ -289,4 +290,10 @@ public class GuiAutoSkillEditor extends ThemedGuiScreen {
         Keyboard.enableRepeatEvents(false);
     }
 }
+
+
+
+
+
+
 

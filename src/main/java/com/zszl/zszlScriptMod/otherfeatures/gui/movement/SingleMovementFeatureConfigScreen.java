@@ -7,11 +7,11 @@ import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
 import com.zszl.zszlScriptMod.otherfeatures.handler.movement.MovementFeatureManager;
 import com.zszl.zszlScriptMod.otherfeatures.handler.movement.MovementFeatureManager.FeatureState;
 import com.zszl.zszlScriptMod.otherfeatures.handler.movement.SpeedHandler;
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiScreen;
-import net.minecraft.client.gui.ScaledResolution;
-import org.lwjgl.input.Keyboard;
-import org.lwjgl.input.Mouse;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.ScaledResolution;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Keyboard;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Mouse;
 import org.lwjgl.opengl.GL11;
 
 import java.io.IOException;
@@ -298,13 +298,13 @@ public class SingleMovementFeatureConfigScreen extends ThemedGuiScreen {
             return;
         case BTN_SAVE:
             saveDraft(state);
-            this.mc.displayGuiScreen(this.parentScreen);
+            this.mc.setScreen(this.parentScreen);
             return;
         case BTN_DEFAULT:
             applyDefaults(state);
             break;
         case BTN_CANCEL:
-            this.mc.displayGuiScreen(this.parentScreen);
+            this.mc.setScreen(this.parentScreen);
             return;
         default:
             break;
@@ -348,7 +348,7 @@ public class SingleMovementFeatureConfigScreen extends ThemedGuiScreen {
     private void openValueInput(FeatureState state) {
         String title = "输入 " + state.valueLabel + " (" + formatFloat(state.minValue) + " - "
                 + formatFloat(state.maxValue) + ")";
-        mc.displayGuiScreen(new GuiTextInput(this, title, formatFloat(this.draftValue), value -> {
+        mc.setScreen(new GuiTextInput(this, title, formatFloat(this.draftValue), value -> {
             float parsed = this.draftValue;
             try {
                 parsed = Float.parseFloat(value.trim());
@@ -357,14 +357,14 @@ public class SingleMovementFeatureConfigScreen extends ThemedGuiScreen {
             this.draftValue = clampFloat(parsed, state.minValue, state.maxValue);
             refreshControlTexts();
             relayoutControls();
-            mc.displayGuiScreen(this);
+            mc.setScreen(this);
         }));
     }
 
     @Override
     protected void keyTyped(char typedChar, int keyCode) throws IOException {
         if (keyCode == Keyboard.KEY_ESCAPE) {
-            this.mc.displayGuiScreen(this.parentScreen);
+            this.mc.setScreen(this.parentScreen);
             return;
         }
         super.keyTyped(typedChar, keyCode);
@@ -377,8 +377,8 @@ public class SingleMovementFeatureConfigScreen extends ThemedGuiScreen {
 
     @Override
     public void handleMouseInput() throws IOException {
-        int mouseX = Mouse.getEventX() * this.width / this.mc.displayWidth;
-        int mouseY = this.height - Mouse.getEventY() * this.height / this.mc.displayHeight - 1;
+        int mouseX = Mouse.getEventX() * this.width / this.mc.getWindow().getWidth();
+        int mouseY = this.height - Mouse.getEventY() * this.height / this.mc.getWindow().getHeight() - 1;
 
         int dWheel = Mouse.getEventDWheel();
         if (dWheel != 0) {
@@ -669,7 +669,7 @@ public class SingleMovementFeatureConfigScreen extends ThemedGuiScreen {
             if (!isPointInsideButtonArea(button, mouseX, mouseY)) {
                 continue;
             }
-            button.playPressSound(this.mc.getSoundHandler());
+            button.playPressSound(this.mc.getSoundManager());
             actionPerformed(button);
             return true;
         }
@@ -837,3 +837,10 @@ public class SingleMovementFeatureConfigScreen extends ThemedGuiScreen {
         return false;
     }
 }
+
+
+
+
+
+
+

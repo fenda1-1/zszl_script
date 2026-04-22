@@ -1,49 +1,54 @@
 package com.zszl.zszlScriptMod.otherfeatures.handler.render;
 
-import net.minecraft.block.Block;
-import net.minecraft.block.state.IBlockState;
+import com.mojang.blaze3d.systems.RenderSystem;
+import com.mojang.blaze3d.vertex.BufferBuilder;
+import com.mojang.blaze3d.vertex.DefaultVertexFormat;
+import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.blaze3d.vertex.Tesselator;
+import com.mojang.blaze3d.vertex.VertexConsumer;
+import com.mojang.blaze3d.vertex.VertexFormat;
+import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.entity.EntityPlayerSP;
-import net.minecraft.client.gui.Gui;
-import net.minecraft.client.gui.ScaledResolution;
-import net.minecraft.client.renderer.BufferBuilder;
-import net.minecraft.client.renderer.GlStateManager;
-import net.minecraft.client.renderer.RenderGlobal;
-import net.minecraft.client.renderer.Tessellator;
-import net.minecraft.client.renderer.entity.RenderManager;
-import net.minecraft.client.renderer.vertex.DefaultVertexFormats;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.EntityLivingBase;
-import net.minecraft.entity.IMerchant;
-import net.minecraft.entity.INpc;
-import net.minecraft.entity.item.EntityItem;
-import net.minecraft.entity.monster.IMob;
-import net.minecraft.entity.passive.EntityAmbientCreature;
-import net.minecraft.entity.passive.EntityAnimal;
-import net.minecraft.entity.passive.EntitySquid;
-import net.minecraft.entity.player.EntityPlayer;
-import net.minecraft.init.Blocks;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemBow;
-import net.minecraft.item.ItemEgg;
-import net.minecraft.item.ItemEnderPearl;
-import net.minecraft.item.ItemExpBottle;
-import net.minecraft.item.ItemLingeringPotion;
-import net.minecraft.item.ItemPotion;
-import net.minecraft.item.ItemSnowball;
-import net.minecraft.item.ItemSplashPotion;
-import net.minecraft.item.ItemStack;
-import net.minecraft.tileentity.TileEntity;
-import net.minecraft.tileentity.TileEntityChest;
-import net.minecraft.tileentity.TileEntityEnderChest;
-import net.minecraft.tileentity.TileEntityMobSpawner;
-import net.minecraft.tileentity.TileEntityShulkerBox;
-import net.minecraft.util.EnumHand;
-import net.minecraft.util.math.AxisAlignedBB;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.RayTraceResult;
-import net.minecraft.util.math.Vec3d;
-import org.lwjgl.opengl.GL11;
+import net.minecraft.client.gui.Font;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.client.renderer.GameRenderer;
+import net.minecraft.client.renderer.LightTexture;
+import net.minecraft.client.renderer.LevelRenderer;
+import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.client.renderer.entity.EntityRenderDispatcher;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.util.Mth;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.ambient.AmbientCreature;
+import net.minecraft.world.entity.animal.Animal;
+import net.minecraft.world.entity.animal.WaterAnimal;
+import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.entity.monster.Enemy;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.BowItem;
+import net.minecraft.world.item.EggItem;
+import net.minecraft.world.item.EnderpearlItem;
+import net.minecraft.world.item.ExperienceBottleItem;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.LingeringPotionItem;
+import net.minecraft.world.item.PotionItem;
+import net.minecraft.world.item.SnowballItem;
+import net.minecraft.world.item.SplashPotionItem;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.EntityHitResult;
+import net.minecraft.world.phys.HitResult;
+import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.phys.shapes.CollisionContext;
+import net.minecraft.world.phys.shapes.VoxelShape;
+import net.minecraftforge.client.event.RenderLevelStageEvent;
+import org.joml.Matrix3f;
+import org.joml.Matrix4f;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -52,105 +57,127 @@ import java.util.Locale;
 final class RenderFeatureSupport {
 
     private static final int MAX_BLOCK_SCAN_RESULTS = 384;
-    private static final int BLOCK_SCAN_COMPLETED_COOLDOWN_TICKS = 10;
-    private static final int BLOCK_SCAN_ACTIVE_COOLDOWN_TICKS = 1;
+    private static final int BLOCK_SCAN_INTERVAL_TICKS = 10;
     private static final int ORE_SCAN_VERTICAL_RADIUS_LIMIT = 24;
-    private static final int ORE_SCAN_POSITION_BUDGET = 4096;
-    private static final int ORE_SCAN_REFRESH_INTERVAL_TICKS = 40;
-    private static final double ORE_SCAN_CENTER_RESTART_DISTANCE_SQ = 4.0D;
     private static final List<BlockHighlightEntry> BLOCK_HIGHLIGHTS = new ArrayList<>();
-    private static final List<BlockHighlightEntry> ORE_BLOCK_HIGHLIGHTS = new ArrayList<>();
-    private static int blockScanCooldown = 0;
     private static RenderFrameData cachedRenderFrameData = null;
     private static int cachedRenderFrameTick = Integer.MIN_VALUE;
-    private static int cachedRenderFrameDimension = Integer.MIN_VALUE;
-    private static OreScanState oreScanState = OreScanState.EMPTY;
+    private static int blockScanCooldown = 0;
 
     private RenderFeatureSupport() {
     }
 
     static void clearRuntimeCaches() {
         BLOCK_HIGHLIGHTS.clear();
-        ORE_BLOCK_HIGHLIGHTS.clear();
-        blockScanCooldown = 0;
         cachedRenderFrameData = null;
         cachedRenderFrameTick = Integer.MIN_VALUE;
-        cachedRenderFrameDimension = Integer.MIN_VALUE;
-        oreScanState = OreScanState.EMPTY;
+        blockScanCooldown = 0;
     }
 
-    static void onClientTick(Minecraft mc, EntityPlayerSP player) {
+    static void onClientTick(Minecraft mc, LocalPlayer player) {
+        cachedRenderFrameData = null;
+        cachedRenderFrameTick = Integer.MIN_VALUE;
         if (blockScanCooldown > 0) {
             blockScanCooldown--;
         }
-        if (RenderFeatureManager.isEnabled("block_highlight") && blockScanCooldown <= 0) {
-            updateBlockHighlights(mc, player);
-            blockScanCooldown = isOreScanPending() ? BLOCK_SCAN_ACTIVE_COOLDOWN_TICKS : BLOCK_SCAN_COMPLETED_COOLDOWN_TICKS;
-        } else if (!RenderFeatureManager.isEnabled("block_highlight")) {
+        if (mc == null || player == null || mc.level == null) {
             BLOCK_HIGHLIGHTS.clear();
-            ORE_BLOCK_HIGHLIGHTS.clear();
-            oreScanState = OreScanState.EMPTY;
+            return;
+        }
+
+        if ((RenderFeatureManager.isEnabled("block_highlight") || RenderFeatureManager.isEnabled("xray"))
+                && blockScanCooldown <= 0) {
+            updateBlockHighlights(mc, player);
+            blockScanCooldown = BLOCK_SCAN_INTERVAL_TICKS;
+        } else if (!RenderFeatureManager.isEnabled("block_highlight") && !RenderFeatureManager.isEnabled("xray")) {
+            BLOCK_HIGHLIGHTS.clear();
         }
     }
 
-    static void renderWorld(Minecraft mc, float partialTicks) {
+    static void renderWorld(Minecraft mc, RenderLevelStageEvent event) {
+        if (mc == null || mc.level == null || mc.player == null || event == null) {
+            return;
+        }
+
+        float partialTicks = event.getPartialTick();
         RenderFrameData frameData = getRenderFrameData(mc);
+        Camera camera = event.getCamera();
+        if (camera == null) {
+            return;
+        }
+        RenderWorldContext renderContext = RenderWorldContext.create(camera);
+        PoseStack geometryPoseStack = renderContext.createBasePoseStack();
+        PoseStack linePoseStack = renderContext.createBasePoseStack();
+
         if (RenderFeatureManager.isEnabled("entity_visual")) {
-            renderEntityVisuals(mc, partialTicks, frameData);
+            renderEntityVisuals(mc, renderContext, geometryPoseStack, frameData, partialTicks);
         }
-        if (RenderFeatureManager.isEnabled("player_skeleton")) {
-            renderPlayerSkeletons(mc, partialTicks, frameData);
-        }
-        if (RenderFeatureManager.isEnabled("tracer_line")) {
-            renderTracers(mc, partialTicks, frameData);
-        }
-        if (RenderFeatureManager.isEnabled("entity_tags")) {
-            renderEntityTags(mc, partialTicks, frameData);
-        }
-        if (RenderFeatureManager.isEnabled("block_highlight")) {
-            renderBlockHighlights(mc, partialTicks);
+        if (RenderFeatureManager.isEnabled("block_highlight") || RenderFeatureManager.isEnabled("xray")) {
+            renderBlockHighlights(renderContext, geometryPoseStack);
         }
         if (RenderFeatureManager.isEnabled("item_esp")) {
-            renderItemEsp(mc, partialTicks, frameData);
-        }
-        if (RenderFeatureManager.isEnabled("trajectory_line")) {
-            renderTrajectory(mc, partialTicks);
+            renderItemEspBoxes(renderContext, geometryPoseStack, frameData, partialTicks);
         }
         if (RenderFeatureManager.isEnabled("block_outline")) {
-            renderBlockOutline(mc, partialTicks);
+            renderBlockOutline(mc, renderContext, geometryPoseStack);
+        }
+
+        if (RenderFeatureManager.isEnabled("player_skeleton")) {
+            renderPlayerSkeletons(mc, renderContext, linePoseStack, frameData, partialTicks);
+        }
+        if (RenderFeatureManager.isEnabled("tracer_line")) {
+            renderTracers(mc, renderContext, linePoseStack, frameData, partialTicks);
+        }
+        if (RenderFeatureManager.isEnabled("trajectory_line")) {
+            renderTrajectory(mc, renderContext, linePoseStack, partialTicks);
+        }
+
+        boolean renderEntityLabels = RenderFeatureManager.isEnabled("entity_tags");
+        boolean renderItemLabels = RenderFeatureManager.isEnabled("item_esp")
+                && (RenderFeatureManager.itemEspShowName || RenderFeatureManager.itemEspShowDistance);
+        if (renderEntityLabels || renderItemLabels) {
+            MultiBufferSource.BufferSource labelBuffer = mc.renderBuffers().bufferSource();
+            if (renderEntityLabels) {
+                renderEntityTags(mc, renderContext, frameData, partialTicks, labelBuffer);
+            }
+            if (renderItemLabels) {
+                renderItemLabels(mc, renderContext, frameData, partialTicks, labelBuffer);
+            }
+            labelBuffer.endBatch();
         }
     }
 
-    static void renderCrosshair(Minecraft mc) {
-        ScaledResolution scaledResolution = new ScaledResolution(mc);
-        int centerX = scaledResolution.getScaledWidth() / 2;
-        int centerY = scaledResolution.getScaledHeight() / 2;
-        float attackPenalty = mc.player == null ? 0.0F : 1.0F - mc.player.getCooledAttackStrength(0.0F);
-        double motion = mc.player == null ? 0.0D
-                : Math.sqrt(mc.player.motionX * mc.player.motionX + mc.player.motionZ * mc.player.motionZ);
+    static void renderCrosshair(Minecraft mc, GuiGraphics graphics) {
+        if (mc == null || graphics == null) {
+            return;
+        }
+        int centerX = mc.getWindow().getGuiScaledWidth() / 2;
+        int centerY = mc.getWindow().getGuiScaledHeight() / 2;
+        double horizontalSpeed = mc.player == null ? 0.0D : Math.sqrt(mc.player.getDeltaMovement().x * mc.player.getDeltaMovement().x
+                + mc.player.getDeltaMovement().z * mc.player.getDeltaMovement().z);
+        float attackPenalty = mc.player == null ? 0.0F : 1.0F - mc.player.getAttackStrengthScale(0.0F);
         int gap = RenderFeatureManager.crosshairDynamicGap
-                ? 4 + Math.round((float) Math.min(3.0D, motion * 10.0D) + attackPenalty * 4.0F)
+                ? 4 + Math.round((float) Math.min(3.0D, horizontalSpeed * 10.0D) + attackPenalty * 4.0F)
                 : 4;
         int size = Math.round(RenderFeatureManager.crosshairSize);
         int thickness = Math.max(1, Math.round(RenderFeatureManager.crosshairThickness));
         int color = 0xFF000000 | (RenderFeatureManager.crosshairColorRgb & 0xFFFFFF);
 
-        Gui.drawRect(centerX - thickness / 2, centerY - gap - size, centerX + (thickness + 1) / 2, centerY - gap, color);
-        Gui.drawRect(centerX - thickness / 2, centerY + gap, centerX + (thickness + 1) / 2, centerY + gap + size, color);
-        Gui.drawRect(centerX - gap - size, centerY - thickness / 2, centerX - gap, centerY + (thickness + 1) / 2, color);
-        Gui.drawRect(centerX + gap, centerY - thickness / 2, centerX + gap + size, centerY + (thickness + 1) / 2, color);
-        Gui.drawRect(centerX - 1, centerY - 1, centerX + 1, centerY + 1, color);
+        graphics.fill(centerX - thickness / 2, centerY - gap - size, centerX + (thickness + 1) / 2, centerY - gap, color);
+        graphics.fill(centerX - thickness / 2, centerY + gap, centerX + (thickness + 1) / 2, centerY + gap + size, color);
+        graphics.fill(centerX - gap - size, centerY - thickness / 2, centerX - gap, centerY + (thickness + 1) / 2, color);
+        graphics.fill(centerX + gap, centerY - thickness / 2, centerX + gap + size, centerY + (thickness + 1) / 2, color);
+        graphics.fill(centerX - 1, centerY - 1, centerX + 1, centerY + 1, color);
     }
 
-    static void renderRadar(Minecraft mc) {
-        if (mc == null || mc.player == null || mc.fontRenderer == null) {
+    static void renderRadar(Minecraft mc, GuiGraphics graphics) {
+        if (mc == null || mc.player == null || graphics == null) {
             return;
         }
-        RenderFrameData frameData = getRenderFrameData(mc);
 
-        ScaledResolution scaledResolution = new ScaledResolution(mc);
-        int radarSize = clampInt(RenderFeatureManager.radarSize, 60, 180);
-        int x = scaledResolution.getScaledWidth() - radarSize - 12;
+        RenderFrameData frameData = getRenderFrameData(mc);
+        int radarSize = Mth.clamp(RenderFeatureManager.radarSize, 60, 180);
+        int x = mc.getWindow().getGuiScaledWidth() - radarSize - 12;
         int y = 12;
         int centerX = x + radarSize / 2;
         int centerY = y + radarSize / 2;
@@ -158,83 +185,65 @@ final class RenderFeatureSupport {
         float maxDistance = Math.max(8.0F, RenderFeatureManager.radarMaxDistance);
         double scale = radius / maxDistance;
 
-        Gui.drawRect(x, y, x + radarSize, y + radarSize, 0x8A0E141C);
-        Gui.drawRect(x, y, x + radarSize, y + 1, 0xFF5FB8FF);
-        Gui.drawRect(x, y + radarSize - 1, x + radarSize, y + radarSize, 0xFF35536C);
-        Gui.drawRect(x, y, x + 1, y + radarSize, 0xFF35536C);
-        Gui.drawRect(x + radarSize - 1, y, x + radarSize, y + radarSize, 0xFF35536C);
-        Gui.drawRect(centerX - 1, y + 6, centerX + 1, y + radarSize - 6, 0x443F6D8F);
-        Gui.drawRect(x + 6, centerY - 1, x + radarSize - 6, centerY + 1, 0x443F6D8F);
-        Gui.drawRect(centerX - 2, centerY - 2, centerX + 2, centerY + 2, 0xFFFFFFFF);
-        mc.fontRenderer.drawStringWithShadow("雷达", x + 5, y + 4, 0xFFEAF6FF);
-        mc.fontRenderer.drawStringWithShadow(String.valueOf((int) maxDistance), x + radarSize - 18, y + radarSize - 11,
-                0xFFB8D8F2);
+        graphics.fill(x, y, x + radarSize, y + radarSize, 0x8A0E141C);
+        graphics.fill(x, y, x + radarSize, y + 1, 0xFF5FB8FF);
+        graphics.fill(centerX - 1, y + 6, centerX + 1, y + radarSize - 6, 0x443F6D8F);
+        graphics.fill(x + 6, centerY - 1, x + radarSize - 6, centerY + 1, 0x443F6D8F);
+        graphics.fill(centerX - 2, centerY - 2, centerX + 2, centerY + 2, 0xFFFFFFFF);
+        graphics.drawString(mc.font, "雷达", x + 5, y + 4, 0xFFEAF6FF, true);
+        graphics.drawString(mc.font, String.valueOf((int) maxDistance), x + radarSize - 18, y + radarSize - 11, 0xFFB8D8F2, true);
 
-        double playerX = interpolate(mc.player.lastTickPosX, mc.player.posX, 1.0F);
-        double playerZ = interpolate(mc.player.lastTickPosZ, mc.player.posZ, 1.0F);
-        double yawRad = Math.toRadians(mc.player.rotationYaw);
+        double yawRad = Math.toRadians(mc.player.getYRot());
         double sin = Math.sin(yawRad);
         double cos = Math.cos(yawRad);
-
+        double playerX = Mth.lerp(1.0F, mc.player.xo, mc.player.getX());
+        double playerZ = Mth.lerp(1.0F, mc.player.zo, mc.player.getZ());
         double maxDistanceSq = maxDistance * maxDistance;
+
         for (EntityRenderSample sample : frameData.livingEntities) {
             if (!sample.matches(RenderFeatureManager.radarPlayers, RenderFeatureManager.radarMonsters,
                     RenderFeatureManager.radarAnimals, maxDistanceSq)) {
                 continue;
             }
             Entity entity = sample.entity;
-            double dx = interpolate(entity.lastTickPosX, entity.posX, 1.0F) - playerX;
-            double dz = interpolate(entity.lastTickPosZ, entity.posZ, 1.0F) - playerZ;
-            double localX;
-            double localZ;
-            if (RenderFeatureManager.radarRotateWithView) {
-                localX = dx * cos + dz * sin;
-                localZ = dz * cos - dx * sin;
-            } else {
-                localX = dx;
-                localZ = dz;
-            }
-
+            double dx = Mth.lerp(1.0F, entity.xo, entity.getX()) - playerX;
+            double dz = Mth.lerp(1.0F, entity.zo, entity.getZ()) - playerZ;
+            double localX = RenderFeatureManager.radarRotateWithView ? dx * cos + dz * sin : dx;
+            double localZ = RenderFeatureManager.radarRotateWithView ? dz * cos - dx * sin : dz;
             int px = centerX + (int) Math.round(localX * scale);
             int py = centerY + (int) Math.round(localZ * scale);
-            int clampedX = clampInt(px, x + 5, x + radarSize - 5);
-            int clampedY = clampInt(py, y + 5, y + radarSize - 5);
+            int clampedX = Mth.clamp(px, x + 5, x + radarSize - 5);
+            int clampedY = Mth.clamp(py, y + 5, y + radarSize - 5);
             int dotColor = getEntityHudColor(entity);
-            Gui.drawRect(clampedX - 1, clampedY - 1, clampedX + 2, clampedY + 2, dotColor);
+            graphics.fill(clampedX - 1, clampedY - 1, clampedX + 2, clampedY + 2, dotColor);
         }
     }
 
-    static void renderEntityInfo(Minecraft mc) {
-        if (mc == null || mc.player == null || mc.fontRenderer == null || mc.objectMouseOver == null) {
+    static void renderEntityInfo(Minecraft mc, GuiGraphics graphics) {
+        if (mc == null || mc.player == null || graphics == null || !(mc.hitResult instanceof EntityHitResult entityHitResult)) {
             return;
         }
-        RayTraceResult rayTraceResult = mc.objectMouseOver;
-        if (rayTraceResult.typeOfHit != RayTraceResult.Type.ENTITY || rayTraceResult.entityHit == null) {
-            return;
-        }
-
-        Entity entity = rayTraceResult.entityHit;
-        if (entity.isDead || mc.player.getDistance(entity) > RenderFeatureManager.entityInfoMaxDistance) {
+        Entity entity = entityHitResult.getEntity();
+        if (!(entity instanceof LivingEntity living) || mc.player.distanceTo(entity) > RenderFeatureManager.entityInfoMaxDistance) {
             return;
         }
 
         List<String> lines = new ArrayList<>();
-        lines.add("§b" + entity.getName() + " §7[" + entity.getClass().getSimpleName() + "]");
-        if (RenderFeatureManager.entityInfoShowHealth && entity instanceof EntityLivingBase) {
-            EntityLivingBase living = (EntityLivingBase) entity;
+        lines.add("§b" + entity.getName().getString() + " §7[" + entity.getClass().getSimpleName() + "]");
+        if (RenderFeatureManager.entityInfoShowHealth) {
             lines.add("§c生命: §f" + formatFloat(Math.max(0.0F, living.getHealth())));
         }
         if (RenderFeatureManager.entityInfoShowDistance) {
-            lines.add("§e距离: §f" + formatFloat(mc.player.getDistance(entity)) + "m");
+            lines.add("§e距离: §f" + formatFloat(mc.player.distanceTo(entity)) + "m");
         }
         if (RenderFeatureManager.entityInfoShowPosition) {
-            lines.add("§a坐标: §f" + formatFloat((float) entity.posX) + ", "
-                    + formatFloat((float) entity.posY) + ", " + formatFloat((float) entity.posZ));
+            lines.add("§a坐标: §f" + formatFloat((float) entity.getX()) + ", "
+                    + formatFloat((float) entity.getY()) + ", " + formatFloat((float) entity.getZ()));
         }
-        if (RenderFeatureManager.entityInfoShowHeldItem && entity instanceof EntityLivingBase) {
-            ItemStack heldItem = ((EntityLivingBase) entity).getHeldItemMainhand();
-            if (heldItem != null && !heldItem.isEmpty()) {
-                lines.add("§d手持: §f" + heldItem.getDisplayName());
+        if (RenderFeatureManager.entityInfoShowHeldItem) {
+            ItemStack held = living.getMainHandItem();
+            if (!held.isEmpty()) {
+                lines.add("§d手持: §f" + held.getHoverName().getString());
             }
         }
         if (lines.isEmpty()) {
@@ -243,30 +252,369 @@ final class RenderFeatureSupport {
 
         int maxWidth = 0;
         for (String line : lines) {
-            maxWidth = Math.max(maxWidth, mc.fontRenderer.getStringWidth(line));
+            maxWidth = Math.max(maxWidth, mc.font.width(line));
         }
-        int lineHeight = mc.fontRenderer.FONT_HEIGHT + 2;
         int panelX = 10;
         int panelY = 10;
+        int lineHeight = mc.font.lineHeight + 2;
         int panelWidth = maxWidth + 10;
         int panelHeight = lines.size() * lineHeight + 8;
 
-        Gui.drawRect(panelX, panelY, panelX + panelWidth, panelY + panelHeight, 0xAA10161D);
-        Gui.drawRect(panelX, panelY, panelX + panelWidth, panelY + 1, 0xFF62C6FF);
-        Gui.drawRect(panelX, panelY + panelHeight - 1, panelX + panelWidth, panelY + panelHeight, 0xFF35536C);
+        graphics.fill(panelX, panelY, panelX + panelWidth, panelY + panelHeight, 0xAA10161D);
+        graphics.fill(panelX, panelY, panelX + panelWidth, panelY + 1, 0xFF62C6FF);
         for (int i = 0; i < lines.size(); i++) {
-            mc.fontRenderer.drawStringWithShadow(lines.get(i), panelX + 5, panelY + 4 + i * lineHeight, 0xFFFFFFFF);
+            graphics.drawString(mc.font, lines.get(i), panelX + 5, panelY + 4 + i * lineHeight, 0xFFFFFFFF, true);
+        }
+    }
+
+    private static void renderEntityVisuals(Minecraft mc, RenderWorldContext renderContext, PoseStack poseStack,
+            RenderFrameData frameData, float partialTicks) {
+        double maxDistanceSq = RenderFeatureManager.entityVisualMaxDistance * RenderFeatureManager.entityVisualMaxDistance;
+        float lineWidth = 1.8F;
+
+        startLines(lineWidth, true, RenderFeatureManager.entityVisualThroughWalls);
+        for (EntityRenderSample sample : frameData.livingEntities) {
+            if (!sample.matches(RenderFeatureManager.entityVisualPlayers, RenderFeatureManager.entityVisualMonsters,
+                    RenderFeatureManager.entityVisualAnimals, maxDistanceSq)) {
+                continue;
+            }
+            AABB box = renderContext.toCameraSpace(interpolateBoundingBox(sample.entity, partialTicks).inflate(0.05D));
+            float[] color = getEntityColor(sample.entity);
+            LevelRenderer.renderLineBox(poseStack, Tesselator.getInstance().getBuilder(), box, color[0], color[1], color[2], 0.95F);
+        }
+        endLines(RenderFeatureManager.entityVisualThroughWalls);
+
+        if (RenderFeatureManager.entityVisualFilledBox) {
+            startFilledBoxes(RenderFeatureManager.entityVisualThroughWalls);
+            for (EntityRenderSample sample : frameData.livingEntities) {
+                if (!sample.matches(RenderFeatureManager.entityVisualPlayers, RenderFeatureManager.entityVisualMonsters,
+                        RenderFeatureManager.entityVisualAnimals, maxDistanceSq)) {
+                    continue;
+                }
+                AABB box = renderContext.toCameraSpace(interpolateBoundingBox(sample.entity, partialTicks).inflate(0.05D));
+                float[] color = getEntityColor(sample.entity);
+                LevelRenderer.addChainedFilledBoxVertices(poseStack, Tesselator.getInstance().getBuilder(),
+                        box.minX, box.minY, box.minZ, box.maxX, box.maxY, box.maxZ,
+                        color[0], color[1], color[2], 0.10F);
+            }
+            endFilledBoxes(RenderFeatureManager.entityVisualThroughWalls);
+        }
+    }
+
+    private static void renderPlayerSkeletons(Minecraft mc, RenderWorldContext renderContext, PoseStack poseStack,
+            RenderFrameData frameData, float partialTicks) {
+        startLines(Math.max(1.0F, RenderFeatureManager.skeletonLineWidth), true, RenderFeatureManager.skeletonThroughWalls);
+        double maxDistanceSq = RenderFeatureManager.skeletonMaxDistance * RenderFeatureManager.skeletonMaxDistance;
+        for (EntityRenderSample sample : frameData.playerEntities) {
+            if (sample.distanceSq > maxDistanceSq || !(sample.entity instanceof Player player) || player == mc.player) {
+                continue;
+            }
+            AABB box = interpolateBoundingBox(player, partialTicks);
+            Vec3 center = box.getCenter();
+            double width = Math.max(0.3D, box.getXsize());
+            double height = Math.max(1.0D, box.getYsize());
+            double yawRad = Math.toRadians(Mth.lerp(partialTicks, player.yRotO, player.getYRot()));
+
+            Vec3 pelvis = localToWorld(center.x, box.minY, center.z, 0.0D, height * 0.52D, 0.0D, yawRad);
+            Vec3 neck = localToWorld(center.x, box.minY, center.z, 0.0D, height * 0.78D, 0.0D, yawRad);
+            Vec3 head = localToWorld(center.x, box.minY, center.z, 0.0D, height * 1.02D, 0.0D, yawRad);
+            Vec3 leftShoulder = localToWorld(center.x, box.minY, center.z, -width * 0.36D, height * 0.78D, 0.0D, yawRad);
+            Vec3 rightShoulder = localToWorld(center.x, box.minY, center.z, width * 0.36D, height * 0.78D, 0.0D, yawRad);
+            Vec3 leftArm = localToWorld(center.x, box.minY, center.z, -width * 0.52D, height * 0.54D, 0.0D, yawRad);
+            Vec3 rightArm = localToWorld(center.x, box.minY, center.z, width * 0.52D, height * 0.54D, 0.0D, yawRad);
+            Vec3 leftHip = localToWorld(center.x, box.minY, center.z, -width * 0.18D, height * 0.52D, 0.0D, yawRad);
+            Vec3 rightHip = localToWorld(center.x, box.minY, center.z, width * 0.18D, height * 0.52D, 0.0D, yawRad);
+            Vec3 leftLeg = localToWorld(center.x, box.minY, center.z, -width * 0.18D, 0.05D, 0.0D, yawRad);
+            Vec3 rightLeg = localToWorld(center.x, box.minY, center.z, width * 0.18D, 0.05D, 0.0D, yawRad);
+
+            head = renderContext.toCameraSpace(head);
+            neck = renderContext.toCameraSpace(neck);
+            pelvis = renderContext.toCameraSpace(pelvis);
+            leftShoulder = renderContext.toCameraSpace(leftShoulder);
+            rightShoulder = renderContext.toCameraSpace(rightShoulder);
+            leftArm = renderContext.toCameraSpace(leftArm);
+            rightArm = renderContext.toCameraSpace(rightArm);
+            leftHip = renderContext.toCameraSpace(leftHip);
+            rightHip = renderContext.toCameraSpace(rightHip);
+            leftLeg = renderContext.toCameraSpace(leftLeg);
+            rightLeg = renderContext.toCameraSpace(rightLeg);
+
+            emitLine(poseStack, head, neck, 0.30F, 0.88F, 1.0F, 0.92F);
+            emitLine(poseStack, neck, pelvis, 0.30F, 0.88F, 1.0F, 0.92F);
+            emitLine(poseStack, leftShoulder, rightShoulder, 0.30F, 0.88F, 1.0F, 0.92F);
+            emitLine(poseStack, neck, leftShoulder, 0.30F, 0.88F, 1.0F, 0.92F);
+            emitLine(poseStack, neck, rightShoulder, 0.30F, 0.88F, 1.0F, 0.92F);
+            emitLine(poseStack, leftShoulder, leftArm, 0.30F, 0.88F, 1.0F, 0.92F);
+            emitLine(poseStack, rightShoulder, rightArm, 0.30F, 0.88F, 1.0F, 0.92F);
+            emitLine(poseStack, pelvis, leftHip, 0.30F, 0.88F, 1.0F, 0.92F);
+            emitLine(poseStack, pelvis, rightHip, 0.30F, 0.88F, 1.0F, 0.92F);
+            emitLine(poseStack, leftHip, leftLeg, 0.30F, 0.88F, 1.0F, 0.92F);
+            emitLine(poseStack, rightHip, rightLeg, 0.30F, 0.88F, 1.0F, 0.92F);
+        }
+        endLines(RenderFeatureManager.skeletonThroughWalls);
+    }
+
+    private static void renderTracers(Minecraft mc, RenderWorldContext renderContext, PoseStack poseStack,
+            RenderFrameData frameData, float partialTicks) {
+        startLines(RenderFeatureManager.tracerLineWidth, true, RenderFeatureManager.tracerThroughWalls);
+        double maxDistanceSq = RenderFeatureManager.tracerMaxDistance * RenderFeatureManager.tracerMaxDistance;
+        Vec3 eye = getSafeLineStart(mc, partialTicks);
+        for (EntityRenderSample sample : frameData.livingEntities) {
+            if (!sample.matches(RenderFeatureManager.tracerPlayers, RenderFeatureManager.tracerMonsters,
+                    RenderFeatureManager.tracerAnimals, maxDistanceSq)) {
+                continue;
+            }
+            float[] color = getEntityColor(sample.entity);
+            emitLine(poseStack, renderContext.toCameraSpace(eye),
+                    renderContext.toCameraSpace(interpolateEntityCenter(sample.entity, partialTicks)),
+                    color[0], color[1], color[2], 0.82F);
+        }
+        endLines(RenderFeatureManager.tracerThroughWalls);
+    }
+
+    private static void renderEntityTags(Minecraft mc, RenderWorldContext renderContext, RenderFrameData frameData,
+            float partialTicks, MultiBufferSource.BufferSource buffer) {
+        double maxDistanceSq = RenderFeatureManager.entityTagMaxDistance * RenderFeatureManager.entityTagMaxDistance;
+        for (EntityRenderSample sample : frameData.livingEntities) {
+            if (!sample.matches(RenderFeatureManager.entityTagPlayers, RenderFeatureManager.entityTagMonsters,
+                    RenderFeatureManager.entityTagAnimals, maxDistanceSq)) {
+                continue;
+            }
+            LivingEntity living = sample.entity;
+
+            List<String> lines = new ArrayList<>();
+            lines.add(sample.entity.getName().getString());
+            if (RenderFeatureManager.entityTagShowHealth) {
+                lines.add("§cHP: §f" + formatFloat(Math.max(0.0F, living.getHealth())));
+            }
+            if (RenderFeatureManager.entityTagShowDistance) {
+                lines.add("§b距离: §f" + formatFloat(mc.player.distanceTo(sample.entity)) + "m");
+            }
+            if (RenderFeatureManager.entityTagShowHeldItem && !living.getMainHandItem().isEmpty()) {
+                lines.add("§e手持: §f" + living.getMainHandItem().getHoverName().getString());
+            }
+            drawWorldLabel(mc, renderContext, buffer,
+                    interpolateEntityCenter(sample.entity, partialTicks).add(0.0D, sample.entity.getBbHeight() * 0.45D, 0.0D),
+                    lines, 0xFFFFFFFF, true);
+        }
+    }
+
+    private static void renderBlockHighlights(RenderWorldContext renderContext, PoseStack poseStack) {
+        boolean ignoreDepth = RenderFeatureManager.blockHighlightThroughWalls || RenderFeatureManager.isEnabled("xray");
+        startLines(1.8F, true, ignoreDepth);
+        for (BlockHighlightEntry entry : BLOCK_HIGHLIGHTS) {
+            AABB box = renderContext.toCameraSpace(entry.box);
+            LevelRenderer.renderLineBox(poseStack, Tesselator.getInstance().getBuilder(), box, entry.r, entry.g, entry.b, 0.95F);
+        }
+        endLines(ignoreDepth);
+
+        boolean hasFilledBoxes = BLOCK_HIGHLIGHTS.stream().anyMatch(entry -> entry.filled);
+        if (hasFilledBoxes) {
+            startFilledBoxes(ignoreDepth);
+            for (BlockHighlightEntry entry : BLOCK_HIGHLIGHTS) {
+                if (!entry.filled) {
+                    continue;
+                }
+                AABB box = renderContext.toCameraSpace(entry.box);
+                LevelRenderer.addChainedFilledBoxVertices(poseStack, Tesselator.getInstance().getBuilder(),
+                        box.minX, box.minY, box.minZ, box.maxX, box.maxY, box.maxZ,
+                        entry.r, entry.g, entry.b, entry.alpha);
+            }
+            endFilledBoxes(ignoreDepth);
+        }
+    }
+
+    private static void renderItemEspBoxes(RenderWorldContext renderContext, PoseStack poseStack,
+            RenderFrameData frameData, float partialTicks) {
+        double maxDistanceSq = RenderFeatureManager.itemEspMaxDistance * RenderFeatureManager.itemEspMaxDistance;
+        startLines(1.6F, true, RenderFeatureManager.itemEspThroughWalls);
+        for (ItemRenderSample sample : frameData.itemEntities) {
+            if (sample.distanceSq > maxDistanceSq) {
+                continue;
+            }
+            AABB box = renderContext.toCameraSpace(interpolateBoundingBox(sample.entityItem, partialTicks).inflate(0.03D));
+            LevelRenderer.renderLineBox(poseStack, Tesselator.getInstance().getBuilder(), box, 1.0F, 0.88F, 0.22F, 0.90F);
+        }
+        endLines(RenderFeatureManager.itemEspThroughWalls);
+
+        startFilledBoxes(RenderFeatureManager.itemEspThroughWalls);
+        for (ItemRenderSample sample : frameData.itemEntities) {
+            if (sample.distanceSq > maxDistanceSq) {
+                continue;
+            }
+            AABB box = renderContext.toCameraSpace(interpolateBoundingBox(sample.entityItem, partialTicks).inflate(0.03D));
+            LevelRenderer.addChainedFilledBoxVertices(poseStack, Tesselator.getInstance().getBuilder(),
+                    box.minX, box.minY, box.minZ, box.maxX, box.maxY, box.maxZ,
+                    1.0F, 0.88F, 0.22F, 0.10F);
+        }
+        endFilledBoxes(RenderFeatureManager.itemEspThroughWalls);
+    }
+
+    private static void renderItemLabels(Minecraft mc, RenderWorldContext renderContext, RenderFrameData frameData,
+            float partialTicks, MultiBufferSource.BufferSource buffer) {
+        double maxDistanceSq = RenderFeatureManager.itemEspMaxDistance * RenderFeatureManager.itemEspMaxDistance;
+        for (ItemRenderSample sample : frameData.itemEntities) {
+            if (sample.distanceSq > maxDistanceSq) {
+                continue;
+            }
+            List<String> lines = new ArrayList<>();
+            if (RenderFeatureManager.itemEspShowName) {
+                lines.add(sample.entityItem.getItem().getHoverName().getString());
+            }
+            if (RenderFeatureManager.itemEspShowDistance) {
+                lines.add("§e距离: §f" + formatFloat(mc.player.distanceTo(sample.entityItem)) + "m");
+            }
+            if (!lines.isEmpty()) {
+                drawWorldLabel(mc, renderContext, buffer,
+                        interpolateEntityCenter(sample.entityItem, partialTicks).add(0.0D, 0.35D, 0.0D),
+                        lines, 0xFFFFFFAA, RenderFeatureManager.itemEspThroughWalls);
+            }
+        }
+    }
+
+    private static void renderTrajectory(Minecraft mc, RenderWorldContext renderContext, PoseStack poseStack, float partialTicks) {
+        if (mc.player == null) {
+            return;
+        }
+        ItemStack held = mc.player.getMainHandItem();
+        if (held.isEmpty()
+                || !(held.getItem() instanceof BowItem
+                || held.getItem() instanceof EnderpearlItem
+                || held.getItem() instanceof SnowballItem
+                || held.getItem() instanceof EggItem
+                || held.getItem() instanceof PotionItem
+                || held.getItem() instanceof SplashPotionItem
+                || held.getItem() instanceof LingeringPotionItem
+                || held.getItem() instanceof ExperienceBottleItem)) {
+            held = mc.player.getOffhandItem();
+        }
+        if (held.isEmpty()) {
+            return;
+        }
+
+        double velocity;
+        double gravity;
+        if (held.getItem() instanceof BowItem) {
+            if (!RenderFeatureManager.trajectoryBows || !mc.player.isUsingItem()) {
+                return;
+            }
+            int useTicks = held.getUseDuration() - mc.player.getUseItemRemainingTicks();
+            float charge = useTicks / 20.0F;
+            charge = (charge * charge + charge * 2.0F) / 3.0F;
+            if (charge < 0.1F) {
+                return;
+            }
+            velocity = Math.min(charge, 1.0F) * 3.0D;
+            gravity = 0.05D;
+        } else if (held.getItem() instanceof EnderpearlItem) {
+            if (!RenderFeatureManager.trajectoryPearls) {
+                return;
+            }
+            velocity = 1.5D;
+            gravity = 0.03D;
+        } else if (held.getItem() instanceof SnowballItem || held.getItem() instanceof EggItem) {
+            if (!RenderFeatureManager.trajectoryThrowables) {
+                return;
+            }
+            velocity = 1.5D;
+            gravity = 0.03D;
+        } else {
+            if (!RenderFeatureManager.trajectoryPotions) {
+                return;
+            }
+            velocity = 0.9D;
+            gravity = 0.05D;
+        }
+
+        startLines(2.0F, true, false);
+        Vec3 previous = getSafeLineStart(mc, partialTicks);
+        Vec3 motion = getCameraLookDirection(mc).scale(velocity);
+        for (int i = 0; i < RenderFeatureManager.trajectoryMaxSteps; i++) {
+            Vec3 next = previous.add(motion);
+            emitLine(poseStack, renderContext.toCameraSpace(previous), renderContext.toCameraSpace(next),
+                    0.35F, 1.0F, 1.0F, 1.0F);
+            previous = next;
+            motion = motion.add(0.0D, -gravity, 0.0D).scale(0.99D);
+            if (!mc.level.noCollision(mc.player, new AABB(previous, previous).inflate(0.15D))) {
+                break;
+            }
+        }
+        endLines(false);
+    }
+
+    private static void renderBlockOutline(Minecraft mc, RenderWorldContext renderContext, PoseStack poseStack) {
+        if (!(mc.hitResult instanceof BlockHitResult blockHitResult)) {
+            return;
+        }
+        BlockPos pos = blockHitResult.getBlockPos();
+        BlockState state = mc.level.getBlockState(pos);
+        Entity viewEntity = mc.getCameraEntity() != null ? mc.getCameraEntity() : mc.player;
+        VoxelShape shape = state.getShape(mc.level, pos, viewEntity == null ? CollisionContext.empty() : CollisionContext.of(viewEntity));
+        if (shape.isEmpty()) {
+            return;
+        }
+
+        Vec3 cameraSpaceOrigin = renderContext.toCameraSpace(new Vec3(pos.getX(), pos.getY(), pos.getZ()));
+        startLines(Math.max(0.5F, RenderFeatureManager.blockOutlineLineWidth), true, false);
+        renderShapeLines(poseStack, shape, cameraSpaceOrigin.x, cameraSpaceOrigin.y, cameraSpaceOrigin.z,
+                0.3F, 0.9F, 1.0F, 0.95F);
+        endLines(false);
+
+        if (RenderFeatureManager.blockOutlineFilledBox) {
+            startFilledBoxes(false);
+            for (AABB localBox : shape.toAabbs()) {
+                AABB box = renderContext.toCameraSpace(localBox.move(pos));
+                LevelRenderer.addChainedFilledBoxVertices(poseStack, Tesselator.getInstance().getBuilder(),
+                        box.minX, box.minY, box.minZ, box.maxX, box.maxY, box.maxZ,
+                        0.3F, 0.9F, 1.0F, 0.08F);
+            }
+            endFilledBoxes(false);
+        }
+    }
+
+    private static void updateBlockHighlights(Minecraft mc, LocalPlayer player) {
+        BLOCK_HIGHLIGHTS.clear();
+        if (mc == null || mc.level == null || player == null) {
+            return;
+        }
+
+        int radius = Math.max(4, Math.round(RenderFeatureManager.blockHighlightMaxDistance));
+        int verticalRadius = Math.min(radius, ORE_SCAN_VERTICAL_RADIUS_LIMIT);
+        BlockPos center = player.blockPosition();
+
+        for (BlockPos pos : BlockPos.betweenClosed(center.offset(-radius, -verticalRadius, -radius),
+                center.offset(radius, verticalRadius, radius))) {
+            if (BLOCK_HIGHLIGHTS.size() >= MAX_BLOCK_SCAN_RESULTS) {
+                break;
+            }
+            BlockState state = mc.level.getBlockState(pos);
+            ResourceLocation key = BuiltInRegistries.BLOCK.getKey(state.getBlock());
+            String id = key == null ? "" : key.toString();
+            boolean storage = RenderFeatureManager.blockHighlightStorages
+                    && (id.contains("chest") || id.contains("shulker_box") || id.contains("barrel") || id.contains("ender_chest"));
+            boolean spawner = RenderFeatureManager.blockHighlightSpawners && id.contains("spawner");
+            boolean ore = RenderFeatureManager.blockHighlightOres && RenderFeatureManager.isOreBlock(state);
+            boolean xrayVisible = RenderFeatureManager.isEnabled("xray") && RenderFeatureManager.isXrayBlockVisible(state);
+            if (!storage && !spawner && !ore && !xrayVisible) {
+                continue;
+            }
+            int color = (ore || xrayVisible)
+                    ? RenderFeatureManager.getBlockHighlightColor(state)
+                    : (storage ? 0x55FFFF : 0xFFAA55);
+            float r = ((color >> 16) & 0xFF) / 255.0F;
+            float g = ((color >> 8) & 0xFF) / 255.0F;
+            float b = (color & 0xFF) / 255.0F;
+            boolean filled = RenderFeatureManager.blockHighlightFilledBox || RenderFeatureManager.isEnabled("xray");
+            float alpha = RenderFeatureManager.isEnabled("xray") ? 0.18F : 0.08F;
+            BLOCK_HIGHLIGHTS.add(new BlockHighlightEntry(new AABB(pos), r, g, b, filled, alpha));
         }
     }
 
     private static RenderFrameData getRenderFrameData(Minecraft mc) {
-        if (mc == null || mc.world == null || mc.player == null) {
+        if (mc == null || mc.level == null || mc.player == null) {
             return RenderFrameData.EMPTY;
         }
-
-        int tick = mc.player.ticksExisted;
-        int dimension = mc.player.dimension;
-        if (cachedRenderFrameData != null && cachedRenderFrameTick == tick && cachedRenderFrameDimension == dimension) {
+        if (cachedRenderFrameData != null && cachedRenderFrameTick == mc.player.tickCount) {
             return cachedRenderFrameData;
         }
 
@@ -278,55 +626,38 @@ final class RenderFeatureSupport {
                 ? RenderFeatureManager.itemEspMaxDistance * RenderFeatureManager.itemEspMaxDistance
                 : 0.0D;
 
-        boolean needLivingScan = maxLivingDistanceSq > 0.0D || maxSkeletonDistanceSq > 0.0D;
-        boolean needItemScan = maxItemDistanceSq > 0.0D;
-        if (!needLivingScan && !needItemScan) {
-            cachedRenderFrameData = RenderFrameData.EMPTY;
-            cachedRenderFrameTick = tick;
-            cachedRenderFrameDimension = dimension;
-            return cachedRenderFrameData;
-        }
-
         List<EntityRenderSample> livingEntities = new ArrayList<>();
         List<EntityRenderSample> playerEntities = new ArrayList<>();
         List<ItemRenderSample> itemEntities = new ArrayList<>();
 
-        for (Entity entity : mc.world.loadedEntityList) {
-            if (entity == null || entity == mc.player || entity.isDead) {
+        for (Entity entity : mc.level.entitiesForRendering()) {
+            if (entity == null || entity == mc.player || !entity.isAlive()) {
                 continue;
             }
 
-            if (needLivingScan && entity instanceof EntityLivingBase && entity.isEntityAlive()) {
-                double distanceSq = mc.player.getDistanceSq(entity);
-                boolean isPlayer = entity instanceof EntityPlayer;
-                boolean isMonster = isMonsterEntity(entity);
-                boolean isAnimal = isAnimalEntity(entity);
-
-                if (maxLivingDistanceSq > 0.0D
-                        && distanceSq <= maxLivingDistanceSq
-                        && (isPlayer || isMonster || isAnimal)) {
-                    livingEntities.add(new EntityRenderSample(entity, distanceSq, isPlayer, isMonster, isAnimal));
+            if (entity instanceof LivingEntity living) {
+                double distanceSq = mc.player.distanceToSqr(living);
+                boolean isPlayer = living instanceof Player;
+                boolean isMonster = isMonsterEntity(living);
+                boolean isAnimal = isAnimalEntity(living);
+                if (maxLivingDistanceSq > 0.0D && distanceSq <= maxLivingDistanceSq && (isPlayer || isMonster || isAnimal)) {
+                    livingEntities.add(new EntityRenderSample(living, distanceSq, isPlayer, isMonster, isAnimal));
                 }
                 if (maxSkeletonDistanceSq > 0.0D && distanceSq <= maxSkeletonDistanceSq && isPlayer) {
-                    playerEntities.add(new EntityRenderSample(entity, distanceSq, true, false, false));
+                    playerEntities.add(new EntityRenderSample(living, distanceSq, true, false, false));
                 }
             }
 
-            if (needItemScan && entity instanceof EntityItem) {
-                EntityItem item = (EntityItem) entity;
-                if (!item.onGround) {
-                    continue;
-                }
-                double distanceSq = mc.player.getDistanceSq(item);
-                if (distanceSq <= maxItemDistanceSq) {
-                    itemEntities.add(new ItemRenderSample(item, distanceSq));
+            if (maxItemDistanceSq > 0.0D && entity instanceof ItemEntity itemEntity) {
+                double distanceSq = mc.player.distanceToSqr(itemEntity);
+                if (distanceSq <= maxItemDistanceSq && itemEntity.onGround()) {
+                    itemEntities.add(new ItemRenderSample(itemEntity, distanceSq));
                 }
             }
         }
 
         cachedRenderFrameData = new RenderFrameData(livingEntities, playerEntities, itemEntities);
-        cachedRenderFrameTick = tick;
-        cachedRenderFrameDimension = dimension;
+        cachedRenderFrameTick = mc.player.tickCount;
         return cachedRenderFrameData;
     }
 
@@ -348,768 +679,258 @@ final class RenderFeatureSupport {
     }
 
     private static boolean isMonsterEntity(Entity entity) {
-        return entity instanceof IMob;
+        return entity instanceof Enemy;
     }
 
     private static boolean isAnimalEntity(Entity entity) {
-        return entity instanceof EntityAnimal
-                || entity instanceof EntityAmbientCreature
-                || entity instanceof EntitySquid
-                || entity instanceof IMerchant
-                || entity instanceof INpc;
+        return entity instanceof Animal || entity instanceof AmbientCreature || entity instanceof WaterAnimal;
     }
 
     private static float[] getEntityColor(Entity entity) {
-        if (entity instanceof EntityPlayer) {
+        if (entity instanceof Player) {
             return new float[] { 0.22F, 0.86F, 1.0F };
         }
-        if (isMonsterEntity(entity)) {
+        if (entity instanceof Enemy) {
             return new float[] { 1.0F, 0.30F, 0.30F };
         }
         return new float[] { 0.35F, 1.0F, 0.48F };
     }
 
     private static int getEntityHudColor(Entity entity) {
-        if (entity instanceof EntityPlayer) {
+        if (entity instanceof Player) {
             return 0xFF55E3FF;
         }
-        if (isMonsterEntity(entity)) {
+        if (entity instanceof Enemy) {
             return 0xFFFF6464;
         }
         return 0xFF66FF7A;
     }
 
-    private static Vec3d getEntityCenter(Entity entity, float partialTicks) {
-        double x = entity.lastTickPosX + (entity.posX - entity.lastTickPosX) * partialTicks;
-        double y = entity.lastTickPosY + (entity.posY - entity.lastTickPosY) * partialTicks + entity.height * 0.5D;
-        double z = entity.lastTickPosZ + (entity.posZ - entity.lastTickPosZ) * partialTicks;
-        return new Vec3d(x, y, z);
+    private static AABB interpolateBoundingBox(Entity entity, float partialTicks) {
+        AABB box = entity.getBoundingBox();
+        double x = Mth.lerp(partialTicks, entity.xo, entity.getX());
+        double y = Mth.lerp(partialTicks, entity.yo, entity.getY());
+        double z = Mth.lerp(partialTicks, entity.zo, entity.getZ());
+        return box.move(x - entity.getX(), y - entity.getY(), z - entity.getZ());
     }
 
-    private static double interpolate(double previous, double current, float partialTicks) {
-        return previous + (current - previous) * partialTicks;
+    private static Vec3 interpolateEntityCenter(Entity entity, float partialTicks) {
+        AABB box = interpolateBoundingBox(entity, partialTicks);
+        return box.getCenter();
     }
 
-    private static void renderEntityLabel(Minecraft mc, Entity entity, float partialTicks) {
-        if (!(entity instanceof EntityLivingBase)) {
-            return;
-        }
-        EntityLivingBase living = (EntityLivingBase) entity;
-        List<String> lines = new ArrayList<>();
-        lines.add(entity.getName());
-        if (RenderFeatureManager.entityTagShowHealth) {
-            lines.add("§cHP: §f" + formatFloat(Math.max(0.0F, living.getHealth())));
-        }
-        if (RenderFeatureManager.entityTagShowDistance) {
-            lines.add("§b距离: §f" + formatFloat(mc.player.getDistance(entity)) + "m");
-        }
-        if (RenderFeatureManager.entityTagShowHeldItem) {
-            ItemStack held = living.getHeldItemMainhand();
-            if (held != null && !held.isEmpty()) {
-                lines.add("§e手持: §f" + held.getDisplayName());
-            }
-        }
-        drawWorldLabel(mc, getEntityCenter(entity, partialTicks).addVector(0.0D, entity.height * 0.45D, 0.0D),
-                lines, 0xFFFFFFFF, true);
-    }
-
-    private static void renderItemLabel(Minecraft mc, EntityItem entityItem, float partialTicks) {
-        List<String> lines = new ArrayList<>();
-        if (RenderFeatureManager.itemEspShowName) {
-            ItemStack stack = entityItem.getItem();
-            lines.add(stack == null || stack.isEmpty() ? entityItem.getName() : stack.getDisplayName());
-        }
-        if (RenderFeatureManager.itemEspShowDistance) {
-            lines.add("§e距离: §f" + formatFloat(mc.player.getDistance(entityItem)) + "m");
-        }
-        if (lines.isEmpty()) {
-            return;
-        }
-        drawWorldLabel(mc, getEntityCenter(entityItem, partialTicks).addVector(0.0D, 0.35D, 0.0D),
-                lines, 0xFFFFFFAA, RenderFeatureManager.itemEspThroughWalls);
-    }
-
-    private static void drawWorldLabel(Minecraft mc, Vec3d worldPos, List<String> lines, int textColor,
-            boolean throughWalls) {
-        RenderManager renderManager = mc.getRenderManager();
-        if (mc.fontRenderer == null || renderManager == null || lines == null || lines.isEmpty()) {
-            return;
-        }
-
-        double x = worldPos.x - renderManager.viewerPosX;
-        double y = worldPos.y - renderManager.viewerPosY;
-        double z = worldPos.z - renderManager.viewerPosZ;
-        float scale = 0.026F;
-        int lineHeight = mc.fontRenderer.FONT_HEIGHT + 1;
-
-        GlStateManager.pushMatrix();
-        GlStateManager.translate(x, y, z);
-        GlStateManager.rotate(-renderManager.playerViewY, 0.0F, 1.0F, 0.0F);
-        float pitchFactor = mc.gameSettings.thirdPersonView == 2 ? -1.0F : 1.0F;
-        GlStateManager.rotate(renderManager.playerViewX * pitchFactor, 1.0F, 0.0F, 0.0F);
-        GlStateManager.scale(-scale, -scale, scale);
-        GlStateManager.disableLighting();
-        GlStateManager.enableBlend();
-        GlStateManager.tryBlendFuncSeparate(GlStateManager.SourceFactor.SRC_ALPHA,
-                GlStateManager.DestFactor.ONE_MINUS_SRC_ALPHA, GlStateManager.SourceFactor.ONE,
-                GlStateManager.DestFactor.ZERO);
-        if (throughWalls) {
-            GlStateManager.disableDepth();
-        }
-        GlStateManager.depthMask(false);
-
-        int maxWidth = 0;
-        for (String line : lines) {
-            maxWidth = Math.max(maxWidth, mc.fontRenderer.getStringWidth(line));
-        }
-
-        int totalHeight = lines.size() * lineHeight;
-        Gui.drawRect(-maxWidth / 2 - 3, -2, maxWidth / 2 + 3, totalHeight + 1, 0x66101010);
-        for (int i = 0; i < lines.size(); i++) {
-            String line = lines.get(i);
-            mc.fontRenderer.drawStringWithShadow(line, -mc.fontRenderer.getStringWidth(line) / 2.0F,
-                    i * lineHeight, textColor);
-        }
-
-        GlStateManager.depthMask(true);
-        if (throughWalls) {
-            GlStateManager.enableDepth();
-        }
-        GlStateManager.disableBlend();
-        GlStateManager.enableLighting();
-        GlStateManager.popMatrix();
-    }
-
-    private static String formatFloat(float value) {
-        return String.format(Locale.ROOT, "%.1f", value);
-    }
-
-    private static int clampInt(int value, int minValue, int maxValue) {
-        return Math.max(minValue, Math.min(maxValue, value));
-    }
-
-    private static void renderEntityVisuals(Minecraft mc, float partialTicks, RenderFrameData frameData) {
-        Entity viewer = mc.getRenderViewEntity();
-        if (viewer == null) {
-            return;
-        }
-
-        double viewerX = viewer.lastTickPosX + (viewer.posX - viewer.lastTickPosX) * partialTicks;
-        double viewerY = viewer.lastTickPosY + (viewer.posY - viewer.lastTickPosY) * partialTicks;
-        double viewerZ = viewer.lastTickPosZ + (viewer.posZ - viewer.lastTickPosZ) * partialTicks;
-
-        GlStateManager.pushMatrix();
-        GlStateManager.enableBlend();
-        GlStateManager.tryBlendFuncSeparate(GlStateManager.SourceFactor.SRC_ALPHA,
-                GlStateManager.DestFactor.ONE_MINUS_SRC_ALPHA, GlStateManager.SourceFactor.ONE,
-                GlStateManager.DestFactor.ZERO);
-        GlStateManager.disableTexture2D();
-        GlStateManager.disableLighting();
-        GlStateManager.depthMask(false);
-        if (RenderFeatureManager.entityVisualThroughWalls) {
-            GlStateManager.disableDepth();
-        }
-        GlStateManager.glLineWidth(1.8F);
-
-        double maxDistanceSq = RenderFeatureManager.entityVisualMaxDistance * RenderFeatureManager.entityVisualMaxDistance;
-        for (EntityRenderSample sample : frameData.livingEntities) {
-            if (!sample.matches(RenderFeatureManager.entityVisualPlayers, RenderFeatureManager.entityVisualMonsters,
-                    RenderFeatureManager.entityVisualAnimals, maxDistanceSq)) {
-                continue;
-            }
-            Entity entity = sample.entity;
-            float[] color = getEntityColor(entity);
-            AxisAlignedBB box = entity.getEntityBoundingBox().grow(0.05D).offset(-viewerX, -viewerY, -viewerZ);
-            if (RenderFeatureManager.entityVisualFilledBox) {
-                RenderGlobal.renderFilledBox(box, color[0], color[1], color[2], 0.12F);
-            }
-            RenderGlobal.drawSelectionBoundingBox(box, color[0], color[1], color[2], 0.88F);
-        }
-
-        GlStateManager.glLineWidth(1.0F);
-        if (RenderFeatureManager.entityVisualThroughWalls) {
-            GlStateManager.enableDepth();
-        }
-        GlStateManager.depthMask(true);
-        GlStateManager.enableTexture2D();
-        GlStateManager.enableLighting();
-        GlStateManager.disableBlend();
-        GlStateManager.popMatrix();
-    }
-
-    private static void renderPlayerSkeletons(Minecraft mc, float partialTicks, RenderFrameData frameData) {
-        Entity viewer = mc.getRenderViewEntity();
-        if (viewer == null) {
-            return;
-        }
-
-        double viewerX = interpolate(viewer.lastTickPosX, viewer.posX, partialTicks);
-        double viewerY = interpolate(viewer.lastTickPosY, viewer.posY, partialTicks);
-        double viewerZ = interpolate(viewer.lastTickPosZ, viewer.posZ, partialTicks);
-        Tessellator tessellator = Tessellator.getInstance();
-        BufferBuilder buffer = tessellator.getBuffer();
-
-        GlStateManager.pushMatrix();
-        GlStateManager.enableBlend();
-        GlStateManager.tryBlendFuncSeparate(GlStateManager.SourceFactor.SRC_ALPHA,
-                GlStateManager.DestFactor.ONE_MINUS_SRC_ALPHA, GlStateManager.SourceFactor.ONE,
-                GlStateManager.DestFactor.ZERO);
-        GlStateManager.disableTexture2D();
-        GlStateManager.disableLighting();
-        GlStateManager.depthMask(false);
-        if (RenderFeatureManager.skeletonThroughWalls) {
-            GlStateManager.disableDepth();
-        }
-        GlStateManager.glLineWidth(Math.max(1.0F, RenderFeatureManager.skeletonLineWidth));
-
-        buffer.begin(GL11.GL_LINES, DefaultVertexFormats.POSITION_COLOR);
-        for (EntityRenderSample sample : frameData.playerEntities) {
-            Entity entity = sample.entity;
-            EntityPlayer target = (EntityPlayer) entity;
-            float swing = target.limbSwing - target.limbSwingAmount * (1.0F - partialTicks);
-            float swingAmount = Math.min(1.0F, target.limbSwingAmount);
-            double armSwing = Math.cos(swing * 0.6662F) * 0.16D * swingAmount;
-            double legSwing = Math.cos(swing * 0.6662F + Math.PI) * 0.18D * swingAmount;
-            double yawRad = Math.toRadians(interpolate(target.prevRotationYaw, target.rotationYaw, partialTicks));
-            double px = interpolate(target.lastTickPosX, target.posX, partialTicks) - viewerX;
-            double py = interpolate(target.lastTickPosY, target.posY, partialTicks) - viewerY;
-            double pz = interpolate(target.lastTickPosZ, target.posZ, partialTicks) - viewerZ;
-            double height = target.height;
-            double shoulderY = height * 0.78D;
-            double pelvisY = height * 0.52D;
-            double headY = height * 1.02D;
-            double armY = height * 0.54D;
-            double footY = 0.05D;
-            double shoulderX = target.width * 0.36D;
-            double hipX = target.width * 0.18D;
-            double armX = target.width * 0.52D;
-
-            Vec3d pelvis = localToWorld(px, py, pz, 0.0D, pelvisY, 0.0D, yawRad);
-            Vec3d neck = localToWorld(px, py, pz, 0.0D, shoulderY, 0.0D, yawRad);
-            Vec3d head = localToWorld(px, py, pz, 0.0D, headY, 0.0D, yawRad);
-            Vec3d leftShoulder = localToWorld(px, py, pz, -shoulderX, shoulderY, 0.0D, yawRad);
-            Vec3d rightShoulder = localToWorld(px, py, pz, shoulderX, shoulderY, 0.0D, yawRad);
-            Vec3d leftArm = localToWorld(px, py, pz, -armX, armY, armSwing, yawRad);
-            Vec3d rightArm = localToWorld(px, py, pz, armX, armY, -armSwing, yawRad);
-            Vec3d leftHip = localToWorld(px, py, pz, -hipX, pelvisY, 0.0D, yawRad);
-            Vec3d rightHip = localToWorld(px, py, pz, hipX, pelvisY, 0.0D, yawRad);
-            Vec3d leftLeg = localToWorld(px, py, pz, -hipX, footY, legSwing, yawRad);
-            Vec3d rightLeg = localToWorld(px, py, pz, hipX, footY, -legSwing, yawRad);
-
-            addLine(buffer, head, neck, 0.30F, 0.88F, 1.0F, 0.92F);
-            addLine(buffer, neck, pelvis, 0.30F, 0.88F, 1.0F, 0.92F);
-            addLine(buffer, leftShoulder, rightShoulder, 0.30F, 0.88F, 1.0F, 0.92F);
-            addLine(buffer, neck, leftShoulder, 0.30F, 0.88F, 1.0F, 0.92F);
-            addLine(buffer, neck, rightShoulder, 0.30F, 0.88F, 1.0F, 0.92F);
-            addLine(buffer, leftShoulder, leftArm, 0.30F, 0.88F, 1.0F, 0.92F);
-            addLine(buffer, rightShoulder, rightArm, 0.30F, 0.88F, 1.0F, 0.92F);
-            addLine(buffer, pelvis, leftHip, 0.30F, 0.88F, 1.0F, 0.92F);
-            addLine(buffer, pelvis, rightHip, 0.30F, 0.88F, 1.0F, 0.92F);
-            addLine(buffer, leftHip, leftLeg, 0.30F, 0.88F, 1.0F, 0.92F);
-            addLine(buffer, rightHip, rightLeg, 0.30F, 0.88F, 1.0F, 0.92F);
-        }
-        tessellator.draw();
-
-        GlStateManager.glLineWidth(1.0F);
-        if (RenderFeatureManager.skeletonThroughWalls) {
-            GlStateManager.enableDepth();
-        }
-        GlStateManager.depthMask(true);
-        GlStateManager.enableTexture2D();
-        GlStateManager.enableLighting();
-        GlStateManager.disableBlend();
-        GlStateManager.popMatrix();
-    }
-
-    private static Vec3d localToWorld(double baseX, double baseY, double baseZ, double localX, double localY,
+    private static Vec3 localToWorld(double baseX, double baseY, double baseZ, double localX, double localY,
             double localZ, double yawRad) {
         double sin = Math.sin(yawRad);
         double cos = Math.cos(yawRad);
         double worldX = baseX + localX * cos - localZ * sin;
         double worldZ = baseZ + localX * sin + localZ * cos;
-        return new Vec3d(worldX, baseY + localY, worldZ);
+        return new Vec3(worldX, baseY + localY, worldZ);
     }
 
-    private static void addLine(BufferBuilder buffer, Vec3d start, Vec3d end, float red, float green, float blue,
-            float alpha) {
-        buffer.pos(start.x, start.y, start.z).color(red, green, blue, alpha).endVertex();
-        buffer.pos(end.x, end.y, end.z).color(red, green, blue, alpha).endVertex();
+    private static Vec3 getSafeLineStart(Minecraft mc, float partialTicks) {
+        if (mc == null || mc.player == null) {
+            return Vec3.ZERO;
+        }
+        Vec3 eye = mc.player.getEyePosition(partialTicks);
+        Camera camera = mc.gameRenderer == null ? null : mc.gameRenderer.getMainCamera();
+        if (camera == null || !camera.isInitialized()) {
+            return eye;
+        }
+        Vec3 cameraPos = camera.getPosition();
+        if (eye.distanceToSqr(cameraPos) > 1.0E-4D) {
+            return eye;
+        }
+        return cameraPos.add(getCameraLookDirection(mc).scale(0.12D));
     }
 
-    private static void renderTracers(Minecraft mc, float partialTicks, RenderFrameData frameData) {
-        Entity viewer = mc.getRenderViewEntity();
-        if (!(viewer instanceof EntityPlayerSP)) {
+    private static Vec3 getCameraLookDirection(Minecraft mc) {
+        Camera camera = mc == null || mc.gameRenderer == null ? null : mc.gameRenderer.getMainCamera();
+        if (camera != null && camera.isInitialized()) {
+            org.joml.Vector3f look = camera.getLookVector();
+            return new Vec3(look.x(), look.y(), look.z());
+        }
+        return mc != null && mc.player != null ? mc.player.getLookAngle() : new Vec3(0.0D, 0.0D, 1.0D);
+    }
+
+    private static void drawWorldLabel(Minecraft mc, RenderWorldContext renderContext, MultiBufferSource.BufferSource buffer,
+            Vec3 worldPos, List<String> lines, int textColor, boolean throughWalls) {
+        if (lines == null || lines.isEmpty() || mc == null || mc.font == null) {
             return;
         }
 
-        Vec3d eyePosition = viewer.getPositionEyes(partialTicks);
-        Tessellator tessellator = Tessellator.getInstance();
-        BufferBuilder buffer = tessellator.getBuffer();
-        RenderManager renderManager = mc.getRenderManager();
-
-        GlStateManager.pushMatrix();
-        GlStateManager.enableBlend();
-        GlStateManager.tryBlendFuncSeparate(GlStateManager.SourceFactor.SRC_ALPHA,
-                GlStateManager.DestFactor.ONE_MINUS_SRC_ALPHA, GlStateManager.SourceFactor.ONE,
-                GlStateManager.DestFactor.ZERO);
-        GlStateManager.disableTexture2D();
-        GlStateManager.disableLighting();
-        GlStateManager.depthMask(false);
-        if (RenderFeatureManager.tracerThroughWalls) {
-            GlStateManager.disableDepth();
-        }
-        GlStateManager.glLineWidth(RenderFeatureManager.tracerLineWidth);
-
-        buffer.begin(GL11.GL_LINES, DefaultVertexFormats.POSITION_COLOR);
-        double maxDistanceSq = RenderFeatureManager.tracerMaxDistance * RenderFeatureManager.tracerMaxDistance;
-        for (EntityRenderSample sample : frameData.livingEntities) {
-            if (!sample.matches(RenderFeatureManager.tracerPlayers, RenderFeatureManager.tracerMonsters,
-                    RenderFeatureManager.tracerAnimals, maxDistanceSq)) {
-                continue;
-            }
-            Entity entity = sample.entity;
-            float[] color = getEntityColor(entity);
-            Vec3d target = getEntityCenter(entity, partialTicks);
-            buffer.pos(eyePosition.x - renderManager.viewerPosX, eyePosition.y - renderManager.viewerPosY,
-                    eyePosition.z - renderManager.viewerPosZ).color(color[0], color[1], color[2], 0.82F).endVertex();
-            buffer.pos(target.x - renderManager.viewerPosX, target.y - renderManager.viewerPosY,
-                    target.z - renderManager.viewerPosZ).color(color[0], color[1], color[2], 0.82F).endVertex();
-        }
-        tessellator.draw();
-
-        GlStateManager.glLineWidth(1.0F);
-        if (RenderFeatureManager.tracerThroughWalls) {
-            GlStateManager.enableDepth();
-        }
-        GlStateManager.depthMask(true);
-        GlStateManager.enableTexture2D();
-        GlStateManager.enableLighting();
-        GlStateManager.disableBlend();
-        GlStateManager.popMatrix();
-    }
-
-    private static void renderEntityTags(Minecraft mc, float partialTicks, RenderFrameData frameData) {
-        double maxDistanceSq = RenderFeatureManager.entityTagMaxDistance * RenderFeatureManager.entityTagMaxDistance;
-        for (EntityRenderSample sample : frameData.livingEntities) {
-            if (sample.matches(RenderFeatureManager.entityTagPlayers, RenderFeatureManager.entityTagMonsters,
-                    RenderFeatureManager.entityTagAnimals, maxDistanceSq)) {
-                renderEntityLabel(mc, sample.entity, partialTicks);
+        Vec3 cameraSpacePos = renderContext.toCameraSpace(worldPos);
+        EntityRenderDispatcher dispatcher = mc.getEntityRenderDispatcher();
+        PoseStack poseStack = renderContext.createBasePoseStack();
+        poseStack.translate(cameraSpacePos.x, cameraSpacePos.y, cameraSpacePos.z);
+        poseStack.mulPose(dispatcher.cameraOrientation());
+        poseStack.scale(-0.025F, -0.025F, 0.025F);
+        Matrix4f matrix = poseStack.last().pose();
+        int lineHeight = mc.font.lineHeight + 1;
+        int background = (int) (mc.options.getBackgroundOpacity(0.25F) * 255.0F) << 24;
+        int opaqueTextColor = 0xFF000000 | (textColor & 0x00FFFFFF);
+        int seeThroughTextColor = 0x20000000 | (textColor & 0x00FFFFFF);
+        for (int i = 0; i < lines.size(); i++) {
+            String line = lines.get(i);
+            float x = -mc.font.width(line) / 2.0F;
+            float y = i * lineHeight;
+            if (throughWalls) {
+                mc.font.drawInBatch(line, x, y, seeThroughTextColor, false, matrix, buffer,
+                        Font.DisplayMode.SEE_THROUGH, background, LightTexture.FULL_BRIGHT);
+                mc.font.drawInBatch(line, x, y, opaqueTextColor, false, matrix, buffer,
+                        Font.DisplayMode.NORMAL, 0, LightTexture.FULL_BRIGHT);
+            } else {
+                mc.font.drawInBatch(line, x, y, opaqueTextColor, false, matrix, buffer,
+                        Font.DisplayMode.NORMAL, background, LightTexture.FULL_BRIGHT);
             }
         }
     }
 
-    private static void renderItemEsp(Minecraft mc, float partialTicks, RenderFrameData frameData) {
-        Entity viewer = mc.getRenderViewEntity();
-        if (viewer == null) {
-            return;
+    private static void startLines(float lineWidth, boolean blend, boolean ignoreDepth) {
+        if (blend) {
+            RenderSystem.enableBlend();
+            RenderSystem.defaultBlendFunc();
         }
-
-        double viewerX = viewer.lastTickPosX + (viewer.posX - viewer.lastTickPosX) * partialTicks;
-        double viewerY = viewer.lastTickPosY + (viewer.posY - viewer.lastTickPosY) * partialTicks;
-        double viewerZ = viewer.lastTickPosZ + (viewer.posZ - viewer.lastTickPosZ) * partialTicks;
-
-        GlStateManager.pushMatrix();
-        GlStateManager.enableBlend();
-        GlStateManager.tryBlendFuncSeparate(GlStateManager.SourceFactor.SRC_ALPHA,
-                GlStateManager.DestFactor.ONE_MINUS_SRC_ALPHA, GlStateManager.SourceFactor.ONE,
-                GlStateManager.DestFactor.ZERO);
-        GlStateManager.disableTexture2D();
-        GlStateManager.disableLighting();
-        GlStateManager.depthMask(false);
-        if (RenderFeatureManager.itemEspThroughWalls) {
-            GlStateManager.disableDepth();
+        RenderSystem.lineWidth(lineWidth);
+        RenderSystem.depthMask(false);
+        RenderSystem.disableCull();
+        if (ignoreDepth) {
+            RenderSystem.disableDepthTest();
         }
-        GlStateManager.glLineWidth(1.6F);
-
-        for (ItemRenderSample sample : frameData.itemEntities) {
-            AxisAlignedBB box = sample.entityItem.getEntityBoundingBox().grow(0.03D).offset(-viewerX, -viewerY, -viewerZ);
-            RenderGlobal.renderFilledBox(box, 1.0F, 0.88F, 0.22F, 0.10F);
-            RenderGlobal.drawSelectionBoundingBox(box, 1.0F, 0.88F, 0.22F, 0.90F);
-        }
-
-        GlStateManager.glLineWidth(1.0F);
-        if (RenderFeatureManager.itemEspThroughWalls) {
-            GlStateManager.enableDepth();
-        }
-        GlStateManager.depthMask(true);
-        GlStateManager.enableTexture2D();
-        GlStateManager.enableLighting();
-        GlStateManager.disableBlend();
-        GlStateManager.popMatrix();
-
-        for (ItemRenderSample sample : frameData.itemEntities) {
-            renderItemLabel(mc, sample.entityItem, partialTicks);
-        }
+        RenderSystem.setShader(GameRenderer::getRendertypeLinesShader);
+        Tesselator.getInstance().getBuilder().begin(VertexFormat.Mode.LINES, DefaultVertexFormat.POSITION_COLOR_NORMAL);
     }
 
-    private static void updateBlockHighlights(Minecraft mc, EntityPlayerSP player) {
-        BLOCK_HIGHLIGHTS.clear();
-        if (mc.world == null || player == null) {
-            ORE_BLOCK_HIGHLIGHTS.clear();
-            oreScanState = OreScanState.EMPTY;
-            return;
+    private static void endLines(boolean ignoredDepth) {
+        Tesselator.getInstance().end();
+        if (ignoredDepth) {
+            RenderSystem.enableDepthTest();
         }
+        RenderSystem.enableCull();
+        RenderSystem.depthMask(true);
+        RenderSystem.disableBlend();
+        RenderSystem.lineWidth(1.0F);
+    }
 
-        float maxDistance = RenderFeatureManager.blockHighlightMaxDistance;
-        double maxDistanceSq = maxDistance * maxDistance;
+    private static void startFilledBoxes(boolean ignoreDepth) {
+        RenderSystem.enableBlend();
+        RenderSystem.defaultBlendFunc();
+        RenderSystem.depthMask(false);
+        RenderSystem.disableCull();
+        if (ignoreDepth) {
+            RenderSystem.disableDepthTest();
+        }
+        RenderSystem.setShader(GameRenderer::getPositionColorShader);
+        Tesselator.getInstance().getBuilder().begin(VertexFormat.Mode.TRIANGLE_STRIP, DefaultVertexFormat.POSITION_COLOR);
+    }
 
-        if (RenderFeatureManager.blockHighlightStorages || RenderFeatureManager.blockHighlightSpawners) {
-            for (TileEntity tileEntity : mc.world.loadedTileEntityList) {
-                if (tileEntity == null || tileEntity.getPos() == null
-                        || player.getDistanceSqToCenter(tileEntity.getPos()) > maxDistanceSq) {
-                    continue;
-                }
-                if (RenderFeatureManager.blockHighlightStorages && isStorageTile(tileEntity)) {
-                    addBlockHighlight(tileEntity.getPos(), 1.0F, 0.74F, 0.20F);
-                } else if (RenderFeatureManager.blockHighlightSpawners && tileEntity instanceof TileEntityMobSpawner) {
-                    addBlockHighlight(tileEntity.getPos(), 1.0F, 0.28F, 0.88F);
-                }
+    private static void endFilledBoxes(boolean ignoredDepth) {
+        Tesselator.getInstance().end();
+        if (ignoredDepth) {
+            RenderSystem.enableDepthTest();
+        }
+        RenderSystem.enableCull();
+        RenderSystem.depthMask(true);
+        RenderSystem.disableBlend();
+    }
+
+    private static void emitLine(PoseStack poseStack, Vec3 start, Vec3 end, float r, float g, float b, float a) {
+        double dx = end.x - start.x;
+        double dy = end.y - start.y;
+        double dz = end.z - start.z;
+        double magnitude = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        float nx = magnitude < 1.0E-6D ? 0.0F : (float) (dx / magnitude);
+        float ny = magnitude < 1.0E-6D ? 1.0F : (float) (dy / magnitude);
+        float nz = magnitude < 1.0E-6D ? 0.0F : (float) (dz / magnitude);
+        Matrix4f pose = poseStack.last().pose();
+        Matrix3f normal = poseStack.last().normal();
+        BufferBuilder buffer = Tesselator.getInstance().getBuilder();
+        buffer.vertex(pose, (float) start.x, (float) start.y, (float) start.z).color(r, g, b, a).normal(normal, nx, ny, nz).endVertex();
+        buffer.vertex(pose, (float) end.x, (float) end.y, (float) end.z).color(r, g, b, a).normal(normal, nx, ny, nz).endVertex();
+    }
+
+    private static void renderShapeLines(PoseStack poseStack, VoxelShape shape, double offsetX, double offsetY,
+            double offsetZ, float r, float g, float b, float a) {
+        PoseStack.Pose pose = poseStack.last();
+        BufferBuilder buffer = Tesselator.getInstance().getBuilder();
+        shape.forAllEdges((x1, y1, z1, x2, y2, z2) -> {
+            float dx = (float) (x2 - x1);
+            float dy = (float) (y2 - y1);
+            float dz = (float) (z2 - z1);
+            float magnitude = Mth.sqrt(dx * dx + dy * dy + dz * dz);
+            if (magnitude < 1.0E-6F) {
+                return;
             }
-        }
-
-        if (RenderFeatureManager.blockHighlightOres) {
-            updateOreHighlights(mc, player, maxDistanceSq);
-            for (BlockHighlightEntry entry : ORE_BLOCK_HIGHLIGHTS) {
-                if (BLOCK_HIGHLIGHTS.size() >= MAX_BLOCK_SCAN_RESULTS) {
-                    break;
-                }
-                BLOCK_HIGHLIGHTS.add(entry);
-            }
-        } else {
-            ORE_BLOCK_HIGHLIGHTS.clear();
-            oreScanState = OreScanState.EMPTY;
-        }
+            float nx = dx / magnitude;
+            float ny = dy / magnitude;
+            float nz = dz / magnitude;
+            buffer.vertex(pose.pose(), (float) (x1 + offsetX), (float) (y1 + offsetY), (float) (z1 + offsetZ))
+                    .color(r, g, b, a)
+                    .normal(pose.normal(), nx, ny, nz)
+                    .endVertex();
+            buffer.vertex(pose.pose(), (float) (x2 + offsetX), (float) (y2 + offsetY), (float) (z2 + offsetZ))
+                    .color(r, g, b, a)
+                    .normal(pose.normal(), nx, ny, nz)
+                    .endVertex();
+        });
     }
 
-    private static void updateOreHighlights(Minecraft mc, EntityPlayerSP player, double maxDistanceSq) {
-        BlockPos center = player.getPosition();
-        int radius = Math.max(4, Math.round(RenderFeatureManager.blockHighlightMaxDistance));
-        int verticalRadius = Math.min(radius, ORE_SCAN_VERTICAL_RADIUS_LIMIT);
-        int configKey = buildOreScanConfigKey(radius, verticalRadius);
-        int tick = player.ticksExisted;
-
-        if (shouldRestartOreScan(player, center, radius, verticalRadius, configKey, tick)) {
-            ORE_BLOCK_HIGHLIGHTS.clear();
-            oreScanState = new OreScanState(center, radius, verticalRadius, configKey, 0, false, tick);
-        }
-
-        if (oreScanState.completed) {
-            return;
-        }
-
-        int side = radius * 2 + 1;
-        int verticalSide = verticalRadius * 2 + 1;
-        int total = side * verticalSide * side;
-        int scanned = 0;
-        int index = oreScanState.nextIndex;
-
-        while (index < total && scanned < ORE_SCAN_POSITION_BUDGET && ORE_BLOCK_HIGHLIGHTS.size() < MAX_BLOCK_SCAN_RESULTS) {
-            int localIndex = index;
-            int dx = localIndex % side - radius;
-            localIndex /= side;
-            int dy = localIndex % verticalSide - verticalRadius;
-            int dz = localIndex / verticalSide - radius;
-
-            BlockPos pos = center.add(dx, dy, dz);
-            if (player.getDistanceSqToCenter(pos) <= maxDistanceSq && mc.world.isBlockLoaded(pos, false)) {
-                IBlockState state = mc.world.getBlockState(pos);
-                if (RenderFeatureManager.isOreBlock(state.getBlock())) {
-                    float[] color = RenderFeatureManager.getBlockHighlightColor(state);
-                    ORE_BLOCK_HIGHLIGHTS.add(new BlockHighlightEntry(pos, color[0], color[1], color[2]));
-                }
-            }
-
-            index++;
-            scanned++;
-        }
-
-        boolean completed = index >= total || ORE_BLOCK_HIGHLIGHTS.size() >= MAX_BLOCK_SCAN_RESULTS;
-        oreScanState = new OreScanState(center, radius, verticalRadius, configKey, index, completed,
-                completed ? tick : oreScanState.lastCompletedTick);
+    private static Matrix4f matrixFromRotation(Matrix3f rotation) {
+        Matrix4f matrix = new Matrix4f().identity();
+        matrix.m00(rotation.m00());
+        matrix.m01(rotation.m01());
+        matrix.m02(rotation.m02());
+        matrix.m10(rotation.m10());
+        matrix.m11(rotation.m11());
+        matrix.m12(rotation.m12());
+        matrix.m20(rotation.m20());
+        matrix.m21(rotation.m21());
+        matrix.m22(rotation.m22());
+        return matrix;
     }
 
-    private static boolean shouldRestartOreScan(EntityPlayerSP player, BlockPos center, int radius, int verticalRadius,
-            int configKey, int tick) {
-        if (player == null) {
-            return false;
-        }
-        if (oreScanState == OreScanState.EMPTY) {
-            return true;
-        }
-        if (oreScanState.radius != radius || oreScanState.verticalRadius != verticalRadius || oreScanState.configKey != configKey) {
-            return true;
-        }
-        if (oreScanState.center == null || oreScanState.center.distanceSq(center) > ORE_SCAN_CENTER_RESTART_DISTANCE_SQ) {
-            return true;
-        }
-        return oreScanState.completed && tick - oreScanState.lastCompletedTick >= ORE_SCAN_REFRESH_INTERVAL_TICKS;
+    private static String formatFloat(float value) {
+        return String.format(Locale.ROOT, "%.2f", value);
     }
 
-    private static int buildOreScanConfigKey(int radius, int verticalRadius) {
-        int result = 17;
-        result = 31 * result + radius;
-        result = 31 * result + verticalRadius;
-        result = 31 * result + Boolean.valueOf(RenderFeatureManager.blockHighlightOres).hashCode();
-        result = 31 * result + Float.valueOf(RenderFeatureManager.blockHighlightMaxDistance).hashCode();
-        return result;
-    }
+    private static final class RenderWorldContext {
+        private final Vec3 cameraPos;
+        private final Matrix3f inverseViewRotation;
+        private final Matrix3f viewRotation;
+        private final Matrix4f inverseViewRotationMatrix;
+        private final Matrix4f viewRotationMatrix;
 
-    private static boolean isOreScanPending() {
-        return RenderFeatureManager.isEnabled("block_highlight")
-                && RenderFeatureManager.blockHighlightOres
-                && oreScanState != OreScanState.EMPTY
-                && !oreScanState.completed;
-    }
-
-    private static void renderBlockHighlights(Minecraft mc, float partialTicks) {
-        Entity viewer = mc.getRenderViewEntity();
-        if (viewer == null || BLOCK_HIGHLIGHTS.isEmpty()) {
-            return;
+        private RenderWorldContext(Vec3 cameraPos, Matrix3f inverseViewRotation, Matrix3f viewRotation) {
+            this.cameraPos = cameraPos;
+            this.inverseViewRotation = inverseViewRotation;
+            this.viewRotation = viewRotation;
+            this.inverseViewRotationMatrix = matrixFromRotation(inverseViewRotation);
+            this.viewRotationMatrix = matrixFromRotation(viewRotation);
         }
 
-        double viewerX = viewer.lastTickPosX + (viewer.posX - viewer.lastTickPosX) * partialTicks;
-        double viewerY = viewer.lastTickPosY + (viewer.posY - viewer.lastTickPosY) * partialTicks;
-        double viewerZ = viewer.lastTickPosZ + (viewer.posZ - viewer.lastTickPosZ) * partialTicks;
-
-        GlStateManager.pushMatrix();
-        GlStateManager.enableBlend();
-        GlStateManager.tryBlendFuncSeparate(GlStateManager.SourceFactor.SRC_ALPHA,
-                GlStateManager.DestFactor.ONE_MINUS_SRC_ALPHA, GlStateManager.SourceFactor.ONE,
-                GlStateManager.DestFactor.ZERO);
-        GlStateManager.disableTexture2D();
-        GlStateManager.disableLighting();
-        GlStateManager.depthMask(false);
-        if (RenderFeatureManager.blockHighlightThroughWalls) {
-            GlStateManager.disableDepth();
-        }
-        GlStateManager.glLineWidth(1.8F);
-
-        for (BlockHighlightEntry entry : BLOCK_HIGHLIGHTS) {
-            AxisAlignedBB box = new AxisAlignedBB(entry.pos).grow(0.003D).offset(-viewerX, -viewerY, -viewerZ);
-            if (RenderFeatureManager.blockHighlightFilledBox) {
-                RenderGlobal.renderFilledBox(box, entry.red, entry.green, entry.blue, 0.12F);
-            }
-            RenderGlobal.drawSelectionBoundingBox(box, entry.red, entry.green, entry.blue, 0.92F);
+        private static RenderWorldContext create(Camera camera) {
+            Matrix3f inverseViewRotation = new Matrix3f(RenderSystem.getInverseViewRotationMatrix());
+            Matrix3f viewRotation = new Matrix3f(inverseViewRotation).invert();
+            return new RenderWorldContext(camera.getPosition(), inverseViewRotation, viewRotation);
         }
 
-        GlStateManager.glLineWidth(1.0F);
-        if (RenderFeatureManager.blockHighlightThroughWalls) {
-            GlStateManager.enableDepth();
-        }
-        GlStateManager.depthMask(true);
-        GlStateManager.enableTexture2D();
-        GlStateManager.enableLighting();
-        GlStateManager.disableBlend();
-        GlStateManager.popMatrix();
-    }
-
-    private static void renderBlockOutline(Minecraft mc, float partialTicks) {
-        if (mc == null || mc.world == null || mc.objectMouseOver == null
-                || mc.objectMouseOver.typeOfHit != RayTraceResult.Type.BLOCK
-                || mc.objectMouseOver.getBlockPos() == null) {
-            return;
+        private PoseStack createBasePoseStack() {
+            PoseStack poseStack = new PoseStack();
+            poseStack.mulPoseMatrix(viewRotationMatrix);
+            return poseStack;
         }
 
-        BlockPos pos = mc.objectMouseOver.getBlockPos();
-        IBlockState state = mc.world.getBlockState(pos);
-        if (state == null || state.getBlock() == Blocks.AIR) {
-            return;
+        private Vec3 toCameraSpace(Vec3 worldPos) {
+            return worldPos.subtract(cameraPos);
         }
 
-        AxisAlignedBB selectedBox = state.getSelectedBoundingBox(mc.world, pos);
-        if (selectedBox == null || selectedBox == Block.NULL_AABB) {
-            return;
-        }
-
-        Entity viewer = mc.getRenderViewEntity();
-        if (viewer == null) {
-            return;
-        }
-
-        double viewerX = interpolate(viewer.lastTickPosX, viewer.posX, partialTicks);
-        double viewerY = interpolate(viewer.lastTickPosY, viewer.posY, partialTicks);
-        double viewerZ = interpolate(viewer.lastTickPosZ, viewer.posZ, partialTicks);
-        AxisAlignedBB box = selectedBox.grow(0.002D).offset(-viewerX, -viewerY, -viewerZ);
-
-        GlStateManager.pushMatrix();
-        GlStateManager.enableBlend();
-        GlStateManager.tryBlendFuncSeparate(GlStateManager.SourceFactor.SRC_ALPHA,
-                GlStateManager.DestFactor.ONE_MINUS_SRC_ALPHA, GlStateManager.SourceFactor.ONE,
-                GlStateManager.DestFactor.ZERO);
-        GlStateManager.disableTexture2D();
-        GlStateManager.disableLighting();
-        GlStateManager.depthMask(false);
-        GlStateManager.glLineWidth(Math.max(1.0F, RenderFeatureManager.blockOutlineLineWidth));
-        if (RenderFeatureManager.blockOutlineFilledBox) {
-            RenderGlobal.renderFilledBox(box, 0.22F, 0.72F, 1.0F, 0.12F);
-        }
-        RenderGlobal.drawSelectionBoundingBox(box, 0.22F, 0.72F, 1.0F, 0.95F);
-        GlStateManager.glLineWidth(1.0F);
-        GlStateManager.depthMask(true);
-        GlStateManager.enableTexture2D();
-        GlStateManager.enableLighting();
-        GlStateManager.disableBlend();
-        GlStateManager.popMatrix();
-    }
-
-    private static void addBlockHighlight(BlockPos pos, float red, float green, float blue) {
-        if (pos != null && BLOCK_HIGHLIGHTS.size() < MAX_BLOCK_SCAN_RESULTS) {
-            BLOCK_HIGHLIGHTS.add(new BlockHighlightEntry(pos, red, green, blue));
-        }
-    }
-
-    private static boolean isStorageTile(TileEntity tileEntity) {
-        return tileEntity instanceof TileEntityChest
-                || tileEntity instanceof TileEntityEnderChest
-                || tileEntity instanceof TileEntityShulkerBox;
-    }
-
-    private static void renderTrajectory(Minecraft mc, float partialTicks) {
-        EntityPlayerSP player = mc.player;
-        if (player == null) {
-            return;
-        }
-
-        ItemStack stack = player.getHeldItem(EnumHand.MAIN_HAND);
-        if (stack == null || stack.isEmpty()) {
-            stack = player.getHeldItem(EnumHand.OFF_HAND);
-        }
-        if (stack == null || stack.isEmpty()) {
-            return;
-        }
-
-        TrajectoryData trajectoryData = buildTrajectoryData(player, stack, partialTicks);
-        if (trajectoryData == null || trajectoryData.points.size() < 2) {
-            return;
-        }
-
-        Tessellator tessellator = Tessellator.getInstance();
-        BufferBuilder buffer = tessellator.getBuffer();
-        RenderManager renderManager = mc.getRenderManager();
-
-        GlStateManager.pushMatrix();
-        GlStateManager.enableBlend();
-        GlStateManager.tryBlendFuncSeparate(GlStateManager.SourceFactor.SRC_ALPHA,
-                GlStateManager.DestFactor.ONE_MINUS_SRC_ALPHA, GlStateManager.SourceFactor.ONE,
-                GlStateManager.DestFactor.ZERO);
-        GlStateManager.disableTexture2D();
-        GlStateManager.disableLighting();
-        GlStateManager.depthMask(false);
-        GlStateManager.disableDepth();
-        GlStateManager.glLineWidth(2.0F);
-
-        buffer.begin(GL11.GL_LINE_STRIP, DefaultVertexFormats.POSITION_COLOR);
-        for (Vec3d point : trajectoryData.points) {
-            buffer.pos(point.x - renderManager.viewerPosX, point.y - renderManager.viewerPosY,
-                    point.z - renderManager.viewerPosZ).color(0.95F, 0.45F, 1.0F, 0.86F).endVertex();
-        }
-        tessellator.draw();
-
-        if (trajectoryData.hitPos != null) {
-            AxisAlignedBB hitBox = new AxisAlignedBB(trajectoryData.hitPos.addVector(-0.15D, -0.15D, -0.15D),
-                    trajectoryData.hitPos.addVector(0.15D, 0.15D, 0.15D))
-                    .offset(-renderManager.viewerPosX, -renderManager.viewerPosY, -renderManager.viewerPosZ);
-            RenderGlobal.renderFilledBox(hitBox, 1.0F, 0.25F, 0.85F, 0.15F);
-            RenderGlobal.drawSelectionBoundingBox(hitBox, 1.0F, 0.25F, 0.85F, 0.92F);
-        }
-
-        GlStateManager.glLineWidth(1.0F);
-        GlStateManager.enableDepth();
-        GlStateManager.depthMask(true);
-        GlStateManager.enableTexture2D();
-        GlStateManager.enableLighting();
-        GlStateManager.disableBlend();
-        GlStateManager.popMatrix();
-    }
-
-    private static TrajectoryData buildTrajectoryData(EntityPlayerSP player, ItemStack stack, float partialTicks) {
-        Item item = stack.getItem();
-        if (item == null) {
-            return null;
-        }
-
-        boolean potionItem = item instanceof ItemPotion
-                || item instanceof ItemSplashPotion
-                || item instanceof ItemLingeringPotion
-                || item instanceof ItemExpBottle;
-        boolean throwableItem = item instanceof ItemSnowball || item instanceof ItemEgg;
-        boolean pearlItem = item instanceof ItemEnderPearl;
-        boolean bowItem = item instanceof ItemBow;
-
-        if ((bowItem && !RenderFeatureManager.trajectoryBows)
-                || (pearlItem && !RenderFeatureManager.trajectoryPearls)
-                || (throwableItem && !RenderFeatureManager.trajectoryThrowables)
-                || (potionItem && !RenderFeatureManager.trajectoryPotions)
-                || (!bowItem && !pearlItem && !throwableItem && !potionItem)) {
-            return null;
-        }
-
-        float velocity;
-        float gravity;
-        if (bowItem) {
-            if (!player.isHandActive()) {
-                return null;
-            }
-            int useTicks = stack.getMaxItemUseDuration() - player.getItemInUseCount();
-            float charge = useTicks / 20.0F;
-            charge = (charge * charge + charge * 2.0F) / 3.0F;
-            if (charge < 0.1F) {
-                return null;
-            }
-            charge = Math.min(charge, 1.0F);
-            velocity = charge * 3.0F;
-            gravity = 0.05F;
-        } else if (potionItem) {
-            velocity = 0.5F;
-            gravity = 0.05F;
-        } else {
-            velocity = pearlItem ? 1.5F : 1.2F;
-            gravity = 0.03F;
-        }
-
-        Vec3d start = player.getPositionEyes(partialTicks);
-        Vec3d look = player.getLook(partialTicks).normalize();
-        Vec3d currentPos = start.add(look.scale(0.16D));
-        Vec3d motion = look.scale(velocity);
-        if (potionItem) {
-            motion = motion.addVector(0.0D, -0.12D, 0.0D);
-        }
-
-        List<Vec3d> points = new ArrayList<>();
-        points.add(currentPos);
-        Vec3d hitPos = null;
-        for (int i = 0; i < RenderFeatureManager.trajectoryMaxSteps; i++) {
-            Vec3d nextPos = currentPos.add(motion);
-            RayTraceResult hit = player.world.rayTraceBlocks(currentPos, nextPos, false, true, false);
-            if (hit != null && hit.hitVec != null) {
-                hitPos = hit.hitVec;
-                points.add(hit.hitVec);
-                break;
-            }
-            currentPos = nextPos;
-            points.add(currentPos);
-            motion = motion.scale(0.99D).addVector(0.0D, -gravity, 0.0D);
-        }
-        return new TrajectoryData(points, hitPos);
-    }
-
-    private static final class BlockHighlightEntry {
-        private final BlockPos pos;
-        private final float red;
-        private final float green;
-        private final float blue;
-
-        private BlockHighlightEntry(BlockPos pos, float red, float green, float blue) {
-            this.pos = pos;
-            this.red = red;
-            this.green = green;
-            this.blue = blue;
+        private AABB toCameraSpace(AABB worldBox) {
+            return worldBox.move(-cameraPos.x, -cameraPos.y, -cameraPos.z);
         }
     }
 
     private static final class RenderFrameData {
-        private static final RenderFrameData EMPTY = new RenderFrameData(new ArrayList<EntityRenderSample>(0),
-                new ArrayList<EntityRenderSample>(0), new ArrayList<ItemRenderSample>(0));
+        private static final RenderFrameData EMPTY = new RenderFrameData(new ArrayList<>(), new ArrayList<>(), new ArrayList<>());
 
         private final List<EntityRenderSample> livingEntities;
         private final List<EntityRenderSample> playerEntities;
@@ -1124,13 +945,13 @@ final class RenderFeatureSupport {
     }
 
     private static final class EntityRenderSample {
-        private final Entity entity;
+        private final LivingEntity entity;
         private final double distanceSq;
         private final boolean player;
         private final boolean monster;
         private final boolean animal;
 
-        private EntityRenderSample(Entity entity, double distanceSq, boolean player, boolean monster, boolean animal) {
+        private EntityRenderSample(LivingEntity entity, double distanceSq, boolean player, boolean monster, boolean animal) {
             this.entity = entity;
             this.distanceSq = distanceSq;
             this.player = player;
@@ -1138,53 +959,37 @@ final class RenderFeatureSupport {
             this.animal = animal;
         }
 
-        private boolean matches(boolean includePlayers, boolean includeMonsters, boolean includeAnimals,
-                double maxDistanceSq) {
-            if (distanceSq > maxDistanceSq) {
-                return false;
-            }
-            return (includePlayers && player) || (includeMonsters && monster) || (includeAnimals && animal);
+        private boolean matches(boolean includePlayers, boolean includeMonsters, boolean includeAnimals, double maxDistanceSq) {
+            return distanceSq <= maxDistanceSq
+                    && ((includePlayers && player) || (includeMonsters && monster) || (includeAnimals && animal));
         }
     }
 
     private static final class ItemRenderSample {
-        private final EntityItem entityItem;
+        private final ItemEntity entityItem;
+        private final double distanceSq;
 
-        private ItemRenderSample(EntityItem entityItem, double distanceSq) {
+        private ItemRenderSample(ItemEntity entityItem, double distanceSq) {
             this.entityItem = entityItem;
+            this.distanceSq = distanceSq;
         }
     }
 
-    private static final class OreScanState {
-        private static final OreScanState EMPTY = new OreScanState(null, 0, 0, 0, 0, true, Integer.MIN_VALUE);
+    private static final class BlockHighlightEntry {
+        private final AABB box;
+        private final float r;
+        private final float g;
+        private final float b;
+        private final boolean filled;
+        private final float alpha;
 
-        private final BlockPos center;
-        private final int radius;
-        private final int verticalRadius;
-        private final int configKey;
-        private final int nextIndex;
-        private final boolean completed;
-        private final int lastCompletedTick;
-
-        private OreScanState(BlockPos center, int radius, int verticalRadius, int configKey, int nextIndex,
-                boolean completed, int lastCompletedTick) {
-            this.center = center;
-            this.radius = radius;
-            this.verticalRadius = verticalRadius;
-            this.configKey = configKey;
-            this.nextIndex = nextIndex;
-            this.completed = completed;
-            this.lastCompletedTick = lastCompletedTick;
-        }
-    }
-
-    private static final class TrajectoryData {
-        private final List<Vec3d> points;
-        private final Vec3d hitPos;
-
-        private TrajectoryData(List<Vec3d> points, Vec3d hitPos) {
-            this.points = points;
-            this.hitPos = hitPos;
+        private BlockHighlightEntry(AABB box, float r, float g, float b, boolean filled, float alpha) {
+            this.box = box;
+            this.r = r;
+            this.g = g;
+            this.b = b;
+            this.filled = filled;
+            this.alpha = alpha;
         }
     }
 }

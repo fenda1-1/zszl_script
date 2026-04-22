@@ -21,7 +21,6 @@ import com.zszl.zszlScriptMod.shadowbaritone.api.IBaritone;
 import com.zszl.zszlScriptMod.shadowbaritone.api.command.Command;
 import com.zszl.zszlScriptMod.shadowbaritone.api.command.argument.IArgConsumer;
 import com.zszl.zszlScriptMod.shadowbaritone.api.command.exception.CommandException;
-import com.zszl.zszlScriptMod.shadowbaritone.api.utils.ShadowBaritoneI18n;
 
 import java.util.Arrays;
 import java.util.List;
@@ -37,8 +36,7 @@ public class ClickCommand extends Command {
     public void execute(String label, IArgConsumer args) throws CommandException {
         args.requireMax(0);
         baritone.openClick();
-        logDirect(ShadowBaritoneI18n.trKey(
-                "shadowbaritone.command.click.status.opened"));
+        logDirect("aight dude");
     }
 
     @Override
@@ -48,19 +46,17 @@ public class ClickCommand extends Command {
 
     @Override
     public String getShortDesc() {
-        return ShadowBaritoneI18n.trKey(
-                "shadowbaritone.command.click.short_desc");
+        return "Open click";
     }
 
     @Override
     public List<String> getLongDesc() {
         return Arrays.asList(
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.click.long_desc.1"),
+                "Opens click dude",
                 "",
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.click.long_desc.usage"),
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.click.long_desc.example.default"));
+                "Usage:",
+                "> click"
+        );
     }
 }
+

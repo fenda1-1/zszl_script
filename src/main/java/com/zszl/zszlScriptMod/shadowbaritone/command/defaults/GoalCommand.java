@@ -27,7 +27,6 @@ import com.zszl.zszlScriptMod.shadowbaritone.api.command.helpers.TabCompleteHelp
 import com.zszl.zszlScriptMod.shadowbaritone.api.pathing.goals.Goal;
 import com.zszl.zszlScriptMod.shadowbaritone.api.process.ICustomGoalProcess;
 import com.zszl.zszlScriptMod.shadowbaritone.api.utils.BetterBlockPos;
-import com.zszl.zszlScriptMod.shadowbaritone.api.utils.ShadowBaritoneI18n;
 
 import java.util.Arrays;
 import java.util.List;
@@ -46,20 +45,16 @@ public class GoalCommand extends Command {
             args.requireMax(1);
             if (goalProcess.getGoal() != null) {
                 goalProcess.setGoal(null);
-                logDirect(ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.goal.status.cleared"));
+                logDirect("Cleared goal");
             } else {
-                logDirect(ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.goal.status.no_goal_to_clear"));
+                logDirect("There was no goal to clear");
             }
         } else {
             args.requireMax(3);
             BetterBlockPos origin = ctx.playerFeet();
             Goal goal = args.getDatatypePost(RelativeGoal.INSTANCE, origin);
             goalProcess.setGoal(goal);
-            logDirect(ShadowBaritoneI18n.trKey(
-                    "shadowbaritone.command.goal.status.goal",
-                    goal.toString()));
+            logDirect(String.format("Goal: %s", goal.toString()));
         }
     }
 
@@ -86,30 +81,23 @@ public class GoalCommand extends Command {
 
     @Override
     public String getShortDesc() {
-        return ShadowBaritoneI18n.trKey(
-                "shadowbaritone.command.goal.short_desc");
+        return "Set or clear the goal";
     }
 
     @Override
     public List<String> getLongDesc() {
         return Arrays.asList(
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.goal.long_desc.1"),
+                "The goal command allows you to set or clear Baritone's goal.",
                 "",
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.goal.long_desc.2"),
+                "Wherever a coordinate is expected, you can use ~ just like in regular Minecraft commands. Or, you can just use regular numbers.",
                 "",
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.goal.long_desc.usage"),
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.goal.long_desc.example.default"),
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.goal.long_desc.example.clear"),
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.goal.long_desc.example.y"),
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.goal.long_desc.example.xz"),
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.goal.long_desc.example.xyz"));
+                "Usage:",
+                "> goal - Set the goal to your current position",
+                "> goal <reset/clear/none> - Erase the goal",
+                "> goal <y> - Set the goal to a Y level",
+                "> goal <x> <z> - Set the goal to an X,Z position",
+                "> goal <x> <y> <z> - Set the goal to an X,Y,Z position"
+        );
     }
 }
+

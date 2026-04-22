@@ -1,6 +1,6 @@
 package com.zszl.zszlScriptMod.otherfeatures.gui.movement;
 
-import net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
 
 public class GuiGuiMoveConfig extends SingleMovementFeatureConfigScreen {
 
@@ -8,3 +8,6 @@ public class GuiGuiMoveConfig extends SingleMovementFeatureConfigScreen {
         super(parentScreen, "gui_move", "GUI界面下移动设置");
     }
 }
+
+
+

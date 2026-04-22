@@ -2,12 +2,12 @@ package com.zszl.zszlScriptMod.gui.config;
 
 import com.zszl.zszlScriptMod.handlers.KillTimerHandler;
 
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
 import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
-import net.minecraft.client.gui.GuiTextField;
-import net.minecraft.client.resources.I18n;
-import org.lwjgl.input.Keyboard;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiTextField;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Keyboard;
 
 import java.io.IOException;
 import com.zszl.zszlScriptMod.gui.components.GuiTheme;
@@ -79,10 +79,10 @@ public class GuiKillTimerConfig extends ThemedGuiScreen {
     @Override
     protected void actionPerformed(GuiButton button) throws IOException {
         if (button.id == 10) {
-            this.mc.displayGuiScreen(null);
+            this.mc.setScreen(null);
             KillTimerHandler.enterFreeEditMode();
             if (this.mc.player != null) {
-                this.mc.player.sendMessage(new net.minecraft.util.text.TextComponentString(
+                this.mc.player.sendSystemMessage(new com.zszl.zszlScriptMod.compat.legacy.net.minecraft.util.text.TextComponentString(
                         I18n.format("msg.killtimer.enter_free_edit")));
             }
             return;
@@ -119,7 +119,7 @@ public class GuiKillTimerConfig extends ThemedGuiScreen {
             KillTimerHandler.deathPanelHoldSeconds = Math.max(1,
                     parseIntOrDefault(deathHoldSecField.getText(), KillTimerHandler.deathPanelHoldSeconds));
             KillTimerHandler.saveConfig();
-            this.mc.displayGuiScreen(parent);
+            this.mc.setScreen(parent);
         }
     }
 
@@ -223,3 +223,9 @@ public class GuiKillTimerConfig extends ThemedGuiScreen {
                 : I18n.format("gui.killtimer.mode.chat");
     }
 }
+
+
+
+
+
+

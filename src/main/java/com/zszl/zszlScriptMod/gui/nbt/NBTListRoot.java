@@ -1,67 +1,75 @@
-// 文件路径: src/main/java/com/keycommand2/zszlScriptMod/gui/nbt/NBTListRoot.java
 package com.zszl.zszlScriptMod.gui.nbt;
 
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.FontRenderer;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.renderer.RenderItem;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
 import com.zszl.zszlScriptMod.gui.components.GuiTheme;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiScreen; // !! 核心修复：添加导入 !!
-import net.minecraft.client.renderer.RenderItem;
-import net.minecraft.client.resources.I18n;
-import net.minecraft.item.ItemStack;
-import net.minecraft.nbt.NBTTagCompound;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.world.item.ItemStack;
 
 public class NBTListRoot extends NBTListCompound {
+
     private NBTListCompound tagElement;
-    private NBTListElement focus = null;
-    private NBTListElement selected = null;
-    private int selX = 0, selY = 0, selWidth = 0, selHeight = 0;
-    private NBTOption[] options = null;
-    private GuiScreen parentGui;
+    private NBTListElement focus;
+    private NBTListElement selected;
+    private int selX;
+    private int selY;
+    private int selWidth;
+    private int selHeight;
+    private NBTOption[] options;
+    private final GuiScreen hostScreen;
 
     public NBTListRoot(ItemStack stack, GuiScreen parentGui) {
-        super(stack.getDisplayName(), null, stack, 30, 50);
-        this.parentGui = parentGui;
-        if (icon.hasTagCompound()) {
-            tagElement = new NBTListCompound("tag", icon.getTagCompound(), false, getX() + 15, getY() + 20);
-            tagElement.parent = this;
-        }
+        super(stack.getHoverName().getString(), null, stack, 30, 50);
+        this.hostScreen = parentGui;
+        refresh();
     }
 
     public NBTListElement getSelected() {
-        return selected;
+        return this.selected;
     }
 
-    public void setSelected(NBTListElement e, int x, int y) {
-        selected = e;
-        selX = x;
-        selY = y;
-        options = selected.getOptions();
-        selWidth = 0;
-        for (NBTOption o : options) {
-            selWidth = Math.max(Minecraft.getMinecraft().fontRenderer.getStringWidth(o.getText()), selWidth);
+    public void setSelected(NBTListElement element, int mouseX, int mouseY) {
+        this.selected = element;
+        this.options = element == null ? null : element.getOptions();
+        this.selWidth = 0;
+        if (this.options != null) {
+            FontRenderer fontRenderer = new FontRenderer(Minecraft.getInstance().font);
+            for (NBTOption option : this.options) {
+                this.selWidth = Math.max(fontRenderer.getStringWidth(option.getText()), this.selWidth);
+            }
         }
-        selWidth += 10;
-        selHeight = 12 * options.length + 15;
+        this.selWidth += 10;
+        this.selHeight = this.options == null ? 15 : 12 * this.options.length + 15;
+
+        int maxX = Math.max(6, this.hostScreen.width - (this.selWidth + 6));
+        int maxY = Math.max(6, this.hostScreen.height - this.selHeight);
+        this.selX = Math.max(6, Math.min(mouseX, maxX));
+        this.selY = Math.max(6, Math.min(mouseY, maxY));
     }
 
     public void clearSelected() {
-        selected = null;
-        selX = 0;
-        selY = 0;
-        selWidth = 0;
-        selHeight = 0;
-        options = null;
+        this.selected = null;
+        this.selX = 0;
+        this.selY = 0;
+        this.selWidth = 0;
+        this.selHeight = 0;
+        this.options = null;
     }
 
-    public void setFocus(NBTListElement e) {
-        if (e == this)
-            return;
-        focus = e;
+    public void setFocus(NBTListElement element) {
+        if (element != this) {
+            this.focus = element;
+        }
     }
 
     public void refresh() {
-        if (icon.hasTagCompound()) {
-            this.tagElement = new NBTListCompound("tag", icon.getTagCompound(),
-                    this.tagElement != null ? this.tagElement.closed : false, getX() + 15, getY() + 20);
+        clearSelected();
+        if (this.icon.hasTag() && this.icon.getTag() != null) {
+            boolean keepClosed = this.tagElement != null && this.tagElement.closed;
+            this.tagElement = new NBTListCompound("tag", this.icon.getTag(), keepClosed, getX() + 15, getY() + 20);
             this.tagElement.parent = this;
             this.tagElement.redoPositions();
         } else {
@@ -71,61 +79,65 @@ public class NBTListRoot extends NBTListCompound {
 
     @Override
     public void redoPositions() {
-        if (tagElement != null) {
-            tagElement.redoPositions();
+        if (this.tagElement != null) {
+            this.tagElement.redoPositions();
         }
     }
 
     @Override
     public void drawIcon(RenderItem itemRender) {
         super.drawIcon(itemRender);
-        if (tagElement != null)
-            tagElement.drawIcon(itemRender);
+        if (this.tagElement != null) {
+            this.tagElement.drawIcon(itemRender);
+        }
     }
 
     @Override
     public void draw(Minecraft mc, int mouseX, int mouseY) {
-        drawString(mc.fontRenderer, getText(), getX() + 15, getY() - 5, 0xffffff);
-        if (tagElement != null) {
+        FontRenderer fontRenderer = new FontRenderer(mc.font);
+        fontRenderer.drawString(getText(), getX() + 15, getY() - 5, 0xFFFFFFFF);
+        if (this.tagElement != null) {
             drawVerticalStructureLine(getX(), getY(), 20);
             drawHorizontalStructureLine(getX() + 2, getY() + 20, 12);
-            tagElement.draw(mc, mouseX, mouseY);
+            this.tagElement.draw(mc, mouseX, mouseY);
         }
 
-        if (selected != null) {
-            drawRect(selX, selY, selX + selWidth + 6, selY + 13, 0xCC007788);
-            String selectedType = selected.getTypeName();
-            mc.fontRenderer.drawString(selectedType, selX + 3, selY + 3,
+        if (this.selected != null && this.options != null) {
+            drawRect(this.selX, this.selY, this.selX + this.selWidth + 6, this.selY + 13, 0xCC007788);
+            String selectedType = this.selected.getTypeName();
+            fontRenderer.drawString(selectedType, this.selX + 3, this.selY + 3,
                     GuiTheme.resolveTextColor(selectedType, 0xFFCCCCCC));
-            int i = 1;
-            for (NBTOption o : options) {
-                boolean over = mouseX >= selX && mouseX <= selX + selWidth + 6 && mouseY >= selY + 13 * i
-                        && mouseY <= selY + 13 + 13 * i;
-                drawRect(selX, selY + 13 * i, selX + selWidth + 6, selY + 13 + 13 * i, 0xCC333333);
-                String optionText = o.getText();
-                mc.fontRenderer.drawString(optionText, selX + 3, selY + 3 + i * 13,
-                        GuiTheme.resolveTextColor(optionText, over ? 0xFFe67e22 : 0xFFCCCCCC));
-                i++;
+            for (int i = 0; i < this.options.length; i++) {
+                int optionTop = this.selY + 13 * (i + 1);
+                boolean over = mouseX >= this.selX && mouseX <= this.selX + this.selWidth + 6
+                        && mouseY >= optionTop && mouseY <= optionTop + 13;
+                drawRect(this.selX, optionTop, this.selX + this.selWidth + 6, optionTop + 13, 0xCC333333);
+                String optionText = this.options[i].getText();
+                fontRenderer.drawString(optionText, this.selX + 3, this.selY + 3 + (i + 1) * 13,
+                        GuiTheme.resolveTextColor(optionText, over ? 0xFFE67E22 : 0xFFCCCCCC));
             }
         }
     }
 
     public boolean mouseOverSelected(int mouseX, int mouseY) {
-        return selected != null && mouseX >= selX && mouseX <= selX + selWidth && mouseY >= selY
-                && mouseY <= selY + selHeight;
+        return this.selected != null
+                && mouseX >= this.selX
+                && mouseX <= this.selX + this.selWidth + 6
+                && mouseY >= this.selY
+                && mouseY <= this.selY + this.selHeight;
     }
 
     @Override
     public void mouseClicked(int mouseX, int mouseY, int mouseButton) {
         super.mouseClicked(mouseX, mouseY, mouseButton);
-        if (selected != null) {
+        if (this.selected != null) {
             if (mouseOverSelected(mouseX, mouseY)) {
                 if (mouseButton == 0) {
-                    int y = (mouseY - (selY + 13));
+                    int y = mouseY - (this.selY + 13);
                     if (y >= 0) {
                         int optionIndex = y / 13;
-                        if (optionIndex < options.length) {
-                            options[optionIndex].action(this.parentGui);
+                        if (optionIndex >= 0 && optionIndex < this.options.length) {
+                            this.options[optionIndex].action(this.hostScreen);
                         }
                     }
                 }
@@ -134,25 +146,25 @@ public class NBTListRoot extends NBTListCompound {
             }
             return;
         }
-        if (tagElement != null)
-            tagElement.mouseClicked(mouseX, mouseY, mouseButton);
+
+        if (this.tagElement != null) {
+            this.tagElement.mouseClicked(mouseX, mouseY, mouseButton);
+        }
     }
 
     @Override
     public NBTOption[] getOptions() {
         return new NBTOption[] {
-                getIconStack().hasTagCompound() ? new NBTOption() {
+                this.icon.hasTag() ? new NBTOption() {
                     @Override
                     public String getText() {
                         return I18n.format("gui.nbt.clear_all_tags");
                     }
 
-                    // !! 核心修复：为 action 方法添加 GuiScreen 参数 !!
                     @Override
                     public void action(GuiScreen currentScreen) {
-                        getIconStack().setTagCompound(null);
-                        tagElement = null;
-                        clearSelected();
+                        icon.setTag(null);
+                        refresh();
                     }
                 } : new NBTOption() {
                     @Override
@@ -160,13 +172,10 @@ public class NBTListRoot extends NBTListCompound {
                         return I18n.format("gui.nbt.create_root_tag");
                     }
 
-                    // !! 核心修复：为 action 方法添加 GuiScreen 参数 !!
                     @Override
                     public void action(GuiScreen currentScreen) {
-                        getIconStack().setTagCompound(new NBTTagCompound());
-                        tagElement = new NBTListCompound("tag", icon.getTagCompound(), false, getX() + 15, getY() + 20);
-                        tagElement.parent = NBTListRoot.this;
-                        clearSelected();
+                        icon.setTag(new CompoundTag());
+                        refresh();
                     }
                 }
         };

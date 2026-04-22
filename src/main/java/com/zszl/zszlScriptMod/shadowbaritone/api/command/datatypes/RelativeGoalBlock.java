@@ -21,9 +21,8 @@ import com.zszl.zszlScriptMod.shadowbaritone.api.command.argument.IArgConsumer;
 import com.zszl.zszlScriptMod.shadowbaritone.api.command.exception.CommandException;
 import com.zszl.zszlScriptMod.shadowbaritone.api.pathing.goals.GoalBlock;
 import com.zszl.zszlScriptMod.shadowbaritone.api.utils.BetterBlockPos;
-import net.minecraft.util.math.MathHelper;
-
 import java.util.stream.Stream;
+import net.minecraft.util.Mth;
 
 public enum RelativeGoalBlock implements IDatatypePost<GoalBlock, BetterBlockPos> {
     INSTANCE;
@@ -36,9 +35,10 @@ public enum RelativeGoalBlock implements IDatatypePost<GoalBlock, BetterBlockPos
 
         final IArgConsumer consumer = ctx.getConsumer();
         return new GoalBlock(
-                MathHelper.floor(consumer.getDatatypePost(RelativeCoordinate.INSTANCE, (double) origin.x)),
-                MathHelper.floor(consumer.getDatatypePost(RelativeCoordinate.INSTANCE, (double) origin.y)),
-                MathHelper.floor(consumer.getDatatypePost(RelativeCoordinate.INSTANCE, (double) origin.z)));
+                Mth.floor(consumer.getDatatypePost(RelativeCoordinate.INSTANCE, (double) origin.x)),
+                Mth.floor(consumer.getDatatypePost(RelativeCoordinate.INSTANCE, (double) origin.y)),
+                Mth.floor(consumer.getDatatypePost(RelativeCoordinate.INSTANCE, (double) origin.z))
+        );
     }
 
     @Override
@@ -50,3 +50,4 @@ public enum RelativeGoalBlock implements IDatatypePost<GoalBlock, BetterBlockPos
         return Stream.empty();
     }
 }
+

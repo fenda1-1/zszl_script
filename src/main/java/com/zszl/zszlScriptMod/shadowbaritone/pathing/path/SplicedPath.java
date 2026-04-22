@@ -77,8 +77,7 @@ public class SplicedPath extends PathBase {
         }
         HashSet<BetterBlockPos> secondPos = new HashSet<>(second.positions());
         int firstPositionInSecond = -1;
-        for (int i = 0; i < first.length() - 1; i++) { // overlap in the very last element is fine (and required) so
-                                                       // only go up to first.length() - 1
+        for (int i = 0; i < first.length() - 1; i++) { // overlap in the very last element is fine (and required) so only go up to first.length() - 1
             if (secondPos.contains(first.positions().get(i))) {
                 firstPositionInSecond = i;
                 break;
@@ -93,7 +92,7 @@ public class SplicedPath extends PathBase {
         }
         int positionInSecond = second.positions().indexOf(first.positions().get(firstPositionInSecond));
         if (!allowOverlapCutoff && positionInSecond != 0) {
-            throw new IllegalStateException();
+            throw new IllegalStateException("Paths to be spliced are overlapping incorrectly");
         }
         List<BetterBlockPos> positions = new ArrayList<>();
         List<IMovement> movements = new ArrayList<>();
@@ -102,7 +101,7 @@ public class SplicedPath extends PathBase {
 
         positions.addAll(second.positions().subList(positionInSecond + 1, second.length()));
         movements.addAll(second.movements().subList(positionInSecond, second.length() - 1));
-        return Optional.of(new SplicedPath(positions, movements,
-                first.getNumNodesConsidered() + second.getNumNodesConsidered(), first.getGoal()));
+        return Optional.of(new SplicedPath(positions, movements, first.getNumNodesConsidered() + second.getNumNodesConsidered(), first.getGoal()));
     }
 }
+

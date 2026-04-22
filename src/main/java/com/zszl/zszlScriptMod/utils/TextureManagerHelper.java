@@ -1,23 +1,24 @@
-// 文件路径: src/main/java/com/keycommand2/zszlScriptMod/utils/TextureManagerHelper.java
 package com.zszl.zszlScriptMod.utils;
 
+import com.mojang.blaze3d.platform.NativeImage;
+import com.zszl.zszlScriptMod.config.ChatOptimizationConfig.ImageQuality;
+import com.zszl.zszlScriptMod.system.ProfileManager;
+import com.zszl.zszlScriptMod.zszlScriptMod;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.texture.DynamicTexture;
-import net.minecraft.util.ResourceLocation;
+import net.minecraft.resources.ResourceLocation;
 
 import javax.imageio.ImageIO;
 import javax.imageio.ImageReader;
-import javax.imageio.spi.ImageReaderSpi;
 import javax.imageio.spi.IIORegistry;
+import javax.imageio.spi.ImageReaderSpi;
 import javax.imageio.stream.ImageInputStream;
-
-import com.zszl.zszlScriptMod.zszlScriptMod;
-import com.zszl.zszlScriptMod.config.ChatOptimizationConfig.ImageQuality;
-import com.zszl.zszlScriptMod.system.ProfileManager;
-
-import java.awt.*;
+import java.awt.Graphics2D;
+import java.awt.Image;
+import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
@@ -32,36 +33,42 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
 
-public class TextureManagerHelper {
-    private static final String BUILTIN_SCHEME = "builtin:";
+public final class TextureManagerHelper {
 
-    private static final Map<String, ResourceLocation> textureCache = new ConcurrentHashMap<>();
-    private static final Map<String, int[]> textureSizeCache = new ConcurrentHashMap<>();
-    private static final Map<String, Long> lastAccessAt = new ConcurrentHashMap<>();
-    private static final Map<String, CompletableFuture<Void>> loadingTasks = new ConcurrentHashMap<>();
-    private static final Map<String, Long> failedAt = new ConcurrentHashMap<>();
+    private static final String BUILTIN_SCHEME = "builtin:";
+    private static final Map<String, ResourceLocation> TEXTURE_CACHE = new ConcurrentHashMap<>();
+    private static final Map<String, int[]> TEXTURE_SIZE_CACHE = new ConcurrentHashMap<>();
+    private static final Map<String, Long> LAST_ACCESS_AT = new ConcurrentHashMap<>();
+    private static final Map<String, CompletableFuture<Void>> LOADING_TASKS = new ConcurrentHashMap<>();
+    private static final Map<String, Long> FAILED_AT = new ConcurrentHashMap<>();
+    private static final Set<String> LOGGED_SOURCE_DIAGNOSTICS =
+            java.util.Collections.newSetFromMap(new ConcurrentHashMap<String, Boolean>());
     private static final long RETRY_COOLDOWN_MS = 10_000L;
     private static final long IDLE_EVICT_MS = 120_000L;
     private static final int MAX_CACHE_ENTRIES = 12;
     private static final long EVICT_CHECK_INTERVAL_MS = 5_000L;
-    private static volatile long lastEvictCheckAt = 0L;
 
     private static final ExecutorService IO_POOL = Executors.newFixedThreadPool(2, new ThreadFactory() {
         @Override
-        public Thread newThread(Runnable r) {
-            Thread t = new Thread(r, "zszl-texture-loader");
-            t.setDaemon(true);
-            return t;
+        public Thread newThread(Runnable runnable) {
+            Thread thread = new Thread(runnable, "zszl-texture-loader");
+            thread.setDaemon(true);
+            return thread;
         }
     });
 
-    private static volatile boolean imageIOReady = false;
+    private static volatile boolean imageIOReady;
+    private static volatile long lastEvictCheckAt;
+
+    private TextureManagerHelper() {
+    }
 
     private static Path getDiskCacheDir() {
         return ProfileManager.getCurrentProfileDir().resolve("theme_image_cache");
@@ -89,28 +96,18 @@ public class TextureManagerHelper {
         return source;
     }
 
-    /**
-     * 根据提供的文件路径和质量设置获取一个 ResourceLocation。
-     * 它会处理图片的加载、缩放、缓存和卸载。
-     *
-     * @param path    图片文件的绝对路径。
-     * @param quality 图片质量/缩放设置。
-     * @return 对应的 ResourceLocation，如果路径无效或加载失败则返回 null。
-     */
     public static ResourceLocation getResourceLocationForPath(String path, ImageQuality quality) {
         ensureImageIOPlugins();
         String normalizedInput = normalizeInputPath(path);
         if (normalizedInput.isEmpty()) {
             return null;
         }
+
         String source = canonicalizeImagePath(normalizedInput);
-
-        // 使用路径和质量作为复合键，因为不同质量设置会生成不同的纹理
         String cacheKey = source + "::" + quality.name();
-
-        ResourceLocation cached = textureCache.get(cacheKey);
+        ResourceLocation cached = TEXTURE_CACHE.get(cacheKey);
         if (cached != null) {
-            lastAccessAt.put(cacheKey, System.currentTimeMillis());
+            LAST_ACCESS_AT.put(cacheKey, System.currentTimeMillis());
             maybeEvictCache(false);
             return cached;
         }
@@ -119,7 +116,7 @@ public class TextureManagerHelper {
             return null;
         }
 
-        loadingTasks.computeIfAbsent(cacheKey, k -> startAsyncLoad(k, source, quality));
+        LOADING_TASKS.computeIfAbsent(cacheKey, key -> startAsyncLoad(key, source, quality));
         maybeEvictCache(false);
         return null;
     }
@@ -128,15 +125,54 @@ public class TextureManagerHelper {
         getResourceLocationForPath(path, quality);
     }
 
-    private static String normalizeInputPath(String path) {
-        if (path == null) {
-            return "";
+    public static void unloadTexture(String path) {
+        if (path == null || path.trim().isEmpty()) {
+            return;
         }
-        String s = path.trim();
-        if (s.length() >= 2 && s.startsWith("\"") && s.endsWith("\"")) {
-            s = s.substring(1, s.length() - 1).trim();
+        String source = canonicalizeImagePath(path);
+        Minecraft mc = Minecraft.getInstance();
+        for (ImageQuality quality : ImageQuality.values()) {
+            String cacheKey = source + "::" + quality.name();
+            ResourceLocation location = TEXTURE_CACHE.remove(cacheKey);
+            LAST_ACCESS_AT.remove(cacheKey);
+            TEXTURE_SIZE_CACHE.remove(cacheKey);
+            FAILED_AT.remove(cacheKey);
+            LOADING_TASKS.remove(cacheKey);
+            if (location != null && mc != null) {
+                mc.execute(() -> mc.getTextureManager().release(location));
+            }
         }
-        return s;
+    }
+
+    public static int[] getTextureSizeForPath(String path, ImageQuality quality) {
+        String normalizedInput = normalizeInputPath(path);
+        if (normalizedInput.isEmpty()) {
+            return null;
+        }
+        String cacheKey = canonicalizeImagePath(normalizedInput) + "::" + quality.name();
+        int[] size = TEXTURE_SIZE_CACHE.get(cacheKey);
+        if (size == null || size.length < 2) {
+            return null;
+        }
+        return new int[] { Math.max(1, size[0]), Math.max(1, size[1]) };
+    }
+
+    public static void clearCache() {
+        if (TEXTURE_CACHE.isEmpty()) {
+            return;
+        }
+        Minecraft mc = Minecraft.getInstance();
+        for (ResourceLocation location : TEXTURE_CACHE.values()) {
+            if (location != null && mc != null) {
+                mc.execute(() -> mc.getTextureManager().release(location));
+            }
+        }
+        TEXTURE_CACHE.clear();
+        LAST_ACCESS_AT.clear();
+        TEXTURE_SIZE_CACHE.clear();
+        FAILED_AT.clear();
+        LOADING_TASKS.clear();
+        zszlScriptMod.LOGGER.info("Cleared all chat background caches and unloaded textures from GPU memory");
     }
 
     private static CompletableFuture<Void> startAsyncLoad(String cacheKey, String source, ImageQuality quality) {
@@ -144,48 +180,63 @@ public class TextureManagerHelper {
             try {
                 BufferedImage originalImage = loadImage(source);
                 if (originalImage == null) {
-                    failedAt.put(cacheKey, System.currentTimeMillis());
+                    FAILED_AT.put(cacheKey, System.currentTimeMillis());
                     zszlScriptMod.LOGGER.warn("Background image load failed: {}", source);
                     return;
                 }
 
                 BufferedImage processedImage = processImage(originalImage, quality);
-                Minecraft mc = Minecraft.getMinecraft();
-                if (mc == null) {
-                    failedAt.put(cacheKey, System.currentTimeMillis());
+                NativeImage nativeImage = toNativeImage(processedImage);
+                if (nativeImage == null) {
+                    FAILED_AT.put(cacheKey, System.currentTimeMillis());
+                    zszlScriptMod.LOGGER.warn("Native image conversion failed: {}", source);
                     return;
                 }
 
-                mc.addScheduledTask(() -> {
+                Minecraft mc = Minecraft.getInstance();
+                if (mc == null) {
+                    nativeImage.close();
+                    FAILED_AT.put(cacheKey, System.currentTimeMillis());
+                    return;
+                }
+
+                mc.execute(() -> {
                     try {
-                        DynamicTexture dynamicTexture = new DynamicTexture(processedImage);
-                        String texName = Integer.toHexString(source.hashCode());
-                        ResourceLocation location = mc.getTextureManager().getDynamicTextureLocation(
-                                "chat_bg/" + texName + "_" + quality.name().toLowerCase(), dynamicTexture);
-                        textureCache.put(cacheKey, location);
-                        lastAccessAt.put(cacheKey, System.currentTimeMillis());
-                        textureSizeCache.put(cacheKey,
-                            new int[] { Math.max(1, processedImage.getWidth()), Math.max(1, processedImage.getHeight()) });
-                        failedAt.remove(cacheKey);
+                        DynamicTexture dynamicTexture = new DynamicTexture(nativeImage);
+                        String textureName = "chat_bg/" + Integer.toHexString(source.hashCode()) + "_"
+                                + quality.name().toLowerCase(Locale.ROOT);
+                        ResourceLocation location = mc.getTextureManager().register(textureName, dynamicTexture);
+                        TEXTURE_CACHE.put(cacheKey, location);
+                        TEXTURE_SIZE_CACHE.put(cacheKey, new int[] {
+                                Math.max(1, processedImage.getWidth()),
+                                Math.max(1, processedImage.getHeight())
+                        });
+                        LAST_ACCESS_AT.put(cacheKey, System.currentTimeMillis());
+                        FAILED_AT.remove(cacheKey);
                         maybeEvictCache(true);
                     } catch (Exception e) {
-                        failedAt.put(cacheKey, System.currentTimeMillis());
+                        FAILED_AT.put(cacheKey, System.currentTimeMillis());
                         zszlScriptMod.LOGGER.error("GPU texture upload failed: {}", source, e);
                     }
                 });
             } catch (Exception e) {
-                failedAt.put(cacheKey, System.currentTimeMillis());
+                FAILED_AT.put(cacheKey, System.currentTimeMillis());
                 zszlScriptMod.LOGGER.error("Error while async loading background image source: {}", source, e);
             }
-        }, IO_POOL).whenComplete((v, ex) -> loadingTasks.remove(cacheKey));
+        }, IO_POOL).whenComplete((ignored, throwable) -> LOADING_TASKS.remove(cacheKey));
+    }
+
+    private static NativeImage toNativeImage(BufferedImage image) {
+        NativeImage nativeImage = NativeImageHelper.fromBufferedImage(image);
+        if (nativeImage == null) {
+            zszlScriptMod.LOGGER.warn("Failed to convert buffered image to NativeImage");
+        }
+        return nativeImage;
     }
 
     private static boolean isInRetryCooldown(String cacheKey) {
-        Long lastFail = failedAt.get(cacheKey);
-        if (lastFail == null) {
-            return false;
-        }
-        return (System.currentTimeMillis() - lastFail) < RETRY_COOLDOWN_MS;
+        Long lastFail = FAILED_AT.get(cacheKey);
+        return lastFail != null && (System.currentTimeMillis() - lastFail) < RETRY_COOLDOWN_MS;
     }
 
     private static BufferedImage loadImage(String source) throws Exception {
@@ -207,8 +258,7 @@ public class TextureManagerHelper {
             connection.setConnectTimeout(8000);
             connection.setReadTimeout(12000);
             applyCommonRequestHeaders(connection, url);
-            if (connection instanceof HttpURLConnection) {
-                HttpURLConnection http = (HttpURLConnection) connection;
+            if (connection instanceof HttpURLConnection http) {
                 http.setInstanceFollowRedirects(true);
                 http.setRequestMethod("GET");
             }
@@ -218,6 +268,7 @@ public class TextureManagerHelper {
                 if (bytes.length == 0) {
                     return null;
                 }
+                logSourceDiagnostics(source, "url", bytes);
                 cacheDownloadedBytes(source, bytes);
                 return decodeImageBytes(bytes);
             }
@@ -236,9 +287,10 @@ public class TextureManagerHelper {
         if (resourcePath.isEmpty()) {
             return null;
         }
-        try (InputStream in = TextureManagerHelper.class.getClassLoader().getResourceAsStream(resourcePath)) {
+        try (InputStream in = openBuiltinResourceStream(resourcePath)) {
             if (in == null) {
-                zszlScriptMod.LOGGER.warn("Built-in theme image resource not found: {}", resourcePath);
+                zszlScriptMod.LOGGER.warn("Built-in theme image resource not found: {} (tried classpath/assets/build/src fallbacks)",
+                        resourcePath);
                 return null;
             }
             byte[] bytes = readAllBytes(in);
@@ -246,8 +298,63 @@ public class TextureManagerHelper {
                 zszlScriptMod.LOGGER.warn("Built-in theme image resource is empty: {}", resourcePath);
                 return null;
             }
-            return decodeImageBytes(bytes);
+            logSourceDiagnostics(resourcePath, "builtin", bytes);
+            BufferedImage decoded = decodeImageBytes(bytes);
+            if (decoded == null) {
+                zszlScriptMod.LOGGER.warn(
+                        "Built-in theme image decode failed: {} (bytes={}, head={}, webpHeader={})",
+                        resourcePath, bytes.length, toHexHead(bytes, 16), hasWebpHeader(bytes));
+            }
+            return decoded;
         }
+    }
+
+    private static InputStream openBuiltinResourceStream(String resourcePath) {
+        String normalized = resourcePath == null ? "" : resourcePath.trim().replace('\\', '/');
+        while (normalized.startsWith("/")) {
+            normalized = normalized.substring(1);
+        }
+        if (normalized.isEmpty()) {
+            return null;
+        }
+
+        String[] candidates = new String[] {
+                normalized,
+                "assets/zszl_script/" + normalized
+        };
+
+        ClassLoader loader = TextureManagerHelper.class.getClassLoader();
+        for (String candidate : candidates) {
+            try {
+                InputStream stream = loader.getResourceAsStream(candidate);
+                if (stream != null) {
+                    return stream;
+                }
+            } catch (Exception ignored) {
+            }
+        }
+
+        Path[] fileCandidates = new Path[] {
+                Path.of("src", "main", "resources", normalized),
+                Path.of("src", "main", "resources", "assets", "zszl_script", normalized),
+                Path.of("build", "resources", "main", normalized),
+                Path.of("build", "resources", "main", "assets", "zszl_script", normalized),
+                Path.of("..", "src", "main", "resources", normalized),
+                Path.of("..", "src", "main", "resources", "assets", "zszl_script", normalized),
+                Path.of("..", "build", "resources", "main", normalized),
+                Path.of("..", "build", "resources", "main", "assets", "zszl_script", normalized)
+        };
+
+        for (Path candidate : fileCandidates) {
+            try {
+                if (Files.exists(candidate) && Files.isRegularFile(candidate)) {
+                    return Files.newInputStream(candidate);
+                }
+            } catch (Exception ignored) {
+            }
+        }
+
+        return null;
     }
 
     private static void applyCommonRequestHeaders(URLConnection connection, URL url) {
@@ -268,7 +375,6 @@ public class TextureManagerHelper {
 
         String host = url.getHost() == null ? "" : url.getHost().toLowerCase(Locale.ROOT);
         if (host.equals("haowallpaper.com") || host.endsWith(".haowallpaper.com")) {
-            // 该站点对图片链路做了防盗链校验，缺少 Referer 时会直接返回 403。
             connection.setRequestProperty("Referer", "https://haowallpaper.com/homeView");
             connection.setRequestProperty("Origin", "https://haowallpaper.com");
         }
@@ -276,11 +382,8 @@ public class TextureManagerHelper {
 
     private static BufferedImage readImageFromFile(File file) {
         try {
-            BufferedImage img = ImageIO.read(file);
-            if (img != null) {
-                return img;
-            }
             byte[] bytes = Files.readAllBytes(file.toPath());
+            logSourceDiagnostics(file.getAbsolutePath(), "file", bytes);
             BufferedImage decoded = decodeImageBytes(bytes);
             if (decoded == null) {
                 zszlScriptMod.LOGGER.warn("Image decode failed for file: {} (head={})",
@@ -297,77 +400,71 @@ public class TextureManagerHelper {
         if (bytes == null || bytes.length == 0) {
             return null;
         }
+
         try {
-            BufferedImage img = ImageIO.read(new ByteArrayInputStream(bytes));
-            if (img != null) {
-                return img;
+            BufferedImage image = ImageIO.read(new ByteArrayInputStream(bytes));
+            if (image != null) {
+                return image;
             }
-        } catch (Exception ignore) {
+        } catch (Exception ignored) {
         }
 
-        try (ImageInputStream iis = ImageIO.createImageInputStream(new ByteArrayInputStream(bytes))) {
-            if (iis == null) {
+        try (ImageInputStream imageInputStream = ImageIO.createImageInputStream(new ByteArrayInputStream(bytes))) {
+            if (imageInputStream == null) {
                 return null;
             }
-            java.util.Iterator<ImageReader> readers = ImageIO.getImageReaders(iis);
+            java.util.Iterator<ImageReader> readers = ImageIO.getImageReaders(imageInputStream);
             while (readers.hasNext()) {
                 ImageReader reader = readers.next();
                 try {
-                    reader.setInput(iis, true, true);
-                    BufferedImage img = reader.read(0);
-                    if (img != null) {
-                        return img;
+                    reader.setInput(imageInputStream, true, true);
+                    BufferedImage image = reader.read(0);
+                    if (image != null) {
+                        return image;
                     }
-                } catch (Exception ignore) {
+                } catch (Exception ignored) {
                 } finally {
                     try {
                         reader.dispose();
-                    } catch (Exception ignore) {
+                    } catch (Exception ignored) {
                     }
                     try {
-                        iis.seek(0);
-                    } catch (Exception ignore) {
+                        imageInputStream.seek(0);
+                    } catch (Exception ignored) {
                     }
                 }
             }
-        } catch (Exception ignore) {
+        } catch (Exception ignored) {
         }
 
-        // 最后兜底：直接实例化 WebP Reader SPI 读取（绕过 ImageIO provider 发现链）
-        BufferedImage webp1 = decodeWithExplicitWebpSpi(bytes, "com.luciad.imageio.webp.WebPImageReaderSpi");
-        if (webp1 != null) {
-            return webp1;
+        BufferedImage luciad = decodeWithExplicitWebpSpi(bytes, "com.luciad.imageio.webp.WebPImageReaderSpi");
+        if (luciad != null) {
+            return luciad;
         }
-        BufferedImage webp2 = decodeWithExplicitWebpSpi(bytes, "com.twelvemonkeys.imageio.plugins.webp.WebPImageReaderSpi");
-        if (webp2 != null) {
-            return webp2;
-        }
-
-        return null;
+        return decodeWithExplicitWebpSpi(bytes, "com.twelvemonkeys.imageio.plugins.webp.WebPImageReaderSpi");
     }
 
     private static BufferedImage decodeWithExplicitWebpSpi(byte[] bytes, String spiClassName) {
         try {
-            Class<?> c = Class.forName(spiClassName);
-            Object spiObj = c.newInstance();
-            if (!(spiObj instanceof ImageReaderSpi)) {
+            Class<?> type = Class.forName(spiClassName);
+            Object spiObject = type.getDeclaredConstructor().newInstance();
+            if (!(spiObject instanceof ImageReaderSpi spi)) {
                 return null;
             }
-            ImageReaderSpi spi = (ImageReaderSpi) spiObj;
             ImageReader reader = spi.createReaderInstance();
-            try (ImageInputStream iis = ImageIO.createImageInputStream(new ByteArrayInputStream(bytes))) {
-                if (iis == null) {
+            try (ImageInputStream imageInputStream = ImageIO.createImageInputStream(new ByteArrayInputStream(bytes))) {
+                if (imageInputStream == null) {
                     return null;
                 }
-                reader.setInput(iis, true, true);
+                reader.setInput(imageInputStream, true, true);
                 return reader.read(0);
             } finally {
                 try {
                     reader.dispose();
-                } catch (Exception ignore) {
+                } catch (Exception ignored) {
                 }
             }
-        } catch (Throwable ignore) {
+        } catch (Throwable ignored) {
             return null;
         }
     }
@@ -377,14 +474,12 @@ public class TextureManagerHelper {
             return;
         }
         try {
-            // 注意：不要调用 ImageIO.scanForPlugins()。
-            // 某些运行环境会因为类路径中存在残缺的 ImageIO provider（例如缺失 WebP writer）
-            // 触发 ServiceConfigurationError，导致 WEBP 初始化失败。
-            boolean ok1 = registerWebpReaderSpi("com.luciad.imageio.webp.WebPImageReaderSpi");
-            boolean ok2 = registerWebpReaderSpi("com.twelvemonkeys.imageio.plugins.webp.WebPImageReaderSpi");
-            zszlScriptMod.LOGGER.info("WEBP reader registration status: luciad={}, twelvemonkeys={}", ok1, ok2);
-        } catch (Throwable e) {
-            zszlScriptMod.LOGGER.warn("ImageIO plugin init failed", e);
+            boolean luciad = registerWebpReaderSpi("com.luciad.imageio.webp.WebPImageReaderSpi");
+            boolean twelveMonkeys = registerWebpReaderSpi("com.twelvemonkeys.imageio.plugins.webp.WebPImageReaderSpi");
+            zszlScriptMod.LOGGER.info("WEBP reader registration status: luciad={}, twelvemonkeys={}",
+                    luciad, twelveMonkeys);
+        } catch (Throwable t) {
+            zszlScriptMod.LOGGER.warn("ImageIO plugin init failed", t);
         } finally {
             imageIOReady = true;
         }
@@ -392,40 +487,68 @@ public class TextureManagerHelper {
 
     private static boolean registerWebpReaderSpi(String className) {
         try {
-            Class<?> spiCls = Class.forName(className);
-            Object spi = spiCls.newInstance();
+            Class<?> spiClass = Class.forName(className);
+            Object spi = spiClass.getDeclaredConstructor().newInstance();
             IIORegistry.getDefaultInstance().registerServiceProvider(spi);
             zszlScriptMod.LOGGER.info("Registered WEBP ImageReader SPI: {}", className);
             return true;
-        } catch (Throwable ignore) {
-            // 忽略：尝试下一个实现
+        } catch (Throwable ignored) {
             return false;
         }
     }
 
-    private static String toHexHead(byte[] bytes, int max) {
-        if (bytes == null || bytes.length == 0) {
-            return "empty";
+    private static BufferedImage processImage(BufferedImage original, ImageQuality quality) {
+        if (quality == ImageQuality.ORIGINAL) {
+            return original;
         }
-        int n = Math.min(max, bytes.length);
-        StringBuilder sb = new StringBuilder(n * 3);
-        for (int i = 0; i < n; i++) {
-            sb.append(String.format("%02X", bytes[i] & 0xFF));
-            if (i < n - 1) {
-                sb.append('-');
-            }
+
+        int targetWidth;
+        Object interpolation;
+        switch (quality) {
+        case HIGH:
+            targetWidth = 1920;
+            interpolation = RenderingHints.VALUE_INTERPOLATION_BILINEAR;
+            break;
+        case MEDIUM:
+            targetWidth = 854;
+            interpolation = RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR;
+            break;
+        case LOW:
+            targetWidth = 426;
+            interpolation = RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR;
+            break;
+        default:
+            return original;
         }
-        return sb.toString();
+
+        if (original.getWidth() <= targetWidth) {
+            return original;
+        }
+
+        double aspectRatio = (double) original.getHeight() / (double) original.getWidth();
+        int targetHeight = Math.max(1, (int) Math.round(targetWidth * aspectRatio));
+
+        Image scaled = original.getScaledInstance(targetWidth, targetHeight,
+                quality == ImageQuality.HIGH ? Image.SCALE_SMOOTH : Image.SCALE_REPLICATE);
+        BufferedImage output = new BufferedImage(targetWidth, targetHeight, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D graphics = output.createGraphics();
+        try {
+            graphics.setRenderingHint(RenderingHints.KEY_INTERPOLATION, interpolation);
+            graphics.drawImage(scaled, 0, 0, null);
+        } finally {
+            graphics.dispose();
+        }
+        return output;
     }
 
     private static boolean isHttpUrl(String source) {
-        String s = source == null ? "" : source.trim().toLowerCase(Locale.ROOT);
-        return s.startsWith("http://") || s.startsWith("https://");
+        String normalized = source == null ? "" : source.trim().toLowerCase(Locale.ROOT);
+        return normalized.startsWith("http://") || normalized.startsWith("https://");
     }
 
     private static boolean isBuiltinResourcePath(String source) {
-        String s = source == null ? "" : source.trim().toLowerCase(Locale.ROOT);
-        return s.startsWith(BUILTIN_SCHEME);
+        String normalized = source == null ? "" : source.trim().toLowerCase(Locale.ROOT);
+        return normalized.startsWith(BUILTIN_SCHEME);
     }
 
     private static String toBuiltinResourcePath(String source) {
@@ -440,11 +563,22 @@ public class TextureManagerHelper {
         return resourcePath;
     }
 
-    private static byte[] readAllBytes(InputStream in) throws Exception {
+    private static String normalizeInputPath(String path) {
+        if (path == null) {
+            return "";
+        }
+        String normalized = path.trim();
+        if (normalized.length() >= 2 && normalized.startsWith("\"") && normalized.endsWith("\"")) {
+            normalized = normalized.substring(1, normalized.length() - 1).trim();
+        }
+        return normalized;
+    }
+
+    private static byte[] readAllBytes(InputStream inputStream) throws Exception {
         byte[] buffer = new byte[8192];
         int read;
-        java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
-        while ((read = in.read(buffer)) != -1) {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        while ((read = inputStream.read(buffer)) != -1) {
             out.write(buffer, 0, read);
         }
         return out.toByteArray();
@@ -478,122 +612,73 @@ public class TextureManagerHelper {
         }
     }
 
-    private static String sha1(String s) throws Exception {
-        MessageDigest md = MessageDigest.getInstance("SHA-1");
-        byte[] dig = md.digest(s.getBytes("UTF-8"));
-        StringBuilder sb = new StringBuilder();
-        for (byte b : dig) {
-            sb.append(String.format("%02x", b));
+    private static String sha1(String value) throws Exception {
+        MessageDigest digest = MessageDigest.getInstance("SHA-1");
+        byte[] bytes = digest.digest(value.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        StringBuilder builder = new StringBuilder();
+        for (byte b : bytes) {
+            builder.append(String.format("%02x", b));
         }
-        return sb.toString();
+        return builder.toString();
     }
 
-    /**
-     * 根据指定的质量对 BufferedImage 进行缩放和插值处理。
-     */
-    private static BufferedImage processImage(BufferedImage original, ImageQuality quality) {
-        if (quality == ImageQuality.ORIGINAL) {
-            return original; // 原始尺寸，不处理
+    private static String toHexHead(byte[] bytes, int max) {
+        if (bytes == null || bytes.length == 0) {
+            return "empty";
         }
-
-        int targetWidth;
-        Object interpolation;
-
-        switch (quality) {
-            case HIGH:
-                targetWidth = 1920;
-                interpolation = RenderingHints.VALUE_INTERPOLATION_BILINEAR;
-                break;
-            case MEDIUM:
-                targetWidth = 854;
-                interpolation = RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR;
-                break;
-            case LOW:
-                targetWidth = 426;
-                interpolation = RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR;
-                break;
-            default:
-                return original;
-        }
-
-        // 如果原图比目标宽度还小，则不放大
-        if (original.getWidth() <= targetWidth) {
-            return original;
-        }
-
-        double aspectRatio = (double) original.getHeight() / original.getWidth();
-        int targetHeight = (int) (targetWidth * aspectRatio);
-
-        Image resultingImage = original.getScaledInstance(targetWidth, targetHeight,
-                quality == ImageQuality.HIGH ? Image.SCALE_SMOOTH : Image.SCALE_REPLICATE);
-        BufferedImage outputImage = new BufferedImage(targetWidth, targetHeight, BufferedImage.TYPE_INT_ARGB);
-
-        Graphics2D g2d = outputImage.createGraphics();
-        g2d.setRenderingHint(RenderingHints.KEY_INTERPOLATION, interpolation);
-        g2d.drawImage(resultingImage, 0, 0, null);
-        g2d.dispose();
-
-        return outputImage;
-    }
-
-    /**
-     * !! 核心修改：卸载指定路径的所有质量版本的纹理 !!
-     * 
-     * @param path 要卸载的图片文件的路径。
-     */
-    public static void unloadTexture(String path) {
-        if (path == null || path.trim().isEmpty()) {
-            return;
-        }
-        String source = path.trim();
-        for (ImageQuality quality : ImageQuality.values()) {
-            String cacheKey = source + "::" + quality.name();
-            ResourceLocation location = textureCache.remove(cacheKey);
-            if (location != null) {
-                Minecraft.getMinecraft().getTextureManager().deleteTexture(location);
-                zszlScriptMod.LOGGER.info("Unloaded texture from GPU memory: {}", location);
-            }
-            lastAccessAt.remove(cacheKey);
-            textureSizeCache.remove(cacheKey);
-            failedAt.remove(cacheKey);
-        }
-    }
-
-    public static int[] getTextureSizeForPath(String path, ImageQuality quality) {
-        String normalizedInput = normalizeInputPath(path);
-        if (normalizedInput.isEmpty()) {
-            return null;
-        }
-        String source = canonicalizeImagePath(normalizedInput);
-        String cacheKey = source + "::" + quality.name();
-        int[] size = textureSizeCache.get(cacheKey);
-        if (size == null || size.length < 2) {
-            return null;
-        }
-        return new int[] { Math.max(1, size[0]), Math.max(1, size[1]) };
-    }
-
-    /**
-     * !! 核心修改：清空所有缓存的纹理并从显存中卸载 !!
-     */
-    public static void clearCache() {
-        if (textureCache.isEmpty()) {
-            return;
-        }
-        for (ResourceLocation location : textureCache.values()) {
-            if (location != null) {
-                // 使用主线程任务来安全地删除纹理
-                Minecraft.getMinecraft().addScheduledTask(() -> {
-                    Minecraft.getMinecraft().getTextureManager().deleteTexture(location);
-                });
+        int length = Math.min(max, bytes.length);
+        StringBuilder builder = new StringBuilder(length * 3);
+        for (int i = 0; i < length; i++) {
+            builder.append(String.format("%02X", bytes[i] & 0xFF));
+            if (i < length - 1) {
+                builder.append('-');
             }
         }
-        textureCache.clear();
-        lastAccessAt.clear();
-        textureSizeCache.clear();
-        failedAt.clear();
-        loadingTasks.clear();
-        zszlScriptMod.LOGGER.info("Cleared all chat background caches and unloaded textures from GPU memory");
+        return builder.toString();
+    }
+
+    private static void logSourceDiagnostics(String source, String origin, byte[] bytes) {
+        String key = origin + "::" + source;
+        if (!LOGGED_SOURCE_DIAGNOSTICS.add(key)) {
+            return;
+        }
+        zszlScriptMod.LOGGER.info(
+                "Theme image source detected: origin={} source={} bytes={} format={} head={}",
+                origin,
+                source,
+                bytes == null ? 0 : bytes.length,
+                describeImageFormat(bytes),
+                toHexHead(bytes, 16));
+    }
+
+    private static String describeImageFormat(byte[] bytes) {
+        if (bytes == null || bytes.length < 12) {
+            return "unknown";
+        }
+        if (hasWebpHeader(bytes)) {
+            return "webp";
+        }
+        if ((bytes[0] & 0xFF) == 0xFF && (bytes[1] & 0xFF) == 0xD8) {
+            return "jpeg";
+        }
+        if ((bytes[0] & 0xFF) == 0x89
+                && bytes[1] == 0x50
+                && bytes[2] == 0x4E
+                && bytes[3] == 0x47) {
+            return "png";
+        }
+        if (bytes[0] == 'G' && bytes[1] == 'I' && bytes[2] == 'F') {
+            return "gif";
+        }
+        return "unknown";
+    }
+
+    private static boolean hasWebpHeader(byte[] bytes) {
+        if (bytes == null || bytes.length < 12) {
+            return false;
+        }
+        return bytes[0] == 'R' && bytes[1] == 'I' && bytes[2] == 'F' && bytes[3] == 'F'
+                && bytes[8] == 'W' && bytes[9] == 'E' && bytes[10] == 'B' && bytes[11] == 'P';
     }
 
     private static void maybeEvictCache(boolean force) {
@@ -602,29 +687,25 @@ public class TextureManagerHelper {
             return;
         }
         lastEvictCheckAt = now;
-
-        if (textureCache.isEmpty()) {
+        if (TEXTURE_CACHE.isEmpty()) {
             return;
         }
 
         List<String> keysToEvict = new ArrayList<>();
-
-        // 1) 先按空闲时间淘汰
-        for (Map.Entry<String, ResourceLocation> entry : textureCache.entrySet()) {
+        for (Map.Entry<String, ResourceLocation> entry : TEXTURE_CACHE.entrySet()) {
             String key = entry.getKey();
-            long last = lastAccessAt.getOrDefault(key, 0L);
-            if ((now - last) > IDLE_EVICT_MS) {
+            long lastAccess = LAST_ACCESS_AT.getOrDefault(key, 0L);
+            if ((now - lastAccess) > IDLE_EVICT_MS) {
                 keysToEvict.add(key);
             }
         }
 
-        // 2) 再按容量淘汰最久未访问项
-        int expectedSize = textureCache.size() - keysToEvict.size();
+        int expectedSize = TEXTURE_CACHE.size() - keysToEvict.size();
         if (expectedSize > MAX_CACHE_ENTRIES) {
             int overflow = expectedSize - MAX_CACHE_ENTRIES;
-            List<String> candidates = new ArrayList<>(textureCache.keySet());
+            List<String> candidates = new ArrayList<>(TEXTURE_CACHE.keySet());
             candidates.removeAll(keysToEvict);
-            candidates.sort(Comparator.comparingLong(k -> lastAccessAt.getOrDefault(k, 0L)));
+            candidates.sort(Comparator.comparingLong(key -> LAST_ACCESS_AT.getOrDefault(key, 0L)));
             for (int i = 0; i < overflow && i < candidates.size(); i++) {
                 keysToEvict.add(candidates.get(i));
             }
@@ -634,14 +715,14 @@ public class TextureManagerHelper {
             return;
         }
 
-        Minecraft mc = Minecraft.getMinecraft();
+        Minecraft mc = Minecraft.getInstance();
         for (String key : keysToEvict) {
-            ResourceLocation location = textureCache.remove(key);
-            lastAccessAt.remove(key);
-            textureSizeCache.remove(key);
-            failedAt.remove(key);
-            if (location != null && mc != null && mc.getTextureManager() != null) {
-                mc.addScheduledTask(() -> mc.getTextureManager().deleteTexture(location));
+            ResourceLocation location = TEXTURE_CACHE.remove(key);
+            LAST_ACCESS_AT.remove(key);
+            TEXTURE_SIZE_CACHE.remove(key);
+            FAILED_AT.remove(key);
+            if (location != null && mc != null) {
+                mc.execute(() -> mc.getTextureManager().release(location));
             }
         }
     }

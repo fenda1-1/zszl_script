@@ -38,13 +38,10 @@ public interface IBaritoneProcess {
     /**
      * Default priority. Most normal processes should have this value.
      * <p>
-     * Some examples of processes that should have different values might include
-     * some kind of automated mob avoidance
-     * that would be temporary and would forcefully take control. Same for something
-     * that pauses pathing for auto eat, etc.
+     * Some examples of processes that should have different values might include some kind of automated mob avoidance
+     * that would be temporary and would forcefully take control. Same for something that pauses pathing for auto eat, etc.
      * <p>
-     * The value is -1 beacuse that's what Impact 4.5's beta auto walk returns and I
-     * want to tie with it.
+     * The value is -1 beacuse that's what Impact 4.5's beta auto walk returns and I want to tie with it.
      */
     double DEFAULT_PRIORITY = -1;
 
@@ -56,20 +53,13 @@ public interface IBaritoneProcess {
     boolean isActive();
 
     /**
-     * Called when this process is in control of pathing; Returns what Baritone
-     * should do.
+     * Called when this process is in control of pathing; Returns what Baritone should do.
      *
-     * @param calcFailed     {@code true} if this specific process was in control
-     *                       last tick,
-     *                       and there was a {@link PathEvent#CALC_FAILED} event
-     *                       last tick
-     * @param isSafeToCancel {@code true} if a
-     *                       {@link PathingCommandType#REQUEST_PAUSE} would happen
-     *                       this tick, and
-     *                       {@link IPathingBehavior} wouldn't actually tick.
-     *                       {@code false} if the PathExecutor reported
-     *                       pausing would be unsafe at the end of the last tick.
-     *                       Effectively "could request cancel or
+     * @param calcFailed     {@code true} if this specific process was in control last tick,
+     *                       and there was a {@link PathEvent#CALC_FAILED} event last tick
+     * @param isSafeToCancel {@code true} if a {@link PathingCommandType#REQUEST_PAUSE} would happen this tick, and
+     *                       {@link IPathingBehavior} wouldn't actually tick. {@code false} if the PathExecutor reported
+     *                       pausing would be unsafe at the end of the last tick. Effectively "could request cancel or
      *                       pause and have it happen right away"
      * @return What the {@link IPathingBehavior} should do
      */
@@ -78,15 +68,11 @@ public interface IBaritoneProcess {
     /**
      * Returns whether or not this process should be treated as "temporary".
      * <p>
-     * If a process is temporary, it doesn't call {@link #onLostControl} on the
-     * processes that aren't execute because of it.
+     * If a process is temporary, it doesn't call {@link #onLostControl} on the processes that aren't execute because of it.
      * <p>
-     * For example, {@code CombatPauserProcess} and {@code PauseForAutoEatProcess}
-     * should return {@code true} always,
-     * and should return {@link #isActive} {@code true} only if there's something in
-     * range this tick, or if the player would like
-     * to start eating this tick. {@code PauseForAutoEatProcess} should only
-     * actually right click once onTick is called with
+     * For example, {@code CombatPauserProcess} and {@code PauseForAutoEatProcess} should return {@code true} always,
+     * and should return {@link #isActive} {@code true} only if there's something in range this tick, or if the player would like
+     * to start eating this tick. {@code PauseForAutoEatProcess} should only actually right click once onTick is called with
      * {@code isSafeToCancel} true though.
      *
      * @return Whether or not if this control is temporary
@@ -101,8 +87,7 @@ public interface IBaritoneProcess {
     void onLostControl();
 
     /**
-     * Used to determine which Process gains control if multiple are reporting
-     * {@link #isActive()}. The one
+     * Used to determine which Process gains control if multiple are reporting {@link #isActive()}. The one
      * that returns the highest value will be given control.
      *
      * @return A double representing the priority
@@ -118,10 +103,8 @@ public interface IBaritoneProcess {
      */
     default String displayName() {
         if (!isActive()) {
-            // i love it when impcat's scuffed HUD calls displayName for inactive processes
-            // for 1 tick too long
-            // causing NPEs when the displayname relies on fields that become null when
-            // inactive
+            // i love it when impcat's scuffed HUD calls displayName for inactive processes for 1 tick too long
+            // causing NPEs when the displayname relies on fields that become null when inactive
             return "INACTIVE";
         }
         return displayName0();
@@ -129,3 +112,4 @@ public interface IBaritoneProcess {
 
     String displayName0();
 }
+

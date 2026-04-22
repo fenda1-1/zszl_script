@@ -24,8 +24,7 @@ import java.util.function.LongSupplier;
 /**
  * Implementation of Xoroshiro256++
  * <p>
- * Extended to produce random double-precision floating point numbers, and allow
- * copies to be spawned via {@link #fork},
+ * Extended to produce random double-precision floating point numbers, and allow copies to be spawned via {@link #fork},
  * which share the same internal state as the source object.
  *
  * @author Brady
@@ -84,3 +83,4 @@ public final class ForkableRandom {
         return (x << k) | (x >>> (64 - k));
     }
 }
+

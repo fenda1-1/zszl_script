@@ -1,65 +1,115 @@
 package com.zszl.zszlScriptMod.shadowbaritone.api.utils;
 
-import net.minecraft.client.resources.I18n;
-import net.minecraft.util.text.ITextComponent;
-import net.minecraft.util.text.Style;
-import net.minecraft.util.text.TextComponentString;
-import net.minecraft.util.text.event.HoverEvent;
+import com.google.gson.Gson;
+import com.google.gson.reflect.TypeToken;
+import com.zszl.zszlScriptMod.shadowbaritone.api.command.ICommand;
+import net.minecraft.client.resources.language.I18n;
 
-/**
- * ShadowBaritone 本地化工具：
- * 1) 兼容旧版“英文原文 -> 中文”查找
- * 2) 支持新版结构化 key（例如 shadowbaritone.command.proc.status）
- * 3) 新旧方案可并存，便于逐步迁移
- */
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.Reader;
+import java.lang.reflect.Type;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Properties;
+
 public final class ShadowBaritoneI18n {
+
+    private static final Gson GSON = new Gson();
+    private static final Type MAP_TYPE = new TypeToken<LinkedHashMap<String, String>>() {
+    }.getType();
+    private static volatile Map<String, String> shadowbaritoneTranslations;
 
     private ShadowBaritoneI18n() {
     }
 
-    /**
-     * 兼容旧用法：
-     * - 若传入的是旧版英文原文，则按原文查表
-     * - 若传入的是结构化 key，则也能正常翻译
-     * - 查不到时回退原文
-     */
     public static String tr(String raw) {
         if (raw == null || raw.isEmpty()) {
             return raw;
         }
         try {
-            String translated = I18n.format(raw);
-            return translated == null ? raw : translated;
+            String translated = I18n.get(raw);
+            if (translated != null && !translated.equals(raw)) {
+                return translated;
+            }
         } catch (Throwable ignored) {
-            return raw;
         }
+        return getShadowbaritoneTranslations().getOrDefault(raw, raw);
     }
 
-    /**
-     * 新版结构化 key 翻译：
-     * - 查不到时回退 key 本身
-     */
     public static String trKey(String key, Object... args) {
         return trKeyOrDefault(key, key, args);
     }
 
-    /**
-     * 新版结构化 key 翻译：
-     * - 查不到时回退到 fallback
-     * - fallback 支持 String.format 风格参数
-     */
     public static String trKeyOrDefault(String key, String fallback, Object... args) {
         if (key == null || key.isEmpty()) {
-            return fallback;
+            return safeFormat(fallback, args);
         }
         try {
-            String translated = I18n.format(key, args);
+            String translated = I18n.get(key, args);
             if (translated != null && !translated.equals(key)) {
                 return translated;
             }
         } catch (Throwable ignored) {
         }
+        String local = getShadowbaritoneTranslations().get(key);
+        if (local != null) {
+            return safeFormat(local, args);
+        }
         return safeFormat(fallback == null ? key : fallback, args);
+    }
+
+    public static String trCommandShortDesc(ICommand command) {
+        String key = getCommandKeyPrefix(command) + ".short_desc";
+        return trKeyOrDefault(key, tr(command.getShortDesc()));
+    }
+
+    public static List<String> trCommandLongDesc(ICommand command) {
+        String prefix = getCommandKeyPrefix(command) + ".long_desc.";
+        Map<String, String> translations = getShadowbaritoneTranslations();
+        List<String> lines = new ArrayList<>();
+
+        int numberedIndex = 1;
+        while (true) {
+            String numbered = translations.get(prefix + numberedIndex);
+            if (numbered == null) {
+                break;
+            }
+            lines.add(numbered);
+            numberedIndex++;
+        }
+
+        String usage = translations.get(prefix + "usage");
+        if (usage != null) {
+            if (!lines.isEmpty()) {
+                lines.add("");
+            }
+            lines.add(usage);
+        }
+
+        translations.entrySet().stream()
+                .filter(entry -> entry.getKey().startsWith(prefix + "example."))
+                .sorted(Map.Entry.comparingByKey())
+                .map(Map.Entry::getValue)
+                .forEach(lines::add);
+
+        if (!lines.isEmpty()) {
+            return lines;
+        }
+
+        return command.getLongDesc().stream()
+                .map(ShadowBaritoneI18n::tr)
+                .toList();
+    }
+
+    private static String getCommandKeyPrefix(ICommand command) {
+        String primaryName = command.getNames().isEmpty() ? "unknown" : command.getNames().get(0);
+        return "shadowbaritone.command." + primaryName.toLowerCase(Locale.ROOT);
     }
 
     private static String safeFormat(String pattern, Object... args) {
@@ -76,31 +126,64 @@ public final class ShadowBaritoneI18n {
         }
     }
 
-    public static ITextComponent trComponent(ITextComponent component) {
-        if (component == null) {
-            return null;
+    private static Map<String, String> getShadowbaritoneTranslations() {
+        Map<String, String> translations = shadowbaritoneTranslations;
+        if (translations != null) {
+            return translations;
         }
-
-        ITextComponent result;
-        if (component instanceof TextComponentString) {
-            TextComponentString text = (TextComponentString) component;
-            TextComponentString translated = new TextComponentString(tr(text.getText()));
-
-            Style style = component.getStyle().createShallowCopy();
-            HoverEvent hover = style.getHoverEvent();
-            if (hover != null && hover.getAction() == HoverEvent.Action.SHOW_TEXT && hover.getValue() != null) {
-                style.setHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, trComponent(hover.getValue())));
+        synchronized (ShadowBaritoneI18n.class) {
+            if (shadowbaritoneTranslations == null) {
+                shadowbaritoneTranslations = loadShadowbaritoneTranslations();
             }
-            translated.setStyle(style);
-            result = translated;
-        } else {
-            result = component.createCopy();
+            return shadowbaritoneTranslations;
         }
+    }
 
-        result.getSiblings().clear();
-        for (ITextComponent sibling : component.getSiblings()) {
-            result.appendSibling(trComponent(sibling));
+    private static Map<String, String> loadShadowbaritoneTranslations() {
+        Map<String, String> json = tryLoadJson("assets/shadowbaritone/lang/zh_cn.json");
+        if (!json.isEmpty()) {
+            return json;
         }
-        return result;
+        Map<String, String> lang = tryLoadLang("assets/shadowbaritone/lang/zh_cn.lang");
+        if (!lang.isEmpty()) {
+            return lang;
+        }
+        return Collections.emptyMap();
+    }
+
+    private static Map<String, String> tryLoadJson(String resourcePath) {
+        try (InputStream stream = ShadowBaritoneI18n.class.getClassLoader().getResourceAsStream(resourcePath)) {
+            if (stream == null) {
+                return Collections.emptyMap();
+            }
+            try (Reader reader = new InputStreamReader(stream, StandardCharsets.UTF_8)) {
+                Map<String, String> parsed = GSON.fromJson(reader, MAP_TYPE);
+                if (parsed == null || parsed.isEmpty()) {
+                    return Collections.emptyMap();
+                }
+                return Collections.unmodifiableMap(new LinkedHashMap<>(parsed));
+            }
+        } catch (Throwable ignored) {
+            return Collections.emptyMap();
+        }
+    }
+
+    private static Map<String, String> tryLoadLang(String resourcePath) {
+        try (InputStream stream = ShadowBaritoneI18n.class.getClassLoader().getResourceAsStream(resourcePath)) {
+            if (stream == null) {
+                return Collections.emptyMap();
+            }
+            Properties properties = new Properties();
+            try (Reader reader = new InputStreamReader(stream, StandardCharsets.UTF_8)) {
+                properties.load(reader);
+            }
+            Map<String, String> ordered = new LinkedHashMap<>();
+            for (String key : properties.stringPropertyNames()) {
+                ordered.put(key, properties.getProperty(key));
+            }
+            return Collections.unmodifiableMap(ordered);
+        } catch (Throwable ignored) {
+            return Collections.emptyMap();
+        }
     }
 }

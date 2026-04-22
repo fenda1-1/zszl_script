@@ -7,7 +7,10 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.zszl.zszlScriptMod.config.ModConfig;
+import com.zszl.zszlScriptMod.gui.packet.PacketFilterConfig;
+import com.zszl.zszlScriptMod.gui.packet.PacketInterceptConfig;
 import com.zszl.zszlScriptMod.gui.theme.ThemeConfigManager;
+import com.zszl.zszlScriptMod.utils.PacketFieldRuleManager;
 import com.zszl.zszlScriptMod.zszlScriptMod;
 
 import java.io.ByteArrayInputStream;
@@ -52,7 +55,42 @@ public final class ProfileShareCodeManager {
             "debuff_reports",
             "execution_logs"));
     private static final Map<String, ProfileFileSpec> PROFILE_FILE_SPECS = buildProfileFileSpecs();
-    private static final List<String> KNOWN_FILE_PATHS = buildKnownFilePaths();
+    private static final List<String> KNOWN_FILE_PATHS = Collections.unmodifiableList(Arrays.asList(
+            "ad_exp_panel_config.json",
+            "arena_config.json",
+            "auto_equip_sets_v5.json",
+            "auto_pickup_rules.json",
+            "auto_signin_online_config.json",
+            "auto_skills_v2.json",
+            "auto_stacking_config.json",
+            "auto_use_item_rules.json",
+            "autofollow_rules.json",
+            "baritone_settings.json",
+            "block_replacement_rules.json",
+            "chat_optimization.json",
+            "conditional_rules.json",
+            "custom_paths.json",
+            "debug_keybinds.json",
+            "dungeon_warehouse_config.json",
+            "filter_config.json",
+            "gui_themes.json",
+            "keybind_actions.json",
+            "keybinds_v2.json",
+            "keycommand_autoeat.json",
+            "keycommand_fastattack.json",
+            "keycommand_leaveconfig.json",
+            "kill_timer_config.json",
+            "loop_execution.json",
+            "mail_settings.json",
+            "packet_filter_config.json",
+            "packet_intercept_rules.json",
+            "packet_field_rules.json",
+            "path_categories.json",
+            "quick_exchange_config.json",
+            "scanner_settings.json",
+            "server_feature_visibility.json",
+            "shulker_mining_rebound_fix_config.json",
+            "warehouses.json"));
     private static final Map<String, Integer> KNOWN_FILE_INDEX = buildKnownFileIndex();
 
     private ProfileShareCodeManager() {
@@ -728,16 +766,52 @@ public final class ProfileShareCodeManager {
 
         ModConfig.loadAllConfigs();
 
+        boolean reloadThemes = false;
+        boolean reloadPacketFilter = false;
+        boolean reloadPacketIntercept = false;
+        boolean reloadPacketFieldRules = false;
+
         if (writtenFiles != null) {
             for (String file : writtenFiles) {
-                if ("gui_themes.json".equalsIgnoreCase(normalizeRelativePath(file))) {
-                    try {
-                        ThemeConfigManager.load();
-                    } catch (Exception e) {
-                        zszlScriptMod.LOGGER.warn("Failed to reload theme config after import", e);
-                    }
-                    break;
+                String normalized = normalizeRelativePath(file);
+                if ("gui_themes.json".equalsIgnoreCase(normalized)) {
+                    reloadThemes = true;
+                } else if ("packet_filter_config.json".equalsIgnoreCase(normalized)) {
+                    reloadPacketFilter = true;
+                } else if ("packet_intercept_rules.json".equalsIgnoreCase(normalized)) {
+                    reloadPacketIntercept = true;
+                } else if ("packet_field_rules.json".equalsIgnoreCase(normalized)) {
+                    reloadPacketFieldRules = true;
                 }
+            }
+        }
+
+        if (reloadThemes) {
+            try {
+                ThemeConfigManager.load();
+            } catch (Exception e) {
+                zszlScriptMod.LOGGER.warn("Failed to reload theme config after import", e);
+            }
+        }
+        if (reloadPacketFilter) {
+            try {
+                PacketFilterConfig.load();
+            } catch (Exception e) {
+                zszlScriptMod.LOGGER.warn("Failed to reload packet filter config after import", e);
+            }
+        }
+        if (reloadPacketIntercept) {
+            try {
+                PacketInterceptConfig.load();
+            } catch (Exception e) {
+                zszlScriptMod.LOGGER.warn("Failed to reload packet intercept config after import", e);
+            }
+        }
+        if (reloadPacketFieldRules) {
+            try {
+                PacketFieldRuleManager.reloadRules();
+            } catch (Exception e) {
+                zszlScriptMod.LOGGER.warn("Failed to reload packet field rules after import", e);
             }
         }
     }
@@ -1025,82 +1099,99 @@ public final class ProfileShareCodeManager {
     private static Map<String, ProfileFileSpec> buildProfileFileSpecs() {
         LinkedHashMap<String, ProfileFileSpec> specs = new LinkedHashMap<>();
 
-        registerKnownShareableFile(specs, "arena_config.json", "竞技场设置");
-        registerKnownShareableFile(specs, "auto_equip_sets_v5.json", "自动穿戴配置集");
-        registerKnownShareableFile(specs, "auto_pickup_rules.json", "自动拾取规则");
-        registerKnownShareableFile(specs, "auto_use_item_rules.json", "静默使用物品规则");
-        registerKnownShareableFile(specs, "autofollow_rules.json", "自动追怪规则");
-        registerKnownHiddenFile(specs, "baritone_settings.json", "旧版 Baritone 设置");
-        registerKnownShareableFile(specs, "block_replacement_rules.json", "区域方块替换规则");
-        registerKnownShareableFile(specs, "chat_optimization.json", "聊天框优化设置");
-        registerKnownShareableFile(specs, "conditional_rules.json", "条件执行规则");
-        registerKnownShareableFile(specs, "custom_paths.json", "自定义路径数据");
-        registerKnownShareableFile(specs, "debug_keybinds.json", "调试快捷键");
-        registerKnownShareableFile(specs, "dungeon_warehouse_config.json", "副本仓库设置");
-        registerKnownShareableFile(specs, "filter_config.json", "旧版过滤配置");
-        registerKnownShareableFile(specs, "gui_themes.json", "主题配置");
-        registerKnownShareableFile(specs, "keybind_actions.json", "快捷键动作配置");
-        registerKnownShareableFile(specs, "keybinds_v2.json", "快捷键绑定");
-        registerKnownShareableFile(specs, "keycommand_autoeat.json", "自动进食设置");
-        registerKnownShareableFile(specs, "keycommand_fastattack.json", "极限攻速设置");
-        registerKnownShareableFile(specs, "kill_timer_config.json", "杀怪数据面板设置");
-        registerKnownShareableFile(specs, "loop_execution.json", "循环执行设置");
-        registerKnownShareableFile(specs, "mail_settings.json", "邮件助手设置");
-        registerKnownShareableFile(specs, "node_editor_hotkeys.json", "节点编辑器快捷键");
-        registerKnownShareableFile(specs, "packet_filter_config.json", "数据包过滤设置");
-        registerKnownShareableFile(specs, "packet_intercept_rules.json", "数据包拦截规则");
-        registerKnownShareableFile(specs, "path_categories.json", "路径分类");
-        registerKnownShareableFile(specs, "scanner_settings.json", "地形扫描设置");
-        registerKnownShareableFile(specs, "server_feature_visibility.json", "服务器功能隐藏");
-        registerKnownShareableFile(specs, "shulker_mining_rebound_fix_config.json", "潜影盒回弹修复");
-        registerKnownShareableFile(specs, "warehouses.json", "智能仓库数据");
-
-        registerKnownShareableFile(specs, "auto_escape_rules.json", "自动逃跑规则");
-        registerKnownShareableFile(specs, "human_like_movement.json", "拟人移动设置");
-        registerKnownShareableFile(specs, "human_like_route_templates.json", "拟人路线模板");
-        registerKnownShareableFile(specs, "keycommand_auto_fishing.json", "自动钓鱼设置");
-        registerKnownShareableFile(specs, "keycommand_fly.json", "飞行设置");
-        registerKnownShareableFile(specs, "keycommand_killaura.json", "杀戮光环设置");
-        registerKnownShareableFile(specs, "keycommand_speed.json", "加速设置");
-        registerKnownShareableFile(specs, "legacy_action_templates.json", "动作模板");
-        registerKnownShareableFile(specs, "legacy_sequence_trigger_rules.json", "路径序列触发器规则");
-        registerKnownShareableFile(specs, "node_sequences.json", "节点序列");
-        registerKnownShareableFile(specs, "node_templates.json", "节点模板库");
-        registerKnownShareableFile(specs, "other_features_block.json", "其他功能-方块");
-        registerKnownShareableFile(specs, "other_features_item.json", "其他功能-物品");
-        registerKnownShareableFile(specs, "other_features_misc.json", "其他功能-杂项");
-        registerKnownShareableFile(specs, "other_features_movement.json", "其他功能-移动");
-        registerKnownShareableFile(specs, "other_features_render.json", "其他功能-渲染");
-        registerKnownShareableFile(specs, "other_features_world.json", "其他功能-世界");
-        registerKnownShareableFile(specs, "packet_field_rules.json", "数据包字段规则");
-        registerKnownShareableFile(specs, "path_safety_config.json", "路径安全设置");
-        registerKnownShareableFile(specs, "performance_monitor.json", "性能监控");
-        registerKnownShareableFile(specs, "shadowbaritone/setting.json", "ShadowBaritone 设置");
-
+        registerHiddenFile(specs, "ad_exp_panel_config.json", "经验数据面板设置");
+        registerHiddenFile(specs, "arena_config.json", "竞技场设置");
+        registerShareableFile(specs, "auto_equip_sets_v5.json", "自动穿戴配置集");
+        registerShareableFile(specs, "auto_escape_rules.json", "自动逃跑规则");
+        registerShareableFile(specs, "auto_pickup_rules.json", "自动拾取规则");
+        registerShareableFile(specs, "auto_signin_online_config.json", "签到/在线设置");
+        registerShareableFile(specs, "auto_skills_v2.json", "自动技能配置");
+        registerHiddenFile(specs, "auto_stacking_config.json", "旧版自动叠加配置");
+        registerShareableFile(specs, "auto_stacking_shulker.json", "自动潜影盒堆叠");
+        registerShareableFile(specs, "auto_use_item_rules.json", "静默使用物品规则");
+        registerShareableFile(specs, "autofollow_rules.json", "自动追怪规则");
         registerHiddenFile(specs, "baritone_command_table_state.json", "Baritone 指令表状态");
         registerHiddenFile(specs, "baritone_parkour_runtime.json", "Baritone 跑酷运行时状态");
+        registerHiddenFile(specs, "baritone_settings.json", "旧版 Baritone 设置");
+        registerShareableFile(specs, "block_replacement_rules.json", "区域方块替换规则");
+        registerShareableFile(specs, "chat_optimization.json", "聊天框优化设置");
+        registerShareableFile(specs, "conditional_rules.json", "条件执行规则");
+        registerShareableFile(specs, "custom_paths.json", "自定义路径数据");
+        registerShareableFile(specs, "debug_keybinds.json", "调试快捷键");
+        registerHiddenFile(specs, "dungeon_warehouse_config.json", "副本仓库设置");
+        registerShareableFile(specs, "filter_config.json", "旧版过滤配置");
+        registerShareableFile(specs, "freecam_fast_attack.json", "极限攻速设置");
         registerHiddenFile(specs, "gui_action_editor_preferences.json", "动作编辑器界面偏好");
         registerHiddenFile(specs, "gui_action_variable_manager_preferences.json", "动作全局变量界面偏好");
         registerHiddenFile(specs, "gui_path_manager_layout.json", "路径序列编辑器布局");
         registerHiddenFile(specs, "gui_profile_manager_layout.json", "配置管理界面布局");
+        registerShareableFile(specs, "gui_themes.json", "主题配置");
+        registerShareableFile(specs, "human_like_movement.json", "拟人移动设置");
+        registerShareableFile(specs, "human_like_route_templates.json", "拟人路线模板");
         registerHiddenFile(specs, "human_route_templates.json", "拟人路线模板（旧版）");
         registerHiddenFile(specs, "inventory_ui_layout.json", "主界面布局");
+        registerShareableFile(specs, "keybind_actions.json", "快捷键动作配置");
+        registerShareableFile(specs, "keybinds_v2.json", "快捷键绑定");
+        registerShareableFile(specs, "keycommand_auto_fishing.json", "自动钓鱼设置");
+        registerShareableFile(specs, "keycommand_autoeat.json", "自动进食设置");
+        registerHiddenFile(specs, "keycommand_fastattack.json", "旧版极限攻速设置");
+        registerShareableFile(specs, "keycommand_fly.json", "飞行设置");
+        registerShareableFile(specs, "keycommand_killaura.json", "杀戮光环设置");
+        registerShareableFile(specs, "keycommand_leaveconfig.json", "撤离/重进设置");
+        registerShareableFile(specs, "keycommand_speed.json", "加速设置");
+        registerShareableFile(specs, "kill_timer_config.json", "杀怪数据面板设置");
+        registerShareableFile(specs, "legacy_action_templates.json", "动作模板");
+        registerShareableFile(specs, "legacy_sequence_trigger_rules.json", "路径序列触发器规则");
+        registerShareableFile(specs, "loop_execution.json", "循环执行设置");
+        registerShareableFile(specs, "mail_settings.json", "邮件助手设置");
         registerHiddenFile(specs, "node_audit_log.json", "节点审计日志");
         registerHiddenFile(specs, "node_editor_drafts.json", "节点编辑器草稿");
+        registerHiddenFile(specs, "node_editor_hotkeys.json", "节点编辑器快捷键");
         registerHiddenFile(specs, "node_library_panel_state.json", "节点库面板状态");
+        registerHiddenFile(specs, "node_sequences.json", "节点序列");
+        registerHiddenFile(specs, "node_templates.json", "节点模板库");
+        registerShareableFile(specs, "other_features_block.json", "其他功能-方块");
+        registerShareableFile(specs, "other_features_item.json", "其他功能-物品");
+        registerShareableFile(specs, "other_features_misc.json", "其他功能-杂项");
+        registerShareableFile(specs, "other_features_movement.json", "其他功能-移动");
+        registerShareableFile(specs, "other_features_render.json", "其他功能-渲染");
+        registerShareableFile(specs, "other_features_speed.json", "其他功能-加速");
+        registerShareableFile(specs, "other_features_world.json", "其他功能-世界");
+        registerShareableFile(specs, "packet_field_rules.json", "数据包字段规则");
+        registerShareableFile(specs, "packet_filter_config.json", "数据包过滤设置");
+        registerShareableFile(specs, "packet_intercept_rules.json", "数据包拦截规则");
         registerHiddenFile(specs, "password_manager.json", "密码管理数据");
+        registerShareableFile(specs, "path_categories.json", "路径分类");
+        registerShareableFile(specs, "path_safety_config.json", "路径安全设置");
+        registerShareableFile(specs, "performance_monitor.json", "性能监控");
+        registerHiddenFile(specs, "quick_exchange_config.json", "快速兑换设置");
+        registerShareableFile(specs, "scanner_settings.json", "地形扫描设置");
+        registerShareableFile(specs, "server_feature_visibility.json", "服务器功能隐藏");
+        registerHiddenFile(specs, "shadowbaritone/setting.json", "ShadowBaritone 设置");
+        registerHiddenFile(specs, "shadowbaritone/settings.json", "ShadowBaritone 设置");
+        registerHiddenFile(specs, "shadowbatitone/setting.json", "ShadowBaritone 设置");
+        registerHiddenFile(specs, "shadowbatitone/settings.json", "ShadowBaritone 设置");
+        registerShareableFile(specs, "shulker_mining_rebound_fix_config.json", "潜影盒回弹修复");
+        registerShareableFile(specs, "warehouses.json", "智能仓库数据");
 
         return Collections.unmodifiableMap(specs);
     }
 
-    private static List<String> buildKnownFilePaths() {
-        List<String> paths = new ArrayList<>();
-        for (ProfileFileSpec spec : PROFILE_FILE_SPECS.values()) {
-            if (spec.knownFileId) {
-                paths.add(spec.relativePath);
-            }
-        }
-        return Collections.unmodifiableList(paths);
+    private static void registerShareableFile(Map<String, ProfileFileSpec> specs, String relativePath,
+            String displayName) {
+        registerFile(specs, relativePath, displayName, true);
+    }
+
+    private static void registerHiddenFile(Map<String, ProfileFileSpec> specs, String relativePath,
+            String displayName) {
+        registerFile(specs, relativePath, displayName, false);
+    }
+
+    private static void registerFile(Map<String, ProfileFileSpec> specs, String relativePath,
+            String displayName, boolean shareable) {
+        String normalizedPath = normalizeRelativePath(relativePath);
+        specs.put(normalizedPath.toLowerCase(Locale.ROOT),
+                new ProfileFileSpec(normalizedPath, displayName, shareable));
     }
 
     private static Map<String, Integer> buildKnownFileIndex() {
@@ -1109,28 +1200,6 @@ public final class ProfileShareCodeManager {
             index.put(KNOWN_FILE_PATHS.get(i).toLowerCase(Locale.ROOT), i + 1);
         }
         return Collections.unmodifiableMap(index);
-    }
-
-    private static void registerKnownShareableFile(Map<String, ProfileFileSpec> specs, String relativePath,
-            String displayName) {
-        registerFile(specs, relativePath, displayName, true, true);
-    }
-
-    private static void registerKnownHiddenFile(Map<String, ProfileFileSpec> specs, String relativePath,
-            String displayName) {
-        registerFile(specs, relativePath, displayName, false, true);
-    }
-
-    private static void registerHiddenFile(Map<String, ProfileFileSpec> specs, String relativePath,
-            String displayName) {
-        registerFile(specs, relativePath, displayName, false, false);
-    }
-
-    private static void registerFile(Map<String, ProfileFileSpec> specs, String relativePath,
-            String displayName, boolean shareable, boolean knownFileId) {
-        String normalizedPath = normalizeRelativePath(relativePath);
-        specs.put(normalizedPath.toLowerCase(Locale.ROOT),
-                new ProfileFileSpec(normalizedPath, displayName, shareable, knownFileId));
     }
 
     private static void writeUtf8(ByteArrayOutputStream output, String value) {
@@ -1211,13 +1280,11 @@ public final class ProfileShareCodeManager {
         private final String relativePath;
         private final String displayName;
         private final boolean shareable;
-        private final boolean knownFileId;
 
-        private ProfileFileSpec(String relativePath, String displayName, boolean shareable, boolean knownFileId) {
+        private ProfileFileSpec(String relativePath, String displayName, boolean shareable) {
             this.relativePath = relativePath == null ? "" : relativePath;
             this.displayName = displayName == null ? "" : displayName;
             this.shareable = shareable;
-            this.knownFileId = knownFileId;
         }
     }
 

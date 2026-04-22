@@ -34,3 +34,4 @@ public interface IEventBus extends IGameEventListener {
      */
     void registerEventListener(IGameEventListener listener);
 }
+

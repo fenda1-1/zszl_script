@@ -164,3 +164,4 @@ public final class ResourceLockManager {
         return value == null ? "" : value;
     }
 }
+

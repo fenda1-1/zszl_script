@@ -20,7 +20,7 @@ package com.zszl.zszlScriptMod.shadowbaritone.api.schematic.mask.operator;
 import com.zszl.zszlScriptMod.shadowbaritone.api.schematic.mask.AbstractMask;
 import com.zszl.zszlScriptMod.shadowbaritone.api.schematic.mask.Mask;
 import com.zszl.zszlScriptMod.shadowbaritone.api.schematic.mask.StaticMask;
-import net.minecraft.block.state.IBlockState;
+import net.minecraft.world.level.block.state.BlockState;
 
 /**
  * @author Brady
@@ -35,7 +35,7 @@ public final class NotMask extends AbstractMask {
     }
 
     @Override
-    public boolean partOfMask(int x, int y, int z, IBlockState currentState) {
+    public boolean partOfMask(int x, int y, int z, BlockState currentState) {
         return !this.source.partOfMask(x, y, z, currentState);
     }
 
@@ -54,3 +54,4 @@ public final class NotMask extends AbstractMask {
         }
     }
 }
+

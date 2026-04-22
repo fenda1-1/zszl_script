@@ -11,12 +11,12 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiScreen;
-import net.minecraft.util.text.TextComponentString;
-import net.minecraft.util.text.TextFormatting;
-import org.lwjgl.input.Keyboard;
-import org.lwjgl.input.Mouse;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.util.text.TextComponentString;
+import net.minecraft.ChatFormatting;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Keyboard;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Mouse;
 
 public class GuiPacketDetailViewer extends ThemedGuiScreen {
     private static final int BUTTON_BACK = 0;
@@ -125,7 +125,7 @@ public class GuiPacketDetailViewer extends ThemedGuiScreen {
     protected void actionPerformed(GuiButton button) throws IOException {
         switch (button.id) {
             case BUTTON_BACK:
-                this.mc.displayGuiScreen(parentScreen);
+                this.mc.setScreen(parentScreen);
                 break;
             case BUTTON_COPY_SELECTION:
                 copySelectionOrCurrent();
@@ -439,8 +439,8 @@ public class GuiPacketDetailViewer extends ThemedGuiScreen {
             return;
         }
 
-        int mouseX = Mouse.getEventX() * this.width / this.mc.displayWidth;
-        int mouseY = this.height - Mouse.getEventY() * this.height / this.mc.displayHeight - 1;
+        int mouseX = Mouse.getEventX() * this.width / Math.max(1, this.mc.getWindow().getScreenWidth());
+        int mouseY = this.height - Mouse.getEventY() * this.height / Math.max(1, this.mc.getWindow().getScreenHeight()) - 1;
         if (activeSection == ViewSection.HEX) {
             if (isInsideHexBytePanel(mouseX, mouseY)) {
                 if (wheel > 0) {
@@ -562,7 +562,7 @@ public class GuiPacketDetailViewer extends ThemedGuiScreen {
 
         switch (keyCode) {
             case Keyboard.KEY_ESCAPE:
-                this.mc.displayGuiScreen(parentScreen);
+                this.mc.setScreen(parentScreen);
                 return;
             case Keyboard.KEY_LEFT:
                 moveLeft(shift);
@@ -781,7 +781,7 @@ public class GuiPacketDetailViewer extends ThemedGuiScreen {
 
     private void toast(String text) {
         if (this.mc.player != null) {
-            this.mc.player.sendMessage(new TextComponentString(TextFormatting.GREEN + text));
+            this.mc.player.sendSystemMessage(new TextComponentString(ChatFormatting.GREEN + text));
         }
     }
 
@@ -1341,3 +1341,5 @@ public class GuiPacketDetailViewer extends ThemedGuiScreen {
         }
     }
 }
+
+

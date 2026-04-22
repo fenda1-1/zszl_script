@@ -21,7 +21,6 @@ import com.zszl.zszlScriptMod.shadowbaritone.api.IBaritone;
 import com.zszl.zszlScriptMod.shadowbaritone.api.command.Command;
 import com.zszl.zszlScriptMod.shadowbaritone.api.command.argument.IArgConsumer;
 import com.zszl.zszlScriptMod.shadowbaritone.api.command.exception.CommandException;
-import com.zszl.zszlScriptMod.shadowbaritone.api.utils.ShadowBaritoneI18n;
 
 import java.util.Arrays;
 import java.util.List;
@@ -35,19 +34,9 @@ public class LitematicaCommand extends Command {
 
     @Override
     public void execute(String label, IArgConsumer args) throws CommandException {
-        int schematic = 0;
-        if (args.hasAny()) {
-            args.requireMax(1);
-            if (args.is(Integer.class)) {
-                schematic = args.getAs(Integer.class) - 1;
-            }
-        }
-        try {
-            baritone.getBuilderProcess().buildOpenLitematic(schematic);
-        } catch (IndexOutOfBoundsException e) {
-            logDirect(ShadowBaritoneI18n.trKey(
-                    "shadowbaritone.command.litematica.error.valid_index"));
-        }
+        args.requireMax(1);
+        int schematic = args.hasAny() ? args.getAs(Integer.class) - 1 : 0;
+        baritone.getBuilderProcess().buildOpenLitematic(schematic);
     }
 
     @Override
@@ -57,21 +46,17 @@ public class LitematicaCommand extends Command {
 
     @Override
     public String getShortDesc() {
-        return ShadowBaritoneI18n.trKey(
-                "shadowbaritone.command.litematica.short_desc");
+        return "Builds the loaded schematic";
     }
 
     @Override
     public List<String> getLongDesc() {
         return Arrays.asList(
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.litematica.long_desc.1"),
+                "Build a schematic currently open in Litematica.",
                 "",
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.litematica.long_desc.usage"),
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.litematica.long_desc.example.default"),
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.litematica.long_desc.example.index"));
+                "Usage:",
+                "> litematica",
+                "> litematica <#>"
+        );
     }
 }

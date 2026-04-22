@@ -1,50 +1,48 @@
-// 文件路径: src/main/java/com/zszl/zszlScriptMod/utils/UpdateChecker.java
 package com.zszl.zszlScriptMod.utils;
 
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.util.text.TextComponentString;
 import com.zszl.zszlScriptMod.zszlScriptMod;
-import net.minecraft.client.resources.I18n;
-import org.jsoup.nodes.Document;
-import org.jsoup.nodes.Element;
+import net.minecraft.ChatFormatting;
+import net.minecraft.client.Minecraft;
 
-// 移除了不再需要的 java.net.* 和 java.io.* 包
 import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/**
- * 负责从指定URL异步获取和解析版本信息及更新日志。
- */
-public class UpdateChecker {
+public final class UpdateChecker {
 
     public static volatile String latestVersion = "...";
     public static volatile String changelogContent = I18n.format("msg.update_checker.fetching_changelog");
-    private static boolean hasFetched = false;
+
+    private static final String UPDATE_URL_KEY = "update_changelog.url";
+    private static final String MOBILE_USER_AGENT = SharechainPageParser.MOBILE_USER_AGENT;
+    private static final Pattern VERSION_PATTERN = Pattern.compile("\\[(v[\\d.]+)\\]");
+    private static final String CACHE_FILE = "update_changelog.md";
+    private static final String META_CACHE_FILE = "update_checker_meta.txt";
+    private static final long NOTICE_INTERVAL_MS = 60L * 60L * 1000L;
+
+    private static volatile boolean hasFetched = false;
     private static volatile boolean fetchInProgress = false;
     private static volatile long lastFetchTime = 0L;
     private static volatile long lastCheckRunTime = 0L;
     private static volatile long lastNoticeTime = 0L;
     private static volatile boolean metaLoaded = false;
 
-    private static final String UPDATE_URL_KEY = "update_changelog.url";
-    private static final String MOBILE_USER_AGENT = "Mozilla/5.0 (iPhone; CPU iPhone OS 13_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.1.1 Mobile/15E148 Safari/604.1";
-    private static final Pattern VERSION_PATTERN = Pattern.compile("\\[(v[\\d.]+)\\]");
-    private static final String CACHE_FILE = "update_changelog.md";
-    private static final String META_CACHE_FILE = "update_checker_meta.txt";
-    private static final long NOTICE_INTERVAL_MS = 60L * 60L * 1000L;
+    private UpdateChecker() {
+    }
 
-    /**
-     * 启动一个后台线程来获取版本和更新日志。
-     * 此方法是线程安全的，并且只会执行一次网络请求。
-     */
     public static void fetchVersionAndChangelog() {
         ensureMetaLoaded();
         if (hasFetched) {
             return;
         }
+
         String cached = CloudContentCache.readText(CACHE_FILE);
         if (!cached.isEmpty()) {
             applyParsedContent(cached);
         }
+
         hasFetched = true;
         forceRefresh();
     }
@@ -67,75 +65,44 @@ public class UpdateChecker {
         lastCheckRunTime = now;
         persistMeta();
 
-        new Thread(() -> {
+        Thread thread = new Thread(() -> {
             zszlScriptMod.LOGGER.info("[UpdateChecker] Background refresh thread started");
             try {
                 String updateUrl = SharechainLinkConfig.getRequiredUrl(UPDATE_URL_KEY);
                 zszlScriptMod.LOGGER.info("[UpdateChecker] Connecting to URL: {}", updateUrl);
 
-                // !! 核心修改：使用Jsoup直接连接和获取文档，让它自动处理编码 !!
-                Document doc = HttpsCompat.connect(updateUrl)
-                        .userAgent(MOBILE_USER_AGENT)
-                        .timeout(15000) // 15秒超时
-                        .get();
+                String rawText = SharechainPageParser.fetchBestMarkdown(updateUrl, MOBILE_USER_AGENT, 15000).trim();
 
-                Element noteContentDiv = doc.selectFirst("div.note-content");
-
-                if (noteContentDiv != null) {
-                    zszlScriptMod.LOGGER.info("[UpdateChecker] Found 'div.note-content' element");
-
-                    StringBuilder markdownBuilder = new StringBuilder();
-                    for (Element p : noteContentDiv.select("p")) {
-                        // Jsoup的 .text() 会解码HTML实体 (例如 &nbsp; 会变成空格)
-                        String lineText = p.text().replace("\u00a0", " "); // 将 &nbsp; 产生的特殊空格替换为普通空格
-                        markdownBuilder.append(lineText).append("\n");
-                    }
-                    String rawText = markdownBuilder.toString().trim();
-
-                    if (rawText.isEmpty()) {
-                        throw new Exception(I18n.format("msg.common.error.parsed_content_empty"));
-                    }
-
-                    zszlScriptMod.LOGGER.info("[UpdateChecker] Parsed markdown content length: {}", rawText.length());
-                    applyParsedContent(rawText);
-                    CloudContentCache.writeText(CACHE_FILE, rawText);
-                } else {
-                    zszlScriptMod.LOGGER.error(
-                            "[UpdateChecker] Critical: 'div.note-content' not found in response HTML; parse failed");
-                    throw new Exception(I18n.format("msg.common.error.note_content_missing"));
+                if (rawText.isEmpty()) {
+                    throw new Exception(I18n.format("msg.common.error.parsed_content_empty"));
                 }
 
-            } catch (Exception e) {
+                zszlScriptMod.LOGGER.info("[UpdateChecker] Parsed markdown content length: {} cache={}",
+                        rawText.length(), CloudContentCache.getCachePath(CACHE_FILE).toAbsolutePath());
+                applyParsedContent(rawText);
+                CloudContentCache.writeText(CACHE_FILE, rawText);
+            } catch (Throwable t) {
                 if (changelogContent == null || changelogContent.trim().isEmpty()
                         || changelogContent.equals(I18n.format("msg.update_checker.fetching_changelog"))) {
                     latestVersion = I18n.format("msg.common.fetch_failed");
-                    changelogContent = I18n.format("msg.update_checker.fetch_failed", e.getClass().getSimpleName(),
-                            e.getMessage());
+                    changelogContent = I18n.format("msg.update_checker.fetch_failed",
+                            t.getClass().getSimpleName(), safeMessage(t));
                 }
-                zszlScriptMod.LOGGER.error("Failed to fetch update information", e);
+                zszlScriptMod.LOGGER.error("Failed to fetch update information", t);
             } finally {
                 fetchInProgress = false;
             }
-        }, "UpdateChecker-Refresh").start();
-    }
-
-    private static void applyParsedContent(String rawText) {
-        changelogContent = rawText;
-        Matcher matcher = VERSION_PATTERN.matcher(rawText == null ? "" : rawText);
-        if (matcher.find()) {
-            latestVersion = matcher.group(1);
-            zszlScriptMod.LOGGER.info("[UpdateChecker] Latest version parsed: {}", latestVersion);
-        } else {
-            latestVersion = I18n.format("msg.common.unknown");
-            zszlScriptMod.LOGGER.warn("[UpdateChecker] Unable to parse version from content");
-        }
+        }, "UpdateChecker-Refresh");
+        thread.setDaemon(true);
+        thread.start();
     }
 
     public static void notifyIfNewVersion() {
         ensureMetaLoaded();
         requestRefreshIfDue(NOTICE_INTERVAL_MS);
 
-        if (latestVersion == null || latestVersion.equals("...")
+        if (latestVersion == null
+                || latestVersion.equals("...")
                 || latestVersion.equals(I18n.format("msg.common.unknown"))
                 || latestVersion.equals(I18n.format("msg.common.fetch_failed"))) {
             return;
@@ -150,12 +117,23 @@ public class UpdateChecker {
             persistMeta();
             zszlScriptMod.LOGGER.info(
                     "New script version detected. Click update script to update, or click version to view changelog.");
-            if (net.minecraft.client.Minecraft.getMinecraft().player != null) {
-                net.minecraft.client.Minecraft.getMinecraft().player.sendMessage(
-                        new net.minecraft.util.text.TextComponentString(
-                                net.minecraft.util.text.TextFormatting.YELLOW
-                                        + I18n.format("msg.update_checker.new_version_notice")));
+            Minecraft mc = Minecraft.getInstance();
+            if (mc.player != null) {
+                mc.player.sendSystemMessage(new TextComponentString(
+                        ChatFormatting.YELLOW + I18n.format("msg.update_checker.new_version_notice")));
             }
+        }
+    }
+
+    private static void applyParsedContent(String rawText) {
+        changelogContent = rawText;
+        Matcher matcher = VERSION_PATTERN.matcher(rawText == null ? "" : rawText);
+        if (matcher.find()) {
+            latestVersion = matcher.group(1);
+            zszlScriptMod.LOGGER.info("[UpdateChecker] Latest version parsed: {}", latestVersion);
+        } else {
+            latestVersion = I18n.format("msg.common.unknown");
+            zszlScriptMod.LOGGER.warn("[UpdateChecker] Unable to parse version from content");
         }
     }
 
@@ -201,5 +179,12 @@ public class UpdateChecker {
         } catch (Exception ignored) {
             return 0L;
         }
+    }
+
+    private static String safeMessage(Throwable throwable) {
+        if (throwable == null || throwable.getMessage() == null || throwable.getMessage().trim().isEmpty()) {
+            return throwable == null ? "" : throwable.getClass().getName();
+        }
+        return throwable.getMessage().trim();
     }
 }

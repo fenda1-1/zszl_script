@@ -31,66 +31,51 @@ import com.zszl.zszlScriptMod.shadowbaritone.api.event.events.*;
 public interface AbstractGameEventListener extends IGameEventListener {
 
     @Override
-    default void onTick(TickEvent event) {
-    }
+    default void onTick(TickEvent event) {}
 
     @Override
-    default void onPostTick(TickEvent event) {
-    }
+    default void onPostTick(TickEvent event) {}
 
     @Override
-    default void onPlayerUpdate(PlayerUpdateEvent event) {
-    }
+    default void onPlayerUpdate(PlayerUpdateEvent event) {}
 
     @Override
-    default void onSendChatMessage(ChatEvent event) {
-    }
+    default void onSendChatMessage(ChatEvent event) {}
 
     @Override
-    default void onPreTabComplete(TabCompleteEvent event) {
-    }
+    default void onPreTabComplete(TabCompleteEvent event) {}
 
     @Override
-    default void onChunkEvent(ChunkEvent event) {
-    }
+    default void onChunkEvent(ChunkEvent event) {}
 
     @Override
-    default void onBlockChange(BlockChangeEvent event) {
-    }
+    default void onBlockChange(BlockChangeEvent event) {}
 
     @Override
-    default void onRenderPass(RenderEvent event) {
-    }
+    default void onRenderPass(RenderEvent event) {}
 
     @Override
-    default void onWorldEvent(WorldEvent event) {
-    }
+    default void onWorldEvent(WorldEvent event) {}
 
     @Override
-    default void onSendPacket(PacketEvent event) {
-    }
+    default void onSendPacket(PacketEvent event) {}
 
     @Override
-    default void onReceivePacket(PacketEvent event) {
-    }
+    default void onReceivePacket(PacketEvent event) {}
 
     @Override
-    default void onPlayerRotationMove(RotationMoveEvent event) {
-    }
+    default void onPlayerRotationMove(RotationMoveEvent event) {}
 
     @Override
-    default void onPlayerSprintState(SprintStateEvent event) {
-    }
+    default void onPlayerSprintState(SprintStateEvent event) {}
 
     @Override
-    default void onBlockInteract(BlockInteractEvent event) {
-    }
+    default void onBlockInteract(BlockInteractEvent event) {}
 
     @Override
-    default void onPlayerDeath() {
-    }
+    default void onPlayerDeath() {}
 
     @Override
-    default void onPathEvent(PathEvent event) {
-    }
+    default void onPathEvent(PathEvent event) {}
 }
+

@@ -1,14 +1,19 @@
 package com.zszl.zszlScriptMod.gui.config;
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiScreen;
+
+import net.minecraft.client.Minecraft;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
 import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
-import net.minecraft.client.gui.GuiTextField;
-import net.minecraft.client.resources.I18n;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiTextField;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
+import com.mojang.blaze3d.platform.GlStateManager; // 导入 GlStateManager
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.util.text.TextComponentString;
 
 import java.io.IOException;
 
 import com.zszl.zszlScriptMod.gui.GuiInventory;
 import com.zszl.zszlScriptMod.config.LoopExecutionConfig;
+import com.zszl.zszlScriptMod.handlers.AutoEatHandler;
 import com.zszl.zszlScriptMod.utils.CapturingFontRenderer;
 import com.zszl.zszlScriptMod.gui.components.GuiTheme;
 
@@ -72,8 +77,8 @@ public class GuiLoopCountInput extends ThemedGuiScreen {
 
     @Override
     public void drawScreen(int mouseX, int mouseY, float partialTicks) {
-        if (mc.fontRenderer instanceof CapturingFontRenderer) {
-            ((CapturingFontRenderer) mc.fontRenderer).disableCapture();
+        if (new com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.FontRenderer(mc.font) instanceof CapturingFontRenderer) {
+            ((CapturingFontRenderer) new com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.FontRenderer(mc.font)).disableCapture();
         }
 
         try {
@@ -107,8 +112,8 @@ public class GuiLoopCountInput extends ThemedGuiScreen {
             super.drawScreen(mouseX, mouseY, partialTicks);
         } finally {
             // !! 关键：绘制完成后，无论是否发生异常，都要重新启用文本捕获 !!
-            if (mc.fontRenderer instanceof CapturingFontRenderer) {
-                ((CapturingFontRenderer) mc.fontRenderer).enableCapture();
+            if (new com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.FontRenderer(mc.font) instanceof CapturingFontRenderer) {
+                ((CapturingFontRenderer) new com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.FontRenderer(mc.font)).enableCapture();
             }
         }
     }
@@ -117,16 +122,16 @@ public class GuiLoopCountInput extends ThemedGuiScreen {
     protected void actionPerformed(GuiButton button) throws IOException {
         if (button.id == 0) { // 确认按钮
             setLoopCount();
-            mc.displayGuiScreen(parent);
+            mc.setScreen(parent);
         } else if (button.id == 1) { // 取消按钮
-            mc.displayGuiScreen(parent);
+            mc.setScreen(parent);
         } else if (button.id == 2) { // 无限循环按钮
             GuiInventory.loopCount = -1;
             LoopExecutionConfig.INSTANCE.loopCount = GuiInventory.loopCount;
             LoopExecutionConfig.save();
             statusMessage = I18n.format("gui.loop.status_infinite");
             messageDisplayTicks = 60;
-            mc.displayGuiScreen(parent);
+            mc.setScreen(parent);
         }
     }
 
@@ -158,3 +163,9 @@ public class GuiLoopCountInput extends ThemedGuiScreen {
         }
     }
 }
+
+
+
+
+
+

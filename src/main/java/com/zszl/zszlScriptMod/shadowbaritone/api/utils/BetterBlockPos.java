@@ -17,23 +17,18 @@
 
 package com.zszl.zszlScriptMod.shadowbaritone.api.utils;
 
-import net.minecraft.util.EnumFacing;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.MathHelper;
-import net.minecraft.util.math.Vec3i;
-
 import javax.annotation.Nonnull;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.core.Vec3i;
+import net.minecraft.util.Mth;
 
 /**
- * A better BlockPos that has fewer hash collisions (and slightly more
- * performant offsets)
+ * A better BlockPos that has fewer hash collisions (and slightly more performant offsets)
  * <p>
- * Is it really faster to subclass BlockPos and calculate a hash in the
- * constructor like this, taking everything into account?
+ * Is it really faster to subclass BlockPos and calculate a hash in the constructor like this, taking everything into account?
  * Yes. 20% faster actually. It's called BETTER BlockPos for a reason. Source:
- * <a href=
- * "https://docs.google.com/spreadsheets/d/1GWjOjOZINkg_0MkRgKRPH1kUzxjsnEROD9u3UFh_DJc">Benchmark
- * Spreadsheet</a>
+ * <a href="https://docs.google.com/spreadsheets/d/1GWjOjOZINkg_0MkRgKRPH1kUzxjsnEROD9u3UFh_DJc">Benchmark Spreadsheet</a>
  *
  * @author leijurv
  */
@@ -62,7 +57,7 @@ public final class BetterBlockPos extends BlockPos {
     }
 
     public BetterBlockPos(double x, double y, double z) {
-        this(MathHelper.floor(x), MathHelper.floor(y), MathHelper.floor(z));
+        this(Mth.floor(x), Mth.floor(y), Mth.floor(z));
     }
 
     public BetterBlockPos(BlockPos pos) {
@@ -70,8 +65,7 @@ public final class BetterBlockPos extends BlockPos {
     }
 
     /**
-     * Like constructor but returns null if pos is null, good if you just need to
-     * possibly censor coordinates
+     * Like constructor but returns null if pos is null, good if you just need to possibly censor coordinates
      *
      * @param pos The BlockPos, possibly null, to convert
      * @return A BetterBlockPos or null if pos was null
@@ -97,17 +91,15 @@ public final class BetterBlockPos extends BlockPos {
         // TODO use the same thing as BlockPos.fromLong();
         // invertibility would be incredibly useful
         /*
-         * This is the hashcode implementation of Vec3i (the superclass of the class
-         * which I shall not name)
+         *   This is the hashcode implementation of Vec3i (the superclass of the class which I shall not name)
          *
-         * public int hashCode() {
-         * return (this.getY() + this.getZ() * 31) * 31 + this.getX();
-         * }
+         *   public int hashCode() {
+         *       return (this.getY() + this.getZ() * 31) * 31 + this.getX();
+         *   }
          *
-         * That is terrible and has tons of collisions and makes the HashMap terribly
-         * inefficient.
+         *   That is terrible and has tons of collisions and makes the HashMap terribly inefficient.
          *
-         * That's why we grab out the X, Y, Z and calculate our own hashcode
+         *   That's why we grab out the X, Y, Z and calculate our own hashcode
          */
         long hash = 3241;
         hash = 3457689L * hash + x;
@@ -132,52 +124,49 @@ public final class BetterBlockPos extends BlockPos {
     }
 
     @Override
-    public BetterBlockPos up() {
+    public BetterBlockPos above() {
         // this is unimaginably faster than blockpos.up
         // that literally calls
         // this.up(1)
-        // which calls this.offset(EnumFacing.UP, 1)
-        // which does return n == 0 ? this : new BlockPos(this.getX() +
-        // facing.getXOffset() * n, this.getY() + facing.getYOffset() * n, this.getZ() +
-        // facing.getZOffset() * n);
+        // which calls this.offset(Direction.UP, 1)
+        // which does return n == 0 ? this : new BlockPos(this.getX() + facing.getXOffset() * n, this.getY() + facing.getYOffset() * n, this.getZ() + facing.getZOffset() * n);
 
-        // how many function calls is that? up(), up(int), offset(EnumFacing, int), new
-        // BlockPos, getX, getXOffset, getY, getYOffset, getZ, getZOffset
+        // how many function calls is that? up(), up(int), offset(Direction, int), new BlockPos, getX, getXOffset, getY, getYOffset, getZ, getZOffset
         // that's ten.
         // this is one function call.
         return new BetterBlockPos(x, y + 1, z);
     }
 
     @Override
-    public BetterBlockPos up(int amt) {
+    public BetterBlockPos above(int amt) {
         // see comment in up()
         return amt == 0 ? this : new BetterBlockPos(x, y + amt, z);
     }
 
     @Override
-    public BetterBlockPos down() {
+    public BetterBlockPos below() {
         // see comment in up()
         return new BetterBlockPos(x, y - 1, z);
     }
 
     @Override
-    public BetterBlockPos down(int amt) {
+    public BetterBlockPos below(int amt) {
         // see comment in up()
         return amt == 0 ? this : new BetterBlockPos(x, y - amt, z);
     }
 
     @Override
-    public BetterBlockPos offset(EnumFacing dir) {
-        Vec3i vec = dir.getDirectionVec();
+    public BetterBlockPos relative(Direction dir) {
+        Vec3i vec = dir.getNormal();
         return new BetterBlockPos(x + vec.getX(), y + vec.getY(), z + vec.getZ());
     }
 
     @Override
-    public BetterBlockPos offset(EnumFacing dir, int dist) {
+    public BetterBlockPos relative(Direction dir, int dist) {
         if (dist == 0) {
             return this;
         }
-        Vec3i vec = dir.getDirectionVec();
+        Vec3i vec = dir.getNormal();
         return new BetterBlockPos(x + vec.getX() * dist, y + vec.getY() * dist, z + vec.getZ() * dist);
     }
 
@@ -242,7 +231,8 @@ public final class BetterBlockPos extends BlockPos {
                 "BetterBlockPos{x=%s,y=%s,z=%s}",
                 SettingsUtil.maybeCensor(x),
                 SettingsUtil.maybeCensor(y),
-                SettingsUtil.maybeCensor(z));
+                SettingsUtil.maybeCensor(z)
+        );
     }
 
     public static long serializeToLong(final int x, final int y, final int z) {
@@ -256,3 +246,4 @@ public final class BetterBlockPos extends BlockPos {
         return new BetterBlockPos(x, y, z);
     }
 }
+

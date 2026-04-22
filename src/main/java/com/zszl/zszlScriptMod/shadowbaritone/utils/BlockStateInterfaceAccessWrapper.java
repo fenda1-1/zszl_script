@@ -17,77 +17,52 @@
 
 package com.zszl.zszlScriptMod.shadowbaritone.utils;
 
-import net.minecraft.block.material.Material;
-import net.minecraft.block.state.IBlockState;
-import net.minecraft.init.Biomes;
-import net.minecraft.tileentity.TileEntity;
-import net.minecraft.util.EnumFacing;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.world.IBlockAccess;
-import net.minecraft.world.WorldType;
-import net.minecraft.world.biome.Biome;
-
 import javax.annotation.Nullable;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.BlockGetter;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.material.FluidState;
 
 /**
  * @author Brady
  * @since 11/5/2019
  */
 @SuppressWarnings("NullableProblems")
-public final class BlockStateInterfaceAccessWrapper implements IBlockAccess {
+public final class BlockStateInterfaceAccessWrapper implements BlockGetter {
 
     private final BlockStateInterface bsi;
-    private final IBlockAccess world;
 
-    BlockStateInterfaceAccessWrapper(BlockStateInterface bsi, IBlockAccess world) {
+    BlockStateInterfaceAccessWrapper(BlockStateInterface bsi) {
         this.bsi = bsi;
-        this.world = world;
     }
 
     @Nullable
     @Override
-    public TileEntity getTileEntity(BlockPos pos) {
+    public BlockEntity getBlockEntity(BlockPos pos) {
         return null;
     }
 
     @Override
-    public int getCombinedLight(BlockPos pos, int lightValue) {
-        return 0;
-    }
-
-    @Override
-    public IBlockState getBlockState(BlockPos pos) {
+    public BlockState getBlockState(BlockPos pos) {
         // BlockStateInterface#get0(BlockPos) btfo!
         return this.bsi.get0(pos.getX(), pos.getY(), pos.getZ());
     }
 
     @Override
-    public boolean isAirBlock(BlockPos pos) {
-        return this.bsi.get0(pos.getX(), pos.getY(), pos.getZ()).getMaterial() == Material.AIR;
+    public FluidState getFluidState(BlockPos blockPos) {
+        return getBlockState(blockPos).getFluidState();
     }
 
     @Override
-    public Biome getBiome(BlockPos pos) {
-        return Biomes.FOREST;
+    public int getHeight() {
+        return bsi.world.getHeight();
     }
 
     @Override
-    public int getStrongPower(BlockPos pos, EnumFacing direction) {
-        return 0;
+    public int getMinBuildHeight() {
+        return bsi.world.getMinBuildHeight();
     }
 
-    @Override
-    public boolean isSideSolid(BlockPos pos, EnumFacing side, boolean _default) {
-        IBlockState state = this.bsi.get0(pos.getX(), pos.getY(), pos.getZ());
-        try {
-            return state.isSideSolid(this, pos, side);
-        } catch (Throwable ignored) {
-            return this.world.isSideSolid(pos, side, _default);
-        }
-    }
-
-    @Override
-    public WorldType getWorldType() {
-        return this.world.getWorldType();
-    }
 }
+

@@ -21,12 +21,12 @@ import com.zszl.zszlScriptMod.shadowbaritone.Baritone;
 import com.zszl.zszlScriptMod.shadowbaritone.api.cache.ICachedWorld;
 import com.zszl.zszlScriptMod.shadowbaritone.api.cache.IWaypointCollection;
 import com.zszl.zszlScriptMod.shadowbaritone.api.cache.IWorldData;
+import net.minecraft.world.level.dimension.DimensionType;
 
 import java.nio.file.Path;
 
 /**
- * Data about a world, from baritone's point of view. Includes cached chunks,
- * waypoints, and map data.
+ * Data about a world, from baritone's point of view. Includes cached chunks, waypoints, and map data.
  *
  * @author leijurv
  */
@@ -34,11 +34,11 @@ public class WorldData implements IWorldData {
 
     public final CachedWorld cache;
     private final WaypointCollection waypoints;
-    // public final MapData map;
+    //public final MapData map;
     public final Path directory;
-    public final int dimension;
+    public final DimensionType dimension;
 
-    WorldData(Path directory, int dimension) {
+    WorldData(Path directory, DimensionType dimension) {
         this.directory = directory;
         this.cache = new CachedWorld(directory.resolve("cache"), dimension);
         this.waypoints = new WaypointCollection(directory.resolve("waypoints"));
@@ -62,3 +62,4 @@ public class WorldData implements IWorldData {
         return this.waypoints;
     }
 }
+

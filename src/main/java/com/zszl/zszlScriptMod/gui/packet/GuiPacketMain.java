@@ -5,10 +5,10 @@ import com.zszl.zszlScriptMod.gui.components.ThemedButton;
 import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
 import com.zszl.zszlScriptMod.gui.components.ToggleGuiButton;
 import com.zszl.zszlScriptMod.utils.PacketCaptureHandler;
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiScreen;
-import net.minecraft.client.resources.I18n;
-import org.lwjgl.input.Mouse;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Mouse;
 
 import java.awt.Rectangle;
 import java.io.IOException;
@@ -112,7 +112,7 @@ public class GuiPacketMain extends ThemedGuiScreen {
                 I18n.format("gui.packet.main.mode", modeState));
         this.buttonList.add(modeButton);
 
-        String businessState = snapshot.businessProcessingEnabled ? "§aON" : "§cOFF";
+        String businessState = snapshot.businessPacketProcessingEnabled ? "§aON" : "§cOFF";
         this.buttonList.add(new ThemedButton(10, contentX, contentY, contentWidth, BUTTON_HEIGHT,
                 "业务链 " + businessState));
         this.buttonList.add(new ThemedButton(5, contentX, contentY, contentWidth, BUTTON_HEIGHT,
@@ -138,11 +138,11 @@ public class GuiPacketMain extends ThemedGuiScreen {
         this.buttonList.add(new ThemedButton(4, contentX, contentY, contentWidth, BUTTON_HEIGHT,
                 I18n.format("gui.common.back")));
 
-        String samplingState = snapshot.adaptiveSamplingEnabled
+        String samplingState = snapshot.samplingModulo > 1
                 ? "1/" + Math.max(1, snapshot.samplingModulo)
                 : "OFF";
         captureSummary = PacketCaptureHandler.isCapturing ? "采集中" : "已停止";
-        businessSummary = snapshot.businessProcessingEnabled ? "业务链已启用" : "业务链已暂停";
+        businessSummary = snapshot.businessPacketProcessingEnabled ? "业务链已启用" : "业务链已暂停";
         queueSummary = "队列 " + snapshot.queueSize + " | 采样 " + samplingState + " | 丢弃 " + snapshot.droppedCount;
         footerSummary = "发送 " + snapshot.sentCount + " / 接收 " + snapshot.receivedCount;
 
@@ -340,8 +340,8 @@ public class GuiPacketMain extends ThemedGuiScreen {
             return;
         }
 
-        int mouseX = Mouse.getEventX() * this.width / this.mc.displayWidth;
-        int mouseY = this.height - Mouse.getEventY() * this.height / this.mc.displayHeight - 1;
+        int mouseX = Mouse.getEventX() * this.width / Math.max(1, this.mc.getWindow().getScreenWidth());
+        int mouseY = this.height - Mouse.getEventY() * this.height / Math.max(1, this.mc.getWindow().getScreenHeight()) - 1;
 
         if (!isInsideContent(mouseX, mouseY) || maxScroll <= 0) {
             return;
@@ -363,23 +363,23 @@ public class GuiPacketMain extends ThemedGuiScreen {
                 initGui();
                 break;
             case 1:
-                mc.displayGuiScreen(new GuiPacketViewer(this));
+                mc.setScreen(new GuiPacketViewer(this));
                 break;
             case 2:
                 PacketCaptureHandler.clearAllPackets();
                 initGui();
                 break;
             case 3:
-                mc.displayGuiScreen(new GuiPacketSequenceEditor(this, new ArrayList<>()));
+                mc.setScreen(new GuiPacketSequenceEditor(this, new ArrayList<>()));
                 break;
             case 4:
-                mc.displayGuiScreen(parentScreen);
+                mc.setScreen(parentScreen);
                 break;
             case 5:
-                mc.displayGuiScreen(new GuiPacketFilter(this));
+                mc.setScreen(new GuiPacketFilter(this));
                 break;
             case 6:
-                mc.displayGuiScreen(new GuiPacketSequenceManager(this));
+                mc.setScreen(new GuiPacketSequenceManager(this));
                 break;
             case 7:
                 PacketFilterConfig.INSTANCE.captureMode = PacketFilterConfig.INSTANCE.captureMode.next();
@@ -387,10 +387,10 @@ public class GuiPacketMain extends ThemedGuiScreen {
                 initGui();
                 break;
             case 8:
-                mc.displayGuiScreen(new GuiCapturedIdViewer(this));
+                mc.setScreen(new GuiCapturedIdViewer(this));
                 break;
             case 9:
-                mc.displayGuiScreen(new GuiPacketInterceptRules(this));
+                mc.setScreen(new GuiPacketInterceptRules(this));
                 break;
             case 10:
                 PacketFilterConfig.INSTANCE.enableBusinessPacketProcessing = !PacketFilterConfig.INSTANCE.enableBusinessPacketProcessing;
@@ -398,7 +398,7 @@ public class GuiPacketMain extends ThemedGuiScreen {
                 initGui();
                 break;
             case 11:
-                mc.displayGuiScreen(new GuiPacketFieldRules(this));
+                mc.setScreen(new GuiPacketFieldRules(this));
                 break;
             default:
                 break;
@@ -536,7 +536,7 @@ public class GuiPacketMain extends ThemedGuiScreen {
                 return "切换业务链处理中心。\n"
                         + "开启后会让抓包系统继续执行捕获ID、字段提取等后续业务逻辑。\n"
                         + "关闭后只保留基础抓包，不再触发这些业务处理。\n"
-                        + "当前状态: " + (snapshot.businessProcessingEnabled ? "已启用" : "已暂停");
+                        + "当前状态: " + (snapshot.businessPacketProcessingEnabled ? "已启用" : "已暂停");
             case 11:
                 return "打开字段提取规则。\n"
                         + "可从数据包 HEX 或解码文本中提取字段，生成变量或供其它系统联动使用。";
@@ -555,3 +555,5 @@ public class GuiPacketMain extends ThemedGuiScreen {
                 && mouseY >= contentY && mouseY <= contentY + contentHeight;
     }
 }
+
+

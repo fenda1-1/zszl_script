@@ -1,65 +1,65 @@
 package com.zszl.zszlScriptMod.otherfeatures.handler.misc.runtime;
 
+import com.zszl.zszlScriptMod.otherfeatures.handler.misc.MiscFeatureManager;
 import com.zszl.zszlScriptMod.zszlScriptMod;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiDisconnected;
-import net.minecraft.client.gui.GuiMainMenu;
-import net.minecraft.client.multiplayer.GuiConnecting;
+import net.minecraft.client.gui.screens.ConnectScreen;
+import net.minecraft.client.gui.screens.DisconnectedScreen;
+import net.minecraft.client.gui.screens.TitleScreen;
 import net.minecraft.client.multiplayer.ServerData;
+import net.minecraft.client.multiplayer.resolver.ServerAddress;
 
 public final class AutoReconnectRuntime {
 
-    private ServerData pendingReconnectServer = null;
-    private int reconnectDelayTicks = 0;
-    private int reconnectKeepAliveTicks = 0;
-    private int reconnectAttemptCount = 0;
+    private ServerData pendingReconnectServer;
+    private int reconnectDelayTicks;
+    private int reconnectKeepAliveTicks;
+    private int reconnectAttemptCount;
 
-    public void onClientDisconnected(Minecraft mc, boolean featureEnabled, int reconnectDelayTicks) {
+    public void onClientDisconnected(Minecraft mc, boolean featureEnabled, int retryDelayTicks) {
         if (!featureEnabled || mc == null || mc.isSingleplayer()) {
             clearState();
             return;
         }
 
-        ServerData current = mc.getCurrentServerData();
-        if (current == null || current.serverIP == null || current.serverIP.trim().isEmpty()) {
+        ServerData current = mc.getCurrentServer();
+        if (current == null || current.ip == null || current.ip.trim().isEmpty()) {
             clearState();
             return;
         }
 
-        this.pendingReconnectServer = new ServerData(current.serverName, current.serverIP, false);
-        this.reconnectDelayTicks = reconnectDelayTicks;
+        this.pendingReconnectServer = new ServerData(current.name, current.ip, false);
+        this.reconnectDelayTicks = Math.max(5, retryDelayTicks);
         this.reconnectKeepAliveTicks = 200;
         this.reconnectAttemptCount = 0;
     }
 
-    public void onClientConnected() {
-        clearState();
-    }
-
-    public void tick(boolean featureEnabled, boolean infiniteAttempts, int maxAttempts, int retryDelayTicks, Minecraft mc) {
+    public void tick(Minecraft mc, boolean featureEnabled, int retryDelayTicks, int maxAttempts, boolean infiniteAttempts) {
         if (!featureEnabled || this.pendingReconnectServer == null || mc == null) {
             return;
         }
-        if (mc.player != null && mc.world != null) {
+        if (mc.player != null && mc.level != null) {
             clearState();
             return;
         }
-        if (mc.currentScreen instanceof GuiConnecting) {
+        if (mc.screen instanceof ConnectScreen) {
             return;
         }
-        if (mc.currentScreen instanceof GuiDisconnected) {
+        if (mc.screen instanceof DisconnectedScreen) {
             if (this.reconnectDelayTicks > 0) {
                 this.reconnectDelayTicks--;
                 return;
             }
-            if (!infiniteAttempts && this.reconnectAttemptCount >= maxAttempts) {
+            if (!infiniteAttempts && this.reconnectAttemptCount >= Math.max(1, maxAttempts)) {
                 clearState();
                 return;
             }
             try {
-                mc.displayGuiScreen(new GuiConnecting(new GuiMainMenu(), mc, this.pendingReconnectServer));
+                ConnectScreen.startConnecting(new TitleScreen(), mc,
+                        ServerAddress.parseString(this.pendingReconnectServer.ip),
+                        this.pendingReconnectServer, false);
                 this.reconnectAttemptCount++;
-                this.reconnectDelayTicks = retryDelayTicks;
+                this.reconnectDelayTicks = Math.max(5, retryDelayTicks);
             } catch (Exception e) {
                 zszlScriptMod.LOGGER.debug("自动重连执行失败", e);
                 clearState();
@@ -73,22 +73,15 @@ public final class AutoReconnectRuntime {
         clearState();
     }
 
+    public MiscFeatureManager.ServerReconnectState snapshot() {
+        return new MiscFeatureManager.ServerReconnectState(this.pendingReconnectServer != null,
+                this.reconnectDelayTicks, this.reconnectAttemptCount);
+    }
+
     public void clearState() {
         this.pendingReconnectServer = null;
         this.reconnectDelayTicks = 0;
         this.reconnectKeepAliveTicks = 0;
         this.reconnectAttemptCount = 0;
-    }
-
-    public ServerData getPendingReconnectServer() {
-        return this.pendingReconnectServer;
-    }
-
-    public int getReconnectDelayTicks() {
-        return this.reconnectDelayTicks;
-    }
-
-    public int getReconnectAttemptCount() {
-        return this.reconnectAttemptCount;
     }
 }

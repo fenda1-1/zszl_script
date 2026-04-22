@@ -17,13 +17,11 @@
 
 package com.zszl.zszlScriptMod.shadowbaritone.utils.pathing;
 
-import net.minecraft.world.border.WorldBorder;
+import net.minecraft.world.level.border.WorldBorder;
 
 /**
- * Essentially, a "rule" for the path finder, prevents proposed movements from
- * attempting to venture
- * into the world border, and prevents actual movements from placing blocks in
- * the world border.
+ * Essentially, a "rule" for the path finder, prevents proposed movements from attempting to venture
+ * into the world border, and prevents actual movements from placing blocks in the world border.
  */
 public class BetterWorldBorder {
 
@@ -33,10 +31,10 @@ public class BetterWorldBorder {
     private final double maxZ;
 
     public BetterWorldBorder(WorldBorder border) {
-        this.minX = border.minX();
-        this.maxX = border.maxX();
-        this.minZ = border.minZ();
-        this.maxZ = border.maxZ();
+        this.minX = border.getMinX();
+        this.maxX = border.getMaxX();
+        this.minZ = border.getMinZ();
+        this.maxZ = border.getMaxZ();
     }
 
     public boolean entirelyContains(int x, int z) {
@@ -45,9 +43,9 @@ public class BetterWorldBorder {
 
     public boolean canPlaceAt(int x, int z) {
         // move it in 1 block on all sides
-        // because we can't place a block at the very edge against a block outside the
-        // border
+        // because we can't place a block at the very edge against a block outside the border
         // it won't let us right click it
         return x > minX && x + 1 < maxX && z > minZ && z + 1 < maxZ;
     }
 }
+

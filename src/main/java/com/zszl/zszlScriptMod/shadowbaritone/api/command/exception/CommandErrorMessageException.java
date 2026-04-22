@@ -27,3 +27,4 @@ public abstract class CommandErrorMessageException extends CommandException {
         super(reason, cause);
     }
 }
+

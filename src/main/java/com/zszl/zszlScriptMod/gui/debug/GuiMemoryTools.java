@@ -1,11 +1,12 @@
 // 文件路径: src/main/java/com/zszl/zszlScriptMod/gui/debug/GuiMemoryTools.java
 package com.zszl.zszlScriptMod.gui.debug;
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiScreen;
+
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
 import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
-import net.minecraft.client.resources.I18n;
-import net.minecraft.util.text.TextComponentString;
-import net.minecraft.util.text.TextFormatting;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.util.text.TextComponentString;
+import net.minecraft.ChatFormatting;
 
 import java.io.IOException;
 import com.zszl.zszlScriptMod.gui.components.GuiTheme;
@@ -35,21 +36,30 @@ public class GuiMemoryTools extends ThemedGuiScreen {
 
     @Override
     protected void actionPerformed(GuiButton button) throws IOException {
+        if (mc.player == null) {
+            if (button.id == 2) {
+                mc.setScreen(parentScreen);
+            }
+            return;
+        }
+
         switch (button.id) {
             case 0: // Force GC
                 long memBefore = (Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory()) / 1024 / 1024;
                 System.gc();
                 long memAfter = (Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory()) / 1024 / 1024;
-                mc.player.sendMessage(new TextComponentString(TextFormatting.GREEN
+                mc.player.sendSystemMessage(new TextComponentString(ChatFormatting.GREEN
                         + I18n.format("msg.memory.tools.gc_done", memBefore, memAfter)));
                 break;
             case 1: // Reload Chunks
-                mc.player.sendMessage(new TextComponentString(
-                        TextFormatting.YELLOW + I18n.format("msg.memory.tools.reloading_chunks")));
-                mc.renderGlobal.loadRenderers();
+                mc.player.sendSystemMessage(new TextComponentString(
+                        ChatFormatting.YELLOW + I18n.format("msg.memory.tools.reloading_chunks")));
+                if (mc.levelRenderer != null) {
+                    mc.levelRenderer.allChanged();
+                }
                 break;
             case 2: // 返回
-                mc.displayGuiScreen(parentScreen);
+                mc.setScreen(parentScreen);
                 break;
         }
     }
@@ -69,4 +79,10 @@ public class GuiMemoryTools extends ThemedGuiScreen {
         super.drawScreen(mouseX, mouseY, partialTicks);
     }
 }
+
+
+
+
+
+
 

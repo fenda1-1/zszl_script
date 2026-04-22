@@ -3,12 +3,12 @@
 
 package com.zszl.zszlScriptMod.gui.path;
 
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
 import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
 import com.zszl.zszlScriptMod.gui.components.ThemedButton;
-import net.minecraft.client.resources.I18n;
-import org.lwjgl.input.Mouse;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Mouse;
 
 import com.zszl.zszlScriptMod.gui.components.GuiTextInput;
 import com.zszl.zszlScriptMod.path.PathSequenceManager;
@@ -16,7 +16,7 @@ import com.zszl.zszlScriptMod.path.PathSequenceManager;
 import java.io.IOException;
 import java.util.List;
 import com.zszl.zszlScriptMod.gui.components.GuiTheme;
-import net.minecraft.util.math.MathHelper;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.util.math.MathHelper;
 
 public class GuiCategoryManager extends ThemedGuiScreen {
 
@@ -123,26 +123,26 @@ public class GuiCategoryManager extends ThemedGuiScreen {
     protected void actionPerformed(GuiButton button) throws IOException {
         switch (button.id) {
             case 0: // 新增
-                mc.displayGuiScreen(new GuiTextInput(this, I18n.format("gui.path.input_new_category"), newName -> {
+                mc.setScreen(new GuiTextInput(this, I18n.format("gui.path.input_new_category"), newName -> {
                     if (newName != null && !newName.trim().isEmpty()) {
                         PathSequenceManager.addCategory(newName.trim());
                         this.categories = PathSequenceManager.getAllCategories();
                         selectedCategoryIndex = categories.indexOf(newName.trim());
                     }
-                    mc.displayGuiScreen(this);
+                    mc.setScreen(this);
                 }));
                 break;
             case 1: // 重命名
                 if (btnRename.enabled) {
                     String oldName = categories.get(selectedCategoryIndex);
-                    mc.displayGuiScreen(
+                    mc.setScreen(
                             new GuiTextInput(this, I18n.format("gui.path.input_rename_category"), oldName, newName -> {
                                 if (newName != null && !newName.trim().isEmpty() && !oldName.equals(newName)) {
                                     PathSequenceManager.renameCategory(oldName, newName.trim());
                                     this.categories = PathSequenceManager.getAllCategories();
                                     selectedCategoryIndex = categories.indexOf(newName.trim());
                                 }
-                                mc.displayGuiScreen(this);
+                                mc.setScreen(this);
                             }));
                 }
                 break;
@@ -158,10 +158,10 @@ public class GuiCategoryManager extends ThemedGuiScreen {
                 // ========修改开始==========
                 // !! 核心修复：在返回父界面之前，将其标记为“脏”，以便刷新数据 !!
                 if (this.parentScreen instanceof GuiPathManager) {
-                    ((GuiPathManager) this.parentScreen).requestReloadFromManager();
+                    ((GuiPathManager) this.parentScreen).markDirty();
                 }
                 // ==========修改结束===========
-                mc.displayGuiScreen(parentScreen);
+                mc.setScreen(parentScreen);
                 break;
             case 4: // 隐藏/显示
                 if (selectedCategoryIndex >= 0 && selectedCategoryIndex < categories.size()) {
@@ -262,3 +262,9 @@ public class GuiCategoryManager extends ThemedGuiScreen {
         }
     }
 }
+
+
+
+
+
+

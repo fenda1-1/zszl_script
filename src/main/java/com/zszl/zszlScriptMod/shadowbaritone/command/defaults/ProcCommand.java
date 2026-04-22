@@ -25,7 +25,6 @@ import com.zszl.zszlScriptMod.shadowbaritone.api.command.exception.CommandInvali
 import com.zszl.zszlScriptMod.shadowbaritone.api.pathing.calc.IPathingControlManager;
 import com.zszl.zszlScriptMod.shadowbaritone.api.process.IBaritoneProcess;
 import com.zszl.zszlScriptMod.shadowbaritone.api.process.PathingCommand;
-import com.zszl.zszlScriptMod.shadowbaritone.api.utils.ShadowBaritoneI18n;
 
 import java.util.Arrays;
 import java.util.List;
@@ -43,11 +42,14 @@ public class ProcCommand extends Command {
         IPathingControlManager pathingControlManager = baritone.getPathingControlManager();
         IBaritoneProcess process = pathingControlManager.mostRecentInControl().orElse(null);
         if (process == null) {
-            throw new CommandInvalidStateException(ShadowBaritoneI18n.trKey(
-                    "shadowbaritone.command.proc.error.no_process"));
+            throw new CommandInvalidStateException("No process in control");
         }
-        logDirect(ShadowBaritoneI18n.trKey(
-                "shadowbaritone.command.proc.status.process_info",
+        logDirect(String.format(
+                "Class: %s\n" +
+                        "Priority: %f\n" +
+                        "Temporary: %b\n" +
+                        "Display name: %s\n" +
+                        "Last command: %s",
                 process.getClass().getTypeName(),
                 process.priority(),
                 process.isTemporary(),
@@ -55,8 +57,8 @@ public class ProcCommand extends Command {
                 pathingControlManager
                         .mostRecentCommand()
                         .map(PathingCommand::toString)
-                        .orElse(ShadowBaritoneI18n.trKey(
-                                "shadowbaritone.command.proc.value.none"))));
+                        .orElse("None")
+        ));
     }
 
     @Override
@@ -66,22 +68,19 @@ public class ProcCommand extends Command {
 
     @Override
     public String getShortDesc() {
-        return ShadowBaritoneI18n.trKey(
-                "shadowbaritone.command.proc.short_desc");
+        return "View process state information";
     }
 
     @Override
     public List<String> getLongDesc() {
         return Arrays.asList(
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.proc.long_desc.1"),
+                "The proc command provides miscellaneous information about the process currently controlling Baritone.",
                 "",
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.proc.long_desc.2"),
+                "You are not expected to understand this if you aren't familiar with how Baritone works.",
                 "",
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.proc.long_desc.usage"),
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.proc.long_desc.example.default"));
+                "Usage:",
+                "> proc - View process information, if present"
+        );
     }
 }
+

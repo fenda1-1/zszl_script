@@ -20,7 +20,7 @@ package com.zszl.zszlScriptMod.shadowbaritone.api.schematic.mask;
 import com.zszl.zszlScriptMod.shadowbaritone.api.schematic.mask.operator.BinaryOperatorMask;
 import com.zszl.zszlScriptMod.shadowbaritone.api.schematic.mask.operator.NotMask;
 import com.zszl.zszlScriptMod.shadowbaritone.api.utils.BooleanBinaryOperators;
-import net.minecraft.block.state.IBlockState;
+import net.minecraft.world.level.block.state.BlockState;
 
 /**
  * @author Brady
@@ -31,11 +31,10 @@ public interface Mask {
      * @param x            The relative x position of the block
      * @param y            The relative y position of the block
      * @param z            The relative z position of the block
-     * @param currentState The current state of that block in the world, may be
-     *                     {@code null}
+     * @param currentState The current state of that block in the world, may be {@code null}
      * @return Whether the given position is included in this mask
      */
-    boolean partOfMask(int x, int y, int z, IBlockState currentState);
+    boolean partOfMask(int x, int y, int z, BlockState currentState);
 
     int widthX();
 
@@ -59,3 +58,4 @@ public interface Mask {
         return new BinaryOperatorMask(this, other, BooleanBinaryOperators.XOR);
     }
 }
+

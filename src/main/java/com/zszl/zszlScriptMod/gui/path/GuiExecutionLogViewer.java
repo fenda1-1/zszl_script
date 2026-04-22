@@ -6,10 +6,10 @@ import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
 import com.zszl.zszlScriptMod.path.runtime.log.ExecutionLogManager;
 import com.zszl.zszlScriptMod.path.runtime.log.ExecutionLogManager.ExecutionEvent;
 import com.zszl.zszlScriptMod.path.runtime.log.ExecutionLogManager.SessionSnapshot;
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiScreen;
-import net.minecraft.client.gui.ScaledResolution;
-import org.lwjgl.input.Mouse;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.ScaledResolution;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Mouse;
 import org.lwjgl.opengl.GL11;
 
 import java.io.IOException;
@@ -165,9 +165,9 @@ public class GuiExecutionLogViewer extends ThemedGuiScreen {
 
     @Override
     protected void actionPerformed(GuiButton button) throws IOException {
-        switch (button.id) {
+            switch (button.id) {
             case 0:
-                this.mc.displayGuiScreen(parentScreen);
+                this.mc.setScreen(parentScreen);
                 return;
             case 1:
                 reloadSessions();
@@ -202,8 +202,8 @@ public class GuiExecutionLogViewer extends ThemedGuiScreen {
         if (dWheel == 0) {
             return;
         }
-        int mouseX = Mouse.getEventX() * this.width / this.mc.displayWidth;
-        int mouseY = this.height - Mouse.getEventY() * this.height / this.mc.displayHeight - 1;
+        int mouseX = Mouse.getEventX() * this.width / this.mc.getWindow().getWidth();
+        int mouseY = this.height - Mouse.getEventY() * this.height / this.mc.getWindow().getHeight() - 1;
         if (isInside(mouseX, mouseY, sessionListX, sessionListY, sessionListW, sessionListH)) {
             sessionScroll = clamp(sessionScroll - Integer.signum(dWheel), 0, maxSessionScroll);
         } else if (isInside(mouseX, mouseY, variableViewportX, variableViewportY, variableViewportW,

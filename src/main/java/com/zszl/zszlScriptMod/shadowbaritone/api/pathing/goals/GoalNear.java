@@ -22,7 +22,7 @@ import com.zszl.zszlScriptMod.shadowbaritone.api.utils.SettingsUtil;
 import com.zszl.zszlScriptMod.shadowbaritone.api.utils.interfaces.IGoalRenderPos;
 import it.unimi.dsi.fastutil.doubles.DoubleIterator;
 import it.unimi.dsi.fastutil.doubles.DoubleOpenHashSet;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.core.BlockPos;
 
 public class GoalNear implements Goal, IGoalRenderPos {
 
@@ -115,6 +115,8 @@ public class GoalNear implements Goal, IGoalRenderPos {
                 SettingsUtil.maybeCensor(x),
                 SettingsUtil.maybeCensor(y),
                 SettingsUtil.maybeCensor(z),
-                rangeSq);
+                rangeSq
+        );
     }
 }
+

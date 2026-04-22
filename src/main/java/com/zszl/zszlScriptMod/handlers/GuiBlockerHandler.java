@@ -1,13 +1,13 @@
 package com.zszl.zszlScriptMod.handlers;
 
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.util.text.TextComponentString;
 import com.zszl.zszlScriptMod.zszlScriptMod;
-
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.resources.I18n;
-import net.minecraft.client.gui.GuiScreen;
-import net.minecraft.util.text.TextComponentString;
 
 public class GuiBlockerHandler {
+
     private static int remainingBlockCount = 0;
 
     public static void blockNextGui(int count) {
@@ -18,8 +18,8 @@ public class GuiBlockerHandler {
         int effectiveCount = Math.max(1, count);
         remainingBlockCount += effectiveCount;
 
-        if (Minecraft.getMinecraft().player != null) {
-            Minecraft.getMinecraft().player.sendMessage(
+        if (Minecraft.getInstance().player != null) {
+            Minecraft.getInstance().player.sendSystemMessage(
                     new TextComponentString(I18n.format("msg.gui_blocker.enabled", remainingBlockCount)));
         }
         zszlScriptMod.LOGGER.info(I18n.format("log.gui_blocker.enabled"), effectiveCount, remainingBlockCount);
@@ -38,8 +38,8 @@ public class GuiBlockerHandler {
         zszlScriptMod.LOGGER.info(I18n.format("log.gui_blocker.blocked"), gui.getClass().getName(),
                 remainingBlockCount);
 
-        if (Minecraft.getMinecraft().player != null) {
-            Minecraft.getMinecraft().player.sendMessage(
+        if (Minecraft.getInstance().player != null) {
+            Minecraft.getInstance().player.sendSystemMessage(
                     new TextComponentString(I18n.format("msg.gui_blocker.blocked", remainingBlockCount)));
         }
 
@@ -51,10 +51,16 @@ public class GuiBlockerHandler {
     }
 
     private static void blockCurrentGuiNow() {
-        Minecraft mc = Minecraft.getMinecraft();
-        GuiScreen currentGui = mc.currentScreen;
-        if (currentGui != null && shouldBlockAndConsume(currentGui)) {
-            mc.displayGuiScreen(null);
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.screen != null && remainingBlockCount > 0) {
+            remainingBlockCount--;
+            zszlScriptMod.LOGGER.info(I18n.format("log.gui_blocker.blocked"), mc.screen.getClass().getName(),
+                    remainingBlockCount);
+            if (mc.player != null) {
+                mc.player.sendSystemMessage(
+                        new TextComponentString(I18n.format("msg.gui_blocker.blocked", remainingBlockCount)));
+            }
+            mc.setScreen(null);
         }
     }
 

@@ -7,8 +7,8 @@ import com.zszl.zszlScriptMod.gui.components.GuiTheme;
 import com.zszl.zszlScriptMod.gui.components.ThemedButton;
 import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
 
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
 
 public class GuiInventoryConfirmScreen extends ThemedGuiScreen {
 
@@ -41,15 +41,15 @@ public class GuiInventoryConfirmScreen extends ThemedGuiScreen {
     @Override
     protected void actionPerformed(GuiButton button) throws IOException {
         if (button.id == 0) {
-            GuiScreen screenBeforeCallback = this.mc.currentScreen;
+            Object screenBeforeCallback = this.mc.screen;
             if (onConfirm != null) {
                 onConfirm.run();
             }
-            if (this.mc.currentScreen == null || this.mc.currentScreen == this || this.mc.currentScreen == screenBeforeCallback) {
-                this.mc.displayGuiScreen(parentScreen);
+            if (this.mc.screen == null || this.mc.screen == this || this.mc.screen == screenBeforeCallback) {
+                this.mc.setScreen(parentScreen);
             }
         } else if (button.id == 1) {
-            this.mc.displayGuiScreen(parentScreen);
+            this.mc.setScreen(parentScreen);
         }
     }
 
@@ -74,3 +74,8 @@ public class GuiInventoryConfirmScreen extends ThemedGuiScreen {
         super.drawScreen(mouseX, mouseY, partialTicks);
     }
 }
+
+
+
+
+

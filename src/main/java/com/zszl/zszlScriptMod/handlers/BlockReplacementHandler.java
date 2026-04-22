@@ -5,30 +5,39 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.google.gson.reflect.TypeToken;
+import com.mojang.blaze3d.platform.GlStateManager;
+import com.mojang.blaze3d.vertex.BufferBuilder;
+import com.mojang.blaze3d.vertex.DefaultVertexFormat;
+import com.mojang.blaze3d.systems.RenderSystem;
+import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.blaze3d.vertex.Tesselator;
+import com.mojang.blaze3d.vertex.VertexFormat;
 import com.zszl.zszlScriptMod.system.BlockReplacementRule;
 import com.zszl.zszlScriptMod.system.ProfileManager;
 import com.zszl.zszlScriptMod.zszlScriptMod;
-import net.minecraft.block.Block;
-import net.minecraft.block.state.IBlockState;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.util.text.TextComponentString;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraftforge.client.event.RenderWorldLastEvent;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.renderer.BlockRendererDispatcher;
-import net.minecraft.client.renderer.BufferBuilder;
-import net.minecraft.client.renderer.GlStateManager;
-import net.minecraft.client.renderer.RenderGlobal;
-import net.minecraft.client.renderer.Tessellator;
-import net.minecraft.client.renderer.texture.TextureMap;
-import net.minecraft.client.renderer.vertex.DefaultVertexFormats;
-import net.minecraft.client.gui.GuiScreen;
-import net.minecraft.entity.player.EntityPlayer;
-import net.minecraft.util.EnumHand;
-import net.minecraft.util.ResourceLocation;
-import net.minecraft.util.math.AxisAlignedBB;
-import net.minecraft.util.math.BlockPos;
-import net.minecraftforge.event.world.GetCollisionBoxesEvent;
-import net.minecraftforge.client.event.RenderWorldLastEvent;
+import net.minecraft.client.renderer.GameRenderer;
+import net.minecraft.client.renderer.LevelRenderer;
+import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.client.renderer.texture.OverlayTexture;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.level.BlockGetter;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.phys.shapes.CollisionContext;
+import net.minecraft.world.phys.shapes.VoxelShape;
 import net.minecraftforge.event.entity.player.PlayerInteractEvent;
-import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
-import org.lwjgl.opengl.GL11;
+import net.minecraftforge.eventbus.api.SubscribeEvent;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
@@ -44,23 +53,29 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 
-public class BlockReplacementHandler {
-    public static final BlockReplacementHandler INSTANCE = new BlockReplacementHandler();
+public final class BlockReplacementHandler {
 
-    private static final Minecraft mc = Minecraft.getMinecraft();
+    public static final BlockReplacementHandler INSTANCE = new BlockReplacementHandler();
+    public static final List<BlockReplacementRule> rules = new CopyOnWriteArrayList<>();
+
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
+    private static final String CATEGORY_DEFAULT = "默认";
+    private static final List<String> categories = new CopyOnWriteArrayList<>();
+    private static final Minecraft MC = Minecraft.getInstance();
     private static final long CACHE_REFRESH_MS = 1000L;
     private static final double MAX_RENDER_DISTANCE_SQ = 96.0D * 96.0D;
-
-    public static final List<BlockReplacementRule> rules = new CopyOnWriteArrayList<>();
-    private static final List<String> categories = new CopyOnWriteArrayList<>();
-    private static final String CATEGORY_DEFAULT = "默认";
 
     private enum SelectionMode {
         NONE,
         REGION,
         SOURCE_BLOCK,
         TARGET_BLOCK
+    }
+
+    private static final class RegionCache {
+        long lastRefreshAt;
+        List<BlockCountEntry> blockCounts = new ArrayList<>();
+        Map<String, List<BlockPos>> positionsBySource = new HashMap<>();
     }
 
     private final Map<BlockReplacementRule, RegionCache> regionCacheMap = new HashMap<>();
@@ -71,7 +86,7 @@ public class BlockReplacementHandler {
     private static volatile boolean regionCorner1SelectedThisSession = false;
     private static volatile boolean regionCorner2SelectedThisSession = false;
 
-    public static class BlockCountEntry {
+    public static final class BlockCountEntry {
         public final String blockId;
         public final int count;
 
@@ -79,13 +94,6 @@ public class BlockReplacementHandler {
             this.blockId = blockId;
             this.count = count;
         }
-    }
-
-    private static class RegionCache {
-        long lastRefreshAt;
-        int dimension;
-        List<BlockCountEntry> blockCounts = new ArrayList<>();
-        Map<String, List<BlockPos>> positionsBySource = new HashMap<>();
     }
 
     private BlockReplacementHandler() {
@@ -103,15 +111,10 @@ public class BlockReplacementHandler {
             ensureCategoriesSynced();
             return;
         }
-
         try (BufferedReader reader = Files.newBufferedReader(configFile, StandardCharsets.UTF_8)) {
-            JsonObject root = new JsonParser().parse(reader).getAsJsonObject();
+            JsonObject root = JsonParser.parseReader(reader).getAsJsonObject();
             if (root.has("categories") && root.get("categories").isJsonArray()) {
-                for (com.google.gson.JsonElement element : root.getAsJsonArray("categories")) {
-                    if (element != null && element.isJsonPrimitive()) {
-                        categories.add(element.getAsString());
-                    }
-                }
+                root.getAsJsonArray("categories").forEach(element -> categories.add(normalizeCategory(element.getAsString())));
             }
             if (root.has("rules")) {
                 Type listType = new TypeToken<ArrayList<BlockReplacementRule>>() {
@@ -133,7 +136,6 @@ public class BlockReplacementHandler {
             }
         } catch (Exception e) {
             zszlScriptMod.LOGGER.error("无法加载区域方块替换规则", e);
-            rules.clear();
         }
         ensureCategoriesSynced();
     }
@@ -152,49 +154,6 @@ public class BlockReplacementHandler {
         } catch (Exception e) {
             zszlScriptMod.LOGGER.error("无法保存区域方块替换规则", e);
         }
-    }
-
-    private static String normalizeCategory(String category) {
-        String normalized = category == null ? "" : category.trim();
-        return normalized.isEmpty() ? CATEGORY_DEFAULT : normalized;
-    }
-
-    private static void ensureCategoriesSynced() {
-        LinkedHashSet<String> normalized = new LinkedHashSet<>();
-        for (String category : categories) {
-            normalized.add(normalizeCategory(category));
-        }
-        for (BlockReplacementRule rule : rules) {
-            if (rule == null) {
-                continue;
-            }
-            rule.category = normalizeCategory(rule.category);
-            normalized.add(rule.category);
-        }
-        if (normalized.isEmpty()) {
-            normalized.add(CATEGORY_DEFAULT);
-        }
-        categories.clear();
-        categories.addAll(normalized);
-    }
-
-    private static boolean containsCategoryIgnoreCase(String category) {
-        for (String existing : categories) {
-            if (normalizeCategory(existing).equalsIgnoreCase(normalizeCategory(category))) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private static boolean removeCategoryIgnoreCase(String category) {
-        for (int i = 0; i < categories.size(); i++) {
-            if (normalizeCategory(categories.get(i)).equalsIgnoreCase(normalizeCategory(category))) {
-                categories.remove(i);
-                return true;
-            }
-        }
-        return false;
     }
 
     public static synchronized List<String> getCategoriesSnapshot() {
@@ -221,7 +180,7 @@ public class BlockReplacementHandler {
     public static synchronized boolean addCategory(String category) {
         String normalized = normalizeCategory(category);
         ensureCategoriesSynced();
-        if (containsCategoryIgnoreCase(normalized)) {
+        if (categories.contains(normalized)) {
             return false;
         }
         categories.add(normalized);
@@ -232,63 +191,38 @@ public class BlockReplacementHandler {
     public static synchronized boolean renameCategory(String oldCategory, String newCategory) {
         String normalizedOld = normalizeCategory(oldCategory);
         String normalizedNew = normalizeCategory(newCategory);
-        ensureCategoriesSynced();
-
-        if (normalizedOld.equalsIgnoreCase(normalizedNew)) {
-            return true;
-        }
-        if (containsCategoryIgnoreCase(normalizedNew)) {
-            return false;
-        }
-
         boolean changed = false;
         for (int i = 0; i < categories.size(); i++) {
             if (normalizeCategory(categories.get(i)).equalsIgnoreCase(normalizedOld)) {
                 categories.set(i, normalizedNew);
                 changed = true;
-                break;
             }
         }
-
         for (BlockReplacementRule rule : rules) {
             if (rule != null && normalizeCategory(rule.category).equalsIgnoreCase(normalizedOld)) {
                 rule.category = normalizedNew;
                 changed = true;
             }
         }
-
-        if (!changed) {
-            return false;
+        if (changed) {
+            saveConfig();
         }
-
-        ensureCategoriesSynced();
-        saveConfig();
-        return true;
+        return changed;
     }
 
     public static synchronized boolean deleteCategory(String category) {
         String normalized = normalizeCategory(category);
-        ensureCategoriesSynced();
-
-        boolean changed = removeCategoryIgnoreCase(normalized);
+        boolean changed = categories.removeIf(existing -> normalizeCategory(existing).equalsIgnoreCase(normalized));
         for (BlockReplacementRule rule : rules) {
             if (rule != null && normalizeCategory(rule.category).equalsIgnoreCase(normalized)) {
                 rule.category = CATEGORY_DEFAULT;
                 changed = true;
             }
         }
-
-        if (!changed) {
-            return false;
+        if (changed) {
+            saveConfig();
         }
-
-        ensureCategoriesSynced();
-        saveConfig();
-        return true;
-    }
-
-    public static List<BlockCountEntry> getAvailableBlocks(BlockReplacementRule rule) {
-        return INSTANCE.getOrBuildCache(rule).blockCounts;
+        return changed;
     }
 
     public static void startRegionSelection(BlockReplacementRule rule, GuiScreen returnScreen) {
@@ -298,42 +232,130 @@ public class BlockReplacementHandler {
         selectionReturnScreen = returnScreen;
         regionCorner1SelectedThisSession = false;
         regionCorner2SelectedThisSession = false;
-        if (mc.player != null) {
-            mc.player.sendMessage(new net.minecraft.util.text.TextComponentString(
+        if (MC.player != null) {
+            MC.player.sendSystemMessage(new TextComponentString(
                     "§b[区域方块替换] §f可视化选择已开启：§a左键选择角1§f，§e右键选择角2§f。"));
         }
-        mc.displayGuiScreen(null);
+        MC.setScreen(null);
     }
 
-    public static void startSourceBlockSelection(BlockReplacementRule.BlockReplacementEntry entry,
-            GuiScreen returnScreen) {
+    public static void startSourceBlockSelection(BlockReplacementRule rule,
+            BlockReplacementRule.BlockReplacementEntry entry, GuiScreen returnScreen) {
         selectionMode = SelectionMode.SOURCE_BLOCK;
-        selectionRule = null;
+        selectionRule = rule;
         selectionEntry = entry;
         selectionReturnScreen = returnScreen;
-        if (mc.player != null) {
-            mc.player.sendMessage(new net.minecraft.util.text.TextComponentString(
+        if (MC.player != null) {
+            MC.player.sendSystemMessage(new TextComponentString(
                     "§b[区域方块替换] §f请左键或右键点击一个方块，作为§a被替换方块§f。"));
         }
-        mc.displayGuiScreen(null);
+        MC.setScreen(null);
     }
 
-    public static void startTargetBlockSelection(BlockReplacementRule.BlockReplacementEntry entry,
-            GuiScreen returnScreen) {
+    public static void startSourceBlockSelection(BlockReplacementRule.BlockReplacementEntry entry, GuiScreen returnScreen) {
+        startSourceBlockSelection(null, entry, returnScreen);
+    }
+
+    public static void startTargetBlockSelection(BlockReplacementRule rule,
+            BlockReplacementRule.BlockReplacementEntry entry, GuiScreen returnScreen) {
         selectionMode = SelectionMode.TARGET_BLOCK;
-        selectionRule = null;
+        selectionRule = rule;
         selectionEntry = entry;
         selectionReturnScreen = returnScreen;
-        if (mc.player != null) {
-            mc.player.sendMessage(new net.minecraft.util.text.TextComponentString(
+        if (MC.player != null) {
+            MC.player.sendSystemMessage(new TextComponentString(
                     "§b[区域方块替换] §f请左键或右键点击一个方块，作为§a替换后显示方块§f。"));
         }
-        mc.displayGuiScreen(null);
+        MC.setScreen(null);
+    }
+
+    public static void startTargetBlockSelection(BlockReplacementRule.BlockReplacementEntry entry, GuiScreen returnScreen) {
+        startTargetBlockSelection(null, entry, returnScreen);
     }
 
     public static void markRuleDirty(BlockReplacementRule rule) {
         if (rule != null) {
             rule.dirty = true;
+        }
+    }
+
+    public static List<BlockCountEntry> getAvailableBlocks(BlockReplacementRule rule) {
+        return INSTANCE.getOrBuildCache(rule).blockCounts;
+    }
+
+    public static VoxelShape getCollisionShapeOverride(BlockGetter world, BlockPos pos, CollisionContext context) {
+        return INSTANCE.resolveReplacementCollisionShape(world, pos, context);
+    }
+
+    @SubscribeEvent
+    public void onLeftClickBlock(PlayerInteractEvent.LeftClickBlock event) {
+        if (!event.getLevel().isClientSide || selectionMode == SelectionMode.NONE || event.getEntity() != MC.player) {
+            return;
+        }
+        handleSelectionClick(event.getPos(), true);
+        event.setCanceled(true);
+    }
+
+    @SubscribeEvent
+    public void onRightClickBlock(PlayerInteractEvent.RightClickBlock event) {
+        if (!event.getLevel().isClientSide
+                || selectionMode == SelectionMode.NONE
+                || event.getEntity() != MC.player
+                || event.getHand() != InteractionHand.MAIN_HAND) {
+            return;
+        }
+        handleSelectionClick(event.getPos(), false);
+        event.setCanceled(true);
+    }
+
+    private void handleSelectionClick(BlockPos pos, boolean leftClick) {
+        if (MC.level == null || pos == null) {
+            return;
+        }
+        switch (selectionMode) {
+            case REGION:
+                if (selectionRule == null) {
+                    return;
+                }
+                if (leftClick) {
+                    selectionRule.setCorner1(pos.getX(), pos.getY(), pos.getZ());
+                    regionCorner1SelectedThisSession = true;
+                    if (MC.player != null) {
+                        MC.player.sendSystemMessage(new TextComponentString("§a[区域方块替换] 已设置角1: " + pos));
+                    }
+                } else {
+                    selectionRule.setCorner2(pos.getX(), pos.getY(), pos.getZ());
+                    regionCorner2SelectedThisSession = true;
+                    if (MC.player != null) {
+                        MC.player.sendSystemMessage(new TextComponentString("§e[区域方块替换] 已设置角2: " + pos));
+                    }
+                }
+                finishSelectionIfPossible();
+                break;
+            case SOURCE_BLOCK:
+            case TARGET_BLOCK:
+                if (selectionEntry == null) {
+                    return;
+                }
+                String blockId = getBlockId(MC.level.getBlockState(pos));
+                if (selectionMode == SelectionMode.SOURCE_BLOCK) {
+                    selectionEntry.sourceBlockId = blockId;
+                    if (MC.player != null) {
+                        MC.player.sendSystemMessage(new TextComponentString("§a[区域方块替换] 被替换方块: " + blockId));
+                    }
+                } else {
+                    selectionEntry.targetBlockId = blockId;
+                    if (MC.player != null) {
+                        MC.player.sendSystemMessage(new TextComponentString("§a[区域方块替换] 替换后方块: " + blockId));
+                    }
+                }
+                if (selectionRule != null) {
+                    markRuleDirty(selectionRule);
+                }
+                finishSelectionIfPossible();
+                break;
+            default:
+                break;
         }
     }
 
@@ -348,7 +370,7 @@ public class BlockReplacementHandler {
                 selectionEntry = null;
                 selectionReturnScreen = null;
                 if (returnScreen != null) {
-                    mc.addScheduledTask(() -> mc.displayGuiScreen(returnScreen));
+                    MC.execute(() -> MC.setScreen(returnScreen));
                 }
             }
             return;
@@ -360,114 +382,39 @@ public class BlockReplacementHandler {
         selectionEntry = null;
         selectionReturnScreen = null;
         if (returnScreen != null) {
-            mc.addScheduledTask(() -> mc.displayGuiScreen(returnScreen));
-        }
-    }
-
-    @SubscribeEvent
-    public void onLeftClickBlock(PlayerInteractEvent.LeftClickBlock event) {
-        if (!event.getWorld().isRemote || selectionMode == SelectionMode.NONE) {
-            return;
-        }
-        handleSelectionClick(event.getPos(), true);
-        event.setCanceled(true);
-    }
-
-    @SubscribeEvent
-    public void onRightClickBlock(PlayerInteractEvent.RightClickBlock event) {
-        if (!event.getWorld().isRemote || selectionMode == SelectionMode.NONE
-                || event.getHand() != EnumHand.MAIN_HAND) {
-            return;
-        }
-        handleSelectionClick(event.getPos(), false);
-        event.setCanceled(true);
-    }
-
-    private void handleSelectionClick(BlockPos pos, boolean leftClick) {
-        if (mc.world == null || pos == null) {
-            return;
-        }
-        switch (selectionMode) {
-            case REGION:
-                if (selectionRule == null) {
-                    return;
-                }
-                if (leftClick) {
-                    selectionRule.setCorner1(pos.getX(), pos.getY(), pos.getZ());
-                    regionCorner1SelectedThisSession = true;
-                    if (mc.player != null) {
-                        mc.player.sendMessage(new net.minecraft.util.text.TextComponentString(
-                                "§a[区域方块替换] 已设置角1: " + pos.toString()));
-                    }
-                } else {
-                    selectionRule.setCorner2(pos.getX(), pos.getY(), pos.getZ());
-                    regionCorner2SelectedThisSession = true;
-                    if (mc.player != null) {
-                        mc.player.sendMessage(new net.minecraft.util.text.TextComponentString(
-                                "§e[区域方块替换] 已设置角2: " + pos.toString()));
-                    }
-                }
-                finishSelectionIfPossible();
-                break;
-            case SOURCE_BLOCK:
-            case TARGET_BLOCK:
-                if (selectionEntry == null) {
-                    return;
-                }
-                IBlockState state = mc.world.getBlockState(pos);
-                ResourceLocation name = Block.REGISTRY.getNameForObject(state.getBlock());
-                String blockId = name == null ? "minecraft:air" : name.toString();
-                if (selectionMode == SelectionMode.SOURCE_BLOCK) {
-                    selectionEntry.sourceBlockId = blockId;
-                } else {
-                    selectionEntry.targetBlockId = blockId;
-                }
-                if (mc.player != null) {
-                    mc.player.sendMessage(new net.minecraft.util.text.TextComponentString(
-                            "§b[区域方块替换] 已选择方块: §a" + blockId));
-                }
-                finishSelectionIfPossible();
-                break;
-            default:
-                break;
+            MC.execute(() -> MC.setScreen(returnScreen));
         }
     }
 
     private synchronized RegionCache getOrBuildCache(BlockReplacementRule rule) {
         RegionCache cache = regionCacheMap.get(rule);
-        int currentDimension = mc.world == null ? 0 : mc.world.provider.getDimension();
         long now = System.currentTimeMillis();
-        if (rule == null || !rule.hasValidRegion() || mc.world == null) {
+        if (rule == null || !rule.hasValidRegion() || MC.level == null) {
             return new RegionCache();
         }
-        if (cache == null || rule.dirty || cache.dimension != currentDimension
-                || now - cache.lastRefreshAt > CACHE_REFRESH_MS) {
-            cache = rebuildCache(rule, currentDimension, now);
+        if (cache == null || rule.dirty || now - cache.lastRefreshAt > CACHE_REFRESH_MS) {
+            cache = rebuildCache(rule, now);
             regionCacheMap.put(rule, cache);
             rule.dirty = false;
         }
         return cache;
     }
 
-    private RegionCache rebuildCache(BlockReplacementRule rule, int currentDimension, long now) {
+    private RegionCache rebuildCache(BlockReplacementRule rule, long now) {
         RegionCache cache = new RegionCache();
-        cache.dimension = currentDimension;
         cache.lastRefreshAt = now;
 
         Map<String, Integer> counts = new HashMap<>();
         Map<String, List<BlockPos>> positions = new HashMap<>();
-
         BlockPos.MutableBlockPos mutable = new BlockPos.MutableBlockPos();
+
         for (int x = rule.getMinX(); x <= rule.getMaxX(); x++) {
             for (int y = rule.getMinY(); y <= rule.getMaxY(); y++) {
                 for (int z = rule.getMinZ(); z <= rule.getMaxZ(); z++) {
-                    mutable.setPos(x, y, z);
-                    IBlockState state = mc.world.getBlockState(mutable);
-                    Block block = state.getBlock();
-                    ResourceLocation name = Block.REGISTRY.getNameForObject(block);
-                    String blockId = name == null ? "minecraft:air" : name.toString();
+                    mutable.set(x, y, z);
+                    String blockId = getBlockId(MC.level.getBlockState(mutable));
                     counts.put(blockId, counts.getOrDefault(blockId, 0) + 1);
-                    positions.computeIfAbsent(blockId, key -> new ArrayList<>()).add(mutable.toImmutable());
+                    positions.computeIfAbsent(blockId, key -> new ArrayList<>()).add(mutable.immutable());
                 }
             }
         }
@@ -476,7 +423,7 @@ public class BlockReplacementHandler {
         for (Map.Entry<String, Integer> entry : counts.entrySet()) {
             entries.add(new BlockCountEntry(entry.getKey(), entry.getValue()));
         }
-        entries.sort(Comparator.comparing((BlockCountEntry e) -> e.blockId));
+        entries.sort(Comparator.comparing(e -> e.blockId));
         cache.blockCounts = entries;
         cache.positionsBySource = positions;
         return cache;
@@ -484,35 +431,18 @@ public class BlockReplacementHandler {
 
     @SubscribeEvent
     public void onRenderWorldLast(RenderWorldLastEvent event) {
-        if (mc.player == null || mc.world == null) {
+        RenderWorldLastEvent.WorldRenderContext renderContext = event.getWorldRenderContext();
+        if (MC.player == null || MC.level == null || renderContext == null) {
             return;
         }
 
-        BlockRendererDispatcher dispatcher = mc.getBlockRendererDispatcher();
-        if (dispatcher == null) {
+        PoseStack blockPoseStack = event.createWorldPoseStack();
+        PoseStack linePoseStack = event.createWorldPoseStack();
+        if (blockPoseStack == null || linePoseStack == null) {
             return;
         }
-
-        double viewerX = mc.getRenderViewEntity().lastTickPosX
-                + (mc.getRenderViewEntity().posX - mc.getRenderViewEntity().lastTickPosX) * event.getPartialTicks();
-        double viewerY = mc.getRenderViewEntity().lastTickPosY
-                + (mc.getRenderViewEntity().posY - mc.getRenderViewEntity().lastTickPosY) * event.getPartialTicks();
-        double viewerZ = mc.getRenderViewEntity().lastTickPosZ
-                + (mc.getRenderViewEntity().posZ - mc.getRenderViewEntity().lastTickPosZ) * event.getPartialTicks();
-
-        Tessellator tessellator = Tessellator.getInstance();
-        BufferBuilder buffer = tessellator.getBuffer();
-        boolean began = false;
-        List<AxisAlignedBB> highlightBoxes = new ArrayList<>();
-
-        GlStateManager.pushMatrix();
-        GlStateManager.enableBlend();
-        GlStateManager.tryBlendFuncSeparate(GlStateManager.SourceFactor.SRC_ALPHA,
-                GlStateManager.DestFactor.ONE_MINUS_SRC_ALPHA,
-                GlStateManager.SourceFactor.ONE,
-                GlStateManager.DestFactor.ZERO);
-        GlStateManager.disableLighting();
-        mc.getTextureManager().bindTexture(TextureMap.LOCATION_BLOCKS_TEXTURE);
+        MultiBufferSource.BufferSource bufferSource = MC.renderBuffers().bufferSource();
+        List<AABB> highlightBoxes = new ArrayList<>();
 
         for (BlockReplacementRule rule : rules) {
             if (rule == null || !rule.enabled || !rule.hasValidRegion() || rule.replacements == null
@@ -530,105 +460,163 @@ public class BlockReplacementHandler {
                     continue;
                 }
 
-                Block targetBlock = Block.getBlockFromName(entry.targetBlockId);
-                if (targetBlock == null) {
+                BlockState targetState = getBlockStateById(entry.targetBlockId);
+                if (targetState == null) {
                     continue;
-                }
-                IBlockState targetState = targetBlock.getDefaultState();
-
-                if (!began) {
-                    buffer.begin(GL11.GL_QUADS, DefaultVertexFormats.BLOCK);
-                    buffer.setTranslation(-viewerX, -viewerY, -viewerZ);
-                    began = true;
                 }
 
                 for (BlockPos pos : positions) {
-                    if (mc.player.getDistanceSqToCenter(pos) > MAX_RENDER_DISTANCE_SQ) {
+                    if (MC.player.distanceToSqr(pos.getX() + 0.5D, pos.getY() + 0.5D, pos.getZ() + 0.5D) > MAX_RENDER_DISTANCE_SQ) {
                         continue;
                     }
-                    dispatcher.renderBlock(targetState, pos, mc.world, buffer);
+                    renderReplacementBlock(blockPoseStack, bufferSource, renderContext, targetState, pos);
                     if (rule.highlightReplacedBlocks) {
-                        AxisAlignedBB box = mc.world.getBlockState(pos).getSelectedBoundingBox(mc.world, pos)
-                                .offset(-viewerX, -viewerY, -viewerZ)
-                                .grow(0.002D);
-                        highlightBoxes.add(box);
+                        highlightBoxes.add(renderContext.toCameraSpace(new AABB(pos)).inflate(0.002D));
                     }
                 }
             }
         }
 
-        if (began) {
-            tessellator.draw();
-            buffer.setTranslation(0, 0, 0);
+        if (selectionMode == SelectionMode.REGION && selectionRule != null) {
+            addSelectionRegionBox(highlightBoxes, renderContext);
         }
+
+        bufferSource.endBatch();
 
         if (!highlightBoxes.isEmpty()) {
-            GlStateManager.disableTexture2D();
-            GlStateManager.disableDepth();
-            GlStateManager.depthMask(false);
-            GlStateManager.glLineWidth(2.0F);
-            for (AxisAlignedBB box : highlightBoxes) {
-                RenderGlobal.drawSelectionBoundingBox(box, 0.2F, 1.0F, 0.3F, 0.7F);
+            RenderSystem.enableBlend();
+            RenderSystem.disableCull();
+            RenderSystem.disableDepthTest();
+            RenderSystem.setShader(GameRenderer::getPositionColorShader);
+            RenderSystem.blendFuncSeparate(GlStateManager.SourceFactor.SRC_ALPHA,
+                    GlStateManager.DestFactor.ONE_MINUS_SRC_ALPHA,
+                    GlStateManager.SourceFactor.ONE,
+                    GlStateManager.DestFactor.ZERO);
+            BufferBuilder lineBuffer = Tesselator.getInstance().getBuilder();
+            lineBuffer.begin(VertexFormat.Mode.LINES, DefaultVertexFormat.POSITION_COLOR);
+            for (AABB box : highlightBoxes) {
+                LevelRenderer.renderLineBox(linePoseStack, lineBuffer, box, 0.2F, 1.0F, 0.3F, 0.8F);
             }
-            GlStateManager.depthMask(true);
-            GlStateManager.enableDepth();
-            GlStateManager.enableTexture2D();
+            Tesselator.getInstance().end();
+            RenderSystem.enableDepthTest();
+            RenderSystem.enableCull();
+            RenderSystem.disableBlend();
         }
-
-        GlStateManager.enableLighting();
-        GlStateManager.disableBlend();
-        GlStateManager.popMatrix();
     }
 
-    @SubscribeEvent
-    public void onGetCollisionBoxes(GetCollisionBoxesEvent event) {
-        if (mc.world == null || event.getWorld() == null
-                || event.getWorld().provider.getDimension() != mc.world.provider.getDimension()) {
+    private void renderReplacementBlock(PoseStack poseStack, MultiBufferSource.BufferSource bufferSource,
+            RenderWorldLastEvent.WorldRenderContext renderContext, BlockState targetState, BlockPos pos) {
+        Vec3 cameraSpacePos = renderContext.toCameraSpace(new Vec3(pos.getX(), pos.getY(), pos.getZ()));
+        poseStack.pushPose();
+        poseStack.translate(cameraSpacePos.x, cameraSpacePos.y, cameraSpacePos.z);
+        MC.getBlockRenderer().renderSingleBlock(targetState, poseStack, bufferSource,
+                LevelRenderer.getLightColor(MC.level, pos), OverlayTexture.NO_OVERLAY);
+        poseStack.popPose();
+    }
+
+    private void addSelectionRegionBox(List<AABB> highlightBoxes, RenderWorldLastEvent.WorldRenderContext renderContext) {
+        if (selectionRule == null) {
             return;
         }
-
-        EntityPlayer entity = mc.player;
-        if (entity == null) {
+        BlockReplacementRule rule = selectionRule;
+        if (!rule.hasCorner1() && !rule.hasCorner2()) {
             return;
         }
-
-        if (event.getEntity() != null && event.getEntity() != entity) {
+        Integer minXValue = rule.hasValidRegion() ? rule.getMinX()
+                : (rule.corner1X != null ? rule.corner1X : rule.corner2X);
+        Integer minYValue = rule.hasValidRegion() ? rule.getMinY()
+                : (rule.corner1Y != null ? rule.corner1Y : rule.corner2Y);
+        Integer minZValue = rule.hasValidRegion() ? rule.getMinZ()
+                : (rule.corner1Z != null ? rule.corner1Z : rule.corner2Z);
+        Integer maxXValue = rule.hasValidRegion() ? rule.getMaxX()
+                : (rule.corner2X != null ? rule.corner2X : rule.corner1X);
+        Integer maxYValue = rule.hasValidRegion() ? rule.getMaxY()
+                : (rule.corner2Y != null ? rule.corner2Y : rule.corner1Y);
+        Integer maxZValue = rule.hasValidRegion() ? rule.getMaxZ()
+                : (rule.corner2Z != null ? rule.corner2Z : rule.corner1Z);
+        if (minXValue == null || minYValue == null || minZValue == null
+                || maxXValue == null || maxYValue == null || maxZValue == null) {
             return;
         }
+        AABB box = renderContext.toCameraSpace(new AABB(
+                minXValue, minYValue, minZValue,
+                maxXValue + 1.0D, maxYValue + 1.0D, maxZValue + 1.0D)).inflate(0.002D);
+        highlightBoxes.add(box);
+    }
 
-        AxisAlignedBB queryBox = event.getAabb();
-        if (queryBox == null) {
-            return;
+    private VoxelShape resolveReplacementCollisionShape(BlockGetter world, BlockPos pos, CollisionContext context) {
+        if (!(world instanceof Level) || pos == null || MC.level == null || world != MC.level) {
+            return null;
         }
-
+        String currentBlockId = getBlockId(world.getBlockState(pos));
         for (BlockReplacementRule rule : rules) {
             if (rule == null || !rule.enabled || !rule.useSolidCollision || !rule.hasValidRegion()
                     || rule.replacements == null || rule.replacements.isEmpty()) {
                 continue;
             }
-
-            RegionCache cache = getOrBuildCache(rule);
+            if (pos.getX() < rule.getMinX() || pos.getX() > rule.getMaxX()
+                    || pos.getY() < rule.getMinY() || pos.getY() > rule.getMaxY()
+                    || pos.getZ() < rule.getMinZ() || pos.getZ() > rule.getMaxZ()) {
+                continue;
+            }
             for (BlockReplacementRule.BlockReplacementEntry entry : rule.replacements) {
                 if (entry == null || !entry.enabled || entry.sourceBlockId == null || entry.targetBlockId == null) {
                     continue;
                 }
-
-                Block targetBlock = Block.getBlockFromName(entry.targetBlockId);
-                if (targetBlock == null) {
+                if (!entry.sourceBlockId.equals(currentBlockId)) {
                     continue;
                 }
-                IBlockState targetState = targetBlock.getDefaultState();
-                List<BlockPos> positions = cache.positionsBySource.get(entry.sourceBlockId);
-                if (positions == null || positions.isEmpty()) {
-                    continue;
-                }
-
-                for (BlockPos pos : positions) {
-                    targetState.addCollisionBoxToList(mc.world, pos, queryBox, event.getCollisionBoxesList(),
-                            event.getEntity(), false);
+                BlockState targetState = getBlockStateById(entry.targetBlockId);
+                if (targetState != null) {
+                    return targetState.getBlock().getCollisionShape(targetState, world, pos, context);
                 }
             }
         }
+        return null;
+    }
+
+    private static String getBlockId(BlockState state) {
+        if (state == null) {
+            return "minecraft:air";
+        }
+        ResourceLocation key = BuiltInRegistries.BLOCK.getKey(state.getBlock());
+        return key == null ? "minecraft:air" : key.toString();
+    }
+
+    private static BlockState getBlockStateById(String blockId) {
+        ResourceLocation id = ResourceLocation.tryParse(blockId == null ? "" : blockId.trim());
+        if (id == null) {
+            return null;
+        }
+        Block block = BuiltInRegistries.BLOCK.get(id);
+        if (block == null || block == Blocks.AIR) {
+            return null;
+        }
+        return block.defaultBlockState();
+    }
+
+    private static String normalizeCategory(String category) {
+        String normalized = category == null ? "" : category.trim();
+        return normalized.isEmpty() ? CATEGORY_DEFAULT : normalized;
+    }
+
+    private static void ensureCategoriesSynced() {
+        LinkedHashSet<String> normalized = new LinkedHashSet<>();
+        for (String category : categories) {
+            normalized.add(normalizeCategory(category));
+        }
+        for (BlockReplacementRule rule : rules) {
+            if (rule != null) {
+                rule.category = normalizeCategory(rule.category);
+                normalized.add(rule.category);
+            }
+        }
+        if (normalized.isEmpty()) {
+            normalized.add(CATEGORY_DEFAULT);
+        }
+        categories.clear();
+        categories.addAll(normalized);
     }
 }
+
 

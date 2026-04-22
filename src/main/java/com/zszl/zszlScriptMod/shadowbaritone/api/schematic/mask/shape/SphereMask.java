@@ -62,3 +62,4 @@ public final class SphereMask extends AbstractMask implements StaticMask {
         return dx * dx / this.radiusSqX + dy * dy / this.radiusSqY + dz * dz / this.radiusSqZ > 1;
     }
 }
+

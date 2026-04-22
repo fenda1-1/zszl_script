@@ -1,7 +1,7 @@
 package com.zszl.zszlScriptMod.otherfeatures.gui.misc;
 
 import com.zszl.zszlScriptMod.otherfeatures.handler.misc.MiscFeatureManager;
-import net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
 
 public final class MiscFeatureGuiFactory {
 
@@ -22,3 +22,6 @@ public final class MiscFeatureGuiFactory {
         return new SingleMiscFeatureConfigScreen(parent, feature.id, feature.name + "设置");
     }
 }
+
+
+

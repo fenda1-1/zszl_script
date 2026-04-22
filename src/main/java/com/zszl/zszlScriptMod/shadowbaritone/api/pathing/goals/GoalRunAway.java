@@ -20,7 +20,7 @@ package com.zszl.zszlScriptMod.shadowbaritone.api.pathing.goals;
 import com.zszl.zszlScriptMod.shadowbaritone.api.utils.SettingsUtil;
 import it.unimi.dsi.fastutil.doubles.DoubleIterator;
 import it.unimi.dsi.fastutil.doubles.DoubleOpenHashSet;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.core.BlockPos;
 
 import java.util.Arrays;
 import java.util.Objects;
@@ -44,7 +44,7 @@ public class GoalRunAway implements Goal {
 
     public GoalRunAway(double distance, Integer maintainY, BlockPos... from) {
         if (from.length == 0) {
-            throw new IllegalArgumentException();
+            throw new IllegalArgumentException("Positions to run away from must not be empty");
         }
         this.from = from;
         this.distanceSq = (int) (distance * distance);
@@ -154,9 +154,11 @@ public class GoalRunAway implements Goal {
             return String.format(
                     "GoalRunAwayFromMaintainY y=%s, %s",
                     SettingsUtil.maybeCensor(maintainY),
-                    Arrays.asList(from));
+                    Arrays.asList(from)
+            );
         } else {
             return "GoalRunAwayFrom" + Arrays.asList(from);
         }
     }
 }
+

@@ -1,6 +1,6 @@
 package com.zszl.zszlScriptMod.system;
 
-import net.minecraft.client.resources.I18n;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
 
 public class ConditionalRule {
     public static final String DEFAULT_VISUALIZE_BORDER_COLOR = "#4AA3FF";
@@ -128,3 +128,6 @@ public class ConditionalRule {
         return Integer.parseInt(normalized.substring(1), 16) & 0xFFFFFF;
     }
 }
+
+
+

@@ -33,3 +33,4 @@ public interface ICancellable {
      */
     boolean isCancelled();
 }
+

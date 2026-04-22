@@ -4,10 +4,9 @@ import com.zszl.zszlScriptMod.shadowbaritone.Baritone;
 import com.zszl.zszlScriptMod.shadowbaritone.api.selection.ISelection;
 import com.zszl.zszlScriptMod.shadowbaritone.api.selection.ISelectionManager;
 import com.zszl.zszlScriptMod.shadowbaritone.api.utils.BetterBlockPos;
-import net.minecraft.util.EnumFacing;
-
 import java.util.LinkedList;
 import java.util.ListIterator;
+import net.minecraft.core.Direction;
 
 public class SelectionManager implements ISelectionManager {
 
@@ -69,8 +68,8 @@ public class SelectionManager implements ISelectionManager {
     }
 
     @Override
-    public synchronized ISelection expand(ISelection selection, EnumFacing direction, int blocks) {
-        for (ListIterator<ISelection> it = selections.listIterator(); it.hasNext();) {
+    public synchronized ISelection expand(ISelection selection, Direction direction, int blocks) {
+        for (ListIterator<ISelection> it = selections.listIterator(); it.hasNext(); ) {
             ISelection current = it.next();
 
             if (current == selection) {
@@ -85,8 +84,8 @@ public class SelectionManager implements ISelectionManager {
     }
 
     @Override
-    public synchronized ISelection contract(ISelection selection, EnumFacing direction, int blocks) {
-        for (ListIterator<ISelection> it = selections.listIterator(); it.hasNext();) {
+    public synchronized ISelection contract(ISelection selection, Direction direction, int blocks) {
+        for (ListIterator<ISelection> it = selections.listIterator(); it.hasNext(); ) {
             ISelection current = it.next();
 
             if (current == selection) {
@@ -101,8 +100,8 @@ public class SelectionManager implements ISelectionManager {
     }
 
     @Override
-    public synchronized ISelection shift(ISelection selection, EnumFacing direction, int blocks) {
-        for (ListIterator<ISelection> it = selections.listIterator(); it.hasNext();) {
+    public synchronized ISelection shift(ISelection selection, Direction direction, int blocks) {
+        for (ListIterator<ISelection> it = selections.listIterator(); it.hasNext(); ) {
             ISelection current = it.next();
 
             if (current == selection) {
@@ -116,3 +115,4 @@ public class SelectionManager implements ISelectionManager {
         return null;
     }
 }
+

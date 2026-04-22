@@ -36,6 +36,9 @@ public class Rotation {
     public Rotation(float yaw, float pitch) {
         this.yaw = yaw;
         this.pitch = pitch;
+        if (Float.isInfinite(yaw) || Float.isNaN(yaw) || Float.isInfinite(pitch) || Float.isNaN(pitch)) {
+            throw new IllegalStateException(yaw + " " + pitch);
+        }
     }
 
     /**
@@ -62,7 +65,8 @@ public class Rotation {
     public Rotation add(Rotation other) {
         return new Rotation(
                 this.yaw + other.yaw,
-                this.pitch + other.pitch);
+                this.pitch + other.pitch
+        );
     }
 
     /**
@@ -75,7 +79,8 @@ public class Rotation {
     public Rotation subtract(Rotation other) {
         return new Rotation(
                 this.yaw - other.yaw,
-                this.pitch - other.pitch);
+                this.pitch - other.pitch
+        );
     }
 
     /**
@@ -84,7 +89,8 @@ public class Rotation {
     public Rotation clamp() {
         return new Rotation(
                 this.yaw,
-                clampPitch(this.pitch));
+                clampPitch(this.pitch)
+        );
     }
 
     /**
@@ -93,7 +99,8 @@ public class Rotation {
     public Rotation normalize() {
         return new Rotation(
                 normalizeYaw(this.yaw),
-                this.pitch);
+                this.pitch
+        );
     }
 
     /**
@@ -102,7 +109,8 @@ public class Rotation {
     public Rotation normalizeAndClamp() {
         return new Rotation(
                 normalizeYaw(this.yaw),
-                clampPitch(this.pitch));
+                clampPitch(this.pitch)
+        );
     }
 
     public Rotation withPitch(float pitch) {
@@ -151,8 +159,29 @@ public class Rotation {
         return newYaw;
     }
 
+    /**
+     * Gets the distance between a starting yaw and an offset yaw.
+     * Distance can be negative if the offset yaw is behind of the starting yaw.
+     *
+     * @param yaw The initial yaw
+     * @param offsetYaw The offset yaw
+     * @return The distance between the yaws
+     */
+    public static float yawDistanceFromOffset(float yaw, float offsetYaw) {
+        if ((yaw > 0 ^ offsetYaw > 0) && ((yaw > 90 || yaw < -90) ^ (offsetYaw > 90 || offsetYaw < -90))) {
+            if (yaw < 0) {
+                return 360 + (yaw - offsetYaw);
+            } else {
+                return 360 - (yaw - offsetYaw);
+            }
+        } else {
+            return yaw - offsetYaw;
+        }
+    }
+
     @Override
     public String toString() {
         return "Yaw: " + yaw + ", Pitch: " + pitch;
     }
 }
+

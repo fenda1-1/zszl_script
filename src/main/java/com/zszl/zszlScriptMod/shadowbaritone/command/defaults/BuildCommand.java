@@ -26,12 +26,13 @@ import com.zszl.zszlScriptMod.shadowbaritone.api.command.datatypes.RelativeFile;
 import com.zszl.zszlScriptMod.shadowbaritone.api.command.exception.CommandException;
 import com.zszl.zszlScriptMod.shadowbaritone.api.command.exception.CommandInvalidStateException;
 import com.zszl.zszlScriptMod.shadowbaritone.api.utils.BetterBlockPos;
-import com.zszl.zszlScriptMod.shadowbaritone.api.utils.ShadowBaritoneI18n;
+import com.zszl.zszlScriptMod.shadowbaritone.utils.schematic.SchematicSystem;
 import org.apache.commons.io.FilenameUtils;
 
 import java.io.File;
 import java.util.Arrays;
 import java.util.List;
+import java.util.StringJoiner;
 import java.util.stream.Stream;
 
 public class BuildCommand extends Command {
@@ -40,14 +41,33 @@ public class BuildCommand extends Command {
 
     public BuildCommand(IBaritone baritone) {
         super(baritone, "build");
-        this.schematicsDir = new File(baritone.getPlayerContext().minecraft().mcDataDir, "schematics");
+        this.schematicsDir = new File(baritone.getPlayerContext().minecraft().gameDirectory, "schematics");
     }
 
     @Override
     public void execute(String label, IArgConsumer args) throws CommandException {
-        File file = args.getDatatypePost(RelativeFile.INSTANCE, schematicsDir).getAbsoluteFile();
+        final File file0 = args.getDatatypePost(RelativeFile.INSTANCE, schematicsDir).getAbsoluteFile();
+        File file = file0;
         if (FilenameUtils.getExtension(file.getAbsolutePath()).isEmpty()) {
             file = new File(file.getAbsolutePath() + "." + Baritone.settings().schematicFallbackExtension.value);
+        }
+        if (!file.exists()) {
+            if (file0.exists()) {
+                throw new CommandInvalidStateException(String.format(
+                        "Cannot load %s because I do not know which schematic format"
+                                + " that is. Please rename the file to include the correct"
+                                + " file extension.",
+                        file));
+            }
+            throw new CommandInvalidStateException("Cannot find " + file);
+        }
+        if (!SchematicSystem.INSTANCE.getByFile(file).isPresent()) {
+            StringJoiner formats = new StringJoiner(", ");
+            SchematicSystem.INSTANCE.getFileExtensions().forEach(formats::add);
+            throw new CommandInvalidStateException(String.format(
+                    "Unsupported schematic format. Reckognized file extensions are: %s",
+                    formats
+            ));
         }
         BetterBlockPos origin = ctx.playerFeet();
         BetterBlockPos buildOrigin;
@@ -60,12 +80,9 @@ public class BuildCommand extends Command {
         }
         boolean success = baritone.getBuilderProcess().build(file.getName(), file, buildOrigin);
         if (!success) {
-            throw new CommandInvalidStateException(ShadowBaritoneI18n.trKey(
-                    "shadowbaritone.command.build.error.load_failed"));
+            throw new CommandInvalidStateException("Couldn't load the schematic. Either your schematic is corrupt or this is a bug.");
         }
-        logDirect(ShadowBaritoneI18n.trKey(
-                "shadowbaritone.command.build.status.loaded",
-                buildOrigin));
+        logDirect(String.format("Successfully loaded schematic for building\nOrigin: %s", buildOrigin));
     }
 
     @Override
@@ -81,21 +98,18 @@ public class BuildCommand extends Command {
 
     @Override
     public String getShortDesc() {
-        return ShadowBaritoneI18n.trKey(
-                "shadowbaritone.command.build.short_desc");
+        return "Build a schematic";
     }
 
     @Override
     public List<String> getLongDesc() {
         return Arrays.asList(
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.build.long_desc.1"),
+                "Build a schematic from a file.",
                 "",
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.build.long_desc.usage"),
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.build.long_desc.example.default"),
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.build.long_desc.example.position"));
+                "Usage:",
+                "> build <filename> - Loads and builds '<filename>.schematic'",
+                "> build <filename> <x> <y> <z> - Custom position"
+        );
     }
 }
+

@@ -14,23 +14,25 @@ import com.zszl.zszlScriptMod.system.AutoEscapeRule;
 import com.zszl.zszlScriptMod.system.ProfileManager;
 import com.zszl.zszlScriptMod.zszlScriptMod;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.entity.EntityPlayerSP;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.EntityLivingBase;
-import net.minecraft.entity.monster.IMob;
-import net.minecraft.entity.passive.EntityAmbientCreature;
-import net.minecraft.entity.passive.EntityAnimal;
-import net.minecraft.entity.passive.EntityTameable;
-import net.minecraft.entity.passive.EntityVillager;
-import net.minecraft.entity.passive.EntityWaterMob;
-import net.minecraft.entity.player.EntityPlayer;
-import net.minecraft.entity.EntityAgeable;
-import net.minecraft.entity.monster.EntityGolem;
-import net.minecraft.util.math.AxisAlignedBB;
-import net.minecraft.util.text.TextComponentString;
-import net.minecraft.util.text.TextFormatting;
-import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
-import net.minecraftforge.fml.common.gameevent.TickEvent;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.network.chat.Component;
+import net.minecraft.world.entity.AgeableMob;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.TamableAnimal;
+import net.minecraft.world.entity.ambient.AmbientCreature;
+import net.minecraft.world.entity.animal.Animal;
+import net.minecraft.world.entity.animal.WaterAnimal;
+import net.minecraft.world.entity.animal.horse.AbstractHorse;
+import net.minecraft.world.entity.boss.enderdragon.EnderDragon;
+import net.minecraft.world.entity.boss.wither.WitherBoss;
+import net.minecraft.world.entity.monster.Enemy;
+import net.minecraft.world.entity.npc.Villager;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.entity.animal.AbstractGolem;
+import net.minecraft.world.phys.AABB;
+import net.minecraftforge.event.TickEvent;
+import net.minecraftforge.eventbus.api.SubscribeEvent;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
@@ -45,13 +47,15 @@ import java.util.Locale;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 public class AutoEscapeHandler {
+
     public static final AutoEscapeHandler INSTANCE = new AutoEscapeHandler();
 
-    private static final Minecraft mc = Minecraft.getMinecraft();
+    private static final Minecraft MC = Minecraft.getInstance();
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
-    private static final List<AutoEscapeRule> rules = new CopyOnWriteArrayList<>();
-    private static final List<String> categories = new CopyOnWriteArrayList<>();
+    private static final List<AutoEscapeRule> RULES = new CopyOnWriteArrayList<>();
+    private static final List<String> CATEGORIES = new CopyOnWriteArrayList<>();
     private static final String CATEGORY_DEFAULT = "默认";
+    private static boolean globalEnabled = true;
 
     private enum RuntimeState {
         IDLE,
@@ -61,7 +65,6 @@ public class AutoEscapeHandler {
 
     private static RuntimeState runtimeState = RuntimeState.IDLE;
     private static AutoEscapeRule activeRule = null;
-    private static String activeEscapeSequenceName = "";
     private static String pendingRestartSequenceName = "";
     private static long restartExecuteAtMs = 0L;
     private static long lastNotifyAtMs = 0L;
@@ -70,8 +73,9 @@ public class AutoEscapeHandler {
     }
 
     public static synchronized void loadConfig() {
-        rules.clear();
-        categories.clear();
+        RULES.clear();
+        CATEGORIES.clear();
+        globalEnabled = true;
 
         Path configFile = getConfigFile();
         if (!Files.exists(configFile)) {
@@ -87,6 +91,9 @@ public class AutoEscapeHandler {
 
             if (parsed != null && parsed.isJsonObject()) {
                 JsonObject root = parsed.getAsJsonObject();
+                if (root.has("globalEnabled")) {
+                    globalEnabled = root.get("globalEnabled").getAsBoolean();
+                }
                 if (root.has("categories") && root.get("categories").isJsonArray()) {
                     JsonArray categoryArray = root.getAsJsonArray("categories");
                     for (JsonElement element : categoryArray) {
@@ -106,7 +113,7 @@ public class AutoEscapeHandler {
                 loadedRules = GSON.fromJson(parsed, listType);
             }
 
-            categories.addAll(loadedCategories);
+            CATEGORIES.addAll(loadedCategories);
             if (loadedRules != null) {
                 for (AutoEscapeRule rule : loadedRules) {
                     if (rule == null) {
@@ -114,13 +121,13 @@ public class AutoEscapeHandler {
                     }
                     rule.normalize();
                     rule.resetRuntimeState();
-                    rules.add(rule);
+                    RULES.add(rule);
                 }
             }
         } catch (Exception e) {
             zszlScriptMod.LOGGER.error("加载自动逃离规则失败", e);
-            rules.clear();
-            categories.clear();
+            RULES.clear();
+            CATEGORIES.clear();
         }
 
         ensureCategoriesSynced();
@@ -128,17 +135,15 @@ public class AutoEscapeHandler {
     }
 
     public static synchronized void saveConfig() {
+        ensureCategoriesSynced();
+        Path configFile = getConfigFile();
         try {
-            ensureCategoriesSynced();
-
-            Path configFile = getConfigFile();
             Files.createDirectories(configFile.getParent());
-
-            JsonObject root = new JsonObject();
-            root.add("categories", GSON.toJsonTree(new ArrayList<>(categories)));
-            root.add("rules", GSON.toJsonTree(snapshotRules()));
-
             try (BufferedWriter writer = Files.newBufferedWriter(configFile, StandardCharsets.UTF_8)) {
+                JsonObject root = new JsonObject();
+                root.addProperty("globalEnabled", globalEnabled);
+                root.add("categories", GSON.toJsonTree(new ArrayList<>(CATEGORIES)));
+                root.add("rules", GSON.toJsonTree(new ArrayList<>(RULES)));
                 GSON.toJson(root, writer);
             }
         } catch (Exception e) {
@@ -147,27 +152,23 @@ public class AutoEscapeHandler {
     }
 
     public static synchronized List<AutoEscapeRule> getRulesSnapshot() {
-        return new ArrayList<>(rules);
+        return new ArrayList<>(RULES);
     }
 
     public static synchronized List<String> getCategoriesSnapshot() {
         ensureCategoriesSynced();
-        return new ArrayList<>(categories);
+        return new ArrayList<>(CATEGORIES);
     }
 
-    public static synchronized void replaceCategoryOrder(List<String> orderedCategories) {
-        ensureCategoriesSynced();
-        LinkedHashSet<String> normalized = new LinkedHashSet<>();
-        if (orderedCategories != null) {
-            for (String category : orderedCategories) {
-                normalized.add(normalizeCategory(category));
-            }
+    public static synchronized boolean isGloballyEnabled() {
+        return globalEnabled;
+    }
+
+    public static synchronized void setGlobalEnabled(boolean enabled) {
+        globalEnabled = enabled;
+        if (!globalEnabled) {
+            deactivateRuntimeBecauseDisabled();
         }
-        for (String category : categories) {
-            normalized.add(normalizeCategory(category));
-        }
-        categories.clear();
-        categories.addAll(normalized);
         saveConfig();
     }
 
@@ -177,7 +178,7 @@ public class AutoEscapeHandler {
         if (containsCategoryIgnoreCase(normalized)) {
             return false;
         }
-        categories.add(normalized);
+        CATEGORIES.add(normalized);
         saveConfig();
         return true;
     }
@@ -195,15 +196,15 @@ public class AutoEscapeHandler {
         }
 
         boolean changed = false;
-        for (int i = 0; i < categories.size(); i++) {
-            if (normalizeCategory(categories.get(i)).equalsIgnoreCase(normalizedOld)) {
-                categories.set(i, normalizedNew);
+        for (int i = 0; i < CATEGORIES.size(); i++) {
+            if (normalizeCategory(CATEGORIES.get(i)).equalsIgnoreCase(normalizedOld)) {
+                CATEGORIES.set(i, normalizedNew);
                 changed = true;
                 break;
             }
         }
 
-        for (AutoEscapeRule rule : rules) {
+        for (AutoEscapeRule rule : RULES) {
             if (rule != null && normalizeCategory(rule.category).equalsIgnoreCase(normalizedOld)) {
                 rule.category = normalizedNew;
                 changed = true;
@@ -224,7 +225,7 @@ public class AutoEscapeHandler {
         ensureCategoriesSynced();
 
         boolean changed = removeCategoryIgnoreCase(normalized);
-        for (AutoEscapeRule rule : rules) {
+        for (AutoEscapeRule rule : RULES) {
             if (rule != null && normalizeCategory(rule.category).equalsIgnoreCase(normalized)) {
                 rule.category = CATEGORY_DEFAULT;
                 changed = true;
@@ -241,7 +242,7 @@ public class AutoEscapeHandler {
     }
 
     public static synchronized void replaceAllRules(List<AutoEscapeRule> newRules) {
-        rules.clear();
+        RULES.clear();
         if (newRules != null) {
             for (AutoEscapeRule rule : newRules) {
                 if (rule == null) {
@@ -249,7 +250,7 @@ public class AutoEscapeHandler {
                 }
                 rule.normalize();
                 rule.resetRuntimeState();
-                rules.add(rule);
+                RULES.add(rule);
             }
         }
         ensureCategoriesSynced();
@@ -268,22 +269,35 @@ public class AutoEscapeHandler {
     public static void resetRuntimeState() {
         runtimeState = RuntimeState.IDLE;
         activeRule = null;
-        activeEscapeSequenceName = "";
         pendingRestartSequenceName = "";
         restartExecuteAtMs = 0L;
         lastNotifyAtMs = 0L;
-        for (AutoEscapeRule rule : snapshotRules()) {
+        for (AutoEscapeRule rule : getRulesSnapshot()) {
             rule.resetRuntimeState();
         }
     }
 
+    private static void deactivateRuntimeBecauseDisabled() {
+        if (runtimeState == RuntimeState.ESCAPING) {
+            stopCurrentSequenceImmediately();
+        }
+        resetRuntimeState();
+    }
+
     @SubscribeEvent
     public void onPlayerTick(TickEvent.PlayerTickEvent event) {
-        if (event.phase != TickEvent.Phase.START || mc.player == null || mc.world == null || event.player != mc.player) {
+        if (event.phase != TickEvent.Phase.START || !(event.player instanceof LocalPlayer player) || MC.level == null) {
             return;
         }
 
-        List<AutoEscapeRule> snapshot = snapshotRules();
+        if (!globalEnabled) {
+            if (runtimeState != RuntimeState.IDLE) {
+                deactivateRuntimeBecauseDisabled();
+            }
+            return;
+        }
+
+        List<AutoEscapeRule> snapshot = getRulesSnapshot();
         AutoEscapeRule candidateRule = null;
         boolean anyThreatPresent = false;
 
@@ -292,7 +306,7 @@ public class AutoEscapeHandler {
                 continue;
             }
             rule.normalize();
-            boolean matched = rule.enabled && hasMatchingThreatNearby(mc.player, rule);
+            boolean matched = rule.enabled && hasMatchingThreatNearby(player, rule);
             if (matched) {
                 anyThreatPresent = true;
                 if (candidateRule == null && !rule.triggerLatched && hasValidEscapeSequence(rule)) {
@@ -340,14 +354,13 @@ public class AutoEscapeHandler {
             pendingRestartSequenceName = activeRule.restartSequenceName.trim();
             restartExecuteAtMs = System.currentTimeMillis() + Math.max(0, activeRule.restartDelaySeconds) * 1000L;
             runtimeState = RuntimeState.WAITING_RESTART;
-            notifyPlayer(TextFormatting.AQUA + "[自动逃离] " + TextFormatting.GREEN
-                    + "逃离序列已完成，将在 "
-                    + TextFormatting.YELLOW + Math.max(0, activeRule.restartDelaySeconds)
-                    + TextFormatting.GREEN + " 秒后执行后续序列。");
+            notifyPlayer("§b[自动逃离] §a逃离序列已完成，将在 §e"
+                    + Math.max(0, activeRule.restartDelaySeconds)
+                    + " §a秒后执行后续序列。");
             return;
         }
 
-        notifyPlayer(TextFormatting.AQUA + "[自动逃离] " + TextFormatting.GREEN + "逃离序列已完成。");
+        notifyPlayer("§b[自动逃离] §a逃离序列已完成。");
         resetRuntimeState();
     }
 
@@ -359,16 +372,14 @@ public class AutoEscapeHandler {
         }
 
         if (!PathSequenceManager.hasSequence(sequenceName)) {
-            notifyPlayer(TextFormatting.AQUA + "[自动逃离] " + TextFormatting.RED
-                    + "后续序列不存在，无法执行: " + TextFormatting.WHITE + sequenceName);
+            notifyPlayer("§b[自动逃离] §c后续序列不存在，无法执行: §f" + sequenceName);
             resetRuntimeState();
             return;
         }
 
         stopCurrentSequenceImmediately();
         PathSequenceManager.runPathSequenceOnce(sequenceName);
-        notifyPlayer(TextFormatting.AQUA + "[自动逃离] " + TextFormatting.GREEN
-                + "开始执行后续序列: " + TextFormatting.WHITE + sequenceName);
+        notifyPlayer("§b[自动逃离] §a开始执行后续序列: §f" + sequenceName);
         resetRuntimeState();
     }
 
@@ -382,13 +393,11 @@ public class AutoEscapeHandler {
             return;
         }
         if (!PathSequenceManager.hasSequence(sequenceName)) {
-            notifyPlayer(TextFormatting.AQUA + "[自动逃离] " + TextFormatting.RED
-                    + "逃离序列不存在，无法执行: " + TextFormatting.WHITE + sequenceName);
+            notifyPlayer("§b[自动逃离] §c逃离序列不存在，无法执行: §f" + sequenceName);
             return;
         }
 
         activeRule = rule;
-        activeEscapeSequenceName = sequenceName;
         pendingRestartSequenceName = "";
         restartExecuteAtMs = 0L;
         runtimeState = RuntimeState.ESCAPING;
@@ -396,12 +405,11 @@ public class AutoEscapeHandler {
         stopCurrentSequenceImmediately();
         PathSequenceManager.runPathSequenceOnce(sequenceName);
 
-        notifyPlayer(TextFormatting.AQUA + "[自动逃离] " + TextFormatting.YELLOW
-                + "检测到附近目标，开始执行逃离序列: " + TextFormatting.WHITE + sequenceName);
+        notifyPlayer("§b[自动逃离] §e检测到附近目标，开始执行逃离序列: §f" + sequenceName);
     }
 
     private static void stopCurrentSequenceImmediately() {
-        EmbeddedNavigationHandler.INSTANCE.stop();
+        EmbeddedNavigationHandler.INSTANCE.forceStop("自动逃离触发时强制打断当前导航");
         PathSequenceManager.clearRunSequenceCallStack();
         if (PathSequenceEventListener.instance.isTracking()) {
             PathSequenceEventListener.instance.stopTracking();
@@ -409,23 +417,19 @@ public class AutoEscapeHandler {
         GuiInventory.isLooping = false;
     }
 
-    private static boolean hasMatchingThreatNearby(EntityPlayerSP player, AutoEscapeRule rule) {
-        if (player == null || mc.world == null || rule == null) {
+    private static boolean hasMatchingThreatNearby(LocalPlayer player, AutoEscapeRule rule) {
+        if (player == null || player.level() == null || rule == null) {
             return false;
         }
 
         double range = rule.detectionRange <= 0 ? AutoEscapeRule.DEFAULT_DETECTION_RANGE : rule.detectionRange;
-        AxisAlignedBB box = player.getEntityBoundingBox().grow(range);
-
-        List<Entity> entities = mc.world.getEntitiesWithinAABB(Entity.class, box);
+        AABB box = player.getBoundingBox().inflate(range, range, range);
+        List<Entity> entities = player.level().getEntities(player, box, entity -> entity != null && entity != player);
         for (Entity entity : entities) {
-            if (entity == null || entity == player) {
+            if (!entity.isAlive()) {
                 continue;
             }
-            if (!isEntityAliveForDetection(entity)) {
-                continue;
-            }
-            if (player.getDistanceSq(entity) > range * range) {
+            if (player.distanceToSqr(entity) > range * range) {
                 continue;
             }
             if (!matchesEntityType(entity, rule)) {
@@ -439,15 +443,8 @@ public class AutoEscapeHandler {
         return false;
     }
 
-    private static boolean isEntityAliveForDetection(Entity entity) {
-        if (entity instanceof EntityLivingBase) {
-            return ((EntityLivingBase) entity).isEntityAlive();
-        }
-        return !entity.isDead;
-    }
-
     private static boolean matchesNameFilters(Entity entity, AutoEscapeRule rule) {
-        String name = entity == null || entity.getName() == null ? "" : entity.getName().trim();
+        String name = entity == null ? "" : entity.getName().getString().trim();
         String lowered = name.toLowerCase(Locale.ROOT);
 
         if (rule.enableNameWhitelist && rule.nameWhitelist != null && !rule.nameWhitelist.isEmpty()) {
@@ -483,7 +480,7 @@ public class AutoEscapeHandler {
 
         List<String> types = rule.entityTypes;
         if (types == null || types.isEmpty()) {
-            return entity instanceof EntityLivingBase;
+            return entity instanceof LivingEntity;
         }
 
         for (String rawType : types) {
@@ -506,46 +503,43 @@ public class AutoEscapeHandler {
                 return true;
             case "生物":
             case "living":
-                return entity instanceof EntityLivingBase;
+                return entity instanceof LivingEntity;
             case "玩家":
             case "player":
-                return entity instanceof EntityPlayer;
+                return entity instanceof Player;
             case "怪物":
             case "monster":
             case "mob":
             case "hostile":
-                return entity instanceof IMob;
+                return entity instanceof Enemy;
             case "中立":
             case "中立生物":
             case "neutral":
-                return entity instanceof EntityLivingBase
-                        && !(entity instanceof EntityPlayer)
-                        && !(entity instanceof IMob);
+                return entity instanceof LivingEntity && !(entity instanceof Player) && !(entity instanceof Enemy);
             case "动物":
             case "animal":
             case "passive":
-                return entity instanceof EntityAnimal || entity instanceof EntityAgeable;
+                return entity instanceof Animal || entity instanceof AgeableMob || entity instanceof AbstractHorse;
             case "水生":
             case "water":
-                return entity instanceof EntityWaterMob;
+                return entity instanceof WaterAnimal;
             case "环境":
             case "ambient":
-                return entity instanceof EntityAmbientCreature;
+                return entity instanceof AmbientCreature;
             case "村民":
             case "villager":
             case "npc":
-                return entity instanceof EntityVillager;
+                return entity instanceof Villager;
             case "傀儡":
             case "golem":
-                return entity instanceof EntityGolem;
+                return entity instanceof AbstractGolem;
             case "驯服":
             case "宠物":
             case "tameable":
-                return entity instanceof EntityTameable;
+                return entity instanceof TamableAnimal;
             case "首领":
             case "boss":
-                return entity instanceof EntityLivingBase
-                        && !((EntityLivingBase) entity).isNonBoss();
+                return entity instanceof EnderDragon || entity instanceof WitherBoss;
             default:
                 return false;
         }
@@ -564,8 +558,8 @@ public class AutoEscapeHandler {
             return;
         }
         lastNotifyAtMs = now;
-        if (mc.player != null) {
-            mc.player.sendMessage(new TextComponentString(message));
+        if (MC.player != null) {
+            MC.player.sendSystemMessage(Component.literal(message));
         }
     }
 
@@ -573,16 +567,12 @@ public class AutoEscapeHandler {
         return ProfileManager.getCurrentProfileDir().resolve("auto_escape_rules.json");
     }
 
-    private static synchronized List<AutoEscapeRule> snapshotRules() {
-        return new ArrayList<>(rules);
-    }
-
     private static void ensureCategoriesSynced() {
         LinkedHashSet<String> normalized = new LinkedHashSet<>();
-        for (String category : categories) {
+        for (String category : CATEGORIES) {
             normalized.add(normalizeCategory(category));
         }
-        for (AutoEscapeRule rule : rules) {
+        for (AutoEscapeRule rule : RULES) {
             if (rule == null) {
                 continue;
             }
@@ -593,8 +583,8 @@ public class AutoEscapeHandler {
         if (normalized.isEmpty()) {
             normalized.add(CATEGORY_DEFAULT);
         }
-        categories.clear();
-        categories.addAll(normalized);
+        CATEGORIES.clear();
+        CATEGORIES.addAll(normalized);
     }
 
     private static String normalizeCategory(String category) {
@@ -603,7 +593,7 @@ public class AutoEscapeHandler {
     }
 
     private static boolean containsCategoryIgnoreCase(String category) {
-        for (String existing : categories) {
+        for (String existing : CATEGORIES) {
             if (normalizeCategory(existing).equalsIgnoreCase(normalizeCategory(category))) {
                 return true;
             }
@@ -612,9 +602,9 @@ public class AutoEscapeHandler {
     }
 
     private static boolean removeCategoryIgnoreCase(String category) {
-        for (int i = 0; i < categories.size(); i++) {
-            if (normalizeCategory(categories.get(i)).equalsIgnoreCase(normalizeCategory(category))) {
-                categories.remove(i);
+        for (int i = 0; i < CATEGORIES.size(); i++) {
+            if (normalizeCategory(CATEGORIES.get(i)).equalsIgnoreCase(normalizeCategory(category))) {
+                CATEGORIES.remove(i);
                 return true;
             }
         }

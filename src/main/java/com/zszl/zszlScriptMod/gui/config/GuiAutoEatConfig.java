@@ -1,11 +1,11 @@
 package com.zszl.zszlScriptMod.gui.config;
 
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
 import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
-import net.minecraft.client.gui.GuiTextField;
-import net.minecraft.client.resources.I18n;
-import org.lwjgl.input.Keyboard;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiTextField;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Keyboard;
 
 import java.io.IOException;
 import java.util.Arrays;
@@ -118,10 +118,10 @@ public class GuiAutoEatConfig extends ThemedGuiScreen {
             }
 
             AutoEatHandler.saveAutoEatConfig();
-            mc.displayGuiScreen(parentScreen);
+            mc.setScreen(parentScreen);
         } else if (button.id == 101) {
             AutoEatHandler.loadAutoEatConfig();
-            mc.displayGuiScreen(parentScreen);
+            mc.setScreen(parentScreen);
         }
     }
 
@@ -208,3 +208,9 @@ public class GuiAutoEatConfig extends ThemedGuiScreen {
         return I18n.format(enabled ? "gui.autoeat.state.on" : "gui.autoeat.state.off");
     }
 }
+
+
+
+
+
+

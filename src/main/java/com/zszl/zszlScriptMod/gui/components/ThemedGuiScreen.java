@@ -2,11 +2,10 @@ package com.zszl.zszlScriptMod.gui.components;
 
 import java.util.Arrays;
 
-import net.minecraft.client.renderer.GlStateManager;
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.FontRenderer;
-import net.minecraft.client.gui.GuiScreen;
-import net.minecraft.client.gui.GuiTextField;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.FontRenderer;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiTextField;
 
 public class ThemedGuiScreen extends GuiScreen {
 
@@ -18,13 +17,10 @@ public class ThemedGuiScreen extends GuiScreen {
         if (field.isFocused() && (field.getSelectedText() == null || field.getSelectedText().isEmpty())) {
             field.setCursorPosition(field.getCursorPosition());
         }
-        GlStateManager.disableLighting();
-        GlStateManager.disableDepth();
-        GlStateManager.color(1.0F, 1.0F, 1.0F, 1.0F);
         field.setEnableBackgroundDrawing(false);
-        GuiTheme.drawInputFrame(field.x - 1, field.y - 1, field.width + 2, field.height + 2, field.isFocused(), true);
+        GuiTheme.drawInputFrame(field.x - 1, field.y - 1, field.width + 2, field.height + 2,
+                field.isFocused(), field.isEnabled());
         field.drawTextBox();
-        GlStateManager.color(1.0F, 1.0F, 1.0F, 1.0F);
     }
 
     @Override
@@ -69,3 +65,6 @@ public class ThemedGuiScreen extends GuiScreen {
         drawHoveringText(Arrays.asList(text.split("\n")), mouseX, mouseY);
     }
 }
+
+
+

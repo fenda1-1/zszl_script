@@ -1,6 +1,6 @@
 package com.zszl.zszlScriptMod.otherfeatures.gui.movement;
 
-import net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
 
 public class GuiHoverModeConfig extends SingleMovementFeatureConfigScreen {
 
@@ -8,3 +8,6 @@ public class GuiHoverModeConfig extends SingleMovementFeatureConfigScreen {
         super(parentScreen, "hover_mode", "悬停模式设置");
     }
 }
+
+
+

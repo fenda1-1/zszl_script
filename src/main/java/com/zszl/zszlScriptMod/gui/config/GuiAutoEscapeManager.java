@@ -4,9 +4,9 @@ import com.zszl.zszlScriptMod.gui.components.ToggleGuiButton;
 import com.zszl.zszlScriptMod.gui.path.GuiSequenceSelector;
 import com.zszl.zszlScriptMod.handlers.AutoEscapeHandler;
 import com.zszl.zszlScriptMod.system.AutoEscapeRule;
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiScreen;
-import net.minecraft.client.gui.GuiTextField;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiTextField;
 
 import java.io.IOException;
 import java.text.DecimalFormat;
@@ -121,12 +121,6 @@ public class GuiAutoEscapeManager extends AbstractThreePaneRuleManager<AutoEscap
     @Override
     protected boolean deleteCategoryInSource(String category) {
         return AutoEscapeHandler.deleteCategory(category);
-    }
-
-    @Override
-    protected boolean replaceCategoryOrderInSource(List<String> orderedCategories) {
-        AutoEscapeHandler.replaceCategoryOrder(orderedCategories);
-        return true;
     }
 
     @Override
@@ -570,10 +564,10 @@ public class GuiAutoEscapeManager extends AbstractThreePaneRuleManager<AutoEscap
         }
         if (button.id == BTN_SELECT_ESCAPE_SEQUENCE) {
             EditorStateSnapshot snapshot = captureEditorStateSnapshot();
-            mc.displayGuiScreen(new GuiSequenceSelector(this, selected -> {
+            mc.setScreen(new GuiSequenceSelector(this, selected -> {
                 snapshot.escapeSequenceName = safe(selected);
                 pendingRestoreState = snapshot;
-                mc.displayGuiScreen(this);
+                mc.setScreen(this);
             }));
             return true;
         }
@@ -594,10 +588,10 @@ public class GuiAutoEscapeManager extends AbstractThreePaneRuleManager<AutoEscap
         }
         if (button.id == BTN_SELECT_RESTART_SEQUENCE) {
             EditorStateSnapshot snapshot = captureEditorStateSnapshot();
-            mc.displayGuiScreen(new GuiSequenceSelector(this, selected -> {
+            mc.setScreen(new GuiSequenceSelector(this, selected -> {
                 snapshot.restartSequenceName = safe(selected);
                 pendingRestoreState = snapshot;
-                mc.displayGuiScreen(this);
+                mc.setScreen(this);
             }));
             return true;
         }
@@ -989,3 +983,6 @@ public class GuiAutoEscapeManager extends AbstractThreePaneRuleManager<AutoEscap
         private boolean enabled = true;
     }
 }
+
+
+

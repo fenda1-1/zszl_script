@@ -7,24 +7,29 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.google.gson.reflect.TypeToken;
+import com.mojang.blaze3d.platform.GlStateManager;
+import com.mojang.blaze3d.systems.RenderSystem;
+import com.mojang.blaze3d.vertex.BufferBuilder;
+import com.mojang.blaze3d.vertex.DefaultVertexFormat;
+import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.blaze3d.vertex.Tesselator;
+import com.mojang.blaze3d.vertex.VertexFormat;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.util.text.TextComponentString;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraftforge.client.event.RenderWorldLastEvent;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraftforge.fml.common.gameevent.TickEvent;
 import com.zszl.zszlScriptMod.config.DebugModule;
 import com.zszl.zszlScriptMod.config.ModConfig;
-import com.zszl.zszlScriptMod.zszlScriptMod;
 import com.zszl.zszlScriptMod.gui.GuiInventory;
 import com.zszl.zszlScriptMod.path.PathSequenceEventListener;
 import com.zszl.zszlScriptMod.path.PathSequenceManager;
 import com.zszl.zszlScriptMod.system.ConditionalRule;
 import com.zszl.zszlScriptMod.system.ProfileManager;
-
+import com.zszl.zszlScriptMod.zszlScriptMod;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.renderer.GlStateManager;
-import net.minecraft.client.renderer.RenderGlobal;
-import net.minecraft.entity.Entity;
-import net.minecraft.util.math.AxisAlignedBB;
-import net.minecraft.util.text.TextComponentString;
-import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
-import net.minecraftforge.client.event.RenderWorldLastEvent;
-import net.minecraftforge.fml.common.gameevent.TickEvent;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.client.renderer.GameRenderer;
+import net.minecraft.world.phys.Vec3;
+import net.minecraftforge.eventbus.api.SubscribeEvent;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
@@ -36,30 +41,46 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Objects;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 public class ConditionalExecutionHandler {
+
+    public static final class ForegroundSequenceStartDecision {
+        private final boolean allowed;
+        private final String source;
+        private final String reason;
+
+        private ForegroundSequenceStartDecision(boolean allowed, String source, String reason) {
+            this.allowed = allowed;
+            this.source = source == null ? "" : source;
+            this.reason = reason == null ? "" : reason;
+        }
+
+        public boolean isAllowed() {
+            return allowed;
+        }
+
+        public String getSource() {
+            return source;
+        }
+
+        public String getReason() {
+            return reason;
+        }
+    }
+
     public static final ConditionalExecutionHandler INSTANCE = new ConditionalExecutionHandler();
-    private static final Minecraft mc = Minecraft.getMinecraft();
+
+    private static final Minecraft MC = Minecraft.getInstance();
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final int DEBUG_LINES_LIMIT = 5;
 
-    // --- 核心修改：使用规则列表 ---
     public static boolean globalEnabled = true;
     public static final List<ConditionalRule> rules = new CopyOnWriteArrayList<>();
     private static final List<String> categories = new CopyOnWriteArrayList<>();
 
     private static final String CATEGORY_DEFAULT = "默认";
-    private static final String BUILTIN_RULE_NAME = "初始化界面";
-    private static final String BUILTIN_SEQUENCE_NAME = "初始化界面";
-    private static final double BUILTIN_CENTER_X = 185.51D;
-    private static final double BUILTIN_CENTER_Y = 14.0D;
-    private static final double BUILTIN_CENTER_Z = -587.42D;
-    private static final double BUILTIN_RANGE = 10.0D;
-
-    // --- 运行时状态 ---
-    private static ConditionalRule activeRule = null; // 记录当前是由哪个规则启动的序列
+    private static ConditionalRule activeRule = null;
     private static final List<String> debugLines = new ArrayList<>();
     private static ConditionalRule antiStuckMonitorRule = null;
     private static int antiStuckStationaryTicks = 0;
@@ -77,42 +98,22 @@ public class ConditionalExecutionHandler {
         return ProfileManager.getCurrentProfileDir().resolve("conditional_rules.json");
     }
 
-    public static synchronized void saveConfig() {
-        try {
-            ensureBuiltinRules();
-            ensureCategoriesSynced();
-            sanitizeRules();
-
-            Path configFile = getConfigFile();
-            Files.createDirectories(configFile.getParent());
-
-            JsonObject root = new JsonObject();
-            root.addProperty("globalEnabled", globalEnabled);
-            root.add("categories", GSON.toJsonTree(new ArrayList<>(categories)));
-            root.add("rules", GSON.toJsonTree(snapshotRules()));
-
-            try (BufferedWriter writer = Files.newBufferedWriter(configFile, StandardCharsets.UTF_8)) {
-                GSON.toJson(root, writer);
-            }
-        } catch (Exception e) {
-            zszlScriptMod.LOGGER.error("无法保存条件执行规则", e);
-        }
-    }
-
     public static synchronized void loadConfig() {
         Path configFile = getConfigFile();
         rules.clear();
         categories.clear();
         globalEnabled = true;
+        activeRule = null;
+        clearAntiStuckState();
+        updateDebugLines(Collections.emptyList());
 
         if (!Files.exists(configFile)) {
-            ensureBuiltinRules();
             ensureCategoriesSynced();
             return;
         }
 
         try (BufferedReader reader = Files.newBufferedReader(configFile, StandardCharsets.UTF_8)) {
-            JsonElement parsed = new JsonParser().parse(reader);
+            JsonElement parsed = JsonParser.parseReader(reader);
             List<ConditionalRule> loadedRules = null;
             List<String> loadedCategories = new ArrayList<>();
 
@@ -145,104 +146,38 @@ public class ConditionalExecutionHandler {
             }
             categories.addAll(loadedCategories);
 
-            ensureBuiltinRules();
+            pruneLegacyInitializationRules();
             ensureCategoriesSynced();
             sanitizeRules();
         } catch (Exception e) {
             zszlScriptMod.LOGGER.error("无法加载条件执行规则", e);
             rules.clear();
             categories.clear();
-            ensureBuiltinRules();
             ensureCategoriesSynced();
             sanitizeRules();
         }
     }
 
-    private static ConditionalRule createBuiltinRule() {
-        ConditionalRule rule = new ConditionalRule();
-        rule.name = BUILTIN_RULE_NAME;
-        rule.enabled = false;
-        rule.centerX = BUILTIN_CENTER_X;
-        rule.centerY = BUILTIN_CENTER_Y;
-        rule.centerZ = BUILTIN_CENTER_Z;
-        rule.range = BUILTIN_RANGE;
-        rule.sequenceName = BUILTIN_SEQUENCE_NAME;
-        rule.stopOnExit = false;
-        rule.loopCount = 1;
-        rule.cooldownSeconds = 30;
-        rule.runOncePerEntry = true;
-        rule.antiStuckEnabled = false;
-        rule.antiStuckTimeoutSeconds = ConditionalRule.DEFAULT_ANTI_STUCK_TIMEOUT_SECONDS;
-        rule.visualizeRange = false;
-        rule.visualizeBorderColor = ConditionalRule.DEFAULT_VISUALIZE_BORDER_COLOR;
-        rule.normalize();
-        return rule;
-    }
+    public static synchronized void saveConfig() {
+        try {
+            pruneLegacyInitializationRules();
+            ensureCategoriesSynced();
+            sanitizeRules();
 
-    private static void applyBuiltinRuleValues(ConditionalRule rule) {
-        if (rule == null) {
-            return;
-        }
-        boolean keepEnabled = rule.enabled;
-        rule.name = BUILTIN_RULE_NAME;
-        rule.enabled = keepEnabled;
-        rule.centerX = BUILTIN_CENTER_X;
-        rule.centerY = BUILTIN_CENTER_Y;
-        rule.centerZ = BUILTIN_CENTER_Z;
-        rule.range = BUILTIN_RANGE;
-        rule.sequenceName = BUILTIN_SEQUENCE_NAME;
-        rule.stopOnExit = false;
-        rule.loopCount = 1;
-        rule.cooldownSeconds = 30;
-        rule.runOncePerEntry = true;
-        rule.antiStuckEnabled = false;
-        rule.antiStuckTimeoutSeconds = ConditionalRule.DEFAULT_ANTI_STUCK_TIMEOUT_SECONDS;
-        rule.visualizeRange = false;
-        rule.visualizeBorderColor = ConditionalRule.DEFAULT_VISUALIZE_BORDER_COLOR;
-        rule.normalize();
-    }
+            Path configFile = getConfigFile();
+            Files.createDirectories(configFile.getParent());
 
-    private static void ensureBuiltinRules() {
-        ConditionalRule builtin = null;
-        int builtinIndex = -1;
-        for (int i = 0; i < rules.size(); i++) {
-            ConditionalRule rule = rules.get(i);
-            if (rule != null && Objects.equals(rule.name, BUILTIN_RULE_NAME)) {
-                builtin = rule;
-                builtinIndex = i;
-                break;
+            JsonObject root = new JsonObject();
+            root.addProperty("globalEnabled", globalEnabled);
+            root.add("categories", GSON.toJsonTree(new ArrayList<>(categories)));
+            root.add("rules", GSON.toJsonTree(snapshotRules()));
+
+            try (BufferedWriter writer = Files.newBufferedWriter(configFile, StandardCharsets.UTF_8)) {
+                GSON.toJson(root, writer);
             }
+        } catch (Exception e) {
+            zszlScriptMod.LOGGER.error("无法保存条件执行规则", e);
         }
-
-        if (builtin == null) {
-            rules.add(0, createBuiltinRule());
-        } else {
-            applyBuiltinRuleValues(builtin);
-            if (builtinIndex > 0) {
-                rules.remove(builtinIndex);
-                rules.add(0, builtin);
-            }
-        }
-    }
-
-    private static void ensureCategoriesSynced() {
-        LinkedHashSet<String> normalized = new LinkedHashSet<>();
-        for (String category : categories) {
-            normalized.add(normalizeCategory(category));
-        }
-        for (ConditionalRule rule : rules) {
-            if (rule == null || isBuiltinRule(rule)) {
-                continue;
-            }
-            rule.normalize();
-            rule.category = normalizeCategory(rule.category);
-            normalized.add(rule.category);
-        }
-        if (normalized.isEmpty()) {
-            normalized.add(CATEGORY_DEFAULT);
-        }
-        categories.clear();
-        categories.addAll(normalized);
     }
 
     private static void sanitizeRules() {
@@ -251,6 +186,36 @@ public class ConditionalExecutionHandler {
                 rule.normalize();
             }
         }
+    }
+
+    private static void pruneLegacyInitializationRules() {
+        boolean removedActiveRule = isLegacyInitializationRule(activeRule);
+        for (int i = rules.size() - 1; i >= 0; i--) {
+            if (isLegacyInitializationRule(rules.get(i))) {
+                rules.remove(i);
+            }
+        }
+        if (removedActiveRule) {
+            activeRule = null;
+        }
+    }
+
+    private static boolean isLegacyInitializationRule(ConditionalRule rule) {
+        return rule != null
+                && "初始化界面".equals(rule.name)
+                && "初始化界面".equals(rule.sequenceName)
+                && Math.abs(rule.centerX - 185.51D) < 0.0001D
+                && Math.abs(rule.centerY - 14.0D) < 0.0001D
+                && Math.abs(rule.centerZ - (-587.42D)) < 0.0001D
+                && Math.abs(rule.range - 10.0D) < 0.0001D
+                && !rule.stopOnExit
+                && rule.loopCount == 1
+                && rule.cooldownSeconds == 30
+                && rule.runOncePerEntry
+                && !rule.antiStuckEnabled
+                && !rule.visualizeRange
+                && ConditionalRule.DEFAULT_VISUALIZE_BORDER_COLOR
+                        .equals(ConditionalRule.normalizeColor(rule.visualizeBorderColor));
     }
 
     private static String normalizeCategory(String category) {
@@ -277,14 +242,32 @@ public class ConditionalExecutionHandler {
         return false;
     }
 
+    private static void ensureCategoriesSynced() {
+        LinkedHashSet<String> normalized = new LinkedHashSet<>();
+        for (String category : categories) {
+            normalized.add(normalizeCategory(category));
+        }
+        for (ConditionalRule rule : rules) {
+            if (rule == null) {
+                continue;
+            }
+            rule.normalize();
+            rule.category = normalizeCategory(rule.category);
+            normalized.add(rule.category);
+        }
+        if (normalized.isEmpty()) {
+            normalized.add(CATEGORY_DEFAULT);
+        }
+        categories.clear();
+        categories.addAll(normalized);
+    }
+
     public static synchronized List<String> getCategoriesSnapshot() {
-        ensureBuiltinRules();
         ensureCategoriesSynced();
         return new ArrayList<>(categories);
     }
 
     public static synchronized void replaceCategoryOrder(List<String> orderedCategories) {
-        ensureBuiltinRules();
         ensureCategoriesSynced();
         LinkedHashSet<String> normalized = new LinkedHashSet<>();
         if (orderedCategories != null) {
@@ -302,7 +285,6 @@ public class ConditionalExecutionHandler {
 
     public static synchronized boolean addCategory(String category) {
         String normalized = normalizeCategory(category);
-        ensureBuiltinRules();
         ensureCategoriesSynced();
         if (containsCategoryIgnoreCase(normalized)) {
             return false;
@@ -315,7 +297,6 @@ public class ConditionalExecutionHandler {
     public static synchronized boolean renameCategory(String oldCategory, String newCategory) {
         String normalizedOld = normalizeCategory(oldCategory);
         String normalizedNew = normalizeCategory(newCategory);
-        ensureBuiltinRules();
         ensureCategoriesSynced();
 
         if (normalizedOld.equalsIgnoreCase(normalizedNew)) {
@@ -333,10 +314,8 @@ public class ConditionalExecutionHandler {
                 break;
             }
         }
-
         for (ConditionalRule rule : rules) {
-            if (rule != null && !isBuiltinRule(rule)
-                    && normalizeCategory(rule.category).equalsIgnoreCase(normalizedOld)) {
+            if (rule != null && normalizeCategory(rule.category).equalsIgnoreCase(normalizedOld)) {
                 rule.category = normalizedNew;
                 changed = true;
             }
@@ -353,13 +332,11 @@ public class ConditionalExecutionHandler {
 
     public static synchronized boolean deleteCategory(String category) {
         String normalized = normalizeCategory(category);
-        ensureBuiltinRules();
         ensureCategoriesSynced();
 
         boolean changed = removeCategoryIgnoreCase(normalized);
         for (ConditionalRule rule : rules) {
-            if (rule != null && !isBuiltinRule(rule)
-                    && normalizeCategory(rule.category).equalsIgnoreCase(normalized)) {
+            if (rule != null && normalizeCategory(rule.category).equalsIgnoreCase(normalized)) {
                 rule.category = CATEGORY_DEFAULT;
                 changed = true;
             }
@@ -374,37 +351,30 @@ public class ConditionalExecutionHandler {
         return true;
     }
 
-    public static boolean isBuiltinRule(ConditionalRule rule) {
-        if (rule == null) {
-            return false;
-        }
-        return Objects.equals(rule.name, BUILTIN_RULE_NAME)
-                && Objects.equals(rule.sequenceName, BUILTIN_SEQUENCE_NAME)
-                && Math.abs(rule.centerX - BUILTIN_CENTER_X) < 0.0001D
-                && Math.abs(rule.centerY - BUILTIN_CENTER_Y) < 0.0001D
-                && Math.abs(rule.centerZ - BUILTIN_CENTER_Z) < 0.0001D;
-    }
-
     public static List<String> getDebugLinesSnapshot() {
         synchronized (debugLines) {
             return new ArrayList<>(debugLines);
         }
     }
 
-    public static void setGlobalEnabled(boolean enabled) {
-        globalEnabled = enabled;
-        if (!enabled) {
-            INSTANCE.stopRuntimeActivity();
-        }
-        saveConfig();
+    public static boolean shouldRenderDebugOverlay() {
+        return ModConfig.isDebugFlagEnabled(DebugModule.CONDITIONAL_EXECUTION);
     }
 
     public static boolean isGloballyEnabled() {
         return globalEnabled;
     }
 
-    public static boolean shouldRenderDebugOverlay() {
-        return ModConfig.isDebugFlagEnabled(DebugModule.CONDITIONAL_EXECUTION);
+    public static void setGlobalEnabled(boolean enabled) {
+        globalEnabled = enabled;
+        if (!enabled) {
+            INSTANCE.stopRuntimeActivity("条件执行总开关关闭");
+        }
+        saveConfig();
+    }
+
+    public static ForegroundSequenceStartDecision assessForegroundSequenceStart(String sequenceName, LocalPlayer player) {
+        return allowStartDecision();
     }
 
     private static void updateDebugLines(List<String> lines) {
@@ -444,31 +414,23 @@ public class ConditionalExecutionHandler {
 
     @SubscribeEvent
     public void onPlayerTick(TickEvent.PlayerTickEvent event) {
-        if (event.phase != TickEvent.Phase.START || mc.player == null || mc.world == null) {
+        if (event.phase != TickEvent.Phase.START || !(event.player instanceof LocalPlayer player) || MC.level == null) {
             return;
         }
 
         if (!globalEnabled) {
-            stopRuntimeActivity();
-            updateDebugLines(new ArrayList<String>() {
-                {
-                    add("§b[条件执行] §7总开关关闭");
-                }
-            });
+            stopRuntimeActivity("条件执行总开关关闭");
+            updateDebugLines(Collections.singletonList("§b[条件执行] §7总开关关闭"));
             return;
         }
 
         if (AutoEscapeHandler.isEmergencyLockActive()) {
             clearAntiStuckState();
-            updateDebugLines(new ArrayList<String>() {
-                {
-                    add("§b[条件执行] §e已被自动逃离临时接管");
-                }
-            });
+            updateDebugLines(Collections.singletonList("§b[条件执行] §e已被自动逃离临时接管"));
             return;
         }
 
-        ensureBuiltinRules();
+        pruneLegacyInitializationRules();
         sanitizeRules();
         List<ConditionalRule> rulesSnapshot = snapshotRules();
         List<String> runtimeDebugLines = new ArrayList<>();
@@ -483,7 +445,7 @@ public class ConditionalExecutionHandler {
             if (rule == null) {
                 continue;
             }
-            boolean inRange = rule.enabled && rule.isInRange(mc.player.posX, mc.player.posY, mc.player.posZ);
+            boolean inRange = rule.enabled && rule.isInRange(player.getX(), player.getY(), player.getZ());
             boolean enteredThisTick = inRange && !rule.wasPlayerInRangeLastTick;
             boolean onCooldown = rule.isOnCooldown();
 
@@ -516,7 +478,7 @@ public class ConditionalExecutionHandler {
             if (!activeRule.enabled) {
                 activeRule = null;
             } else if (!PathSequenceEventListener.instance.isTracking()
-                    && !activeRule.isInRange(mc.player.posX, mc.player.posY, mc.player.posZ)) {
+                    && !activeRule.isInRange(player.getX(), player.getY(), player.getZ())) {
                 activeRule = null;
             }
         }
@@ -524,60 +486,47 @@ public class ConditionalExecutionHandler {
         boolean isSequenceActive = PathSequenceEventListener.instance.isTracking() && activeRule != null;
 
         if (highestPriorityRuleInRange == null && activeRule == null) {
-            updateAntiStuckState(false, null);
+            updateAntiStuckState(false, null, player);
             return;
         }
 
-        // --- 核心逻辑 ---
-
-        // 1. 处理离开区域的情况
-        if (isSequenceActive && activeRule.stopOnExit) {
-            // 检查玩家是否已经离开了 *当前活动规则* 的区域
-            if (!activeRule.isInRange(mc.player.posX, mc.player.posY, mc.player.posZ)) {
-                zszlScriptMod.LOGGER.info("[条件执行] 玩家离开规则 '{}' 的区域，终止序列。", activeRule.name);
-                stopActiveSequence();
-                activeRule.startCooldown(); // 离开后也启动冷却
-                activeRule = null;
-                clearAntiStuckState();
-                return;
-            }
+        if (isSequenceActive && activeRule.stopOnExit && !activeRule.isInRange(player.getX(), player.getY(), player.getZ())) {
+            zszlScriptMod.LOGGER.info("[条件执行] 玩家离开规则 '{}' 的区域，终止序列。", activeRule.name);
+            stopActiveSequence("条件执行",
+                    "玩家离开规则 '" + describeRule(activeRule) + "' 的区域，stopOnExit=true");
+            activeRule.startCooldown();
+            activeRule = null;
+            clearAntiStuckState();
+            return;
         }
 
-        // 2. 处理进入区域的情况
         if (highestPriorityRuleInRange != null) {
-            // 如果没有序列在运行，或者当前运行的序列优先级低于新发现的规则
-            if (!isSequenceActive
-                    || (activeRule != null
-                            && getRulePriorityIndex(rulesSnapshot, highestPriorityRuleInRange) < getRulePriorityIndex(
-                                    rulesSnapshot, activeRule))) {
-
-                // 如果有低优先级的在运行，先停止它
+            if (!isSequenceActive || (activeRule != null
+                    && getRulePriorityIndex(rulesSnapshot, highestPriorityRuleInRange) < getRulePriorityIndex(
+                            rulesSnapshot, activeRule))) {
                 if (isSequenceActive) {
-                    zszlScriptMod.LOGGER.info("[条件执行] 发现更高优先级的规则 '{}'，停止当前规则 '{}'。", highestPriorityRuleInRange.name,
-                            activeRule.name);
-                    stopActiveSequence();
+                    zszlScriptMod.LOGGER.info("[条件执行] 发现更高优先级的规则 '{}'，停止当前规则 '{}'.",
+                            highestPriorityRuleInRange.name, activeRule.name);
+                    stopActiveSequence("条件执行",
+                            "更高优先级规则 '" + describeRule(highestPriorityRuleInRange)
+                                    + "' 抢占当前规则 '" + describeRule(activeRule) + "'");
                 }
 
-                // 检查 "Run Once" 逻辑
                 ConditionalRule candidateRule = highestPriorityFreshEntryRule != null
                         ? highestPriorityFreshEntryRule
                         : highestPriorityRuleInRange;
-
                 if (candidateRule.runOncePerEntry && candidateRule.hasBeenTriggered) {
-                    return; // 本次进入已经触发过，跳过
+                    return;
                 }
 
-                // 启动新规则
-                zszlScriptMod.LOGGER.info("[条件执行] 玩家进入规则 '{}' 的区域，开始执行序列: {}", candidateRule.name,
-                        candidateRule.sequenceName);
+                zszlScriptMod.LOGGER.info("[条件执行] 玩家进入规则 '{}' 的区域，开始执行序列: {}",
+                        candidateRule.name, candidateRule.sequenceName);
                 activeRule = candidateRule;
-                activeRule.hasBeenTriggered = true; // 标记已触发
-
+                activeRule.hasBeenTriggered = true;
                 runRuleSequence(activeRule, false);
             }
         }
 
-        // 3. 如果玩家不在任何启用规则区域内，重置所有规则的 "Run Once" 状态
         if (!playerIsInRangeOfAnyEnabledRule) {
             for (ConditionalRule rule : rulesSnapshot) {
                 rule.resetTrigger();
@@ -588,32 +537,31 @@ public class ConditionalExecutionHandler {
         }
 
         updateAntiStuckState(PathSequenceEventListener.instance.isTracking() && activeRule != null,
-                highestPriorityRuleInRange);
+                highestPriorityRuleInRange, player);
     }
 
     private static List<ConditionalRule> snapshotRules() {
-        if (rules == null || rules.isEmpty()) {
+        if (rules.isEmpty()) {
             return Collections.emptyList();
         }
         return new ArrayList<>(rules);
     }
 
     private static int getRulePriorityIndex(List<ConditionalRule> snapshot, ConditionalRule rule) {
-        int idx = snapshot.indexOf(rule);
-        return idx >= 0 ? idx : Integer.MAX_VALUE;
+        int index = snapshot.indexOf(rule);
+        return index >= 0 ? index : Integer.MAX_VALUE;
     }
 
-    private void stopActiveSequence() {
-        EmbeddedNavigationHandler.INSTANCE.stop();
+    private void stopActiveSequence(String source, String reason) {
         if (PathSequenceEventListener.instance.isTracking()) {
-            PathSequenceEventListener.instance.stopTracking();
+            PathSequenceEventListener.instance.stopTrackingAndStopNavigation(source, reason);
         }
         GuiInventory.isLooping = false;
     }
 
-    private void stopRuntimeActivity() {
+    private void stopRuntimeActivity(String reason) {
         if (activeRule != null) {
-            stopActiveSequence();
+            stopActiveSequence("条件执行", reason);
         }
         activeRule = null;
         clearAntiStuckState();
@@ -628,8 +576,9 @@ public class ConditionalExecutionHandler {
         resetAntiStuckTracking(rule);
     }
 
-    private void updateAntiStuckState(boolean isSequenceActive, ConditionalRule highestPriorityRuleInRange) {
-        if (mc.player == null) {
+    private void updateAntiStuckState(boolean isSequenceActive, ConditionalRule highestPriorityRuleInRange,
+            LocalPlayer player) {
+        if (player == null) {
             clearAntiStuckState();
             return;
         }
@@ -638,7 +587,7 @@ public class ConditionalExecutionHandler {
             if (antiStuckEntryGraceTicks <= 0
                     || !antiStuckEntryGraceRule.enabled
                     || !antiStuckEntryGraceRule.antiStuckEnabled
-                    || !antiStuckEntryGraceRule.isInRange(mc.player.posX, mc.player.posY, mc.player.posZ)) {
+                    || !antiStuckEntryGraceRule.isInRange(player.getX(), player.getY(), player.getZ())) {
                 antiStuckEntryGraceRule = null;
                 antiStuckEntryGraceTicks = 0;
             } else {
@@ -650,9 +599,8 @@ public class ConditionalExecutionHandler {
         if (activeRule != null
                 && activeRule.enabled
                 && activeRule.antiStuckEnabled
-                && activeRule.isInRange(mc.player.posX, mc.player.posY, mc.player.posZ)
-                && (isSequenceActive
-                        || (antiStuckEntryGraceRule == activeRule && antiStuckEntryGraceTicks > 0))) {
+                && activeRule.isInRange(player.getX(), player.getY(), player.getZ())
+                && (isSequenceActive || (antiStuckEntryGraceRule == activeRule && antiStuckEntryGraceTicks > 0))) {
             monitorRule = activeRule;
         }
         if (monitorRule == null
@@ -660,14 +608,14 @@ public class ConditionalExecutionHandler {
                 && antiStuckEntryGraceTicks > 0
                 && antiStuckEntryGraceRule.enabled
                 && antiStuckEntryGraceRule.antiStuckEnabled
-                && antiStuckEntryGraceRule.isInRange(mc.player.posX, mc.player.posY, mc.player.posZ)) {
+                && antiStuckEntryGraceRule.isInRange(player.getX(), player.getY(), player.getZ())) {
             monitorRule = antiStuckEntryGraceRule;
         }
         if (monitorRule == null
                 && highestPriorityRuleInRange != null
                 && highestPriorityRuleInRange == activeRule
                 && highestPriorityRuleInRange.antiStuckEnabled
-                && highestPriorityRuleInRange.isInRange(mc.player.posX, mc.player.posY, mc.player.posZ)
+                && highestPriorityRuleInRange.isInRange(player.getX(), player.getY(), player.getZ())
                 && isSequenceActive) {
             monitorRule = highestPriorityRuleInRange;
         }
@@ -682,24 +630,22 @@ public class ConditionalExecutionHandler {
             return;
         }
 
-        if (Double.isNaN(antiStuckLastPosX) || hasPlayerMoved()) {
+        if (Double.isNaN(antiStuckLastPosX) || hasPlayerMoved(player)) {
             antiStuckStationaryTicks = 0;
             antiStuckWarnSent = false;
-            captureAntiStuckPosition();
+            captureAntiStuckPosition(player);
             return;
         }
 
         antiStuckStationaryTicks++;
-        captureAntiStuckPosition();
+        captureAntiStuckPosition(player);
 
         int timeoutTicks = Math.max(20, monitorRule.getAntiStuckTimeoutTicks());
         int warningTicks = timeoutTicks - 20;
-
         if (warningTicks >= 20 && !antiStuckWarnSent && antiStuckStationaryTicks >= warningTicks) {
             sendAntiStuckWarning(monitorRule, warningTicks / 20, 1);
             antiStuckWarnSent = true;
         }
-
         if (antiStuckStationaryTicks < timeoutTicks) {
             return;
         }
@@ -710,20 +656,20 @@ public class ConditionalExecutionHandler {
     }
 
     private void restartRuleSequence(ConditionalRule rule) {
-        if (rule == null || mc.player == null) {
+        if (rule == null || MC.player == null) {
             return;
         }
-
         String sequenceName = rule.sequenceName == null ? "" : rule.sequenceName.trim();
         if (sequenceName.isEmpty()) {
             return;
         }
         if (!PathSequenceManager.hasSequence(sequenceName)) {
-            mc.player.sendMessage(new TextComponentString("§c[条件执行] 未找到序列: " + sequenceName));
+            MC.player.sendSystemMessage(new TextComponentString("§c[条件执行] 未找到序列: " + sequenceName));
             return;
         }
 
-        stopActiveSequence();
+        stopActiveSequence("条件执行",
+                "条件执行防卡死重启规则 '" + describeRule(rule) + "' 前清理当前前台序列");
         activeRule = rule;
         activeRule.hasBeenTriggered = true;
         runRuleSequence(activeRule, true);
@@ -749,47 +695,68 @@ public class ConditionalExecutionHandler {
         PathSequenceManager.runPathSequenceWithLoopCount(sequenceName, explicitLoopCount);
     }
 
+    private static ForegroundSequenceStartDecision allowStartDecision() {
+        return new ForegroundSequenceStartDecision(true, "", "");
+    }
+
+    private static ForegroundSequenceStartDecision blockedStartDecision(String source, String reason) {
+        return new ForegroundSequenceStartDecision(false, source, reason);
+    }
+
+    private static String describeRule(ConditionalRule rule) {
+        if (rule == null || rule.name == null || rule.name.trim().isEmpty()) {
+            return "<未命名规则>";
+        }
+        return rule.name.trim();
+    }
+
     private void sendAntiStuckWarning(ConditionalRule rule, int elapsedSeconds, int remainSeconds) {
-        if (mc.player == null || rule == null) {
+        if (MC.player == null || rule == null) {
             return;
         }
         String sequenceName = rule.sequenceName == null ? "" : rule.sequenceName.trim();
-        mc.player.sendMessage(new TextComponentString(
+        MC.player.sendSystemMessage(new TextComponentString(
                 "§e[条件执行] 已在" + sequenceName + "序列中停留超过" + Math.max(1, elapsedSeconds)
                         + "s，将在" + Math.max(1, remainSeconds) + "s后重启序列。"));
     }
 
     private void sendAntiStuckRestartMessage(ConditionalRule rule, int elapsedSeconds) {
-        if (mc.player == null || rule == null) {
+        if (MC.player == null || rule == null) {
             return;
         }
         String sequenceName = rule.sequenceName == null ? "" : rule.sequenceName.trim();
-        mc.player.sendMessage(new TextComponentString(
+        MC.player.sendSystemMessage(new TextComponentString(
                 "§c[条件执行] 已在" + sequenceName + "序列中停留超过" + Math.max(1, elapsedSeconds)
                         + "s，正在重启序列。"));
     }
 
-    private boolean hasPlayerMoved() {
-        double dx = mc.player.posX - antiStuckLastPosX;
-        double dy = mc.player.posY - antiStuckLastPosY;
-        double dz = mc.player.posZ - antiStuckLastPosZ;
+    private boolean hasPlayerMoved(LocalPlayer player) {
+        double dx = player.getX() - antiStuckLastPosX;
+        double dy = player.getY() - antiStuckLastPosY;
+        double dz = player.getZ() - antiStuckLastPosZ;
         return dx * dx + dy * dy + dz * dz > 0.0025D;
     }
 
-    private void captureAntiStuckPosition() {
-        antiStuckLastPosX = mc.player.posX;
-        antiStuckLastPosY = mc.player.posY;
-        antiStuckLastPosZ = mc.player.posZ;
+    private static void captureAntiStuckPosition(LocalPlayer player) {
+        antiStuckLastPosX = player.getX();
+        antiStuckLastPosY = player.getY();
+        antiStuckLastPosZ = player.getZ();
     }
 
-    private void resetAntiStuckTracking(ConditionalRule rule) {
+    private static void resetAntiStuckTracking(ConditionalRule rule) {
         antiStuckMonitorRule = rule;
         antiStuckStationaryTicks = 0;
         antiStuckWarnSent = false;
-        captureAntiStuckPosition();
+        if (MC.player != null) {
+            captureAntiStuckPosition(MC.player);
+        } else {
+            antiStuckLastPosX = Double.NaN;
+            antiStuckLastPosY = Double.NaN;
+            antiStuckLastPosZ = Double.NaN;
+        }
     }
 
-    private void clearAntiStuckState() {
+    private static void clearAntiStuckState() {
         antiStuckMonitorRule = null;
         antiStuckStationaryTicks = 0;
         antiStuckWarnSent = false;
@@ -802,10 +769,7 @@ public class ConditionalExecutionHandler {
 
     @SubscribeEvent
     public void onRenderWorldLast(RenderWorldLastEvent event) {
-        if (mc == null || mc.world == null) {
-            return;
-        }
-        if (!globalEnabled) {
+        if (MC.level == null || MC.player == null || !globalEnabled) {
             return;
         }
 
@@ -814,25 +778,23 @@ public class ConditionalExecutionHandler {
             return;
         }
 
-        Entity viewer = mc.getRenderViewEntity();
-        if (viewer == null) {
+        RenderWorldLastEvent.WorldRenderContext renderContext = event.getWorldRenderContext();
+        if (renderContext == null) {
             return;
         }
-
-        float partialTicks = event.getPartialTicks();
-        double viewerX = viewer.lastTickPosX + (viewer.posX - viewer.lastTickPosX) * partialTicks;
-        double viewerY = viewer.lastTickPosY + (viewer.posY - viewer.lastTickPosY) * partialTicks;
-        double viewerZ = viewer.lastTickPosZ + (viewer.posZ - viewer.lastTickPosZ) * partialTicks;
-
+        PoseStack poseStack = event.createWorldPoseStack();
+        if (poseStack == null) {
+            return;
+        }
         for (ConditionalRule rule : rulesSnapshot) {
             if (rule == null || !rule.visualizeRange || rule.range <= 0.05D) {
                 continue;
             }
-            drawRuleRange(rule, viewerX, viewerY, viewerZ);
+            drawRuleRange(rule, renderContext, poseStack);
         }
     }
 
-    private void drawRuleRange(ConditionalRule rule, double viewerX, double viewerY, double viewerZ) {
+    private void drawRuleRange(ConditionalRule rule, RenderWorldLastEvent.WorldRenderContext renderContext, PoseStack poseStack) {
         if (Double.isNaN(rule.centerX) || Double.isNaN(rule.centerY) || Double.isNaN(rule.centerZ)) {
             return;
         }
@@ -844,41 +806,53 @@ public class ConditionalExecutionHandler {
         float fillAlpha = rule == activeRule ? 0.18F : 0.10F;
         float lineAlpha = rule == activeRule ? 0.95F : 0.75F;
 
-        AxisAlignedBB renderBox = new AxisAlignedBB(
-                rule.centerX - rule.range,
-                rule.centerY - 0.05D,
-                rule.centerZ - rule.range,
-                rule.centerX + rule.range,
-                rule.centerY + 0.05D,
-                rule.centerZ + rule.range).offset(-viewerX, -viewerY, -viewerZ).grow(0.001D);
-        AxisAlignedBB centerMarker = new AxisAlignedBB(
-                rule.centerX - 0.08D,
-                rule.centerY - 0.05D,
-                rule.centerZ - 0.08D,
-                rule.centerX + 0.08D,
-                rule.centerY + Math.max(1.2D, Math.min(2.0D, rule.range)),
-                rule.centerZ + 0.08D).offset(-viewerX, -viewerY, -viewerZ).grow(0.001D);
+        double minX = rule.centerX - rule.range;
+        double maxX = rule.centerX + rule.range;
+        double minZ = rule.centerZ - rule.range;
+        double maxZ = rule.centerZ + rule.range;
+        double y = rule.centerY + 0.05D;
+        double topWorldY = rule.centerY + Math.max(1.2D, Math.min(2.0D, rule.range));
 
-        GlStateManager.pushMatrix();
-        GlStateManager.enableBlend();
-        GlStateManager.tryBlendFuncSeparate(GlStateManager.SourceFactor.SRC_ALPHA,
+        Vec3 northWest = renderContext.toCameraSpace(new Vec3(minX, y, minZ));
+        Vec3 northEast = renderContext.toCameraSpace(new Vec3(maxX, y, minZ));
+        Vec3 southEast = renderContext.toCameraSpace(new Vec3(maxX, y, maxZ));
+        Vec3 southWest = renderContext.toCameraSpace(new Vec3(minX, y, maxZ));
+        Vec3 center = renderContext.toCameraSpace(new Vec3(rule.centerX, y, rule.centerZ));
+        Vec3 top = renderContext.toCameraSpace(new Vec3(rule.centerX, topWorldY, rule.centerZ));
+
+        BufferBuilder buffer = Tesselator.getInstance().getBuilder();
+
+        RenderSystem.enableBlend();
+        RenderSystem.disableCull();
+        RenderSystem.disableDepthTest();
+        RenderSystem.setShader(GameRenderer::getPositionColorShader);
+        RenderSystem.blendFuncSeparate(GlStateManager.SourceFactor.SRC_ALPHA,
                 GlStateManager.DestFactor.ONE_MINUS_SRC_ALPHA,
                 GlStateManager.SourceFactor.ONE,
                 GlStateManager.DestFactor.ZERO);
-        GlStateManager.disableTexture2D();
-        GlStateManager.disableDepth();
-        GlStateManager.depthMask(false);
-        GlStateManager.glLineWidth(1.8F);
 
-        RenderGlobal.renderFilledBox(renderBox, r, g, b, fillAlpha);
-        RenderGlobal.drawSelectionBoundingBox(renderBox, r, g, b, lineAlpha);
-        RenderGlobal.renderFilledBox(centerMarker, r, g, b, Math.min(0.35F, fillAlpha + 0.08F));
-        RenderGlobal.drawSelectionBoundingBox(centerMarker, r, g, b, Math.min(1.0F, lineAlpha + 0.1F));
+        buffer.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_COLOR);
+        buffer.vertex(poseStack.last().pose(), (float) northWest.x, (float) northWest.y, (float) northWest.z).color(r, g, b, fillAlpha).endVertex();
+        buffer.vertex(poseStack.last().pose(), (float) northEast.x, (float) northEast.y, (float) northEast.z).color(r, g, b, fillAlpha).endVertex();
+        buffer.vertex(poseStack.last().pose(), (float) southEast.x, (float) southEast.y, (float) southEast.z).color(r, g, b, fillAlpha).endVertex();
+        buffer.vertex(poseStack.last().pose(), (float) southWest.x, (float) southWest.y, (float) southWest.z).color(r, g, b, fillAlpha).endVertex();
+        Tesselator.getInstance().end();
 
-        GlStateManager.depthMask(true);
-        GlStateManager.enableDepth();
-        GlStateManager.enableTexture2D();
-        GlStateManager.disableBlend();
-        GlStateManager.popMatrix();
+        buffer.begin(VertexFormat.Mode.LINE_STRIP, DefaultVertexFormat.POSITION_COLOR);
+        buffer.vertex(poseStack.last().pose(), (float) northWest.x, (float) northWest.y, (float) northWest.z).color(r, g, b, lineAlpha).endVertex();
+        buffer.vertex(poseStack.last().pose(), (float) northEast.x, (float) northEast.y, (float) northEast.z).color(r, g, b, lineAlpha).endVertex();
+        buffer.vertex(poseStack.last().pose(), (float) southEast.x, (float) southEast.y, (float) southEast.z).color(r, g, b, lineAlpha).endVertex();
+        buffer.vertex(poseStack.last().pose(), (float) southWest.x, (float) southWest.y, (float) southWest.z).color(r, g, b, lineAlpha).endVertex();
+        buffer.vertex(poseStack.last().pose(), (float) northWest.x, (float) northWest.y, (float) northWest.z).color(r, g, b, lineAlpha).endVertex();
+        Tesselator.getInstance().end();
+
+        buffer.begin(VertexFormat.Mode.LINES, DefaultVertexFormat.POSITION_COLOR);
+        buffer.vertex(poseStack.last().pose(), (float) center.x, (float) center.y, (float) center.z).color(r, g, b, lineAlpha).endVertex();
+        buffer.vertex(poseStack.last().pose(), (float) top.x, (float) top.y, (float) top.z).color(r, g, b, lineAlpha).endVertex();
+        Tesselator.getInstance().end();
+
+        RenderSystem.enableDepthTest();
+        RenderSystem.enableCull();
+        RenderSystem.disableBlend();
     }
 }

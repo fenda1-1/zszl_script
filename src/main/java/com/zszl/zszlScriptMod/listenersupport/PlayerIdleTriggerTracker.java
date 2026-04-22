@@ -4,6 +4,7 @@ import com.google.gson.JsonObject;
 import com.zszl.zszlScriptMod.path.PathSequenceEventListener;
 import com.zszl.zszlScriptMod.path.trigger.LegacySequenceTriggerManager;
 import net.minecraft.client.Minecraft;
+import net.minecraft.world.phys.Vec3;
 
 public final class PlayerIdleTriggerTracker {
 
@@ -29,7 +30,7 @@ public final class PlayerIdleTriggerTracker {
     private int damageRecoverySettledTicks = 0;
 
     public void update(Minecraft mc, boolean playerDeadNow, int clientTickCounter) {
-        if (mc == null || mc.player == null || mc.world == null || playerDeadNow) {
+        if (mc == null || mc.player == null || mc.level == null || playerDeadNow) {
             reset();
             return;
         }
@@ -71,6 +72,7 @@ public final class PlayerIdleTriggerTracker {
             this.playerIdleStartMsIgnoringDamage = nowMs;
             this.playerIdleStartTickIgnoringDamage = clientTickCounter;
         }
+
         boolean sequenceRunning = PathSequenceEventListener.isAnySequenceRunning();
         if (sequenceRunning) {
             this.playerIdleStartMsExcludingPath = -1L;
@@ -110,9 +112,9 @@ public final class PlayerIdleTriggerTracker {
                         : Math.max(0, clientTickCounter - this.playerIdleStartTickExcludingPathIgnoringDamage));
         triggerData.addProperty("pathTrackingActive", sequenceRunning);
         triggerData.addProperty("recentlyHurt", isDamageRecoveryIdleBypassActive(mc));
-        triggerData.addProperty("x", mc.player.posX);
-        triggerData.addProperty("y", mc.player.posY);
-        triggerData.addProperty("z", mc.player.posZ);
+        triggerData.addProperty("x", mc.player.getX());
+        triggerData.addProperty("y", mc.player.getY());
+        triggerData.addProperty("z", mc.player.getZ());
         LegacySequenceTriggerManager.triggerEvent(LegacySequenceTriggerManager.TRIGGER_PLAYER_IDLE, triggerData);
         captureReference(mc);
     }
@@ -142,17 +144,17 @@ public final class PlayerIdleTriggerTracker {
             return false;
         }
         if (ignoreDamageReset && isDamageRecoveryIdleBypassActive(mc)) {
-            if (!mc.player.isRiding() && !mc.player.isInWater() && !mc.player.isInLava()) {
+            if (!mc.player.isPassenger() && !mc.player.isInWater() && !mc.player.isInLava()) {
                 return true;
             }
         }
-        if (!mc.player.onGround || mc.player.isRiding() || mc.player.isInWater() || mc.player.isInLava()) {
+        if (!mc.player.onGround() || mc.player.isPassenger() || mc.player.isInWater() || mc.player.isInLava()) {
             return false;
         }
 
-        double dx = mc.player.posX - this.lastIdleCheckPosX;
-        double dy = mc.player.posY - this.lastIdleCheckPosY;
-        double dz = mc.player.posZ - this.lastIdleCheckPosZ;
+        double dx = mc.player.getX() - this.lastIdleCheckPosX;
+        double dy = mc.player.getY() - this.lastIdleCheckPosY;
+        double dz = mc.player.getZ() - this.lastIdleCheckPosZ;
         double horizontalDistanceSq = dx * dx + dz * dz;
         if (horizontalDistanceSq > PLAYER_IDLE_HORIZONTAL_DISTANCE_THRESHOLD * PLAYER_IDLE_HORIZONTAL_DISTANCE_THRESHOLD) {
             return false;
@@ -161,11 +163,12 @@ public final class PlayerIdleTriggerTracker {
             return false;
         }
 
-        double horizontalMotionSq = mc.player.motionX * mc.player.motionX + mc.player.motionZ * mc.player.motionZ;
+        Vec3 motion = mc.player.getDeltaMovement();
+        double horizontalMotionSq = motion.x * motion.x + motion.z * motion.z;
         if (horizontalMotionSq > PLAYER_IDLE_HORIZONTAL_MOTION_THRESHOLD * PLAYER_IDLE_HORIZONTAL_MOTION_THRESHOLD) {
             return false;
         }
-        return Math.abs(mc.player.motionY) <= PLAYER_IDLE_VERTICAL_MOTION_THRESHOLD;
+        return Math.abs(motion.y) <= PLAYER_IDLE_VERTICAL_MOTION_THRESHOLD;
     }
 
     private void updateDamageRecoveryIdleBypassState(Minecraft mc) {
@@ -212,26 +215,26 @@ public final class PlayerIdleTriggerTracker {
         if (mc == null || mc.player == null) {
             return true;
         }
-        if (!mc.player.onGround) {
+        if (!mc.player.onGround()) {
             return false;
         }
 
-        double horizontalMotionSq = mc.player.motionX * mc.player.motionX + mc.player.motionZ * mc.player.motionZ;
+        Vec3 motion = mc.player.getDeltaMovement();
+        double horizontalMotionSq = motion.x * motion.x + motion.z * motion.z;
         if (horizontalMotionSq > PLAYER_IDLE_HORIZONTAL_MOTION_THRESHOLD * PLAYER_IDLE_HORIZONTAL_MOTION_THRESHOLD) {
             return false;
         }
-        return Math.abs(mc.player.motionY) <= PLAYER_IDLE_VERTICAL_MOTION_THRESHOLD;
+        return Math.abs(motion.y) <= PLAYER_IDLE_VERTICAL_MOTION_THRESHOLD;
     }
 
     private boolean hasPlayerMovementInput(Minecraft mc) {
-        if (mc == null || mc.player == null || mc.gameSettings == null) {
-            return false;
-        }
-        return mc.gameSettings.keyBindForward.isKeyDown()
-                || mc.gameSettings.keyBindBack.isKeyDown()
-                || mc.gameSettings.keyBindLeft.isKeyDown()
-                || mc.gameSettings.keyBindRight.isKeyDown()
-                || mc.gameSettings.keyBindJump.isKeyDown();
+        return mc != null
+                && mc.options != null
+                && (mc.options.keyUp.isDown()
+                || mc.options.keyDown.isDown()
+                || mc.options.keyLeft.isDown()
+                || mc.options.keyRight.isDown()
+                || mc.options.keyJump.isDown());
     }
 
     private void captureReference(Minecraft mc) {
@@ -239,9 +242,9 @@ public final class PlayerIdleTriggerTracker {
             reset();
             return;
         }
-        this.lastIdleCheckPosX = mc.player.posX;
-        this.lastIdleCheckPosY = mc.player.posY;
-        this.lastIdleCheckPosZ = mc.player.posZ;
+        this.lastIdleCheckPosX = mc.player.getX();
+        this.lastIdleCheckPosY = mc.player.getY();
+        this.lastIdleCheckPosZ = mc.player.getZ();
         this.hasIdleCheckPos = true;
     }
 }

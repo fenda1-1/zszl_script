@@ -1,9 +1,8 @@
 package com.zszl.zszlScriptMod.gui.components;
 
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.renderer.GlStateManager;
-import org.lwjgl.input.Mouse;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Mouse;
 import com.zszl.zszlScriptMod.gui.components.GuiTheme.UiState;
 
 /**
@@ -20,12 +19,6 @@ public class SafeThemedButton extends GuiButton {
         if (!this.visible) {
             return;
         }
-
-        // 防御式恢复渲染状态：避免被其他GUI绘制逻辑污染导致按钮文字/颜色异常
-        GlStateManager.enableBlend();
-        GlStateManager.tryBlendFuncSeparate(770, 771, 1, 0);
-        GlStateManager.enableTexture2D();
-        GlStateManager.color(1.0F, 1.0F, 1.0F, 1.0F);
 
         this.hovered = mouseX >= this.x && mouseY >= this.y && mouseX < this.x + this.width
                 && mouseY < this.y + this.height;
@@ -48,7 +41,14 @@ public class SafeThemedButton extends GuiButton {
             textColor = GuiTheme.LABEL_TEXT;
         }
         textColor = GuiTheme.resolveTextColor(this.displayString, textColor);
-        drawCenteredString(mc.fontRenderer, this.displayString, this.x + this.width / 2,
+        drawCenteredString(new com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.FontRenderer(mc.font), this.displayString, this.x + this.width / 2,
                 this.y + (this.height - 8) / 2, textColor);
     }
 }
+
+
+
+
+
+
+

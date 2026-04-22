@@ -2,7 +2,6 @@ package com.zszl.zszlScriptMod.gui.packet;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
-import com.zszl.zszlScriptMod.config.ChatOptimizationConfig;
 import com.zszl.zszlScriptMod.system.ProfileManager;
 import com.zszl.zszlScriptMod.zszlScriptMod;
 
@@ -21,8 +20,7 @@ public class PacketInterceptConfig {
 
     public boolean inboundInterceptEnabled = false;
     public List<InterceptRule> inboundRules = new ArrayList<>();
-
-    public static final String BUILTIN_SMART_COPY_RULE_NAME = "聊天run_command动态改copy";
+    private static final String LEGACY_SMART_COPY_RULE_NAME = "聊天run_command动态改copy";
 
     public static class InterceptRule {
         public String name = "new_rule";
@@ -58,7 +56,7 @@ public class PacketInterceptConfig {
     }
 
     public static void save() {
-        ensureBuiltinRules();
+        removeLegacySmartCopyRules();
         Path configFile = getConfigFile();
         try {
             Files.createDirectories(configFile.getParent());
@@ -84,66 +82,15 @@ public class PacketInterceptConfig {
                 for (InterceptRule rule : INSTANCE.inboundRules) {
                     normalizeRule(rule);
                 }
-                ensureBuiltinRules();
+                removeLegacySmartCopyRules();
             } catch (Exception e) {
                 zszlScriptMod.LOGGER.error("Failed to load packet intercept config", e);
                 INSTANCE = new PacketInterceptConfig();
-                ensureBuiltinRules();
+                removeLegacySmartCopyRules();
             }
         } else {
             INSTANCE = new PacketInterceptConfig();
-            ensureBuiltinRules();
-        }
-    }
-
-    private static InterceptRule createBuiltinSmartCopyRule(boolean enabled) {
-        InterceptRule rule = new InterceptRule();
-        applyBuiltinSmartCopyRule(rule, enabled);
-        return rule;
-    }
-
-    public static void applyBuiltinSmartCopyRule(InterceptRule rule, boolean enabled) {
-        rule.name = BUILTIN_SMART_COPY_RULE_NAME;
-        rule.enabled = enabled;
-        rule.packetFilter = "0x0F";
-        rule.channel = "";
-        rule.matchHex = "(?<prefix>2272756E5F636F6D6D616E64222C2276616C7565223A22)(?<cmd>[0-9A-Fa-f]{2,}?)(?<suffix>22)(?=[0-9A-Fa-f]*?E78EA9E5AEB6E5908DE7A7B0C2A7395D20C2A7[0-9A-Fa-f]{2}(?<name>[0-9A-Fa-f]{4,40})5C6E)";
-        rule.replaceHex = "{prefix}{copycmd:name:cmd}{suffix}";
-        rule.regexEnabled = true;
-        rule.replaceAll = true;
-    }
-
-    public static boolean isBuiltinSmartCopyRule(InterceptRule rule) {
-        return rule != null && BUILTIN_SMART_COPY_RULE_NAME.equals(rule.name);
-    }
-
-    public static void ensureBuiltinRules() {
-        if (INSTANCE.inboundRules == null) {
-            INSTANCE.inboundRules = new ArrayList<>();
-        }
-
-        boolean enabledBySmartCopy = ChatOptimizationConfig.INSTANCE != null
-                && ChatOptimizationConfig.INSTANCE.enableSmartCopy;
-
-        InterceptRule first = null;
-        for (InterceptRule rule : INSTANCE.inboundRules) {
-            if (isBuiltinSmartCopyRule(rule)) {
-                if (first == null) {
-                    first = rule;
-                }
-            }
-        }
-
-        if (first == null) {
-            INSTANCE.inboundRules.add(createBuiltinSmartCopyRule(enabledBySmartCopy));
-        } else {
-            applyBuiltinSmartCopyRule(first, enabledBySmartCopy);
-            for (int i = INSTANCE.inboundRules.size() - 1; i >= 0; i--) {
-                InterceptRule r = INSTANCE.inboundRules.get(i);
-                if (r != first && isBuiltinSmartCopyRule(r)) {
-                    INSTANCE.inboundRules.remove(i);
-                }
-            }
+            removeLegacySmartCopyRules();
         }
     }
 
@@ -162,4 +109,22 @@ public class PacketInterceptConfig {
         if (rule.replaceHex == null)
             rule.replaceHex = "";
     }
+
+    private static void removeLegacySmartCopyRules() {
+        if (INSTANCE == null) {
+            INSTANCE = new PacketInterceptConfig();
+        }
+        if (INSTANCE.inboundRules == null) {
+            INSTANCE.inboundRules = new ArrayList<>();
+            return;
+        }
+        for (int i = INSTANCE.inboundRules.size() - 1; i >= 0; i--) {
+            InterceptRule rule = INSTANCE.inboundRules.get(i);
+            if (rule != null && LEGACY_SMART_COPY_RULE_NAME.equals(rule.name)) {
+                INSTANCE.inboundRules.remove(i);
+            }
+        }
+    }
 }
+
+

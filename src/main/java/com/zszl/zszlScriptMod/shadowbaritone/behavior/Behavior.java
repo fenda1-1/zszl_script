@@ -22,8 +22,7 @@ import com.zszl.zszlScriptMod.shadowbaritone.api.behavior.IBehavior;
 import com.zszl.zszlScriptMod.shadowbaritone.api.utils.IPlayerContext;
 
 /**
- * A type of game event listener that is given {@link Baritone} instance
- * context.
+ * A type of game event listener that is given {@link Baritone} instance context.
  *
  * @author Brady
  * @since 8/1/2018
@@ -38,3 +37,4 @@ public class Behavior implements IBehavior {
         this.ctx = baritone.getPlayerContext();
     }
 }
+

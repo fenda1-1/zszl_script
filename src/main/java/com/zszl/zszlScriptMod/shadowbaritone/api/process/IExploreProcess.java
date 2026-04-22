@@ -25,3 +25,4 @@ public interface IExploreProcess extends IBaritoneProcess {
 
     void applyJsonFilter(Path path, boolean invert) throws Exception;
 }
+

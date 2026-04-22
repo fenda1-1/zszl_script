@@ -39,3 +39,4 @@ public class CommandUnhandledException extends RuntimeException implements IComm
         HELPER.logUnhandledException(this);
     }
 }
+

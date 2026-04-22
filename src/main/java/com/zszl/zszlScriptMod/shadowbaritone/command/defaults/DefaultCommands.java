@@ -32,9 +32,8 @@ public final class DefaultCommands {
         List<ICommand> commands = new ArrayList<>(Arrays.asList(
                 new HelpCommand(baritone),
                 new SetCommand(baritone),
-                new CommandAlias(baritone, Arrays.asList("modified", "mod", "baritone", "modifiedsettings"),
-                        "shadowbaritone.command.alias.modified.short_desc", "set modified"),
-                new CommandAlias(baritone, "reset", "shadowbaritone.command.alias.reset.short_desc", "set reset"),
+                new CommandAlias(baritone, Arrays.asList("modified", "mod", "baritone", "modifiedsettings"), "List modified settings", "set modified"),
+                new CommandAlias(baritone, "reset", "Reset all settings or just one", "set reset"),
                 new GoalCommand(baritone),
                 new GotoCommand(baritone),
                 new PathCommand(baritone),
@@ -43,7 +42,7 @@ public final class DefaultCommands {
                 new VersionCommand(baritone),
                 new RepackCommand(baritone),
                 new BuildCommand(baritone),
-                new SchematicaCommand(baritone),
+                //new SchematicaCommand(baritone),
                 new LitematicaCommand(baritone),
                 new ComeCommand(baritone),
                 new AxisCommand(baritone),
@@ -54,6 +53,7 @@ public final class DefaultCommands {
                 new RenderCommand(baritone),
                 new FarmCommand(baritone),
                 new FollowCommand(baritone),
+                new PickupCommand(baritone),
                 new ExploreFilterCommand(baritone),
                 new ReloadAllCommand(baritone),
                 new SaveAllCommand(baritone),
@@ -65,10 +65,11 @@ public final class DefaultCommands {
                 new SurfaceCommand(baritone),
                 new ThisWayCommand(baritone),
                 new WaypointsCommand(baritone),
-                new CommandAlias(baritone, "sethome", "shadowbaritone.command.alias.sethome.short_desc", "waypoints save home"),
-                new CommandAlias(baritone, "home", "shadowbaritone.command.alias.home.short_desc", "waypoints goto home"),
+                new CommandAlias(baritone, "sethome", "Sets your home waypoint", "waypoints save home"),
+                new CommandAlias(baritone, "home", "Path to your home waypoint", "waypoints goto home"),
                 new SelCommand(baritone),
-                new ElytraCommand(baritone)));
+                new ElytraCommand(baritone)
+        ));
         ExecutionControlCommands prc = new ExecutionControlCommands(baritone);
         commands.add(prc.pauseCommand);
         commands.add(prc.resumeCommand);
@@ -77,3 +78,4 @@ public final class DefaultCommands {
         return Collections.unmodifiableList(commands);
     }
 }
+

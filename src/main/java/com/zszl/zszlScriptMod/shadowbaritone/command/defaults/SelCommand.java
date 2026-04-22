@@ -23,7 +23,7 @@ import com.zszl.zszlScriptMod.shadowbaritone.api.command.Command;
 import com.zszl.zszlScriptMod.shadowbaritone.api.command.argument.IArgConsumer;
 import com.zszl.zszlScriptMod.shadowbaritone.api.command.datatypes.ForAxis;
 import com.zszl.zszlScriptMod.shadowbaritone.api.command.datatypes.ForBlockOptionalMeta;
-import com.zszl.zszlScriptMod.shadowbaritone.api.command.datatypes.ForEnumFacing;
+import com.zszl.zszlScriptMod.shadowbaritone.api.command.datatypes.ForDirection;
 import com.zszl.zszlScriptMod.shadowbaritone.api.command.datatypes.RelativeBlockPos;
 import com.zszl.zszlScriptMod.shadowbaritone.api.command.exception.CommandException;
 import com.zszl.zszlScriptMod.shadowbaritone.api.command.exception.CommandInvalidStateException;
@@ -31,13 +31,7 @@ import com.zszl.zszlScriptMod.shadowbaritone.api.command.exception.CommandInvali
 import com.zszl.zszlScriptMod.shadowbaritone.api.command.helpers.TabCompleteHelper;
 import com.zszl.zszlScriptMod.shadowbaritone.api.event.events.RenderEvent;
 import com.zszl.zszlScriptMod.shadowbaritone.api.event.listener.AbstractGameEventListener;
-import com.zszl.zszlScriptMod.shadowbaritone.api.schematic.CompositeSchematic;
-import com.zszl.zszlScriptMod.shadowbaritone.api.schematic.FillSchematic;
-import com.zszl.zszlScriptMod.shadowbaritone.api.schematic.ISchematic;
-import com.zszl.zszlScriptMod.shadowbaritone.api.schematic.MaskSchematic;
-import com.zszl.zszlScriptMod.shadowbaritone.api.schematic.ReplaceSchematic;
-import com.zszl.zszlScriptMod.shadowbaritone.api.schematic.ShellSchematic;
-import com.zszl.zszlScriptMod.shadowbaritone.api.schematic.WallsSchematic;
+import com.zszl.zszlScriptMod.shadowbaritone.api.schematic.*;
 import com.zszl.zszlScriptMod.shadowbaritone.api.schematic.mask.shape.CylinderMask;
 import com.zszl.zszlScriptMod.shadowbaritone.api.schematic.mask.shape.SphereMask;
 import com.zszl.zszlScriptMod.shadowbaritone.api.selection.ISelection;
@@ -45,22 +39,19 @@ import com.zszl.zszlScriptMod.shadowbaritone.api.selection.ISelectionManager;
 import com.zszl.zszlScriptMod.shadowbaritone.api.utils.BetterBlockPos;
 import com.zszl.zszlScriptMod.shadowbaritone.api.utils.BlockOptionalMeta;
 import com.zszl.zszlScriptMod.shadowbaritone.api.utils.BlockOptionalMetaLookup;
-import com.zszl.zszlScriptMod.shadowbaritone.api.utils.ShadowBaritoneI18n;
 import com.zszl.zszlScriptMod.shadowbaritone.utils.BlockStateInterface;
 import com.zszl.zszlScriptMod.shadowbaritone.utils.IRenderer;
 import com.zszl.zszlScriptMod.shadowbaritone.utils.schematic.StaticSchematic;
-import net.minecraft.block.state.IBlockState;
-import net.minecraft.init.Blocks;
-import net.minecraft.util.EnumFacing;
-import net.minecraft.util.math.AxisAlignedBB;
-import net.minecraft.util.math.Vec3i;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.core.Vec3i;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.AABB;
 
-import java.awt.Color;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashSet;
+import java.awt.*;
+import java.util.*;
 import java.util.List;
-import java.util.Set;
 import java.util.function.Function;
 import java.util.function.UnaryOperator;
 import java.util.stream.Stream;
@@ -85,7 +76,7 @@ public class SelCommand extends Command {
                 float lineWidth = Baritone.settings().selectionLineWidth.value;
                 boolean ignoreDepth = Baritone.settings().renderSelectionIgnoreDepth.value;
                 IRenderer.startLines(color, opacity, lineWidth, ignoreDepth);
-                IRenderer.emitAABB(new AxisAlignedBB(pos1, pos1.add(1, 1, 1)));
+                IRenderer.emitAABB(event.getModelViewStack(), new AABB(pos1, pos1.offset(1, 1, 1)));
                 IRenderer.endLines(ignoreDepth);
             }
         });
@@ -95,50 +86,39 @@ public class SelCommand extends Command {
     public void execute(String label, IArgConsumer args) throws CommandException {
         Action action = Action.getByName(args.getString());
         if (action == null) {
-            throw new CommandInvalidTypeException(
-                    args.consumed(),
-                    ShadowBaritoneI18n.trKey(
-                            "shadowbaritone.command.sel.error.action_type"));
+            throw new CommandInvalidTypeException(args.consumed(), "an action");
         }
         if (action == Action.POS1 || action == Action.POS2) {
             if (action == Action.POS2 && pos1 == null) {
-                throw new CommandInvalidStateException(ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.sel.error.set_pos1_first"));
+                throw new CommandInvalidStateException("Set pos1 first before using pos2");
             }
             BetterBlockPos playerPos = ctx.viewerPos();
             BetterBlockPos pos = args.hasAny() ? args.getDatatypePost(RelativeBlockPos.INSTANCE, playerPos) : playerPos;
             args.requireMax(0);
             if (action == Action.POS1) {
                 pos1 = pos;
-                logDirect(ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.sel.status.pos1_set"));
+                logDirect("Position 1 has been set");
             } else {
                 manager.addSelection(pos1, pos);
                 pos1 = null;
-                logDirect(ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.sel.status.selection_added"));
+                logDirect("Selection added");
             }
         } else if (action == Action.CLEAR) {
             args.requireMax(0);
             pos1 = null;
-            logDirect(ShadowBaritoneI18n.trKey(
-                    "shadowbaritone.command.sel.status.removed",
-                    manager.removeAllSelections().length));
+            logDirect(String.format("Removed %d selections", manager.removeAllSelections().length));
         } else if (action == Action.UNDO) {
             args.requireMax(0);
             if (pos1 != null) {
                 pos1 = null;
-                logDirect(ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.sel.status.undid_pos1"));
+                logDirect("Undid pos1");
             } else {
                 ISelection[] selections = manager.getSelections();
                 if (selections.length < 1) {
-                    throw new CommandInvalidStateException(ShadowBaritoneI18n.trKey(
-                            "shadowbaritone.command.sel.error.nothing_to_undo"));
+                    throw new CommandInvalidStateException("Nothing to undo!");
                 } else {
                     pos1 = manager.removeSelection(selections[selections.length - 1]).pos1();
-                    logDirect(ShadowBaritoneI18n.trKey(
-                            "shadowbaritone.command.sel.status.undid_pos2"));
+                    logDirect("Undid pos2");
                 }
             }
         } else if (action.isFillAction()) {
@@ -146,8 +126,8 @@ public class SelCommand extends Command {
                     ? new BlockOptionalMeta(Blocks.AIR)
                     : args.getDatatypeFor(ForBlockOptionalMeta.INSTANCE);
 
-            final BlockOptionalMetaLookup replaces;
-            final EnumFacing.Axis alignment;
+            final BlockOptionalMetaLookup replaces; // Action.REPLACE
+            final Direction.Axis alignment;         // Action.(H)CYLINDER
             if (action == Action.REPLACE) {
                 args.requireMin(1);
                 List<BlockOptionalMeta> replacesList = new ArrayList<>();
@@ -160,7 +140,7 @@ public class SelCommand extends Command {
                 alignment = null;
             } else if (action == Action.CYLINDER || action == Action.HCYLINDER) {
                 args.requireMax(1);
-                alignment = args.hasAny() ? args.getDatatypeFor(ForAxis.INSTANCE) : EnumFacing.Axis.Y;
+                alignment = args.hasAny() ? args.getDatatypeFor(ForAxis.INSTANCE) : Direction.Axis.Y;
                 replaces = null;
             } else {
                 args.requireMax(0);
@@ -169,8 +149,7 @@ public class SelCommand extends Command {
             }
             ISelection[] selections = manager.getSelections();
             if (selections.length == 0) {
-                throw new CommandInvalidStateException(ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.sel.error.no_selections"));
+                throw new CommandInvalidStateException("No selections");
             }
             BetterBlockPos origin = selections[0].min();
             CompositeSchematic composite = new CompositeSchematic(0, 0, 0);
@@ -179,12 +158,14 @@ public class SelCommand extends Command {
                 origin = new BetterBlockPos(
                         Math.min(origin.x, min.x),
                         Math.min(origin.y, min.y),
-                        Math.min(origin.z, min.z));
+                        Math.min(origin.z, min.z)
+                );
             }
             for (ISelection selection : selections) {
                 Vec3i size = selection.size();
                 BetterBlockPos min = selection.min();
 
+                // Java 8 so no switch expressions 😿
                 UnaryOperator<ISchematic> create = fill -> {
                     final int w = fill.widthX();
                     final int h = fill.heightY();
@@ -206,6 +187,7 @@ public class SelCommand extends Command {
                         case HCYLINDER:
                             return MaskSchematic.create(fill, new CylinderMask(w, h, l, false, alignment).compute());
                         default:
+                            // Silent fail
                             return fill;
                     }
                 };
@@ -213,21 +195,15 @@ public class SelCommand extends Command {
                 ISchematic schematic = create.apply(new FillSchematic(size.getX(), size.getY(), size.getZ(), type));
                 composite.put(schematic, min.x - origin.x, min.y - origin.y, min.z - origin.z);
             }
-            baritone.getBuilderProcess().build(
-                    ShadowBaritoneI18n.trKey(
-                            "shadowbaritone.command.sel.value.fill_name"),
-                    composite,
-                    origin);
-            logDirect(ShadowBaritoneI18n.trKey(
-                    "shadowbaritone.command.sel.status.filling"));
+            baritone.getBuilderProcess().build("Fill", composite, origin);
+            logDirect("Filling now");
         } else if (action == Action.COPY) {
             BetterBlockPos playerPos = ctx.viewerPos();
             BetterBlockPos pos = args.hasAny() ? args.getDatatypePost(RelativeBlockPos.INSTANCE, playerPos) : playerPos;
             args.requireMax(0);
             ISelection[] selections = manager.getSelections();
             if (selections.length < 1) {
-                throw new CommandInvalidStateException(ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.sel.error.no_selections"));
+                throw new CommandInvalidStateException("No selections");
             }
             BlockStateInterface bsi = new BlockStateInterface(ctx);
             BetterBlockPos origin = selections[0].min();
@@ -237,12 +213,13 @@ public class SelCommand extends Command {
                 origin = new BetterBlockPos(
                         Math.min(origin.x, min.x),
                         Math.min(origin.y, min.y),
-                        Math.min(origin.z, min.z));
+                        Math.min(origin.z, min.z)
+                );
             }
             for (ISelection selection : selections) {
                 Vec3i size = selection.size();
                 BetterBlockPos min = selection.min();
-                IBlockState[][][] blockstates = new IBlockState[size.getX()][size.getZ()][size.getY()];
+                BlockState[][][] blockstates = new BlockState[size.getX()][size.getZ()][size.getY()];
                 for (int x = 0; x < size.getX(); x++) {
                     for (int y = 0; y < size.getY(); y++) {
                         for (int z = 0; z < size.getZ(); z++) {
@@ -250,48 +227,32 @@ public class SelCommand extends Command {
                         }
                     }
                 }
-                ISchematic schematic = new StaticSchematic() {
-                    {
-                        states = blockstates;
-                        x = size.getX();
-                        y = size.getY();
-                        z = size.getZ();
-                    }
-                };
+                ISchematic schematic = new StaticSchematic(blockstates);
                 composite.put(schematic, min.x - origin.x, min.y - origin.y, min.z - origin.z);
             }
             clipboard = composite;
             clipboardOffset = origin.subtract(pos);
-            logDirect(ShadowBaritoneI18n.trKey(
-                    "shadowbaritone.command.sel.status.copied"));
+            logDirect("Selection copied");
         } else if (action == Action.PASTE) {
             BetterBlockPos playerPos = ctx.viewerPos();
             BetterBlockPos pos = args.hasAny() ? args.getDatatypePost(RelativeBlockPos.INSTANCE, playerPos) : playerPos;
             args.requireMax(0);
             if (clipboard == null) {
-                throw new CommandInvalidStateException(ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.sel.error.copy_first"));
+                throw new CommandInvalidStateException("You need to copy a selection first");
             }
-            baritone.getBuilderProcess().build(
-                    ShadowBaritoneI18n.trKey(
-                            "shadowbaritone.command.sel.value.fill_name"),
-                    clipboard,
-                    pos.add(clipboardOffset));
-            logDirect(ShadowBaritoneI18n.trKey(
-                    "shadowbaritone.command.sel.status.building"));
+            baritone.getBuilderProcess().build("Fill", clipboard, pos.offset(clipboardOffset));
+            logDirect("Building now");
         } else if (action == Action.EXPAND || action == Action.CONTRACT || action == Action.SHIFT) {
             args.requireExactly(3);
             TransformTarget transformTarget = TransformTarget.getByName(args.getString());
             if (transformTarget == null) {
-                throw new CommandInvalidStateException(ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.sel.error.invalid_transform_type"));
+                throw new CommandInvalidStateException("Invalid transform type");
             }
-            EnumFacing direction = args.getDatatypeFor(ForEnumFacing.INSTANCE);
+            Direction direction = args.getDatatypeFor(ForDirection.INSTANCE);
             int blocks = args.getAs(Integer.class);
             ISelection[] selections = manager.getSelections();
             if (selections.length < 1) {
-                throw new CommandInvalidStateException(ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.sel.error.no_selections_found"));
+                throw new CommandInvalidStateException("No selections found");
             }
             selections = transformTarget.transform(selections);
             for (ISelection selection : selections) {
@@ -303,9 +264,7 @@ public class SelCommand extends Command {
                     manager.shift(selection, direction, blocks);
                 }
             }
-            logDirect(ShadowBaritoneI18n.trKey(
-                    "shadowbaritone.command.sel.status.transformed",
-                    selections.length));
+            logDirect(String.format("Transformed %d selections", selections.length));
         }
     }
 
@@ -344,7 +303,7 @@ public class SelCommand extends Command {
                     } else {
                         TransformTarget target = TransformTarget.getByName(args.getString());
                         if (target != null && args.hasExactlyOne()) {
-                            return args.tabCompleteDatatype(ForEnumFacing.INSTANCE);
+                            return args.tabCompleteDatatype(ForDirection.INSTANCE);
                         }
                     }
                 }
@@ -355,66 +314,42 @@ public class SelCommand extends Command {
 
     @Override
     public String getShortDesc() {
-        return ShadowBaritoneI18n.trKey(
-                "shadowbaritone.command.sel.short_desc");
+        return "WorldEdit-like commands";
     }
 
     @Override
     public List<String> getLongDesc() {
         return Arrays.asList(
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.sel.long_desc.1"),
+                "The sel command allows you to manipulate Baritone's selections, similarly to WorldEdit.",
                 "",
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.sel.long_desc.2"),
+                "Using these selections, you can clear areas, fill them with blocks, or something else.",
                 "",
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.sel.long_desc.3"),
+                "The expand/contract/shift commands use a kind of selector to choose which selections to target. Supported ones are a/all, n/newest, and o/oldest.",
                 "",
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.sel.long_desc.usage"),
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.sel.long_desc.example.pos1_current"),
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.sel.long_desc.example.pos1_relative"),
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.sel.long_desc.example.pos2_current"),
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.sel.long_desc.example.pos2_relative"),
+                "Usage:",
+                "> sel pos1/p1/1 - Set position 1 to your current position.",
+                "> sel pos1/p1/1 <x> <y> <z> - Set position 1 to a relative position.",
+                "> sel pos2/p2/2 - Set position 2 to your current position.",
+                "> sel pos2/p2/2 <x> <y> <z> - Set position 2 to a relative position.",
                 "",
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.sel.long_desc.example.clear"),
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.sel.long_desc.example.undo"),
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.sel.long_desc.example.set"),
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.sel.long_desc.example.walls"),
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.sel.long_desc.example.shell"),
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.sel.long_desc.example.sphere"),
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.sel.long_desc.example.hsphere"),
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.sel.long_desc.example.cylinder"),
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.sel.long_desc.example.hcylinder"),
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.sel.long_desc.example.cleararea"),
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.sel.long_desc.example.replace"),
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.sel.long_desc.example.copy"),
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.sel.long_desc.example.paste"),
+                "> sel clear/c - Clear the selection.",
+                "> sel undo/u - Undo the last action (setting positions, creating selections, etc.)",
+                "> sel set/fill/s/f [block] - Completely fill all selections with a block.",
+                "> sel walls/w [block] - Fill in the walls of the selection with a specified block.",
+                "> sel shell/shl [block] - The same as walls, but fills in a ceiling and floor too.",
+                "> sel sphere/sph [block] - Fills the selection with a sphere bounded by the sides.",
+                "> sel hsphere/hsph [block] - The same as sphere, but hollow.",
+                "> sel cylinder/cyl [block] <axis> - Fills the selection with a cylinder bounded by the sides, oriented about the given axis. (default=y)",
+                "> sel hcylinder/hcyl [block] <axis> - The same as cylinder, but hollow.",
+                "> sel cleararea/ca - Basically 'set air'.",
+                "> sel replace/r <blocks...> <with> - Replaces blocks with another block.",
+                "> sel copy/cp <x> <y> <z> - Copy the selected area relative to the specified or your position.",
+                "> sel paste/p <x> <y> <z> - Build the copied area relative to the specified or your position.",
                 "",
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.sel.long_desc.example.expand"),
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.sel.long_desc.example.contract"),
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.sel.long_desc.example.shift"));
+                "> sel expand <target> <direction> <blocks> - Expand the targets.",
+                "> sel contract <target> <direction> <blocks> - Contract the targets.",
+                "> sel shift <target> <direction> <blocks> - Shift the targets (does not resize)."
+        );
     }
 
     enum Action {
@@ -436,7 +371,6 @@ public class SelCommand extends Command {
         PASTE("paste", "p"),
         CONTRACT("contract", "ct"),
         SHIFT("shift", "sh");
-
         private final String[] names;
 
         Action(String... names) {
@@ -479,7 +413,6 @@ public class SelCommand extends Command {
         ALL(sels -> sels, "all", "a"),
         NEWEST(sels -> new ISelection[]{sels[sels.length - 1]}, "newest", "n"),
         OLDEST(sels -> new ISelection[]{sels[0]}, "oldest", "o");
-
         private final Function<ISelection[], ISelection[]> transform;
         private final String[] names;
 
@@ -512,3 +445,4 @@ public class SelCommand extends Command {
         }
     }
 }
+

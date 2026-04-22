@@ -2,45 +2,41 @@ package com.zszl.zszlScriptMod.otherfeatures.handler.item;
 
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.inventory.ItemStackHelper;
 import com.zszl.zszlScriptMod.otherfeatures.handler.movement.MovementFeatureManager;
 import com.zszl.zszlScriptMod.system.ProfileManager;
-import com.zszl.zszlScriptMod.utils.ReflectionCompat;
 import com.zszl.zszlScriptMod.zszlScriptMod;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.entity.EntityPlayerSP;
-import net.minecraft.client.gui.Gui;
-import net.minecraft.client.gui.inventory.GuiChest;
-import net.minecraft.client.gui.inventory.GuiContainer;
-import net.minecraft.client.gui.inventory.GuiInventory;
-import net.minecraft.client.renderer.GlStateManager;
-import net.minecraft.client.renderer.RenderHelper;
-import net.minecraft.enchantment.EnchantmentHelper;
-import net.minecraft.init.Enchantments;
-import net.minecraft.inventory.ClickType;
-import net.minecraft.inventory.ContainerChest;
-import net.minecraft.inventory.ItemStackHelper;
-import net.minecraft.inventory.Slot;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemArmor;
-import net.minecraft.item.ItemBlock;
-import net.minecraft.item.ItemBow;
-import net.minecraft.item.ItemFood;
-import net.minecraft.item.ItemShulkerBox;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.ItemSword;
-import net.minecraft.item.ItemTool;
-import net.minecraft.nbt.NBTTagCompound;
-import net.minecraft.util.FoodStats;
-import net.minecraft.util.NonNullList;
-import net.minecraft.util.math.MathHelper;
-import net.minecraftforge.client.event.GuiScreenEvent;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
+import net.minecraft.client.gui.screens.inventory.InventoryScreen;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.core.NonNullList;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.chat.Component;
+import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.food.FoodData;
+import net.minecraft.world.inventory.ChestMenu;
+import net.minecraft.world.inventory.ClickType;
+import net.minecraft.world.inventory.Slot;
+import net.minecraft.world.item.ArmorItem;
+import net.minecraft.world.item.BowItem;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.SwordItem;
+import net.minecraft.world.item.DiggerItem;
+import net.minecraft.world.item.enchantment.EnchantmentHelper;
+import net.minecraft.world.item.enchantment.Enchantments;
+import net.minecraft.world.level.block.ShulkerBoxBlock;
 import net.minecraftforge.client.event.RenderTooltipEvent;
-import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
-import net.minecraftforge.fml.common.gameevent.TickEvent;
+import net.minecraftforge.client.event.ScreenEvent;
+import net.minecraftforge.event.entity.player.ItemTooltipEvent;
+import net.minecraftforge.eventbus.api.SubscribeEvent;
 
-import java.io.File;
-import java.io.FileReader;
-import java.io.FileWriter;
+import java.lang.reflect.Field;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -48,11 +44,10 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
-public class ItemFeatureManager {
+public final class ItemFeatureManager {
 
     public static final ItemFeatureManager INSTANCE = new ItemFeatureManager();
 
-    private static final String CONFIG_FILE_NAME = "other_features_item.json";
     private static final Map<String, FeatureState> FEATURES = new LinkedHashMap<>();
     private static final int DEFAULT_CHEST_STEAL_DELAY_TICKS = 2;
     private static final int DEFAULT_AUTO_EQUIP_INTERVAL_TICKS = 4;
@@ -68,31 +63,20 @@ public class ItemFeatureManager {
     private static int dropAllDelayTicks = DEFAULT_DROP_ALL_DELAY_TICKS;
     private static String dropAllKeywordsText = "";
 
-    private int inventorySortCooldownTicks = 0;
-    private int chestStealCooldownTicks = 0;
-    private int autoEquipCooldownTicks = 0;
-    private int dropAllCooldownTicks = 0;
-    private boolean forceNoHungerReflectionFailed = false;
+    private int inventorySortCooldownTicks;
+    private int chestStealCooldownTicks;
+    private int autoEquipCooldownTicks;
+    private int dropAllCooldownTicks;
 
     static {
         register(new FeatureState("inventory_sort", "自动整理",
-                "打开背包时自动整理主背包（不动热栏），将装备、工具、食物、方块等按类别排序。",
-                null, 0.0F, 0.0F, 0.0F, true));
-        register(new FeatureState("chest_steal", "箱子窃取",
-                "打开箱子后按间隔自动把物品快速搬到背包。",
-                null, 0.0F, 0.0F, 0.0F, true));
-        register(new FeatureState("auto_equip", "自动装备",
-                "如果身上没穿或有更差的装备，会自动从背包里穿上更好的装备。",
-                null, 0.0F, 0.0F, 0.0F, true));
+                "打开背包时自动整理主背包（不动热栏），将装备、工具、食物、方块等按类别排序。", true));
+        register(new FeatureState("chest_steal", "箱子窃取", "打开箱子后按间隔自动把物品快速搬到背包。", true));
+        register(new FeatureState("auto_equip", "自动装备", "如果身上没穿或有更差的装备，会自动从背包里穿上更好的装备。", true));
         register(new FeatureState("force_no_hunger", "强制不饥饿",
-                "持续锁定客户端饥饿值、饱和度和消耗值，尽量让角色保持满饱食状态。",
-                null, 0.0F, 0.0F, 0.0F, true));
-        register(new FeatureState("drop_all", "丢弃所有",
-                "按关键词自动丢弃指定物品，支持多个关键词。",
-                null, 0.0F, 0.0F, 0.0F, true));
-        register(new FeatureState("shulker_preview", "潜影盒预览",
-                "鼠标悬停在潜影盒物品上时，直接显示其内部内容预览。",
-                null, 0.0F, 0.0F, 0.0F, true));
+                "持续锁定客户端饥饿值、饱和度和消耗值，尽量让角色保持满饱食状态。", true));
+        register(new FeatureState("drop_all", "丢弃所有", "按关键词自动丢弃指定物品，支持多个关键词。", true));
+        register(new FeatureState("shulker_preview", "潜影盒预览", "鼠标悬停在潜影盒物品上时，直接显示其内部内容预览。", true));
         loadConfig();
     }
 
@@ -103,33 +87,24 @@ public class ItemFeatureManager {
         public final String id;
         public final String name;
         public final String description;
-        public final String valueLabel;
-        public final float defaultValue;
-        public final float minValue;
-        public final float maxValue;
+        public final String valueLabel = "";
+        public final float defaultValue = 0.0F;
+        public final float minValue = 0.0F;
+        public final float maxValue = 0.0F;
         public final boolean behaviorImplemented;
 
         private boolean enabled;
-        private float value;
-        private boolean statusHudEnabled;
+        private boolean statusHudEnabled = true;
 
-        private FeatureState(String id, String name, String description, String valueLabel,
-                float defaultValue, float minValue, float maxValue, boolean behaviorImplemented) {
+        private FeatureState(String id, String name, String description, boolean behaviorImplemented) {
             this.id = safe(id);
             this.name = safe(name);
             this.description = safe(description);
-            this.valueLabel = valueLabel == null ? "" : valueLabel.trim();
-            this.defaultValue = defaultValue;
-            this.minValue = minValue;
-            this.maxValue = maxValue;
             this.behaviorImplemented = behaviorImplemented;
-            this.enabled = false;
-            this.value = defaultValue;
-            this.statusHudEnabled = true;
         }
 
         public boolean supportsValue() {
-            return !valueLabel.isEmpty() && maxValue > minValue;
+            return false;
         }
 
         public boolean isEnabled() {
@@ -137,50 +112,12 @@ public class ItemFeatureManager {
         }
 
         public float getValue() {
-            return value;
+            return 0.0F;
         }
 
         public boolean isStatusHudEnabled() {
             return statusHudEnabled;
         }
-
-        private void setEnabledInternal(boolean enabled) {
-            this.enabled = enabled;
-        }
-
-        private void setValueInternal(float value) {
-            if (!supportsValue()) {
-                this.value = defaultValue;
-                return;
-            }
-            this.value = MathHelper.clamp(value, minValue, maxValue);
-        }
-
-        private void setStatusHudEnabledInternal(boolean statusHudEnabled) {
-            this.statusHudEnabled = statusHudEnabled;
-        }
-
-        private void resetToDefaultInternal() {
-            this.enabled = false;
-            this.value = defaultValue;
-            this.statusHudEnabled = true;
-        }
-    }
-
-    private static void register(FeatureState state) {
-        FEATURES.put(state.id, state);
-    }
-
-    private static String safe(String text) {
-        return text == null ? "" : text.trim();
-    }
-
-    private static String normalizeId(String featureId) {
-        return safe(featureId).toLowerCase(Locale.ROOT);
-    }
-
-    private static File getConfigFile() {
-        return ProfileManager.getCurrentProfileDir().resolve(CONFIG_FILE_NAME).toFile();
     }
 
     public static List<FeatureState> getFeatures() {
@@ -197,7 +134,7 @@ public class ItemFeatureManager {
 
     public static boolean isEnabled(String featureId) {
         FeatureState state = getFeature(featureId);
-        return state != null && state.isEnabled();
+        return state != null && state.enabled;
     }
 
     public static void toggleFeature(String featureId) {
@@ -209,52 +146,7 @@ public class ItemFeatureManager {
         if (state == null) {
             return;
         }
-        state.setEnabledInternal(enabled);
-        saveConfig();
-    }
-
-    public static boolean isFeatureStatusHudEnabled(String featureId) {
-        FeatureState state = getFeature(featureId);
-        return state != null && state.isStatusHudEnabled();
-    }
-
-    public static boolean shouldDisplayFeatureStatusHud(String featureId) {
-        return MovementFeatureManager.isMasterStatusHudEnabled() && isFeatureStatusHudEnabled(featureId);
-    }
-
-    public static int getChestStealDelayTicks() {
-        return chestStealDelayTicks;
-    }
-
-    public static void setChestStealDelayTicks(int ticks) {
-        chestStealDelayTicks = MathHelper.clamp(ticks, 0, 20);
-        saveConfig();
-    }
-
-    public static int getAutoEquipIntervalTicks() {
-        return autoEquipIntervalTicks;
-    }
-
-    public static void setAutoEquipIntervalTicks(int ticks) {
-        autoEquipIntervalTicks = MathHelper.clamp(ticks, 1, 40);
-        saveConfig();
-    }
-
-    public static int getDropAllDelayTicks() {
-        return dropAllDelayTicks;
-    }
-
-    public static void setDropAllDelayTicks(int ticks) {
-        dropAllDelayTicks = MathHelper.clamp(ticks, 0, 20);
-        saveConfig();
-    }
-
-    public static String getDropAllKeywordsText() {
-        return dropAllKeywordsText;
-    }
-
-    public static void setDropAllKeywordsText(String text) {
-        dropAllKeywordsText = text == null ? "" : text.trim();
+        state.enabled = enabled;
         saveConfig();
     }
 
@@ -263,7 +155,7 @@ public class ItemFeatureManager {
         if (state == null) {
             return;
         }
-        state.setStatusHudEnabledInternal(enabled);
+        state.statusHudEnabled = enabled;
         saveConfig();
     }
 
@@ -272,530 +164,117 @@ public class ItemFeatureManager {
         if (state == null) {
             return;
         }
-        state.resetToDefaultInternal();
-        String normalizedId = normalizeId(featureId);
-        if ("chest_steal".equals(normalizedId)) {
+        state.enabled = false;
+        state.statusHudEnabled = true;
+        if ("chest_steal".equals(state.id)) {
             chestStealDelayTicks = DEFAULT_CHEST_STEAL_DELAY_TICKS;
-        } else if ("auto_equip".equals(normalizedId)) {
+        } else if ("auto_equip".equals(state.id)) {
             autoEquipIntervalTicks = DEFAULT_AUTO_EQUIP_INTERVAL_TICKS;
-        } else if ("drop_all".equals(normalizedId)) {
+        } else if ("drop_all".equals(state.id)) {
             dropAllDelayTicks = DEFAULT_DROP_ALL_DELAY_TICKS;
             dropAllKeywordsText = "";
         }
         saveConfig();
     }
 
-    public static void loadConfig() {
-        for (FeatureState state : FEATURES.values()) {
-            state.resetToDefaultInternal();
-        }
-        chestStealDelayTicks = DEFAULT_CHEST_STEAL_DELAY_TICKS;
-        autoEquipIntervalTicks = DEFAULT_AUTO_EQUIP_INTERVAL_TICKS;
-        dropAllDelayTicks = DEFAULT_DROP_ALL_DELAY_TICKS;
-        dropAllKeywordsText = "";
-
-        try {
-            File configFile = getConfigFile();
-            if (!configFile.exists()) {
-                saveConfig();
-                return;
-            }
-
-            JsonObject root = new JsonParser().parse(new FileReader(configFile)).getAsJsonObject();
-            JsonObject featuresObject = root.has("features") && root.get("features").isJsonObject()
-                    ? root.getAsJsonObject("features")
-                    : new JsonObject();
-
-            for (Map.Entry<String, FeatureState> entry : FEATURES.entrySet()) {
-                if (!featuresObject.has(entry.getKey()) || !featuresObject.get(entry.getKey()).isJsonObject()) {
-                    continue;
-                }
-                JsonObject item = featuresObject.getAsJsonObject(entry.getKey());
-                FeatureState state = entry.getValue();
-                if (item.has("enabled")) {
-                    state.setEnabledInternal(item.get("enabled").getAsBoolean());
-                }
-                if (item.has("statusHudEnabled")) {
-                    state.setStatusHudEnabledInternal(item.get("statusHudEnabled").getAsBoolean());
-                }
-            }
-            if (root.has("chestStealDelayTicks")) {
-                chestStealDelayTicks = MathHelper.clamp(root.get("chestStealDelayTicks").getAsInt(), 0, 20);
-            }
-            if (root.has("autoEquipIntervalTicks")) {
-                autoEquipIntervalTicks = MathHelper.clamp(root.get("autoEquipIntervalTicks").getAsInt(), 1, 40);
-            }
-            if (root.has("dropAllDelayTicks")) {
-                dropAllDelayTicks = MathHelper.clamp(root.get("dropAllDelayTicks").getAsInt(), 0, 20);
-            }
-            if (root.has("dropAllKeywordsText")) {
-                dropAllKeywordsText = safe(root.get("dropAllKeywordsText").getAsString());
-            }
-        } catch (Exception e) {
-            zszlScriptMod.LOGGER.error("加载物品功能配置失败", e);
-        }
+    public static int getChestStealDelayTicks() {
+        return chestStealDelayTicks;
     }
 
-    public static void saveConfig() {
-        try {
-            File configFile = getConfigFile();
-            if (!configFile.getParentFile().exists()) {
-                configFile.getParentFile().mkdirs();
-            }
-
-            JsonObject root = new JsonObject();
-            JsonObject featuresObject = new JsonObject();
-            for (FeatureState state : FEATURES.values()) {
-                JsonObject item = new JsonObject();
-                item.addProperty("enabled", state.isEnabled());
-                item.addProperty("statusHudEnabled", state.isStatusHudEnabled());
-                featuresObject.add(state.id, item);
-            }
-            root.add("features", featuresObject);
-            root.addProperty("chestStealDelayTicks", chestStealDelayTicks);
-            root.addProperty("autoEquipIntervalTicks", autoEquipIntervalTicks);
-            root.addProperty("dropAllDelayTicks", dropAllDelayTicks);
-            root.addProperty("dropAllKeywordsText", dropAllKeywordsText);
-
-            try (FileWriter writer = new FileWriter(configFile)) {
-                writer.write(root.toString());
-            }
-        } catch (Exception e) {
-            zszlScriptMod.LOGGER.error("保存物品功能配置失败", e);
-        }
+    public static void setChestStealDelayTicks(int ticks) {
+        chestStealDelayTicks = clampInt(ticks, 0, 20);
+        saveConfig();
     }
 
-    public void onClientDisconnect() {
-        resetRuntimeState();
+    public static int getAutoEquipIntervalTicks() {
+        return autoEquipIntervalTicks;
     }
 
-    private void resetRuntimeState() {
-        this.inventorySortCooldownTicks = 0;
-        this.chestStealCooldownTicks = 0;
-        this.autoEquipCooldownTicks = 0;
-        this.dropAllCooldownTicks = 0;
+    public static void setAutoEquipIntervalTicks(int ticks) {
+        autoEquipIntervalTicks = clampInt(ticks, 1, 40);
+        saveConfig();
     }
 
-    @SubscribeEvent
-    public void onClientTick(TickEvent.ClientTickEvent event) {
-        if (event.phase != TickEvent.Phase.END) {
-            return;
-        }
+    public static int getDropAllDelayTicks() {
+        return dropAllDelayTicks;
+    }
 
-        Minecraft mc = Minecraft.getMinecraft();
-        EntityPlayerSP player = mc.player;
-        if (mc.world == null || player == null) {
+    public static void setDropAllDelayTicks(int ticks) {
+        dropAllDelayTicks = clampInt(ticks, 0, 20);
+        saveConfig();
+    }
+
+    public static String getDropAllKeywordsText() {
+        return dropAllKeywordsText == null ? "" : dropAllKeywordsText;
+    }
+
+    public static void setDropAllKeywordsText(String text) {
+        dropAllKeywordsText = text == null ? "" : text.trim();
+        saveConfig();
+    }
+
+    public void tick(Minecraft mc) {
+        if (mc == null || mc.player == null || mc.level == null || mc.gameMode == null) {
             resetRuntimeState();
             return;
         }
 
         tickCooldowns();
-        handleForceNoHunger(player);
-        handleAutoEquip(mc, player);
-        handleChestSteal(mc, player);
-        handleInventorySort(mc, player);
-        handleDropAll(mc, player);
+        handleForceNoHunger(mc.player);
+        handleAutoEquip(mc, mc.player);
+        handleChestSteal(mc, mc.player);
+        handleInventorySort(mc, mc.player);
+        handleDropAll(mc, mc.player);
     }
 
-    private void tickCooldowns() {
-        if (this.inventorySortCooldownTicks > 0) {
-            this.inventorySortCooldownTicks--;
-        }
-        if (this.chestStealCooldownTicks > 0) {
-            this.chestStealCooldownTicks--;
-        }
-        if (this.autoEquipCooldownTicks > 0) {
-            this.autoEquipCooldownTicks--;
-        }
-        if (this.dropAllCooldownTicks > 0) {
-            this.dropAllCooldownTicks--;
-        }
-    }
-
-    private void handleForceNoHunger(EntityPlayerSP player) {
-        if (!isEnabled("force_no_hunger") || player == null) {
+    @SubscribeEvent
+    public void onItemTooltip(ItemTooltipEvent event) {
+        if (!isEnabled("shulker_preview") || event.getItemStack().isEmpty()) {
             return;
         }
-
-        FoodStats foodStats = player.getFoodStats();
-        if (foodStats == null) {
+        if (!hasShulkerPreviewContents(event.getItemStack())) {
             return;
         }
-
-        foodStats.setFoodLevel(20);
-        foodStats.setFoodSaturationLevel(20.0F);
-
-        if (this.forceNoHungerReflectionFailed) {
-            return;
-        }
-
-        try {
-            ReflectionCompat.setPrivateValue(FoodStats.class, foodStats, 0.0F,
-                    "foodExhaustionLevel", "field_75126_c");
-            ReflectionCompat.setPrivateValue(FoodStats.class, foodStats, 0,
-                    "foodTimer", "field_75123_d");
-        } catch (RuntimeException e) {
-            this.forceNoHungerReflectionFailed = true;
-            zszlScriptMod.LOGGER.warn("强制不饥饿无法重置 FoodStats 私有字段，将仅锁定可公开修改的饥饿值。", e);
-        }
-    }
-
-    private void handleAutoEquip(Minecraft mc, EntityPlayerSP player) {
-        if (!isEnabled("auto_equip") || this.autoEquipCooldownTicks > 0 || mc.playerController == null) {
-            return;
-        }
-        if (mc.currentScreen instanceof GuiContainer && !(mc.currentScreen instanceof GuiInventory)) {
-            return;
-        }
-        if (player.ticksExisted % 2 == 0) {
-            return;
-        }
-
-        int[] bestArmorSlots = new int[4];
-        float[] bestArmorScores = new float[4];
-        for (int armorType = 0; armorType < 4; armorType++) {
-            ItemStack equipped = player.inventory.armorItemInSlot(armorType);
-            bestArmorScores[armorType] = getArmorScore(equipped);
-            bestArmorSlots[armorType] = -1;
-        }
-
-        for (int slot = 0; slot < 36; slot++) {
-            ItemStack stack = player.inventory.getStackInSlot(slot);
-            if (stack.isEmpty() || !(stack.getItem() instanceof ItemArmor)) {
-                continue;
-            }
-            ItemArmor armor = (ItemArmor) stack.getItem();
-            int armorType = getArmorTypeIndex(armor);
-            if (armorType < 0) {
-                continue;
-            }
-
-            float score = getArmorScore(stack);
-            if (score > bestArmorScores[armorType] + 0.01F) {
-                bestArmorScores[armorType] = score;
-                bestArmorSlots[armorType] = slot;
-            }
-        }
-
-        for (int armorType = 0; armorType < 4; armorType++) {
-            int sourceSlot = bestArmorSlots[armorType];
-            if (sourceSlot < 0) {
-                continue;
-            }
-
-            ItemStack equipped = player.inventory.armorItemInSlot(armorType);
-            if (!equipped.isEmpty() && player.inventory.getFirstEmptyStack() == -1) {
-                continue;
-            }
-
-            int sourceContainerSlot = toPlayerContainerSlot(sourceSlot);
-            int armorContainerSlot = 8 - armorType;
-            mc.playerController.windowClick(0, armorContainerSlot, 0, ClickType.QUICK_MOVE, player);
-            mc.playerController.windowClick(0, sourceContainerSlot, 0, ClickType.QUICK_MOVE, player);
-            this.autoEquipCooldownTicks = autoEquipIntervalTicks;
-            return;
-        }
-    }
-
-    private void handleChestSteal(Minecraft mc, EntityPlayerSP player) {
-        if (!isEnabled("chest_steal") || this.chestStealCooldownTicks > 0 || mc.playerController == null) {
-            return;
-        }
-        if (!(mc.currentScreen instanceof GuiChest) || !(player.openContainer instanceof ContainerChest)) {
-            return;
-        }
-
-        ContainerChest chest = (ContainerChest) player.openContainer;
-        int size = chest.getLowerChestInventory().getSizeInventory();
-        for (int slot = 0; slot < size; slot++) {
-            ItemStack stack = chest.getLowerChestInventory().getStackInSlot(slot);
-            if (stack.isEmpty()) {
-                continue;
-            }
-            mc.playerController.windowClick(chest.windowId, slot, 0, ClickType.QUICK_MOVE, player);
-            this.chestStealCooldownTicks = chestStealDelayTicks;
-            return;
-        }
-    }
-
-    private void handleInventorySort(Minecraft mc, EntityPlayerSP player) {
-        if (!isEnabled("inventory_sort") || this.inventorySortCooldownTicks > 0 || mc.playerController == null) {
-            return;
-        }
-        if (!(mc.currentScreen instanceof GuiInventory) || player.openContainer != player.inventoryContainer) {
-            return;
-        }
-
-        List<ItemStack> sorted = new ArrayList<>();
-        for (int slot = 9; slot <= 35; slot++) {
-            ItemStack stack = player.inventory.getStackInSlot(slot);
-            if (!stack.isEmpty()) {
-                sorted.add(stack.copy());
-            }
-        }
-        sorted.sort(INVENTORY_SORT_COMPARATOR);
-        while (sorted.size() < 27) {
-            sorted.add(ItemStack.EMPTY);
-        }
-
-        for (int index = 0; index < 27; index++) {
-            int targetInvSlot = 9 + index;
-            ItemStack desired = sorted.get(index);
-            ItemStack current = player.inventory.getStackInSlot(targetInvSlot);
-            if (sameStackIdentity(current, desired)) {
-                continue;
-            }
-
-            if (desired.isEmpty()) {
-                int emptySlot = findEmptyInventorySlot(player, targetInvSlot + 1, 35);
-                if (emptySlot >= 0) {
-                    moveInventorySlot(player, targetInvSlot, emptySlot);
-                    this.inventorySortCooldownTicks = 4;
-                }
-                return;
-            }
-
-            int sourceInvSlot = findMatchingInventorySlot(player, desired, targetInvSlot + 1, 35);
-            if (sourceInvSlot >= 0) {
-                moveInventorySlot(player, sourceInvSlot, targetInvSlot);
-                this.inventorySortCooldownTicks = 4;
-            }
-            return;
-        }
-
-        this.inventorySortCooldownTicks = 10;
-    }
-
-    private void handleDropAll(Minecraft mc, EntityPlayerSP player) {
-        if (!isEnabled("drop_all") || this.dropAllCooldownTicks > 0 || mc.playerController == null) {
-            return;
-        }
-        if (dropAllKeywordsText.trim().isEmpty() || player.openContainer != player.inventoryContainer) {
-            return;
-        }
-
-        List<String> keywords = getDropAllKeywords();
-        for (int invSlot = 9; invSlot <= 44; invSlot++) {
-            int actualInvSlot = invSlot <= 35 ? invSlot : invSlot - 36;
-            ItemStack stack = player.inventory.getStackInSlot(actualInvSlot);
-            if (stack.isEmpty()) {
-                continue;
-            }
-            String displayName = safe(stack.getDisplayName()).toLowerCase(Locale.ROOT);
-            boolean matched = false;
-            for (String keyword : keywords) {
-                if (!keyword.isEmpty() && displayName.contains(keyword.toLowerCase(Locale.ROOT))) {
-                    matched = true;
-                    break;
-                }
-            }
-            if (!matched) {
-                continue;
-            }
-
-            mc.playerController.windowClick(0, toPlayerContainerSlot(actualInvSlot), 1, ClickType.THROW, player);
-            this.dropAllCooldownTicks = dropAllDelayTicks;
-            return;
-        }
+        event.getToolTip().add(Component.literal("§8[潜影盒预览]"));
     }
 
     @SubscribeEvent
     public void onRenderTooltipPre(RenderTooltipEvent.Pre event) {
-        Minecraft mc = Minecraft.getMinecraft();
+        Minecraft mc = Minecraft.getInstance();
         if (!isEnabled("shulker_preview")
                 || event == null
                 || mc == null
-                || !(mc.currentScreen instanceof GuiContainer)
-                || !hasShulkerPreviewContents(event.getStack())) {
+                || !(mc.screen instanceof AbstractContainerScreen<?>)
+                || !hasShulkerPreviewContents(event.getItemStack())) {
             return;
         }
         event.setCanceled(true);
     }
 
     @SubscribeEvent
-    public void onDrawScreenPost(GuiScreenEvent.DrawScreenEvent.Post event) {
-        if (!isEnabled("shulker_preview") || !(event.getGui() instanceof GuiContainer)) {
+    public void onScreenRenderPost(ScreenEvent.Render.Post event) {
+        Minecraft mc = Minecraft.getInstance();
+        if (!isEnabled("shulker_preview")
+                || mc == null
+                || !(event.getScreen() instanceof AbstractContainerScreen<?> screen)) {
             return;
         }
 
-        GuiContainer gui = (GuiContainer) event.getGui();
-        Slot hoveredSlot = gui.getSlotUnderMouse();
-        if (hoveredSlot == null || !hoveredSlot.getHasStack()) {
+        Slot hoveredSlot = resolveHoveredSlot(screen);
+        if (hoveredSlot == null || !hoveredSlot.hasItem()) {
             return;
         }
 
-        ItemStack stack = hoveredSlot.getStack();
-        if (stack.isEmpty() || !(stack.getItem() instanceof ItemShulkerBox)) {
-            return;
-        }
-
+        ItemStack stack = hoveredSlot.getItem();
         NonNullList<ItemStack> items = getShulkerPreviewItems(stack);
         if (items == null) {
             return;
         }
-        renderShulkerPreview(gui, stack, items, event.getMouseX(), event.getMouseY());
+        renderShulkerPreview(event.getGuiGraphics(), screen, stack, items, event.getMouseX(), event.getMouseY());
     }
 
-    private boolean hasShulkerPreviewContents(ItemStack stack) {
-        return getShulkerPreviewItems(stack) != null;
-    }
-
-    private NonNullList<ItemStack> getShulkerPreviewItems(ItemStack stack) {
-        if (stack == null || stack.isEmpty() || !(stack.getItem() instanceof ItemShulkerBox)) {
-            return null;
-        }
-        NBTTagCompound blockEntityTag = stack.getSubCompound("BlockEntityTag");
-        if (blockEntityTag == null || !blockEntityTag.hasKey("Items", 9)) {
-            return null;
-        }
-
-        NonNullList<ItemStack> items = NonNullList.withSize(27, ItemStack.EMPTY);
-        ItemStackHelper.loadAllItems(blockEntityTag, items);
-        return items;
-    }
-
-    private void renderShulkerPreview(GuiContainer gui, ItemStack shulkerStack, NonNullList<ItemStack> items, int mouseX,
-            int mouseY) {
-        Minecraft mc = Minecraft.getMinecraft();
-        int panelWidth = 162;
-        int panelHeight = 78;
-        int panelX = Math.min(mouseX + 12, gui.width - panelWidth - 6);
-        int panelY = Math.min(mouseY + 12, gui.height - panelHeight - 6);
-
-        Gui.drawRect(panelX, panelY, panelX + panelWidth, panelY + panelHeight, DEFAULT_SHULKER_PREVIEW_BG);
-        Gui.drawRect(panelX, panelY, panelX + panelWidth, panelY + 15, DEFAULT_SHULKER_PREVIEW_HEADER_BG);
-        Gui.drawRect(panelX, panelY, panelX + panelWidth, panelY + 1, 0xFF5FB8FF);
-        Gui.drawRect(panelX, panelY + panelHeight - 1, panelX + panelWidth, panelY + panelHeight,
-                DEFAULT_SHULKER_PREVIEW_BORDER);
-        Gui.drawRect(panelX, panelY, panelX + 1, panelY + panelHeight, DEFAULT_SHULKER_PREVIEW_BORDER);
-        Gui.drawRect(panelX + panelWidth - 1, panelY, panelX + panelWidth, panelY + panelHeight,
-                DEFAULT_SHULKER_PREVIEW_BORDER);
-        mc.fontRenderer.drawStringWithShadow(shulkerStack.getDisplayName(), panelX + 6, panelY + 5, 0xFFFFFFFF);
-
-        RenderHelper.enableGUIStandardItemLighting();
-        GlStateManager.pushMatrix();
-        for (int index = 0; index < items.size(); index++) {
-            int slotX = panelX + 6 + index % 9 * 17;
-            int slotY = panelY + 18 + index / 9 * 17;
-            Gui.drawRect(slotX - 1, slotY - 1, slotX + 17, slotY + 17, DEFAULT_SHULKER_PREVIEW_SLOT_BORDER);
-            Gui.drawRect(slotX, slotY, slotX + 16, slotY + 16, DEFAULT_SHULKER_PREVIEW_SLOT_BG);
-            ItemStack item = items.get(index);
-            if (!item.isEmpty()) {
-                mc.getRenderItem().renderItemAndEffectIntoGUI(item, slotX, slotY);
-                mc.getRenderItem().renderItemOverlayIntoGUI(mc.fontRenderer, item, slotX, slotY, null);
-            }
-        }
-        GlStateManager.popMatrix();
-        RenderHelper.disableStandardItemLighting();
-    }
-
-    private void moveInventorySlot(EntityPlayerSP player, int sourceInvSlot, int targetInvSlot) {
-        if (sourceInvSlot == targetInvSlot) {
-            return;
-        }
-        int windowId = player.inventoryContainer.windowId;
-        int sourceContainerSlot = toPlayerContainerSlot(sourceInvSlot);
-        int targetContainerSlot = toPlayerContainerSlot(targetInvSlot);
-        boolean targetEmpty = player.inventory.getStackInSlot(targetInvSlot).isEmpty();
-        boolean sourceEmpty = player.inventory.getStackInSlot(sourceInvSlot).isEmpty();
-        if (sourceEmpty) {
-            return;
-        }
-
-        Minecraft mc = Minecraft.getMinecraft();
-        if (mc.playerController == null) {
-            return;
-        }
-
-        if (targetEmpty) {
-            mc.playerController.windowClick(windowId, sourceContainerSlot, 0, ClickType.PICKUP, player);
-            mc.playerController.windowClick(windowId, targetContainerSlot, 0, ClickType.PICKUP, player);
-            return;
-        }
-
-        mc.playerController.windowClick(windowId, targetContainerSlot, 0, ClickType.PICKUP, player);
-        mc.playerController.windowClick(windowId, sourceContainerSlot, 0, ClickType.PICKUP, player);
-        mc.playerController.windowClick(windowId, targetContainerSlot, 0, ClickType.PICKUP, player);
-    }
-
-    private int findEmptyInventorySlot(EntityPlayerSP player, int start, int end) {
-        for (int slot = Math.max(9, start); slot <= Math.min(35, end); slot++) {
-            if (player.inventory.getStackInSlot(slot).isEmpty()) {
-                return slot;
-            }
-        }
-        return -1;
-    }
-
-    private int findMatchingInventorySlot(EntityPlayerSP player, ItemStack target, int start, int end) {
-        for (int slot = Math.max(9, start); slot <= Math.min(35, end); slot++) {
-            if (sameStackIdentity(player.inventory.getStackInSlot(slot), target)) {
-                return slot;
-            }
-        }
-        return -1;
-    }
-
-    private static int toPlayerContainerSlot(int inventorySlot) {
-        return inventorySlot < 9 ? inventorySlot + 36 : inventorySlot;
-    }
-
-    private static int getArmorTypeIndex(ItemArmor armor) {
-        if (armor == null || armor.armorType == null) {
-            return -1;
-        }
-        switch (armor.armorType) {
-        case FEET:
-            return 0;
-        case LEGS:
-            return 1;
-        case CHEST:
-            return 2;
-        case HEAD:
-            return 3;
-        default:
-            return -1;
-        }
-    }
-
-    private static float getArmorScore(ItemStack stack) {
-        if (stack == null || stack.isEmpty() || !(stack.getItem() instanceof ItemArmor)) {
-            return 0.0F;
-        }
-        ItemArmor armor = (ItemArmor) stack.getItem();
-        float score = armor.damageReduceAmount * 10.0F;
-        score += EnchantmentHelper.getEnchantmentLevel(Enchantments.PROTECTION, stack) * 3.0F;
-        score += EnchantmentHelper.getEnchantmentLevel(Enchantments.BLAST_PROTECTION, stack) * 1.5F;
-        score += EnchantmentHelper.getEnchantmentLevel(Enchantments.FIRE_PROTECTION, stack) * 1.2F;
-        score += EnchantmentHelper.getEnchantmentLevel(Enchantments.PROJECTILE_PROTECTION, stack) * 1.2F;
-        return score;
-    }
-
-    private static boolean sameStackIdentity(ItemStack a, ItemStack b) {
-        if (a == null || a.isEmpty()) {
-            return b == null || b.isEmpty();
-        }
-        if (b == null || b.isEmpty()) {
-            return false;
-        }
-        return ItemStack.areItemsEqual(a, b)
-                && ItemStack.areItemStackTagsEqual(a, b)
-                && a.getCount() == b.getCount();
-    }
-
-    private List<String> getDropAllKeywords() {
-        List<String> keywords = new ArrayList<>();
-        if (dropAllKeywordsText == null || dropAllKeywordsText.trim().isEmpty()) {
-            return keywords;
-        }
-        String normalized = dropAllKeywordsText.replace('，', ',').replace('\n', ',').replace(';', ',');
-        for (String part : normalized.split(",")) {
-            String keyword = safe(part);
-            if (!keyword.isEmpty()) {
-                keywords.add(keyword);
-            }
-        }
-        return keywords;
+    public static String getFeatureRuntimeSummary(String featureId) {
+        return INSTANCE.buildFeatureRuntimeSummary(normalizeId(featureId));
     }
 
     public static List<String> getStatusLines() {
@@ -809,7 +288,7 @@ public class ItemFeatureManager {
 
         List<String> activeNames = new ArrayList<>();
         for (FeatureState state : FEATURES.values()) {
-            if (state != null && state.isEnabled() && state.isStatusHudEnabled()) {
+            if (state != null && state.enabled && state.statusHudEnabled) {
                 activeNames.add(state.name);
             }
         }
@@ -839,22 +318,422 @@ public class ItemFeatureManager {
         return lines;
     }
 
-    public static String getFeatureRuntimeSummary(String featureId) {
-        return INSTANCE.buildFeatureRuntimeSummary(normalizeId(featureId));
+    public static void loadConfig() {
+        try {
+            Path file = ProfileManager.getCurrentProfileDir().resolve("other_features_item.json");
+            if (!Files.exists(file)) {
+                return;
+            }
+
+            JsonObject root = JsonParser.parseString(Files.readString(file, StandardCharsets.UTF_8)).getAsJsonObject();
+            JsonObject features = root.has("features") && root.get("features").isJsonObject()
+                    ? root.getAsJsonObject("features")
+                    : root;
+
+            chestStealDelayTicks = root.has("chestStealDelayTicks")
+                    ? clampInt(root.get("chestStealDelayTicks").getAsInt(), 0, 20)
+                    : DEFAULT_CHEST_STEAL_DELAY_TICKS;
+            autoEquipIntervalTicks = root.has("autoEquipIntervalTicks")
+                    ? clampInt(root.get("autoEquipIntervalTicks").getAsInt(), 1, 40)
+                    : DEFAULT_AUTO_EQUIP_INTERVAL_TICKS;
+            dropAllDelayTicks = root.has("dropAllDelayTicks")
+                    ? clampInt(root.get("dropAllDelayTicks").getAsInt(), 0, 20)
+                    : DEFAULT_DROP_ALL_DELAY_TICKS;
+            dropAllKeywordsText = root.has("dropAllKeywordsText") ? root.get("dropAllKeywordsText").getAsString() : "";
+
+            for (FeatureState state : FEATURES.values()) {
+                if (!features.has(state.id) || !features.get(state.id).isJsonObject()) {
+                    continue;
+                }
+                JsonObject json = features.getAsJsonObject(state.id);
+                if (json.has("enabled")) {
+                    state.enabled = json.get("enabled").getAsBoolean();
+                }
+                if (json.has("statusHudEnabled")) {
+                    state.statusHudEnabled = json.get("statusHudEnabled").getAsBoolean();
+                }
+            }
+        } catch (Exception e) {
+            zszlScriptMod.LOGGER.error("加载物品功能配置失败", e);
+        }
+    }
+
+    public static void saveConfig() {
+        try {
+            Path file = ProfileManager.getCurrentProfileDir().resolve("other_features_item.json");
+            Files.createDirectories(file.getParent());
+            JsonObject root = new JsonObject();
+            JsonObject features = new JsonObject();
+            root.addProperty("chestStealDelayTicks", chestStealDelayTicks);
+            root.addProperty("autoEquipIntervalTicks", autoEquipIntervalTicks);
+            root.addProperty("dropAllDelayTicks", dropAllDelayTicks);
+            root.addProperty("dropAllKeywordsText", getDropAllKeywordsText());
+            for (FeatureState state : FEATURES.values()) {
+                JsonObject json = new JsonObject();
+                json.addProperty("enabled", state.enabled);
+                json.addProperty("statusHudEnabled", state.statusHudEnabled);
+                features.add(state.id, json);
+            }
+            root.add("features", features);
+            Files.writeString(file, root.toString(), StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            zszlScriptMod.LOGGER.error("保存物品功能配置失败", e);
+        }
+    }
+
+    public void onClientDisconnect() {
+        resetRuntimeState();
+    }
+
+    private void tickCooldowns() {
+        if (inventorySortCooldownTicks > 0) {
+            inventorySortCooldownTicks--;
+        }
+        if (chestStealCooldownTicks > 0) {
+            chestStealCooldownTicks--;
+        }
+        if (autoEquipCooldownTicks > 0) {
+            autoEquipCooldownTicks--;
+        }
+        if (dropAllCooldownTicks > 0) {
+            dropAllCooldownTicks--;
+        }
+    }
+
+    private void handleForceNoHunger(LocalPlayer player) {
+        if (!isEnabled("force_no_hunger") || player == null) {
+            return;
+        }
+
+        FoodData foodData = player.getFoodData();
+        foodData.setFoodLevel(20);
+        foodData.setSaturation(20.0F);
+        foodData.setExhaustion(0.0F);
+    }
+
+    private void handleAutoEquip(Minecraft mc, LocalPlayer player) {
+        if (!isEnabled("auto_equip") || autoEquipCooldownTicks > 0 || mc.gameMode == null) {
+            return;
+        }
+        if (mc.screen instanceof AbstractContainerScreen<?> && !(mc.screen instanceof InventoryScreen)) {
+            return;
+        }
+        if (player.containerMenu != player.inventoryMenu) {
+            return;
+        }
+
+        Inventory inventory = player.getInventory();
+        int bestMenuSlot = -1;
+        double bestGain = 0.0D;
+
+        for (int invIndex = 0; invIndex < inventory.items.size(); invIndex++) {
+            ItemStack stack = inventory.items.get(invIndex);
+            if (!(stack.getItem() instanceof ArmorItem armorItem)) {
+                continue;
+            }
+
+            EquipmentSlot slot = armorItem.getEquipmentSlot();
+            ItemStack equipped = player.getItemBySlot(slot);
+            double gain = getArmorScore(stack) - getArmorScore(equipped);
+            if (gain > bestGain + 0.05D) {
+                bestGain = gain;
+                bestMenuSlot = inventoryIndexToMenuSlot(invIndex);
+            }
+        }
+
+        if (bestMenuSlot >= 0) {
+            mc.gameMode.handleInventoryMouseClick(player.inventoryMenu.containerId, bestMenuSlot, 0,
+                    ClickType.QUICK_MOVE, player);
+            autoEquipCooldownTicks = autoEquipIntervalTicks;
+        }
+    }
+
+    private void handleChestSteal(Minecraft mc, LocalPlayer player) {
+        if (!isEnabled("chest_steal") || chestStealCooldownTicks > 0 || !(player.containerMenu instanceof ChestMenu chestMenu)) {
+            return;
+        }
+        int containerSlots = chestMenu.getRowCount() * 9;
+        for (int i = 0; i < containerSlots; i++) {
+            if (chestMenu.slots.get(i).hasItem()) {
+                mc.gameMode.handleInventoryMouseClick(chestMenu.containerId, i, 0, ClickType.QUICK_MOVE, player);
+                chestStealCooldownTicks = chestStealDelayTicks;
+                return;
+            }
+        }
+    }
+
+    private void handleInventorySort(Minecraft mc, LocalPlayer player) {
+        if (!isEnabled("inventory_sort") || inventorySortCooldownTicks > 0
+                || !(mc.screen instanceof InventoryScreen)
+                || player.containerMenu != player.inventoryMenu) {
+            return;
+        }
+
+        List<ItemStack> sorted = new ArrayList<>();
+        for (int slot = 9; slot <= 35; slot++) {
+            ItemStack stack = player.getInventory().items.get(slot);
+            if (!stack.isEmpty()) {
+                sorted.add(stack.copy());
+            }
+        }
+        sorted.sort(INVENTORY_SORT_COMPARATOR);
+        while (sorted.size() < 27) {
+            sorted.add(ItemStack.EMPTY);
+        }
+
+        for (int index = 0; index < 27; index++) {
+            int targetInvSlot = 9 + index;
+            ItemStack desired = sorted.get(index);
+            ItemStack current = player.getInventory().items.get(targetInvSlot);
+            if (sameStackIdentity(current, desired)) {
+                continue;
+            }
+
+            if (desired.isEmpty()) {
+                int emptySlot = findEmptyInventorySlot(player, targetInvSlot + 1, 35);
+                if (emptySlot >= 0) {
+                    moveInventorySlot(mc, player, targetInvSlot, emptySlot);
+                    inventorySortCooldownTicks = 4;
+                }
+                return;
+            }
+
+            int sourceInvSlot = findMatchingInventorySlot(player, desired, targetInvSlot + 1, 35);
+            if (sourceInvSlot >= 0) {
+                moveInventorySlot(mc, player, sourceInvSlot, targetInvSlot);
+                inventorySortCooldownTicks = 4;
+            }
+            return;
+        }
+
+        inventorySortCooldownTicks = 10;
+    }
+
+    private void handleDropAll(Minecraft mc, LocalPlayer player) {
+        if (!isEnabled("drop_all") || dropAllCooldownTicks > 0 || getDropAllKeywordsText().trim().isEmpty()) {
+            return;
+        }
+        if (player.containerMenu != player.inventoryMenu) {
+            return;
+        }
+
+        List<String> keywords = getDropAllKeywords();
+        for (int invIndex = 0; invIndex < player.getInventory().items.size(); invIndex++) {
+            ItemStack stack = player.getInventory().items.get(invIndex);
+            if (stack.isEmpty()) {
+                continue;
+            }
+
+            String display = stack.getHoverName().getString().toLowerCase(Locale.ROOT);
+            boolean matched = false;
+            for (String keyword : keywords) {
+                if (!keyword.isEmpty() && display.contains(keyword.toLowerCase(Locale.ROOT))) {
+                    matched = true;
+                    break;
+                }
+            }
+            if (!matched) {
+                continue;
+            }
+
+            mc.gameMode.handleInventoryMouseClick(player.inventoryMenu.containerId,
+                    inventoryIndexToMenuSlot(invIndex), 1, ClickType.THROW, player);
+            dropAllCooldownTicks = dropAllDelayTicks;
+            return;
+        }
+    }
+
+    private void moveInventorySlot(Minecraft mc, LocalPlayer player, int sourceInvSlot, int targetInvSlot) {
+        if (sourceInvSlot == targetInvSlot) {
+            return;
+        }
+
+        int sourceMenuSlot = inventoryIndexToMenuSlot(sourceInvSlot);
+        int targetMenuSlot = inventoryIndexToMenuSlot(targetInvSlot);
+        mc.gameMode.handleInventoryMouseClick(player.inventoryMenu.containerId, sourceMenuSlot, 0, ClickType.PICKUP, player);
+        mc.gameMode.handleInventoryMouseClick(player.inventoryMenu.containerId, targetMenuSlot, 0, ClickType.PICKUP, player);
+        if (!player.inventoryMenu.getCarried().isEmpty()) {
+            mc.gameMode.handleInventoryMouseClick(player.inventoryMenu.containerId, sourceMenuSlot, 0, ClickType.PICKUP, player);
+        }
+    }
+
+    private int findEmptyInventorySlot(LocalPlayer player, int start, int end) {
+        for (int slot = Math.max(9, start); slot <= Math.min(35, end); slot++) {
+            if (player.getInventory().items.get(slot).isEmpty()) {
+                return slot;
+            }
+        }
+        return -1;
+    }
+
+    private int findMatchingInventorySlot(LocalPlayer player, ItemStack target, int start, int end) {
+        for (int slot = Math.max(9, start); slot <= Math.min(35, end); slot++) {
+            if (sameStackIdentity(player.getInventory().items.get(slot), target)) {
+                return slot;
+            }
+        }
+        return -1;
+    }
+
+    private static int inventoryIndexToMenuSlot(int inventoryIndex) {
+        return inventoryIndex < 9 ? inventoryIndex + 36 : inventoryIndex;
+    }
+
+    private static double getArmorScore(ItemStack stack) {
+        if (stack == null || stack.isEmpty() || !(stack.getItem() instanceof ArmorItem armorItem)) {
+            return -1.0D;
+        }
+        double score = armorItem.getDefense() * 10.0D;
+        score += armorItem.getToughness() * 1.5D;
+        score += EnchantmentHelper.getItemEnchantmentLevel(Enchantments.ALL_DAMAGE_PROTECTION, stack) * 3.0D;
+        score += EnchantmentHelper.getItemEnchantmentLevel(Enchantments.BLAST_PROTECTION, stack) * 1.5D;
+        score += EnchantmentHelper.getItemEnchantmentLevel(Enchantments.FIRE_PROTECTION, stack) * 1.2D;
+        score += EnchantmentHelper.getItemEnchantmentLevel(Enchantments.PROJECTILE_PROTECTION, stack) * 1.2D;
+        return score;
+    }
+
+    private static int categoryWeight(ItemStack stack) {
+        if (stack.isEmpty()) {
+            return 99;
+        }
+        if (stack.getItem() instanceof ArmorItem) {
+            return 0;
+        }
+        if (stack.getItem() instanceof SwordItem || stack.getItem() instanceof DiggerItem || stack.getItem() instanceof BowItem) {
+            return 1;
+        }
+        if (stack.isEdible()) {
+            return 2;
+        }
+        if (stack.getItem() instanceof net.minecraft.world.item.BlockItem) {
+            return 3;
+        }
+        if (stack.isDamageableItem()) {
+            return 4;
+        }
+        return 5;
+    }
+
+    private static boolean sameStackIdentity(ItemStack a, ItemStack b) {
+        if (a == null || a.isEmpty()) {
+            return b == null || b.isEmpty();
+        }
+        if (b == null || b.isEmpty()) {
+            return false;
+        }
+        return ItemStack.isSameItemSameTags(a, b) && a.getCount() == b.getCount();
+    }
+
+    private List<String> getDropAllKeywords() {
+        List<String> keywords = new ArrayList<>();
+        if (dropAllKeywordsText == null || dropAllKeywordsText.trim().isEmpty()) {
+            return keywords;
+        }
+        String normalized = dropAllKeywordsText.replace('，', ',').replace('\n', ',').replace(';', ',');
+        for (String part : normalized.split(",")) {
+            String keyword = safe(part);
+            if (!keyword.isEmpty()) {
+                keywords.add(keyword);
+            }
+        }
+        return keywords;
+    }
+
+    private boolean hasShulkerPreviewContents(ItemStack stack) {
+        return getShulkerPreviewItems(stack) != null;
+    }
+
+    private NonNullList<ItemStack> getShulkerPreviewItems(ItemStack stack) {
+        if (stack == null || stack.isEmpty()) {
+            return null;
+        }
+        if (!(stack.getItem() instanceof net.minecraft.world.item.BlockItem blockItem)
+                || !(blockItem.getBlock() instanceof ShulkerBoxBlock)) {
+            return null;
+        }
+        CompoundTag blockEntityTag = stack.getTagElement("BlockEntityTag");
+        if (blockEntityTag == null || !blockEntityTag.contains("Items", 9)) {
+            return null;
+        }
+
+        NonNullList<ItemStack> items = NonNullList.withSize(27, ItemStack.EMPTY);
+        ItemStackHelper.loadAllItems(blockEntityTag, items);
+        return items;
+    }
+
+    private void renderShulkerPreview(GuiGraphics graphics, AbstractContainerScreen<?> screen, ItemStack shulkerStack,
+            NonNullList<ItemStack> items, int mouseX, int mouseY) {
+        Minecraft mc = Minecraft.getInstance();
+        int panelWidth = 162;
+        int panelHeight = 78;
+        int panelX = Math.min(mouseX + 12, screen.width - panelWidth - 6);
+        int panelY = Math.min(mouseY + 12, screen.height - panelHeight - 6);
+
+        graphics.fill(panelX, panelY, panelX + panelWidth, panelY + panelHeight, DEFAULT_SHULKER_PREVIEW_BG);
+        graphics.fill(panelX, panelY, panelX + panelWidth, panelY + 15, DEFAULT_SHULKER_PREVIEW_HEADER_BG);
+        graphics.fill(panelX, panelY, panelX + panelWidth, panelY + 1, 0xFF5FB8FF);
+        graphics.fill(panelX, panelY + panelHeight - 1, panelX + panelWidth, panelY + panelHeight, DEFAULT_SHULKER_PREVIEW_BORDER);
+        graphics.fill(panelX, panelY, panelX + 1, panelY + panelHeight, DEFAULT_SHULKER_PREVIEW_BORDER);
+        graphics.fill(panelX + panelWidth - 1, panelY, panelX + panelWidth, panelY + panelHeight, DEFAULT_SHULKER_PREVIEW_BORDER);
+        graphics.drawString(mc.font, shulkerStack.getHoverName(), panelX + 6, panelY + 4, 0xFFEAF6FF, false);
+
+        int startX = panelX + 6;
+        int startY = panelY + 20;
+        for (int i = 0; i < items.size(); i++) {
+            int slotX = startX + (i % 9) * 17;
+            int slotY = startY + (i / 9) * 17;
+            graphics.fill(slotX, slotY, slotX + 16, slotY + 16, DEFAULT_SHULKER_PREVIEW_SLOT_BG);
+            graphics.fill(slotX, slotY, slotX + 16, slotY + 1, DEFAULT_SHULKER_PREVIEW_SLOT_BORDER);
+            graphics.fill(slotX, slotY + 15, slotX + 16, slotY + 16, DEFAULT_SHULKER_PREVIEW_SLOT_BORDER);
+            graphics.fill(slotX, slotY, slotX + 1, slotY + 16, DEFAULT_SHULKER_PREVIEW_SLOT_BORDER);
+            graphics.fill(slotX + 15, slotY, slotX + 16, slotY + 16, DEFAULT_SHULKER_PREVIEW_SLOT_BORDER);
+
+            ItemStack item = items.get(i);
+            if (item.isEmpty()) {
+                continue;
+            }
+            graphics.renderItem(item, slotX, slotY);
+            graphics.renderItemDecorations(mc.font, item, slotX, slotY);
+        }
+    }
+
+    private Slot resolveHoveredSlot(AbstractContainerScreen<?> screen) {
+        try {
+            for (Class<?> type = screen.getClass(); type != null; type = type.getSuperclass()) {
+                for (Field field : type.getDeclaredFields()) {
+                    if (Slot.class.isAssignableFrom(field.getType())) {
+                        field.setAccessible(true);
+                        Object value = field.get(screen);
+                        if (value instanceof Slot slot) {
+                            return slot;
+                        }
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return null;
+    }
+
+    private void resetRuntimeState() {
+        inventorySortCooldownTicks = 0;
+        chestStealCooldownTicks = 0;
+        autoEquipCooldownTicks = 0;
+        dropAllCooldownTicks = 0;
     }
 
     private String getRuntimeHudLine() {
         List<String> parts = new ArrayList<>();
-        if (isEnabled("auto_equip") && shouldDisplayFeatureStatusHud("auto_equip")) {
+        if (isEnabled("auto_equip") && getFeature("auto_equip").statusHudEnabled) {
             parts.add("§b自动装备");
         }
-        if (isEnabled("chest_steal") && shouldDisplayFeatureStatusHud("chest_steal")) {
+        if (isEnabled("chest_steal") && getFeature("chest_steal").statusHudEnabled) {
             parts.add("§e箱窃:" + chestStealDelayTicks + "t");
         }
-        if (isEnabled("drop_all") && shouldDisplayFeatureStatusHud("drop_all")) {
+        if (isEnabled("drop_all") && getFeature("drop_all").statusHudEnabled) {
             parts.add("§c丢弃词:" + getDropAllKeywords().size());
         }
-        if (isEnabled("force_no_hunger") && shouldDisplayFeatureStatusHud("force_no_hunger")) {
+        if (isEnabled("force_no_hunger") && getFeature("force_no_hunger").statusHudEnabled) {
             parts.add("§a锁饥饿");
         }
         if (parts.isEmpty()) {
@@ -874,7 +753,6 @@ public class ItemFeatureManager {
         if (featureId == null || featureId.isEmpty()) {
             return "待机";
         }
-
         FeatureState state = getFeature(featureId);
         if (state == null) {
             return "未找到功能";
@@ -898,38 +776,28 @@ public class ItemFeatureManager {
         case "shulker_preview":
             return isEnabled(featureId) ? "悬停潜影盒时显示内容预览" : "未启用";
         default:
-            return state.behaviorImplemented ? "基础逻辑已接入" : "仅配置占位";
+            return state.enabled ? "已启用" : "未启用";
         }
+    }
+
+    private static void register(FeatureState state) {
+        FEATURES.put(state.id, state);
+    }
+
+    private static String safe(String text) {
+        return text == null ? "" : text.trim();
+    }
+
+    private static String normalizeId(String featureId) {
+        return safe(featureId).toLowerCase(Locale.ROOT);
+    }
+
+    private static int clampInt(int value, int min, int max) {
+        return Math.max(min, Math.min(max, value));
     }
 
     private static final Comparator<ItemStack> INVENTORY_SORT_COMPARATOR = Comparator
-            .comparingInt(ItemFeatureManager::getSortCategory)
-            .thenComparing(stack -> safe(stack.getDisplayName()).toLowerCase(Locale.ROOT))
-            .thenComparing(stack -> {
-                Item item = stack.getItem();
-                return item == null || Item.REGISTRY.getNameForObject(item) == null
-                        ? ""
-                        : Item.REGISTRY.getNameForObject(item).toString();
-            })
-            .thenComparingInt(ItemStack::getMetadata);
-
-    private static int getSortCategory(ItemStack stack) {
-        if (stack == null || stack.isEmpty() || stack.getItem() == null) {
-            return 99;
-        }
-        Item item = stack.getItem();
-        if (item instanceof ItemArmor) {
-            return 0;
-        }
-        if (item instanceof ItemSword || item instanceof ItemBow || item instanceof ItemTool) {
-            return 1;
-        }
-        if (item instanceof ItemFood) {
-            return 2;
-        }
-        if (item instanceof ItemBlock) {
-            return item instanceof ItemShulkerBox ? 4 : 3;
-        }
-        return 5;
-    }
+            .comparingInt(ItemFeatureManager::categoryWeight)
+            .thenComparing(stack -> stack.isEmpty() ? "" : safe(stack.getHoverName().getString()), String.CASE_INSENSITIVE_ORDER)
+            .thenComparingInt(stack -> stack.isEmpty() ? 0 : -stack.getCount());
 }

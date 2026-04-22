@@ -1,51 +1,45 @@
-// 文件路径: src/main/java/com/zszl/zszlScriptMod/system/MemoryManager.java
 package com.zszl.zszlScriptMod.system;
 
-import com.zszl.zszlScriptMod.utils.ReflectionCompat;
-import com.zszl.zszlScriptMod.zszlScriptMod; // !! 修复：添加缺失的导入 !!
-import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
+import com.zszl.zszlScriptMod.shadowbaritone.utils.accessor.IChunkArray;
+import com.zszl.zszlScriptMod.shadowbaritone.utils.accessor.IClientChunkProvider;
+import com.zszl.zszlScriptMod.zszlScriptMod;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.multiplayer.ChunkProviderClient;
-import net.minecraft.client.renderer.RenderGlobal;
-import net.minecraft.client.renderer.chunk.RenderChunk;
-import net.minecraft.entity.Entity;
-import net.minecraft.nbt.CompressedStreamTools;
-import net.minecraft.nbt.NBTTagCompound;
-import net.minecraft.tileentity.TileEntity;
-import net.minecraft.world.World;
-import net.minecraft.world.chunk.Chunk;
-import net.minecraft.world.chunk.storage.AnvilChunkLoader;
+import net.minecraft.client.multiplayer.ClientChunkCache;
+import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.NbtIo;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.chunk.LevelChunk;
+import net.minecraft.world.level.chunk.LevelChunkSection;
 
 import java.io.ByteArrayOutputStream;
-import java.io.DataOutputStream;
-import java.lang.reflect.Method;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.IdentityHashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicReferenceArray;
 
-public class MemoryManager {
-    private static final Minecraft mc = Minecraft.getMinecraft();
+public final class MemoryManager {
+
+    private static final Minecraft MC = Minecraft.getInstance();
+    private static final String RENDER_SECTION_CLASS_NAME =
+            "net.minecraft.client.renderer.chunk.SectionRenderDispatcher$RenderSection";
+
     public static final Map<String, MemorySnapshot> snapshots = new LinkedHashMap<>();
 
-    // --- 核心修复：使用反射来访问受保护的方法 ---
-    private static Method writeChunkToNBTMethod = null;
-
-    static {
-        try {
-            // 获取 AnvilChunkLoader 的 writeChunkToNBT 方法
-            // 这个方法是 protected 的，所以需要 setAccessible(true)
-            writeChunkToNBTMethod = AnvilChunkLoader.class.getDeclaredMethod("writeChunkToNBT", Chunk.class,
-                    World.class, NBTTagCompound.class);
-            writeChunkToNBTMethod.setAccessible(true);
-        } catch (NoSuchMethodException e) {
-            zszlScriptMod.LOGGER.error(
-                    "Unable to find AnvilChunkLoader.writeChunkToNBT via reflection; chunk memory estimation may be inaccurate.",
-                    e);
-        }
+    private MemoryManager() {
     }
-    // --- 修复结束 ---
 
     public static void takeSnapshot(String name) {
-        if (mc.world == null)
+        if (MC.level == null) {
             return;
+        }
 
         System.gc();
 
@@ -55,96 +49,21 @@ public class MemoryManager {
 
         Map<String, Integer> entityCounts = new HashMap<>();
         Map<String, Integer> tileEntityCounts = new HashMap<>();
+        Map<String, Integer> chunkCounts = new HashMap<>();
+        Map<String, Integer> renderChunkCounts = new HashMap<>();
+
         Map<String, Long> entityMemoryUsage = new HashMap<>();
         Map<String, Long> tileEntityMemoryUsage = new HashMap<>();
-        Map<String, Integer> chunkCounts = new HashMap<>();
         Map<String, Long> chunkMemoryUsage = new HashMap<>();
-        Map<String, Integer> renderChunkCounts = new HashMap<>();
         Map<String, Long> renderChunkMemoryUsage = new HashMap<>();
 
-        // 扫描实体 (逻辑不变)
-        for (Entity entity : mc.world.loadedEntityList) {
-            String className = entity.getClass().getName();
-            entityCounts.put(className, entityCounts.getOrDefault(className, 0) + 1);
-            try {
-                NBTTagCompound nbt = new NBTTagCompound();
-                entity.writeToNBT(nbt);
-                ByteArrayOutputStream baos = new ByteArrayOutputStream();
-                CompressedStreamTools.writeCompressed(nbt, new DataOutputStream(baos));
-                entityMemoryUsage.put(className, entityMemoryUsage.getOrDefault(className, 0L) + baos.size());
-            } catch (Exception e) {
-            }
-        }
+        snapshotEntities(MC.level, entityCounts, entityMemoryUsage);
+        snapshotChunks(MC.level, tileEntityCounts, tileEntityMemoryUsage,
+                chunkCounts, chunkMemoryUsage, renderChunkCounts, renderChunkMemoryUsage);
 
-        // 扫描方块实体 (逻辑不变)
-        for (TileEntity tileEntity : mc.world.loadedTileEntityList) {
-            String className = tileEntity.getClass().getName();
-            tileEntityCounts.put(className, tileEntityCounts.getOrDefault(className, 0) + 1);
-            try {
-                NBTTagCompound nbt = new NBTTagCompound();
-                tileEntity.writeToNBT(nbt);
-                ByteArrayOutputStream baos = new ByteArrayOutputStream();
-                CompressedStreamTools.writeCompressed(nbt, new DataOutputStream(baos));
-                tileEntityMemoryUsage.put(className, tileEntityMemoryUsage.getOrDefault(className, 0L) + baos.size());
-            } catch (Exception e) {
-            }
-        }
-
-        // --- 核心修复：使用反射访问客户端的区块列表 ---
-        ChunkProviderClient chunkProvider = mc.world.getChunkProvider();
-        if (chunkProvider != null) {
-            try {
-                // ObfuscationReflectionHelper 会自动处理混淆名 (field_73244_f)
-                Long2ObjectMap<Chunk> chunkMapping = ReflectionCompat
-                        .getPrivateValue(ChunkProviderClient.class, chunkProvider, "chunkMapping", "field_73244_f");
-                if (chunkMapping != null) {
-                    String chunkClassName = Chunk.class.getName();
-                    AnvilChunkLoader loader = new AnvilChunkLoader(null, null);
-
-                    for (Chunk chunk : chunkMapping.values()) {
-                        chunkCounts.put(chunkClassName, chunkCounts.getOrDefault(chunkClassName, 0) + 1);
-                        if (writeChunkToNBTMethod != null) { // 确保方法已成功获取
-                            try {
-                                NBTTagCompound nbt = new NBTTagCompound();
-                                // 使用反射调用方法
-                                writeChunkToNBTMethod.invoke(loader, chunk, mc.world, nbt);
-                                ByteArrayOutputStream baos = new ByteArrayOutputStream();
-                                CompressedStreamTools.writeCompressed(nbt, new DataOutputStream(baos));
-                                chunkMemoryUsage.put(chunkClassName,
-                                        chunkMemoryUsage.getOrDefault(chunkClassName, 0L) + baos.size());
-                            } catch (Exception e) {
-                                // 忽略序列化失败
-                            }
-                        }
-                    }
-                }
-            } catch (Exception e) {
-                zszlScriptMod.LOGGER.error("Failed to get chunk list via reflection", e);
-            }
-        }
-        // --- 修复结束 ---
-
-        // --- 核心修复：使用反射访问渲染区块列表 ---
-        if (mc.renderGlobal != null) {
-            try {
-                // ObfuscationReflectionHelper 会自动处理混淆名 (field_174992_B)
-                RenderChunk[] renderChunks = ReflectionCompat.getPrivateValue(RenderGlobal.class,
-                        mc.renderGlobal, "renderChunks", "field_174992_B");
-                if (renderChunks != null) {
-                    String renderChunkClassName = RenderChunk.class.getName();
-                    renderChunkCounts.put(renderChunkClassName, renderChunks.length);
-                    renderChunkMemoryUsage.put(renderChunkClassName, 0L); // 内存占用依然不估算
-                }
-            } catch (Exception e) {
-                zszlScriptMod.LOGGER.error("Failed to get render chunk list via reflection", e);
-            }
-        }
-        // --- 修复结束 ---
-
-        MemorySnapshot snapshot = new MemorySnapshot(name, totalMemory, freeMemory,
+        snapshots.put(name, new MemorySnapshot(name, totalMemory, freeMemory,
                 entityCounts, tileEntityCounts, chunkCounts, renderChunkCounts,
-                entityMemoryUsage, tileEntityMemoryUsage, chunkMemoryUsage, renderChunkMemoryUsage);
-        snapshots.put(name, snapshot);
+                entityMemoryUsage, tileEntityMemoryUsage, chunkMemoryUsage, renderChunkMemoryUsage));
     }
 
     public static void deleteSnapshot(String name) {
@@ -159,7 +78,143 @@ public class MemoryManager {
         return new ComparisonResult(before, after);
     }
 
-    public static class ComparisonResult {
+    private static void snapshotEntities(ClientLevel level, Map<String, Integer> entityCounts,
+            Map<String, Long> entityMemoryUsage) {
+        for (Entity entity : level.entitiesForRendering()) {
+            if (entity == null) {
+                continue;
+            }
+
+            String className = entity.getClass().getName();
+            entityCounts.put(className, entityCounts.getOrDefault(className, 0) + 1);
+            try {
+                CompoundTag tag = new CompoundTag();
+                entity.saveWithoutId(tag);
+                entityMemoryUsage.put(className,
+                        entityMemoryUsage.getOrDefault(className, 0L) + estimateCompressedSize(tag));
+            } catch (Exception e) {
+                zszlScriptMod.LOGGER.debug("Failed to estimate entity memory for {}", className, e);
+            }
+        }
+    }
+
+    private static void snapshotChunks(ClientLevel level,
+            Map<String, Integer> tileEntityCounts,
+            Map<String, Long> tileEntityMemoryUsage,
+            Map<String, Integer> chunkCounts,
+            Map<String, Long> chunkMemoryUsage,
+            Map<String, Integer> renderChunkCounts,
+            Map<String, Long> renderChunkMemoryUsage) {
+        Collection<LevelChunk> loadedChunks = getLoadedChunks(level);
+        if (loadedChunks.isEmpty()) {
+            return;
+        }
+
+        String chunkClassName = LevelChunk.class.getName();
+        Set<BlockEntity> seenBlockEntities = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+        int totalRenderSections = 0;
+
+        for (LevelChunk chunk : loadedChunks) {
+            if (chunk == null) {
+                continue;
+            }
+
+            chunkCounts.put(chunkClassName, chunkCounts.getOrDefault(chunkClassName, 0) + 1);
+
+            int nonEmptySections = 0;
+            LevelChunkSection[] sections = chunk.getSections();
+            if (sections != null) {
+                for (LevelChunkSection section : sections) {
+                    if (section != null && !section.hasOnlyAir()) {
+                        nonEmptySections++;
+                    }
+                }
+            }
+            totalRenderSections += nonEmptySections;
+            chunkMemoryUsage.put(chunkClassName,
+                    chunkMemoryUsage.getOrDefault(chunkClassName, 0L) + estimateChunkSize(chunk, nonEmptySections));
+
+            try {
+                for (BlockEntity blockEntity : chunk.getBlockEntities().values()) {
+                    if (blockEntity == null || !seenBlockEntities.add(blockEntity)) {
+                        continue;
+                    }
+
+                    String className = blockEntity.getClass().getName();
+                    tileEntityCounts.put(className, tileEntityCounts.getOrDefault(className, 0) + 1);
+                    try {
+                        CompoundTag tag = blockEntity.saveWithFullMetadata();
+                        tileEntityMemoryUsage.put(className,
+                                tileEntityMemoryUsage.getOrDefault(className, 0L) + estimateCompressedSize(tag));
+                    } catch (Exception e) {
+                        zszlScriptMod.LOGGER.debug("Failed to estimate block entity memory for {}", className, e);
+                    }
+                }
+            } catch (Exception e) {
+                zszlScriptMod.LOGGER.debug("Failed to iterate block entities for chunk {}", chunk.getPos(), e);
+            }
+        }
+
+        if (totalRenderSections > 0) {
+            renderChunkCounts.put(RENDER_SECTION_CLASS_NAME, totalRenderSections);
+            renderChunkMemoryUsage.put(RENDER_SECTION_CLASS_NAME, 0L);
+        }
+    }
+
+    private static Collection<LevelChunk> getLoadedChunks(ClientLevel level) {
+        List<LevelChunk> result = new ArrayList<>();
+        try {
+            ClientChunkCache chunkSource = level.getChunkSource();
+            if (!(chunkSource instanceof IClientChunkProvider provider)) {
+                return result;
+            }
+
+            IChunkArray chunkArray = provider.extractReferenceArray();
+            if (chunkArray == null) {
+                return result;
+            }
+
+            AtomicReferenceArray<LevelChunk> chunks = chunkArray.getChunks();
+            if (chunks == null) {
+                return result;
+            }
+
+            for (int i = 0; i < chunks.length(); i++) {
+                LevelChunk chunk = chunks.get(i);
+                if (chunk != null) {
+                    result.add(chunk);
+                }
+            }
+        } catch (Exception e) {
+            zszlScriptMod.LOGGER.error("Failed to collect loaded client chunks for memory snapshot", e);
+        }
+        return result;
+    }
+
+    private static long estimateChunkSize(LevelChunk chunk, int nonEmptySections) {
+        try {
+            CompoundTag tag = new CompoundTag();
+            tag.putInt("x", chunk.getPos().x);
+            tag.putInt("z", chunk.getPos().z);
+            tag.putInt("non_empty_sections", Math.max(0, nonEmptySections));
+            tag.putInt("block_entity_count", chunk.getBlockEntities().size());
+            return estimateCompressedSize(tag);
+        } catch (Exception ignored) {
+            return 0L;
+        }
+    }
+
+    private static long estimateCompressedSize(CompoundTag tag) throws Exception {
+        if (tag == null) {
+            return 0L;
+        }
+
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        NbtIo.writeCompressed(tag, output);
+        return output.size();
+    }
+
+    public static final class ComparisonResult {
         public final MemorySnapshot before;
         public final MemorySnapshot after;
         public final List<Map.Entry<String, Long>> topMemoryIncreases;
@@ -170,7 +225,6 @@ public class MemoryManager {
             this.after = after;
 
             Map<String, Long> memoryDeltas = new HashMap<>();
-
             Set<String> allKeys = new HashSet<>();
             allKeys.addAll(before.entityMemoryUsage.keySet());
             allKeys.addAll(after.entityMemoryUsage.keySet());
@@ -186,32 +240,28 @@ public class MemoryManager {
                         + before.tileEntityMemoryUsage.getOrDefault(key, 0L)
                         + before.chunkMemoryUsage.getOrDefault(key, 0L)
                         + before.renderChunkMemoryUsage.getOrDefault(key, 0L);
-
                 long afterMemory = after.entityMemoryUsage.getOrDefault(key, 0L)
                         + after.tileEntityMemoryUsage.getOrDefault(key, 0L)
                         + after.chunkMemoryUsage.getOrDefault(key, 0L)
                         + after.renderChunkMemoryUsage.getOrDefault(key, 0L);
-
-                long memoryDelta = afterMemory - beforeMemory;
-
-                if (memoryDelta != 0) {
-                    memoryDeltas.put(key, memoryDelta);
+                long delta = afterMemory - beforeMemory;
+                if (delta != 0L) {
+                    memoryDeltas.put(key, delta);
                 }
             }
 
-            List<Map.Entry<String, Long>> sortedDeltas = new ArrayList<>(memoryDeltas.entrySet());
+            List<Map.Entry<String, Long>> sorted = new ArrayList<>(memoryDeltas.entrySet());
             topMemoryIncreases = new ArrayList<>();
             topMemoryDecreases = new ArrayList<>();
-
-            for (Map.Entry<String, Long> entry : sortedDeltas) {
-                if (entry.getValue() > 0) {
+            for (Map.Entry<String, Long> entry : sorted) {
+                if (entry.getValue() > 0L) {
                     topMemoryIncreases.add(entry);
-                } else {
+                } else if (entry.getValue() < 0L) {
                     topMemoryDecreases.add(entry);
                 }
             }
 
-            topMemoryIncreases.sort((e1, e2) -> e2.getValue().compareTo(e1.getValue()));
+            topMemoryIncreases.sort((a, b) -> Long.compare(b.getValue(), a.getValue()));
             topMemoryDecreases.sort(Map.Entry.comparingByValue());
         }
     }

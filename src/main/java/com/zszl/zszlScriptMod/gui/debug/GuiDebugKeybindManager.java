@@ -6,11 +6,11 @@ import com.zszl.zszlScriptMod.gui.path.GuiKeybindRecorder;
 import com.zszl.zszlScriptMod.system.BindableDebugAction;
 import com.zszl.zszlScriptMod.system.DebugKeybindManager;
 import com.zszl.zszlScriptMod.system.KeybindManager;
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
 import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
-import net.minecraft.client.resources.I18n;
-import org.lwjgl.input.Keyboard;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Keyboard;
 
 import java.io.IOException;
 
@@ -61,20 +61,20 @@ public class GuiDebugKeybindManager extends ThemedGuiScreen {
     protected void actionPerformed(GuiButton button) throws IOException {
         if (button.id >= 0 && button.id < BindableDebugAction.values().length) {
             final BindableDebugAction action = BindableDebugAction.values()[button.id];
-            mc.displayGuiScreen(new GuiKeybindRecorder(this, DebugKeybindManager.keybinds.get(action), newKeybind -> {
+            mc.setScreen(new GuiKeybindRecorder(this, DebugKeybindManager.keybinds.get(action), newKeybind -> {
                 if (newKeybind != null && newKeybind.getKeyCode() != Keyboard.KEY_NONE) {
                     DebugKeybindManager.keybinds.put(action, newKeybind);
                 } else {
                     DebugKeybindManager.keybinds.remove(action);
                 }
-                mc.displayGuiScreen(this);
+                mc.setScreen(this);
             }));
         } else if (button.id == 100) { // 保存
             DebugKeybindManager.saveConfig();
-            this.mc.displayGuiScreen(this.parentScreen);
+            this.mc.setScreen(this.parentScreen);
         } else if (button.id == 101) { // 返回
             DebugKeybindManager.loadConfig(); // 重新加载以放弃更改
-            this.mc.displayGuiScreen(this.parentScreen);
+            this.mc.setScreen(this.parentScreen);
         }
     }
 
@@ -122,3 +122,8 @@ public class GuiDebugKeybindManager extends ThemedGuiScreen {
         super.drawScreen(mouseX, mouseY, partialTicks);
     }
 }
+
+
+
+
+

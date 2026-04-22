@@ -3,11 +3,11 @@
 
 package com.zszl.zszlScriptMod.gui.path;
 
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
 import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
-import net.minecraft.client.resources.I18n;
-import org.lwjgl.input.Mouse;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Mouse;
 
 import com.zszl.zszlScriptMod.path.PathSequenceManager;
 
@@ -48,7 +48,7 @@ public class GuiCategorySelect extends ThemedGuiScreen {
     @Override
     protected void actionPerformed(GuiButton button) throws IOException {
         if (button.id == 0) {
-            mc.displayGuiScreen(parentScreen);
+            mc.setScreen(parentScreen);
         }
     }
 
@@ -117,3 +117,9 @@ public class GuiCategorySelect extends ThemedGuiScreen {
         }
     }
 }
+
+
+
+
+
+

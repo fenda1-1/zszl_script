@@ -9,9 +9,9 @@ import com.zszl.zszlScriptMod.gui.path.GuiActionEditor.model.ScopedVariableEdito
 import com.zszl.zszlScriptMod.path.ActionVariableRegistry;
 import com.zszl.zszlScriptMod.path.PathSequenceManager;
 
-import net.minecraft.client.gui.Gui;
-import net.minecraft.client.gui.GuiTextField;
-import net.minecraft.client.resources.I18n;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.Gui;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiTextField;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -29,8 +29,8 @@ final class ActionVariableBindingSupport {
         String currentValue = editor.currentParams.has(actualParamKey)
                 ? editor.currentParams.get(actualParamKey).getAsString()
                 : "";
-        String scopeKey = ActionVariableRegistry.extractScopeKey(currentValue);
-        String baseName = ActionVariableRegistry.extractBaseName(currentValue);
+        String scopeKey = extractScopeKey(currentValue);
+        String baseName = extractBaseName(currentValue);
         if (baseName.isEmpty()) {
             baseName = defaultBaseName == null ? "" : defaultBaseName;
         }
@@ -154,10 +154,10 @@ final class ActionVariableBindingSupport {
         boolean allowEmptySelection = "fromVar".equals(actualParamKey);
         LinkedHashMap<String, LinkedHashMap<String, String>> groups = new LinkedHashMap<>();
         groups.put("内置变量(builtin)", new LinkedHashMap<String, String>());
-        groups.put(ActionVariableRegistry.scopeKeyToDisplay("global"), new LinkedHashMap<String, String>());
-        groups.put(ActionVariableRegistry.scopeKeyToDisplay("sequence"), new LinkedHashMap<String, String>());
-        groups.put(ActionVariableRegistry.scopeKeyToDisplay("local"), new LinkedHashMap<String, String>());
-        groups.put(ActionVariableRegistry.scopeKeyToDisplay("temp"), new LinkedHashMap<String, String>());
+        groups.put(scopeKeyToDisplay("global"), new LinkedHashMap<String, String>());
+        groups.put(scopeKeyToDisplay("sequence"), new LinkedHashMap<String, String>());
+        groups.put(scopeKeyToDisplay("local"), new LinkedHashMap<String, String>());
+        groups.put(scopeKeyToDisplay("temp"), new LinkedHashMap<String, String>());
         groups.put("数据采集变量(capture)", new LinkedHashMap<String, String>());
 
         for (String option : editor.availableRuntimeVariableOptions) {
@@ -179,24 +179,24 @@ final class ActionVariableBindingSupport {
             if (actualValue.isEmpty()) {
                 continue;
             }
-            String scopeGroup = ActionVariableRegistry.scopeKeyToDisplay(entry.getScopeKey());
-            addVariableOption(editor, groups.get(scopeGroup), entry.getBaseVariableName(), actualValue);
-            if (ActionVariableRegistry.isCaptureVariable(entry)) {
+            String scopeGroup = scopeKeyToDisplay(getScopeKey(entry));
+            addVariableOption(editor, groups.get(scopeGroup), getBaseVariableName(entry), actualValue);
+            if (isCaptureVariable(entry)) {
                 addVariableOption(editor, groups.get("数据采集变量(capture)"),
-                        entry.getBaseVariableName() + " ["
-                                + ActionVariableRegistry.normalizeScopeKey(entry.getScopeKey()) + "]",
+                        getBaseVariableName(entry) + " ["
+                                + normalizeScopeKey(getScopeKey(entry)) + "]",
                         actualValue);
             }
         }
 
         if (currentValue != null && !currentValue.trim().isEmpty()
                 && !containsActualValue(groups, currentValue.trim())) {
-            LinkedHashMap<String, String> currentGroup = groups.get(ActionVariableRegistry.scopeKeyToDisplay("sequence"));
+            LinkedHashMap<String, String> currentGroup = groups.get(scopeKeyToDisplay("sequence"));
             if (currentGroup == null) {
                 currentGroup = new LinkedHashMap<String, String>();
-                groups.put(ActionVariableRegistry.scopeKeyToDisplay("sequence"), currentGroup);
+                groups.put(scopeKeyToDisplay("sequence"), currentGroup);
             }
-            currentGroup.put(ActionVariableRegistry.extractBaseName(currentValue.trim()) + " (当前值)",
+            currentGroup.put(extractBaseName(currentValue.trim()) + " (当前值)",
                     currentValue.trim());
         }
 
@@ -310,7 +310,7 @@ final class ActionVariableBindingSupport {
             return "";
         }
         String scopeKey = displayToScopeKey(scopeDropdown == null ? "" : scopeDropdown.getValue());
-        return ActionVariableRegistry.buildScopedVariableName(scopeKey, baseName);
+        return buildScopedVariableName(scopeKey, baseName);
     }
 
     static LinkedHashMap<String, String> buildSetVarExpressionTemplates() {
@@ -352,7 +352,7 @@ final class ActionVariableBindingSupport {
     }
 
     static String scopeKeyToDisplay(String scopeKey) {
-        return ActionVariableRegistry.scopeKeyToDisplay(scopeKey);
+        return scopeKeyToDisplayImpl(scopeKey);
     }
 
     static String displayToScopeKey(String display) {
@@ -452,8 +452,12 @@ final class ActionVariableBindingSupport {
                 draft.addProperty(key, displayOnOffToBool(value));
             } else if ("locatorMode".equals(key)) {
                 draft.addProperty(key, displayToLocatorMode(value));
+            } else if ("coordinateMode".equals(key)) {
+                draft.addProperty(key, displayToClickCoordinateMode(value));
             } else if ("locatorMatchMode".equals(key)) {
                 draft.addProperty(key, displayToMatchMode(value));
+            } else if ("mouseMoveMode".equals(key)) {
+                draft.addProperty(key, displayToMouseMoveMode(value));
             } else if ("huntMode".equals(key)) {
                 draft.addProperty(key, displayToHuntMode(value));
             } else if ("attackMode".equals(key) && "hunt".equalsIgnoreCase(editor.getSelectedActionType())) {
@@ -516,7 +520,102 @@ final class ActionVariableBindingSupport {
         }
     }
 
+    private static String normalizeScopeKey(String scopeKey) {
+        String normalized = safe(scopeKey).trim().toLowerCase();
+        if ("global".equals(normalized) || "local".equals(normalized) || "temp".equals(normalized)
+                || "sequence".equals(normalized)) {
+            return normalized;
+        }
+        return "sequence";
+    }
+
+    private static String extractScopeKey(String variableName) {
+        String name = safe(variableName).trim();
+        int dot = name.indexOf('.');
+        if (dot > 0) {
+            return normalizeScopeKey(name.substring(0, dot));
+        }
+        return "sequence";
+    }
+
+    private static String extractBaseName(String variableName) {
+        String name = safe(variableName).trim();
+        int dot = name.indexOf('.');
+        if (dot > 0) {
+            String prefix = normalizeScopeKey(name.substring(0, dot));
+            if ("global".equals(prefix) || "local".equals(prefix) || "temp".equals(prefix)
+                    || "sequence".equals(prefix)) {
+                return safe(name.substring(dot + 1)).trim();
+            }
+        }
+        return name;
+    }
+
+    private static String buildScopedVariableName(String scopeKey, String baseName) {
+        String normalizedScope = normalizeScopeKey(scopeKey);
+        String normalizedBaseName = safe(baseName).trim();
+        if (normalizedBaseName.isEmpty()) {
+            return "";
+        }
+        // Keep explicit scope values as-is to avoid rewriting existing variable references.
+        if (normalizedBaseName.contains(".")) {
+            String existingScope = extractScopeKey(normalizedBaseName);
+            if (!"sequence".equals(existingScope) || normalizedBaseName.startsWith("sequence.")) {
+                return normalizedBaseName;
+            }
+        }
+        if ("sequence".equals(normalizedScope)) {
+            return normalizedBaseName;
+        }
+        return normalizedScope + "." + normalizedBaseName;
+    }
+
+    private static String getScopeKey(ActionVariableRegistry.VariableEntry entry) {
+        if (entry == null) {
+            return "sequence";
+        }
+        return extractScopeKey(entry.getVariableName());
+    }
+
+    private static String getBaseVariableName(ActionVariableRegistry.VariableEntry entry) {
+        if (entry == null) {
+            return "";
+        }
+        return extractBaseName(entry.getVariableName());
+    }
+
+    private static boolean isCaptureVariable(ActionVariableRegistry.VariableEntry entry) {
+        if (entry == null) {
+            return false;
+        }
+        for (ActionVariableRegistry.VariableSource source : entry.getSources()) {
+            if (source == null) {
+                continue;
+            }
+            String actionType = safe(source.getActionType()).trim().toLowerCase();
+            if (actionType.startsWith("capture_")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static String scopeKeyToDisplayImpl(String scopeKey) {
+        String normalized = normalizeScopeKey(scopeKey);
+        if ("global".equals(normalized)) {
+            return "全局变量(global)";
+        }
+        if ("local".equals(normalized)) {
+            return "局部变量(local)";
+        }
+        if ("temp".equals(normalized)) {
+            return "临时变量(temp)";
+        }
+        return "序列变量(sequence)";
+    }
+
     private static String safe(String value) {
         return value == null ? "" : value;
     }
 }
+

@@ -1,71 +1,120 @@
 package com.zszl.zszlScriptMod.otherfeatures.gui.item;
 
 import com.zszl.zszlScriptMod.gui.components.GuiTextInput;
-import com.zszl.zszlScriptMod.otherfeatures.gui.common.SimpleFeatureConfigScreen;
+import com.zszl.zszlScriptMod.gui.components.GuiTheme;
+import com.zszl.zszlScriptMod.gui.components.ThemedButton;
+import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
+import com.zszl.zszlScriptMod.gui.components.ToggleGuiButton;
 import com.zszl.zszlScriptMod.otherfeatures.handler.item.ItemFeatureManager;
 import com.zszl.zszlScriptMod.otherfeatures.handler.item.ItemFeatureManager.FeatureState;
-import net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Keyboard;
 
-import java.util.Arrays;
-import java.util.Collections;
+import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
 
-public class SingleItemFeatureConfigScreen extends SimpleFeatureConfigScreen {
+public class SingleItemFeatureConfigScreen extends ThemedGuiScreen {
+
+    private static final int BTN_ENABLED = 1;
+    private static final int BTN_HUD = 2;
+    private static final int BTN_PRIMARY_OPTION = 3;
+    private static final int BTN_SECONDARY_OPTION = 4;
+    private static final int BTN_SAVE = 100;
+    private static final int BTN_DEFAULT = 101;
+    private static final int BTN_CANCEL = 102;
+
+    private final GuiScreen parentScreen;
+    private final String featureId;
+    private final String title;
+    private final List<String> descriptionLines = new ArrayList<>();
+
+    private ToggleGuiButton enabledButton;
+    private ToggleGuiButton hudButton;
+    private GuiButton primaryOptionButton;
+    private GuiButton secondaryOptionButton;
+    private GuiButton saveButton;
+    private GuiButton defaultButton;
+    private GuiButton cancelButton;
+
+    private boolean draftEnabled;
+    private boolean draftStatusHudEnabled;
 
     public SingleItemFeatureConfigScreen(GuiScreen parentScreen, String featureId, String title) {
-        super(parentScreen, featureId, title);
+        this.parentScreen = parentScreen;
+        this.featureId = featureId == null ? "" : featureId.trim();
+        this.title = title == null ? "物品功能设置" : title.trim();
     }
 
     @Override
-    protected FeatureView getFeatureView() {
-        FeatureState state = ItemFeatureManager.getFeature(this.featureId);
-        if (state == null) {
-            return new FeatureView("", "当前功能不存在。", false, true, false, "未找到");
+    public void initGui() {
+        this.buttonList.clear();
+        FeatureState state = getFeature();
+        this.draftEnabled = state != null && state.isEnabled();
+        this.draftStatusHudEnabled = state == null || state.isStatusHudEnabled();
+        rebuildDescription(state);
+
+        int panelWidth = Math.min(520, Math.max(360, this.width - 16));
+        int panelHeight = 250;
+        int panelX = (this.width - panelWidth) / 2;
+        int panelY = (this.height - panelHeight) / 2;
+        int fieldX = panelX + 18;
+        int fieldWidth = panelWidth - 36;
+
+        this.enabledButton = new ToggleGuiButton(BTN_ENABLED, fieldX, panelY + 84, fieldWidth, 20, "", this.draftEnabled);
+        this.hudButton = new ToggleGuiButton(BTN_HUD, fieldX, panelY + 108, fieldWidth, 20, "", this.draftStatusHudEnabled);
+        this.primaryOptionButton = new ThemedButton(BTN_PRIMARY_OPTION, fieldX, panelY + 140, fieldWidth, 20, "");
+        this.secondaryOptionButton = new ThemedButton(BTN_SECONDARY_OPTION, fieldX, panelY + 164, fieldWidth, 20, "");
+        int footerY = panelY + panelHeight - 30;
+        int footerW = (fieldWidth - 12) / 3;
+        this.saveButton = new ThemedButton(BTN_SAVE, fieldX, footerY, footerW, 20, "§a保存并关闭");
+        this.defaultButton = new ThemedButton(BTN_DEFAULT, fieldX + footerW + 6, footerY, footerW, 20, "§e恢复默认");
+        this.cancelButton = new ThemedButton(BTN_CANCEL, fieldX + (footerW + 6) * 2, footerY, footerW, 20, "取消");
+
+        this.buttonList.add(this.enabledButton);
+        this.buttonList.add(this.hudButton);
+        this.buttonList.add(this.primaryOptionButton);
+        this.buttonList.add(this.secondaryOptionButton);
+        this.buttonList.add(this.saveButton);
+        this.buttonList.add(this.defaultButton);
+        this.buttonList.add(this.cancelButton);
+
+        refreshButtonTexts();
+    }
+
+    private FeatureState getFeature() {
+        return ItemFeatureManager.getFeature(this.featureId);
+    }
+
+    private void rebuildDescription(FeatureState state) {
+        this.descriptionLines.clear();
+        String text = state == null ? "当前功能不存在。" : "§7" + state.description;
+        this.descriptionLines.addAll(this.fontRenderer.listFormattedStringToWidth(text, Math.max(120, this.width - 80)));
+    }
+
+    private void refreshButtonTexts() {
+        if (this.enabledButton != null) {
+            this.enabledButton.setEnabledState(this.draftEnabled);
+            this.enabledButton.displayString = "功能状态 : " + (this.draftEnabled ? "开启" : "关闭");
         }
-        return new FeatureView(state.name, state.description, state.isEnabled(), state.isStatusHudEnabled(),
-                state.behaviorImplemented, ItemFeatureManager.getFeatureRuntimeSummary(this.featureId));
+        if (this.hudButton != null) {
+            this.hudButton.setEnabledState(this.draftStatusHudEnabled);
+            this.hudButton.displayString = "状态HUD : " + (this.draftStatusHudEnabled ? "开启" : "关闭");
+        }
+        if (this.primaryOptionButton != null) {
+            this.primaryOptionButton.visible = true;
+            this.primaryOptionButton.enabled = true;
+            this.primaryOptionButton.displayString = buildPrimaryOptionLabel();
+        }
+        if (this.secondaryOptionButton != null) {
+            this.secondaryOptionButton.visible = shouldShowSecondaryOption();
+            this.secondaryOptionButton.enabled = this.secondaryOptionButton.visible;
+            this.secondaryOptionButton.displayString = buildSecondaryOptionLabel();
+        }
     }
 
-    @Override
-    protected void saveDraftState(boolean enabled, boolean statusHudEnabled) {
-        ItemFeatureManager.setEnabled(this.featureId, enabled);
-        ItemFeatureManager.setFeatureStatusHudEnabled(this.featureId, statusHudEnabled);
-    }
-
-    @Override
-    protected void resetFeatureState() {
-        ItemFeatureManager.resetFeature(this.featureId);
-    }
-
-    @Override
-    protected String getDefaultTitle() {
-        return "物品功能设置";
-    }
-
-    @Override
-    protected boolean hasPrimaryOptionButton() {
-        return true;
-    }
-
-    @Override
-    protected boolean hasSecondaryOptionButton() {
-        return "drop_all".equals(this.featureId);
-    }
-
-    @Override
-    protected boolean isPrimaryOptionButtonEnabled() {
-        return "chest_steal".equals(this.featureId)
-                || "auto_equip".equals(this.featureId)
-                || "drop_all".equals(this.featureId);
-    }
-
-    @Override
-    protected boolean isSecondaryOptionButtonEnabled() {
-        return "drop_all".equals(this.featureId);
-    }
-
-    @Override
-    protected String getPrimaryOptionButtonLabel() {
+    private String buildPrimaryOptionLabel() {
         switch (this.featureId) {
         case "chest_steal":
             return "箱子窃取间隔 : " + ItemFeatureManager.getChestStealDelayTicks() + " tick";
@@ -83,8 +132,11 @@ public class SingleItemFeatureConfigScreen extends SimpleFeatureConfigScreen {
         }
     }
 
-    @Override
-    protected String getSecondaryOptionButtonLabel() {
+    private boolean shouldShowSecondaryOption() {
+        return "drop_all".equals(this.featureId);
+    }
+
+    private String buildSecondaryOptionLabel() {
         if ("drop_all".equals(this.featureId)) {
             return "丢弃间隔 : " + ItemFeatureManager.getDropAllDelayTicks() + " tick";
         }
@@ -92,49 +144,43 @@ public class SingleItemFeatureConfigScreen extends SimpleFeatureConfigScreen {
     }
 
     @Override
-    protected String getOptionSectionHintText() {
-        return "§7这里可以单独配置当前物品功能的附加参数。";
-    }
-
-    @Override
-    protected List<String> getPrimaryOptionTooltipLines() {
-        switch (this.featureId) {
-        case "chest_steal":
-            return Arrays.asList("§e箱子窃取间隔",
-                    "§7控制打开箱子后每次搬运物品的间隔 tick。",
-                    "§7数值越小，窃取越快。");
-        case "auto_equip":
-            return Arrays.asList("§e自动装备扫描间隔",
-                    "§7控制自动检查并替换装备的频率。",
-                    "§7数值越小，响应越快。");
-        case "drop_all":
-            return Arrays.asList("§e丢弃关键词",
-                    "§7多个关键词可用逗号分隔。",
-                    "§7命中关键词的物品会被自动丢弃。");
-        case "inventory_sort":
-            return Arrays.asList("§e整理范围",
-                    "§7当前固定整理主背包 9-35 格，不整理热栏。",
-                    "§7这个功能目前没有额外可调参数。");
-        case "shulker_preview":
-            return Arrays.asList("§e预览模式",
-                    "§7当前为悬停显示潜影盒内容预览。",
-                    "§7这个功能目前没有额外可调参数。");
+    protected void actionPerformed(GuiButton button) throws IOException {
+        switch (button.id) {
+        case BTN_ENABLED:
+            this.draftEnabled = !this.draftEnabled;
+            refreshButtonTexts();
+            return;
+        case BTN_HUD:
+            this.draftStatusHudEnabled = !this.draftStatusHudEnabled;
+            refreshButtonTexts();
+            return;
+        case BTN_PRIMARY_OPTION:
+            handlePrimaryOption();
+            return;
+        case BTN_SECONDARY_OPTION:
+            handleSecondaryOption();
+            return;
+        case BTN_SAVE:
+            ItemFeatureManager.setEnabled(this.featureId, this.draftEnabled);
+            ItemFeatureManager.setFeatureStatusHudEnabled(this.featureId, this.draftStatusHudEnabled);
+            this.mc.setScreen(this.parentScreen);
+            return;
+        case BTN_DEFAULT:
+            ItemFeatureManager.resetFeature(this.featureId);
+            FeatureState state = getFeature();
+            this.draftEnabled = state != null && state.isEnabled();
+            this.draftStatusHudEnabled = state == null || state.isStatusHudEnabled();
+            refreshButtonTexts();
+            return;
+        case BTN_CANCEL:
+            this.mc.setScreen(this.parentScreen);
+            return;
         default:
-            return Collections.emptyList();
+            break;
         }
     }
 
-    @Override
-    protected List<String> getSecondaryOptionTooltipLines() {
-        if ("drop_all".equals(this.featureId)) {
-            return Arrays.asList("§e丢弃间隔",
-                    "§7控制自动丢弃两次物品之间的间隔 tick。");
-        }
-        return Collections.emptyList();
-    }
-
-    @Override
-    protected void onPrimaryOptionButtonPressed() {
+    private void handlePrimaryOption() {
         switch (this.featureId) {
         case "chest_steal":
             openIntegerInput("输入箱子窃取间隔 (0 - 20 tick)", ItemFeatureManager.getChestStealDelayTicks(), 0, 20,
@@ -145,10 +191,11 @@ public class SingleItemFeatureConfigScreen extends SimpleFeatureConfigScreen {
                     ItemFeatureManager::setAutoEquipIntervalTicks);
             return;
         case "drop_all":
-            this.mc.displayGuiScreen(new GuiTextInput(this, "输入丢弃关键词（逗号分隔）",
+            this.mc.setScreen(new GuiTextInput(this, "输入丢弃关键词（逗号分隔）",
                     ItemFeatureManager.getDropAllKeywordsText(), value -> {
                         ItemFeatureManager.setDropAllKeywordsText(value);
-                        this.mc.displayGuiScreen(this);
+                        refreshButtonTexts();
+                        this.mc.setScreen(this);
                     }));
             return;
         default:
@@ -156,8 +203,7 @@ public class SingleItemFeatureConfigScreen extends SimpleFeatureConfigScreen {
         }
     }
 
-    @Override
-    protected void onSecondaryOptionButtonPressed() {
+    private void handleSecondaryOption() {
         if (!"drop_all".equals(this.featureId)) {
             return;
         }
@@ -165,16 +211,58 @@ public class SingleItemFeatureConfigScreen extends SimpleFeatureConfigScreen {
                 ItemFeatureManager::setDropAllDelayTicks);
     }
 
-    private void openIntegerInput(String titleText, int currentValue, int min, int max,
-            java.util.function.IntConsumer setter) {
-        this.mc.displayGuiScreen(new GuiTextInput(this, titleText, String.valueOf(currentValue), value -> {
+    private void openIntegerInput(String titleText, int currentValue, int min, int max, java.util.function.IntConsumer setter) {
+        this.mc.setScreen(new GuiTextInput(this, titleText, String.valueOf(currentValue), value -> {
             int parsed = currentValue;
             try {
                 parsed = Integer.parseInt(value.trim());
             } catch (Exception ignored) {
             }
             setter.accept(Math.max(min, Math.min(max, parsed)));
-            this.mc.displayGuiScreen(this);
+            refreshButtonTexts();
+            this.mc.setScreen(this);
         }));
     }
+
+    @Override
+    protected void keyTyped(char typedChar, int keyCode) throws IOException {
+        if (keyCode == Keyboard.KEY_ESCAPE) {
+            this.mc.setScreen(this.parentScreen);
+            return;
+        }
+        super.keyTyped(typedChar, keyCode);
+    }
+
+    @Override
+    public void drawScreen(int mouseX, int mouseY, float partialTicks) {
+        drawDefaultBackground();
+
+        int panelWidth = Math.min(520, Math.max(360, this.width - 16));
+        int panelHeight = 250;
+        int panelX = (this.width - panelWidth) / 2;
+        int panelY = (this.height - panelHeight) / 2;
+        int fieldX = panelX + 18;
+
+        GuiTheme.drawPanel(panelX, panelY, panelWidth, panelHeight);
+        GuiTheme.drawTitleBar(panelX, panelY, panelWidth, this.title, this.fontRenderer);
+
+        FeatureState state = getFeature();
+        drawString(this.fontRenderer, "§7左键主界面为总开关；这里可配置物品功能与状态HUD。", fieldX, panelY + 24, 0xFFFFFFFF);
+        int descY = panelY + 42;
+        for (String line : this.descriptionLines) {
+            drawString(this.fontRenderer, line, fieldX, descY, 0xFFE2F2FF);
+            descY += this.fontRenderer.FONT_HEIGHT + 2;
+        }
+        drawString(this.fontRenderer, "§7运行状态: §f" + ItemFeatureManager.getFeatureRuntimeSummary(this.featureId), fieldX,
+                panelY + 194, 0xFFFFFFFF);
+        drawString(this.fontRenderer, "§7当前草稿: " + (this.draftEnabled ? "§a开启" : "§c关闭") + " §7| HUD: "
+                + (this.draftStatusHudEnabled ? "§a开启" : "§c关闭"), fieldX, panelY + 208, 0xFFFFFFFF);
+
+        super.drawScreen(mouseX, mouseY, partialTicks);
+    }
 }
+
+
+
+
+

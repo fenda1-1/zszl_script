@@ -1,194 +1,180 @@
-// 文件路径: src/main/java/com/zszl/zszlScriptMod/handlers/GoToAndOpenHandler.java
 package com.zszl.zszlScriptMod.handlers;
 
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.util.text.TextComponentString;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraftforge.client.event.GuiOpenEvent;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraftforge.fml.common.gameevent.TickEvent;
 import com.zszl.zszlScriptMod.utils.ModUtils;
-import net.minecraft.block.state.IBlockState;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.resources.I18n;
-import net.minecraft.client.gui.inventory.GuiChest;
-import net.minecraft.inventory.ContainerChest;
-import net.minecraft.inventory.IInventory;
-import net.minecraft.tileentity.TileEntityChest;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.RayTraceResult;
-import net.minecraft.util.math.Vec3d;
-import net.minecraft.util.text.TextComponentString;
-import net.minecraftforge.client.event.GuiOpenEvent;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.inventory.ChestMenu;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.entity.ChestBlockEntity;
 import net.minecraftforge.common.MinecraftForge;
-import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
-import net.minecraftforge.fml.common.gameevent.TickEvent;
+import net.minecraftforge.eventbus.api.SubscribeEvent;
 
-public class GoToAndOpenHandler {
-    private static final GoToAndOpenHandler INSTANCE = new GoToAndOpenHandler();
-    private static final Minecraft mc = Minecraft.getMinecraft();
+public final class GoToAndOpenHandler {
+
+    public static final GoToAndOpenHandler INSTANCE = new GoToAndOpenHandler();
+    private static final Minecraft MC = Minecraft.getInstance();
 
     private enum State {
-        IDLE, MOVING, OPENING
+        IDLE,
+        MOVING,
+        OPENING
     }
 
     private State currentState = State.IDLE;
-    private BlockPos targetChestPos = null;
-    private BlockPos targetStandPos = null;
-    private int timeoutTicks = 0;
+    private BlockPos targetChestPos;
+    private BlockPos targetStandPos;
+    private int timeoutTicks;
 
     private GoToAndOpenHandler() {
     }
 
-    public static void start(BlockPos chestPos) {
-        if (INSTANCE.currentState != State.IDLE) {
-            mc.player.sendMessage(new TextComponentString(I18n.format("msg.goto_open.task_in_progress")));
+    public static void start(BlockPos pos) {
+        INSTANCE.startInternal(pos);
+    }
+
+    private void startInternal(BlockPos chestPos) {
+        if (chestPos == null || MC.player == null || MC.level == null) {
             return;
         }
-        INSTANCE.targetChestPos = chestPos;
-        INSTANCE.targetStandPos = INSTANCE.findBestStandPosition(chestPos);
-        INSTANCE.currentState = State.MOVING;
-        INSTANCE.timeoutTicks = 600; // 30秒超时
-        MinecraftForge.EVENT_BUS.register(INSTANCE);
+        if (currentState != State.IDLE) {
+            MC.player.sendSystemMessage(new TextComponentString("§c[仓库] 另一个前往开箱任务仍在进行中。"));
+            return;
+        }
 
-        if (INSTANCE.targetStandPos != null) {
-            mc.player.sendMessage(new TextComponentString(
-                    I18n.format("msg.goto_open.start_to_interact_pos", INSTANCE.targetStandPos.toString())));
-            EmbeddedNavigationHandler.INSTANCE.startGoto(INSTANCE.targetStandPos.getX(), INSTANCE.targetStandPos.getY(),
-                    INSTANCE.targetStandPos.getZ());
+        targetChestPos = chestPos.immutable();
+        targetStandPos = findBestStandPosition(chestPos);
+        currentState = State.MOVING;
+        timeoutTicks = 20 * 30;
+        MinecraftForge.EVENT_BUS.register(this);
+
+        if (targetStandPos != null) {
+            MC.player.sendSystemMessage(new TextComponentString("§b[仓库] §a开始前往箱子可交互点 @" + targetStandPos));
+            EmbeddedNavigationHandler.INSTANCE.startGoto(EmbeddedNavigationHandler.NavigationOwner.GO_TO_AND_OPEN,
+                    targetStandPos.getX() + 0.5D, targetStandPos.getY(),
+                    targetStandPos.getZ() + 0.5D, true, "已找到箱子可交互落脚点，开始前往");
         } else {
-            mc.player.sendMessage(new TextComponentString(
-                    I18n.format("msg.goto_open.fallback_to_chest_pos", chestPos.toString())));
-            EmbeddedNavigationHandler.INSTANCE.startGoto(chestPos.getX(), chestPos.getY(), chestPos.getZ());
+            MC.player.sendSystemMessage(new TextComponentString("§b[仓库] §e未找到理想落脚点，回退到箱子坐标导航 @" + chestPos));
+            EmbeddedNavigationHandler.INSTANCE.startGoto(EmbeddedNavigationHandler.NavigationOwner.GO_TO_AND_OPEN,
+                    chestPos.getX() + 0.5D, chestPos.getY(),
+                    chestPos.getZ() + 0.5D, true, "未找到理想落脚点，回退到箱子坐标导航");
         }
     }
 
     private void stop() {
-        this.currentState = State.IDLE;
-        this.targetChestPos = null;
-        this.targetStandPos = null;
-        MinecraftForge.EVENT_BUS.unregister(this);
-        EmbeddedNavigationHandler.INSTANCE.stop();
+        currentState = State.IDLE;
+        targetChestPos = null;
+        targetStandPos = null;
+        timeoutTicks = 0;
+        EmbeddedNavigationHandler.INSTANCE.stopOwned(EmbeddedNavigationHandler.NavigationOwner.GO_TO_AND_OPEN,
+                "前往开箱任务结束，停止专属导航");
+        try {
+            MinecraftForge.EVENT_BUS.unregister(this);
+        } catch (Exception ignored) {
+        }
     }
 
     @SubscribeEvent
     public void onPlayerTick(TickEvent.PlayerTickEvent event) {
-        if (event.phase != TickEvent.Phase.END || mc.player == null)
+        if (event.phase != TickEvent.Phase.END || MC.player == null || currentState == State.IDLE) {
             return;
+        }
 
         timeoutTicks--;
         if (timeoutTicks <= 0) {
-            mc.player.sendMessage(new TextComponentString(I18n.format("msg.goto_open.timeout")));
+            MC.player.sendSystemMessage(new TextComponentString("§c[仓库] 前往箱子超时！"));
             stop();
             return;
         }
 
-        if (currentState == State.MOVING) {
-            BlockPos arrivalPos = targetStandPos != null ? targetStandPos : targetChestPos;
-            // Check if arrived at target position
-            double distance = mc.player.getDistance(arrivalPos.getX() + 0.5, arrivalPos.getY() + 0.5,
-                    arrivalPos.getZ() + 0.5);
-            if (distance < 2.0) {
-                EmbeddedNavigationHandler.INSTANCE.stop();
-                mc.player.sendMessage(new TextComponentString(
-                        I18n.format("msg.goto_open.arrived_try_open")));
-                currentState = State.OPENING;
-                // 延迟一小会再打开，确保导航完全停止
-                ModUtils.DelayScheduler.instance.schedule(() -> {
-                    if (currentState == State.OPENING) {
-                        ModUtils.rightClickOnBlock(mc.player, targetChestPos);
-                    }
-                }, 5);
-            }
+        if (currentState != State.MOVING) {
+            return;
         }
+
+        BlockPos arrivePos = targetStandPos != null ? targetStandPos : targetChestPos;
+        if (arrivePos == null) {
+            stop();
+            return;
+        }
+
+        double distanceSq = MC.player.distanceToSqr(arrivePos.getX() + 0.5D, arrivePos.getY() + 0.5D, arrivePos.getZ() + 0.5D);
+        if (distanceSq > 4.0D) {
+            return;
+        }
+
+        EmbeddedNavigationHandler.INSTANCE.stopOwned(EmbeddedNavigationHandler.NavigationOwner.GO_TO_AND_OPEN,
+                "已到达箱子附近，停止前往开箱导航");
+        currentState = State.OPENING;
+        MC.player.sendSystemMessage(new TextComponentString("§b[仓库] §a已到达箱子附近，正在尝试打开..."));
+        ModUtils.DelayScheduler.init();
+        ModUtils.DelayScheduler.instance.schedule(() -> {
+            if (currentState == State.OPENING && targetChestPos != null && MC.player != null) {
+                ModUtils.rightClickOnBlock(MC.player, targetChestPos);
+            }
+        }, 5);
     }
 
     @SubscribeEvent
     public void onGuiOpen(GuiOpenEvent event) {
-        if (currentState != State.OPENING || !(event.getGui() instanceof GuiChest)) {
+        if (currentState != State.OPENING || event == null || event.getGui() == null) {
             return;
         }
-
-        GuiChest gui = (GuiChest) event.getGui();
-        if (!(gui.inventorySlots instanceof ContainerChest)) {
+        if (MC.player == null || !(MC.player.containerMenu instanceof ChestMenu)) {
             return;
         }
-
-        ContainerChest container = (ContainerChest) gui.inventorySlots;
-        IInventory inv = container.getLowerChestInventory();
-        BlockPos openedChestPos = null;
-        if (inv instanceof TileEntityChest) {
-            openedChestPos = ((TileEntityChest) inv).getPos();
-        }
-
-        if (openedChestPos != null && targetChestPos != null && !openedChestPos.equals(targetChestPos)) {
-            if (mc.player != null) {
-                mc.player.sendMessage(new TextComponentString(I18n.format("msg.goto_open.not_target_retry")));
-            }
-            return;
-        }
-
-        mc.player.sendMessage(
-                new TextComponentString(I18n.format("msg.goto_open.success")));
+        MC.player.sendSystemMessage(new TextComponentString("§b[仓库] §a已成功打开目标箱子。"));
         stop();
     }
 
     private BlockPos findBestStandPosition(BlockPos chestPos) {
-        if (mc.world == null) {
+        if (MC.level == null || chestPos == null) {
             return null;
         }
-
         BlockPos[] candidates = new BlockPos[] {
-                chestPos.north(), chestPos.south(), chestPos.west(), chestPos.east(), chestPos
+                chestPos.north(),
+                chestPos.south(),
+                chestPos.west(),
+                chestPos.east(),
+                chestPos
         };
 
         BlockPos best = null;
-        double bestDistSq = Double.MAX_VALUE;
-        Vec3d chestCenter = new Vec3d(chestPos).addVector(0.5, 0.5, 0.5);
-
+        double bestDistanceSq = Double.MAX_VALUE;
         for (BlockPos candidate : candidates) {
             if (!isStandable(candidate)) {
                 continue;
             }
-            if (!hasLineOfSightToChest(candidate, chestCenter, chestPos)) {
-                continue;
-            }
-
-            double distSq;
-            if (mc.player != null) {
-                distSq = mc.player.getDistanceSq(candidate.getX() + 0.5, candidate.getY() + 0.5,
-                        candidate.getZ() + 0.5);
-            } else {
-                distSq = 0;
-            }
-
-            if (distSq < bestDistSq) {
-                bestDistSq = distSq;
-                best = candidate;
+            double distanceSq = MC.player == null ? 0.0D
+                    : MC.player.distanceToSqr(candidate.getX() + 0.5D, candidate.getY() + 0.5D,
+                            candidate.getZ() + 0.5D);
+            if (distanceSq < bestDistanceSq) {
+                bestDistanceSq = distanceSq;
+                best = candidate.immutable();
             }
         }
-
         return best;
     }
 
-    private boolean isStandable(BlockPos standPos) {
-        if (mc.world == null) {
+    private boolean isStandable(BlockPos pos) {
+        if (MC.level == null || pos == null) {
             return false;
         }
-
-        IBlockState feetState = mc.world.getBlockState(standPos);
-        IBlockState headState = mc.world.getBlockState(standPos.up());
-        IBlockState belowState = mc.world.getBlockState(standPos.down());
-
-        boolean feetPassable = !feetState.getMaterial().blocksMovement();
-        boolean headPassable = !headState.getMaterial().blocksMovement();
-        boolean hasGround = belowState.getMaterial().blocksMovement();
-
-        return feetPassable && headPassable && hasGround;
+        return MC.level.getBlockState(pos).canBeReplaced()
+                && MC.level.getBlockState(pos.above()).canBeReplaced()
+                && MC.level.getBlockState(pos.below()).isSolid();
     }
 
-    private boolean hasLineOfSightToChest(BlockPos standPos, Vec3d chestCenter, BlockPos chestPos) {
-        if (mc.world == null) {
-            return false;
-        }
+    public static boolean isBusy() {
+        return INSTANCE.currentState != State.IDLE;
+    }
 
-        Vec3d eyePos = new Vec3d(standPos).addVector(0.5, 1.62, 0.5);
-        RayTraceResult ray = mc.world.rayTraceBlocks(eyePos, chestCenter, false, true, false);
-        return ray == null || (ray.typeOfHit == RayTraceResult.Type.BLOCK && chestPos.equals(ray.getBlockPos()));
+    public static boolean isTargetChest(BlockPos pos) {
+        return INSTANCE.targetChestPos != null && INSTANCE.targetChestPos.equals(pos);
+    }
+
+    public static BlockPos getTargetChestPos() {
+        return INSTANCE.targetChestPos == null ? null : INSTANCE.targetChestPos.immutable();
     }
 }
-

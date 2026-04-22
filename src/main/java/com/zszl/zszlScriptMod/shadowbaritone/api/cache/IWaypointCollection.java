@@ -40,8 +40,7 @@ public interface IWaypointCollection {
     void removeWaypoint(IWaypoint waypoint);
 
     /**
-     * Gets the most recently created waypoint by the specified
-     * {@link IWaypoint.Tag}
+     * Gets the most recently created waypoint by the specified {@link IWaypoint.Tag}
      *
      * @param tag The tag
      * @return The most recently created waypoint with the specified tag
@@ -65,3 +64,4 @@ public interface IWaypointCollection {
      */
     Set<IWaypoint> getAllWaypoints();
 }
+

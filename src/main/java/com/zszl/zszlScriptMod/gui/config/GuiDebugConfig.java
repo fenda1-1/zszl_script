@@ -6,13 +6,13 @@ import com.zszl.zszlScriptMod.gui.components.GuiTheme;
 import com.zszl.zszlScriptMod.gui.components.ThemedButton;
 import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
 import com.zszl.zszlScriptMod.utils.PinyinSearchHelper;
-import net.minecraft.client.gui.Gui;
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiTextField;
-import net.minecraft.client.gui.ScaledResolution;
-import net.minecraft.client.resources.I18n;
-import org.lwjgl.input.Keyboard;
-import org.lwjgl.input.Mouse;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.Gui;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiTextField;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.ScaledResolution;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Keyboard;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Mouse;
 import org.lwjgl.opengl.GL11;
 
 import java.io.IOException;
@@ -86,7 +86,7 @@ public class GuiDebugConfig extends ThemedGuiScreen {
     @Override
     protected void actionPerformed(GuiButton button) throws IOException {
         if (button != null && button.id == BTN_DONE) {
-            this.mc.displayGuiScreen(null);
+            this.mc.setScreen(null);
         }
     }
 
@@ -177,7 +177,7 @@ public class GuiDebugConfig extends ThemedGuiScreen {
     @Override
     protected void keyTyped(char typedChar, int keyCode) throws IOException {
         if (keyCode == 1) {
-            this.mc.displayGuiScreen(null);
+            this.mc.setScreen(null);
             return;
         }
 
@@ -827,6 +827,8 @@ public class GuiDebugConfig extends ThemedGuiScreen {
                 return "gui.debug.tip.autoequip";
             case TRIGGER_RULES:
                 return "gui.debug.tip.trigger";
+            case KILL_AURA_ORBIT:
+                return "gui.debug.tip.orbit";
             default:
                 return null;
         }

@@ -38,8 +38,7 @@ public class Waypoint implements IWaypoint {
     }
 
     /**
-     * Constructor called when a Waypoint is read from disk, adds the
-     * creationTimestamp
+     * Constructor called when a Waypoint is read from disk, adds the creationTimestamp
      * as a parameter so that it is reserved after a waypoint is wrote to the disk.
      *
      * @param name              The waypoint name
@@ -85,7 +84,8 @@ public class Waypoint implements IWaypoint {
                 "%s %s %s",
                 name,
                 BetterBlockPos.from(location).toString(),
-                new Date(creationTimestamp).toString());
+                new Date(creationTimestamp).toString()
+        );
     }
 
     @Override
@@ -100,3 +100,4 @@ public class Waypoint implements IWaypoint {
         return name.equals(w.getName()) && tag == w.getTag() && location.equals(w.getLocation());
     }
 }
+

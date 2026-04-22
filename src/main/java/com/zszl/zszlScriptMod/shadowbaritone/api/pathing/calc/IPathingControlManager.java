@@ -28,8 +28,7 @@ import java.util.Optional;
 public interface IPathingControlManager {
 
     /**
-     * Registers a process with this pathing control manager. See
-     * {@link IBaritoneProcess} for more details.
+     * Registers a process with this pathing control manager. See {@link IBaritoneProcess} for more details.
      *
      * @param process The process
      * @see IBaritoneProcess
@@ -46,3 +45,4 @@ public interface IPathingControlManager {
      */
     Optional<PathingCommand> mostRecentCommand();
 }
+

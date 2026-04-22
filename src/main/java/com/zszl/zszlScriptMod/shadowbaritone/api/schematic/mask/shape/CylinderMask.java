@@ -19,7 +19,7 @@ package com.zszl.zszlScriptMod.shadowbaritone.api.schematic.mask.shape;
 
 import com.zszl.zszlScriptMod.shadowbaritone.api.schematic.mask.AbstractMask;
 import com.zszl.zszlScriptMod.shadowbaritone.api.schematic.mask.StaticMask;
-import net.minecraft.util.EnumFacing;
+import net.minecraft.core.Direction;
 
 /**
  * @author Brady
@@ -31,9 +31,9 @@ public final class CylinderMask extends AbstractMask implements StaticMask {
     private final double radiusSqA;
     private final double radiusSqB;
     private final boolean filled;
-    private final EnumFacing.Axis alignment;
+    private final Direction.Axis alignment;
 
-    public CylinderMask(int widthX, int heightY, int lengthZ, boolean filled, EnumFacing.Axis alignment) {
+    public CylinderMask(int widthX, int heightY, int lengthZ, boolean filled, Direction.Axis alignment) {
         super(widthX, heightY, lengthZ);
         this.centerA = this.getA(widthX, heightY, alignment) / 2.0;
         this.centerB = this.getB(heightY, lengthZ, alignment) / 2.0;
@@ -59,11 +59,12 @@ public final class CylinderMask extends AbstractMask implements StaticMask {
         return da * da / this.radiusSqA + db * db / this.radiusSqB > 1;
     }
 
-    private static int getA(int x, int y, EnumFacing.Axis alignment) {
-        return alignment == EnumFacing.Axis.X ? y : x;
+    private static int getA(int x, int y, Direction.Axis alignment) {
+        return alignment == Direction.Axis.X ? y : x;
     }
 
-    private static int getB(int y, int z, EnumFacing.Axis alignment) {
-        return alignment == EnumFacing.Axis.Z ? y : z;
+    private static int getB(int y, int z, Direction.Axis alignment) {
+        return alignment == Direction.Axis.Z ? y : z;
     }
 }
+

@@ -17,11 +17,10 @@
 
 package com.zszl.zszlScriptMod.shadowbaritone.api.pathing.goals;
 
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.core.BlockPos;
 
 /**
- * An abstract Goal for pathing, can be anything from a specific block to just a
- * Y coordinate.
+ * An abstract Goal for pathing, can be anything from a specific block to just a Y coordinate.
  *
  * @author leijurv
  */
@@ -64,9 +63,10 @@ public interface Goal {
      * some Goals actually do not have a heuristic of 0 when that condition is met
      *
      * @return The estimate number of ticks to satisfy the goal when the goal
-     *         is already satisfied
+     * is already satisfied
      */
     default double heuristic() {
         return 0;
     }
 }
+

@@ -2,7 +2,7 @@ package com.zszl.zszlScriptMod.otherfeatures.gui.block;
 
 import com.zszl.zszlScriptMod.gui.components.GuiTheme;
 import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
-import net.minecraft.client.gui.Gui;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.Gui;
 
 final class ConfigDropdown {
 
@@ -94,10 +94,10 @@ final class ConfigDropdown {
             state = GuiTheme.UiState.NORMAL;
         }
         GuiTheme.drawButtonFrameSafe(x, y, width, height, state);
-        owner.drawString(owner.mc.fontRenderer,
-                owner.mc.fontRenderer.trimStringToWidth(label + ": " + getSelectedText(), Math.max(10, width - 18)),
+        owner.drawString(new com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.FontRenderer(net.minecraft.client.Minecraft.getInstance().font),
+                new com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.FontRenderer(net.minecraft.client.Minecraft.getInstance().font).trimStringToWidth(label + ": " + getSelectedText(), Math.max(10, width - 18)),
                 x + 6, y + 6, 0xFFFFFFFF);
-        owner.drawString(owner.mc.fontRenderer, expanded ? "▲" : "▼", x + width - 10, y + 6, 0xFF9FDFFF);
+        owner.drawString(new com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.FontRenderer(net.minecraft.client.Minecraft.getInstance().font), expanded ? "▲" : "▼", x + width - 10, y + 6, 0xFF9FDFFF);
 
         if (!expanded) {
             return;
@@ -119,7 +119,7 @@ final class ConfigDropdown {
                 Gui.drawRect(x + 1, itemY, x + width - 1, itemY + ITEM_HEIGHT,
                         selected ? 0xCC2B5A7C : 0xAA2E4258);
             }
-            owner.drawString(owner.mc.fontRenderer, options[i], x + 6, itemY + 5, 0xFFFFFFFF);
+            owner.drawString(new com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.FontRenderer(net.minecraft.client.Minecraft.getInstance().font), options[i], x + 6, itemY + 5, 0xFFFFFFFF);
         }
     }
 
@@ -165,3 +165,7 @@ final class ConfigDropdown {
         return mouseX >= x && mouseX <= x + width && mouseY >= y && mouseY <= y + height;
     }
 }
+
+
+
+

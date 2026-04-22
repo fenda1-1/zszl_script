@@ -1,54 +1,65 @@
 package com.zszl.zszlScriptMod.otherfeatures.handler.movement;
 
-import net.minecraft.client.entity.EntityPlayerSP;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.world.phys.Vec3;
 
 final class AirMotionFeatureHandler {
 
     private AirMotionFeatureHandler() {
     }
 
-    static void apply(EntityPlayerSP player) {
+    static void apply(LocalPlayer player) {
+        if (player == null) {
+            return;
+        }
         applyHoverOrGravity(player);
         applyFallCushion(player);
         LavaWalkFeatureHandler.apply(player);
     }
 
-    private static void applyHoverOrGravity(EntityPlayerSP player) {
+    private static void applyHoverOrGravity(LocalPlayer player) {
         if (MovementFeatureManager.isEnabled("hover_mode")
-                && !player.onGround
-                && !player.capabilities.isFlying
-                && player.movementInput != null
-                && !player.movementInput.jump
-                && !player.movementInput.sneak
+                && !player.onGround()
+                && !player.getAbilities().flying
+                && player.input != null
+                && !player.input.jumping
+                && !player.input.shiftKeyDown
                 && !player.isInWater()
                 && !player.isInLava()) {
-            player.motionY = MovementFeatureManager.getConfiguredValue("hover_mode", 0.0F);
+            Vec3 motion = player.getDeltaMovement();
+            player.setDeltaMovement(motion.x, MovementFeatureManager.getConfiguredValue("hover_mode", 0.0F), motion.z);
             player.fallDistance = 0.0F;
-            player.velocityChanged = true;
+            player.hurtMarked = true;
             return;
         }
 
         if (MovementFeatureManager.isEnabled("low_gravity")
-                && !player.onGround
-                && player.motionY < 0.0D
-                && !player.capabilities.isFlying
+                && !player.onGround()
+                && player.getDeltaMovement().y < 0.0D
+                && !player.getAbilities().flying
                 && !player.isInWater()
                 && !player.isInLava()) {
-            player.motionY *= MovementFeatureManager.getConfiguredValue("low_gravity", 0.72F);
-            player.velocityChanged = true;
+            Vec3 motion = player.getDeltaMovement();
+            player.setDeltaMovement(motion.x,
+                    motion.y * MovementFeatureManager.getConfiguredValue("low_gravity", 0.72F),
+                    motion.z);
+            player.hurtMarked = true;
         }
     }
 
-    private static void applyFallCushion(EntityPlayerSP player) {
+    private static void applyFallCushion(LocalPlayer player) {
         if (!MovementFeatureManager.isEnabled("fall_cushion")
-                || player.motionY >= -0.12D
+                || player.getDeltaMovement().y >= -0.12D
                 || player.fallDistance <= 2.0F
                 || !MovementFeatureSupport.hasGroundBelow(player, 1.75D)) {
             return;
         }
+        Vec3 motion = player.getDeltaMovement();
         double buffer = MovementFeatureManager.getConfiguredValue("fall_cushion", 0.24F);
-        player.motionY = Math.max(player.motionY, -buffer);
+        player.setDeltaMovement(motion.x, Math.max(motion.y, -buffer), motion.z);
         player.fallDistance *= 0.4F;
-        player.velocityChanged = true;
+        player.hurtMarked = true;
     }
 }
+
+

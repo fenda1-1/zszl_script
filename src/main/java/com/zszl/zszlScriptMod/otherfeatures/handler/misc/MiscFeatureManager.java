@@ -8,25 +8,20 @@ import com.zszl.zszlScriptMod.otherfeatures.handler.movement.MovementFeatureMana
 import com.zszl.zszlScriptMod.system.ProfileManager;
 import com.zszl.zszlScriptMod.zszlScriptMod;
 import net.minecraft.client.Minecraft;
-import net.minecraft.util.math.MathHelper;
-import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
-import net.minecraftforge.fml.common.gameevent.TickEvent;
-import net.minecraftforge.fml.common.network.FMLNetworkEvent;
 
-import java.io.File;
-import java.io.FileReader;
-import java.io.FileWriter;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
-public class MiscFeatureManager {
+public final class MiscFeatureManager {
 
     public static final MiscFeatureManager INSTANCE = new MiscFeatureManager();
 
-    private static final String CONFIG_FILE_NAME = "other_features_misc.json";
     private static final Map<String, FeatureState> FEATURES = new LinkedHashMap<>();
     private static final int DEFAULT_AUTO_RECONNECT_DELAY_TICKS = 40;
     private static final int DEFAULT_AUTO_RECONNECT_MAX_ATTEMPTS = 3;
@@ -38,16 +33,12 @@ public class MiscFeatureManager {
     private static boolean autoReconnectInfiniteAttempts = DEFAULT_AUTO_RECONNECT_INFINITE_ATTEMPTS;
     private static int autoRespawnDelayTicks = DEFAULT_AUTO_RESPAWN_DELAY_TICKS;
 
-    private final AutoRespawnRuntime autoRespawnRuntime = new AutoRespawnRuntime();
     private final AutoReconnectRuntime autoReconnectRuntime = new AutoReconnectRuntime();
+    private final AutoRespawnRuntime autoRespawnRuntime = new AutoRespawnRuntime();
 
     static {
-        register(new FeatureState("auto_reconnect", "自动重连",
-                "被踢出服务器后自动尝试重新连接到上一个服务器。",
-                null, 0.0F, 0.0F, 0.0F, true));
-        register(new FeatureState("auto_respawn", "死亡自动复活",
-                "死亡界面出现后自动发送复活请求并关闭死亡界面。",
-                null, 0.0F, 0.0F, 0.0F, true));
+        register(new FeatureState("auto_reconnect", "自动重连", "被踢出或断开服务器后自动尝试重新连接到上一个服务器。"));
+        register(new FeatureState("auto_respawn", "死亡自动复活", "死亡界面出现后自动发送复活请求并关闭死亡界面。"));
         loadConfig();
     }
 
@@ -58,33 +49,24 @@ public class MiscFeatureManager {
         public final String id;
         public final String name;
         public final String description;
-        public final String valueLabel;
-        public final float defaultValue;
-        public final float minValue;
-        public final float maxValue;
-        public final boolean behaviorImplemented;
+        public final String valueLabel = "";
+        public final float defaultValue = 0.0F;
+        public final float minValue = 0.0F;
+        public final float maxValue = 0.0F;
+        public final boolean behaviorImplemented = true;
 
         private boolean enabled;
         private float value;
-        private boolean statusHudEnabled;
+        private boolean statusHudEnabled = true;
 
-        private FeatureState(String id, String name, String description, String valueLabel,
-                float defaultValue, float minValue, float maxValue, boolean behaviorImplemented) {
+        private FeatureState(String id, String name, String description) {
             this.id = safe(id);
             this.name = safe(name);
             this.description = safe(description);
-            this.valueLabel = valueLabel == null ? "" : valueLabel.trim();
-            this.defaultValue = defaultValue;
-            this.minValue = minValue;
-            this.maxValue = maxValue;
-            this.behaviorImplemented = behaviorImplemented;
-            this.enabled = false;
-            this.value = defaultValue;
-            this.statusHudEnabled = true;
         }
 
         public boolean supportsValue() {
-            return !valueLabel.isEmpty() && maxValue > minValue;
+            return false;
         }
 
         public boolean isEnabled() {
@@ -98,48 +80,10 @@ public class MiscFeatureManager {
         public boolean isStatusHudEnabled() {
             return statusHudEnabled;
         }
-
-        private void setEnabledInternal(boolean enabled) {
-            this.enabled = enabled;
-        }
-
-        private void setValueInternal(float value) {
-            if (!supportsValue()) {
-                this.value = defaultValue;
-                return;
-            }
-            this.value = MathHelper.clamp(value, minValue, maxValue);
-        }
-
-        private void setStatusHudEnabledInternal(boolean statusHudEnabled) {
-            this.statusHudEnabled = statusHudEnabled;
-        }
-
-        private void resetToDefaultInternal() {
-            this.enabled = false;
-            this.value = defaultValue;
-            this.statusHudEnabled = true;
-        }
-    }
-
-    private static void register(FeatureState state) {
-        FEATURES.put(state.id, state);
-    }
-
-    private static String safe(String text) {
-        return text == null ? "" : text.trim();
-    }
-
-    private static String normalizeId(String featureId) {
-        return safe(featureId).toLowerCase(Locale.ROOT);
     }
 
     public static List<FeatureState> getFeatures() {
         return new ArrayList<>(FEATURES.values());
-    }
-
-    private static File getConfigFile() {
-        return ProfileManager.getCurrentProfileDir().resolve(CONFIG_FILE_NAME).toFile();
     }
 
     public static FeatureState getFeature(String featureId) {
@@ -152,7 +96,7 @@ public class MiscFeatureManager {
 
     public static boolean isEnabled(String featureId) {
         FeatureState state = getFeature(featureId);
-        return state != null && state.isEnabled();
+        return state != null && state.enabled;
     }
 
     public static void toggleFeature(String featureId) {
@@ -164,17 +108,34 @@ public class MiscFeatureManager {
         if (state == null) {
             return;
         }
-        state.setEnabledInternal(enabled);
+        state.enabled = enabled;
         saveConfig();
     }
 
-    public static boolean isFeatureStatusHudEnabled(String featureId) {
+    public static void setFeatureStatusHudEnabled(String featureId, boolean enabled) {
         FeatureState state = getFeature(featureId);
-        return state != null && state.isStatusHudEnabled();
+        if (state == null) {
+            return;
+        }
+        state.statusHudEnabled = enabled;
+        saveConfig();
     }
 
-    public static boolean shouldDisplayFeatureStatusHud(String featureId) {
-        return MovementFeatureManager.isMasterStatusHudEnabled() && isFeatureStatusHudEnabled(featureId);
+    public static void resetFeature(String featureId) {
+        FeatureState state = getFeature(featureId);
+        if (state == null) {
+            return;
+        }
+        state.enabled = false;
+        state.statusHudEnabled = true;
+        if ("auto_reconnect".equals(state.id)) {
+            autoReconnectDelayTicks = DEFAULT_AUTO_RECONNECT_DELAY_TICKS;
+            autoReconnectMaxAttempts = DEFAULT_AUTO_RECONNECT_MAX_ATTEMPTS;
+            autoReconnectInfiniteAttempts = DEFAULT_AUTO_RECONNECT_INFINITE_ATTEMPTS;
+        } else if ("auto_respawn".equals(state.id)) {
+            autoRespawnDelayTicks = DEFAULT_AUTO_RESPAWN_DELAY_TICKS;
+        }
+        saveConfig();
     }
 
     public static int getAutoReconnectDelayTicks() {
@@ -182,7 +143,7 @@ public class MiscFeatureManager {
     }
 
     public static void setAutoReconnectDelayTicks(int ticks) {
-        autoReconnectDelayTicks = MathHelper.clamp(ticks, 5, 200);
+        autoReconnectDelayTicks = clampInt(ticks, 5, 200);
         saveConfig();
     }
 
@@ -191,7 +152,7 @@ public class MiscFeatureManager {
     }
 
     public static void setAutoReconnectMaxAttempts(int attempts) {
-        autoReconnectMaxAttempts = MathHelper.clamp(attempts, 1, 10);
+        autoReconnectMaxAttempts = clampInt(attempts, 1, 10);
         saveConfig();
     }
 
@@ -209,148 +170,12 @@ public class MiscFeatureManager {
     }
 
     public static void setAutoRespawnDelayTicks(int ticks) {
-        autoRespawnDelayTicks = MathHelper.clamp(ticks, 1, 100);
+        autoRespawnDelayTicks = clampInt(ticks, 1, 100);
         saveConfig();
     }
 
-    public static void setFeatureStatusHudEnabled(String featureId, boolean enabled) {
-        FeatureState state = getFeature(featureId);
-        if (state == null) {
-            return;
-        }
-        state.setStatusHudEnabledInternal(enabled);
-        saveConfig();
-    }
-
-    public static void resetFeature(String featureId) {
-        FeatureState state = getFeature(featureId);
-        if (state == null) {
-            return;
-        }
-        state.resetToDefaultInternal();
-        String normalizedId = normalizeId(featureId);
-        if ("auto_reconnect".equals(normalizedId)) {
-            autoReconnectDelayTicks = DEFAULT_AUTO_RECONNECT_DELAY_TICKS;
-            autoReconnectMaxAttempts = DEFAULT_AUTO_RECONNECT_MAX_ATTEMPTS;
-            autoReconnectInfiniteAttempts = DEFAULT_AUTO_RECONNECT_INFINITE_ATTEMPTS;
-        } else if ("auto_respawn".equals(normalizedId)) {
-            autoRespawnDelayTicks = DEFAULT_AUTO_RESPAWN_DELAY_TICKS;
-        }
-        saveConfig();
-    }
-
-    public static void loadConfig() {
-        for (FeatureState state : FEATURES.values()) {
-            state.resetToDefaultInternal();
-        }
-        autoReconnectDelayTicks = DEFAULT_AUTO_RECONNECT_DELAY_TICKS;
-        autoReconnectMaxAttempts = DEFAULT_AUTO_RECONNECT_MAX_ATTEMPTS;
-        autoReconnectInfiniteAttempts = DEFAULT_AUTO_RECONNECT_INFINITE_ATTEMPTS;
-        autoRespawnDelayTicks = DEFAULT_AUTO_RESPAWN_DELAY_TICKS;
-
-        try {
-            File configFile = getConfigFile();
-            if (!configFile.exists()) {
-                saveConfig();
-                return;
-            }
-
-            JsonObject root = new JsonParser().parse(new FileReader(configFile)).getAsJsonObject();
-            JsonObject featuresObject = root.has("features") && root.get("features").isJsonObject()
-                    ? root.getAsJsonObject("features")
-                    : new JsonObject();
-
-            for (Map.Entry<String, FeatureState> entry : FEATURES.entrySet()) {
-                if (!featuresObject.has(entry.getKey()) || !featuresObject.get(entry.getKey()).isJsonObject()) {
-                    continue;
-                }
-                JsonObject item = featuresObject.getAsJsonObject(entry.getKey());
-                FeatureState state = entry.getValue();
-                if (item.has("enabled")) {
-                    state.setEnabledInternal(item.get("enabled").getAsBoolean());
-                }
-                if (item.has("statusHudEnabled")) {
-                    state.setStatusHudEnabledInternal(item.get("statusHudEnabled").getAsBoolean());
-                }
-                if (item.has("value")) {
-                    state.setValueInternal(item.get("value").getAsFloat());
-                }
-            }
-            if (root.has("autoReconnectDelayTicks")) {
-                autoReconnectDelayTicks = MathHelper.clamp(root.get("autoReconnectDelayTicks").getAsInt(), 5, 200);
-            }
-            if (root.has("autoReconnectMaxAttempts")) {
-                autoReconnectMaxAttempts = MathHelper.clamp(root.get("autoReconnectMaxAttempts").getAsInt(), 1, 10);
-            }
-            if (root.has("autoReconnectInfiniteAttempts")) {
-                autoReconnectInfiniteAttempts = root.get("autoReconnectInfiniteAttempts").getAsBoolean();
-            }
-            if (root.has("autoRespawnDelayTicks")) {
-                autoRespawnDelayTicks = MathHelper.clamp(root.get("autoRespawnDelayTicks").getAsInt(), 1, 100);
-            }
-        } catch (Exception e) {
-            zszlScriptMod.LOGGER.error("加载杂项功能配置失败", e);
-        }
-    }
-
-    public static void saveConfig() {
-        try {
-            File configFile = getConfigFile();
-            if (!configFile.getParentFile().exists()) {
-                configFile.getParentFile().mkdirs();
-            }
-
-            JsonObject root = new JsonObject();
-            JsonObject featuresObject = new JsonObject();
-            for (FeatureState state : FEATURES.values()) {
-                JsonObject item = new JsonObject();
-                item.addProperty("enabled", state.isEnabled());
-                item.addProperty("statusHudEnabled", state.isStatusHudEnabled());
-                if (state.supportsValue()) {
-                    item.addProperty("value", state.getValue());
-                }
-                featuresObject.add(state.id, item);
-            }
-            root.add("features", featuresObject);
-            root.addProperty("autoReconnectDelayTicks", autoReconnectDelayTicks);
-            root.addProperty("autoReconnectMaxAttempts", autoReconnectMaxAttempts);
-            root.addProperty("autoReconnectInfiniteAttempts", autoReconnectInfiniteAttempts);
-            root.addProperty("autoRespawnDelayTicks", autoRespawnDelayTicks);
-
-            try (FileWriter writer = new FileWriter(configFile)) {
-                writer.write(root.toString());
-            }
-        } catch (Exception e) {
-            zszlScriptMod.LOGGER.error("保存杂项功能配置失败", e);
-        }
-    }
-
-    public void onClientDisconnect() {
-        this.autoRespawnRuntime.onClientDisconnect();
-        this.autoReconnectRuntime.clearState();
-    }
-
-    @SubscribeEvent
-    public void onClientDisconnected(FMLNetworkEvent.ClientDisconnectionFromServerEvent event) {
-        Minecraft mc = Minecraft.getMinecraft();
-        this.autoReconnectRuntime.onClientDisconnected(mc, isEnabled("auto_reconnect"), autoReconnectDelayTicks);
-    }
-
-    @SubscribeEvent
-    public void onClientConnected(FMLNetworkEvent.ClientConnectedToServerEvent event) {
-        this.autoReconnectRuntime.onClientConnected();
-    }
-
-    @SubscribeEvent
-    public void onClientTick(TickEvent.ClientTickEvent event) {
-        if (event.phase != TickEvent.Phase.END) {
-            return;
-        }
-
-        Minecraft mc = Minecraft.getMinecraft();
-        this.autoRespawnRuntime.tick(isEnabled("auto_respawn"), autoRespawnDelayTicks);
-        this.autoReconnectRuntime.tick(isEnabled("auto_reconnect"), autoReconnectInfiniteAttempts,
-                autoReconnectMaxAttempts, autoReconnectDelayTicks, mc);
+    public static String getFeatureRuntimeSummary(String featureId) {
+        return INSTANCE.buildFeatureRuntimeSummary(normalizeId(featureId));
     }
 
     public static List<String> getStatusLines() {
@@ -364,7 +189,7 @@ public class MiscFeatureManager {
 
         List<String> activeNames = new ArrayList<>();
         for (FeatureState state : FEATURES.values()) {
-            if (state != null && state.isEnabled() && state.isStatusHudEnabled()) {
+            if (state != null && state.enabled && state.statusHudEnabled) {
                 activeNames.add(state.name);
             }
         }
@@ -382,6 +207,9 @@ public class MiscFeatureManager {
             }
             builder.append(activeNames.get(i));
         }
+        if (activeNames.size() > 4) {
+            builder.append(" §8+").append(activeNames.size() - 4);
+        }
         lines.add(builder.toString());
 
         String runtime = INSTANCE.getRuntimeHudLine();
@@ -391,27 +219,156 @@ public class MiscFeatureManager {
         return lines;
     }
 
-    public static String getFeatureRuntimeSummary(String featureId) {
-        return INSTANCE.buildFeatureRuntimeSummary(normalizeId(featureId));
+    public static String getFeatureRuntimeSummaryLegacy(String featureId) {
+        FeatureState state = getFeature(featureId);
+        if (state == null) {
+            return "未注册";
+        }
+        if (!state.enabled) {
+            return "未启用";
+        }
+        if ("auto_reconnect".equals(state.id)) {
+            ServerReconnectState reconnectState = INSTANCE.autoReconnectRuntime.snapshot();
+            if (reconnectState.pending) {
+                return "等待重连 / " + reconnectState.delayTicks + " tick / 第 "
+                        + (reconnectState.attemptCount + 1) + " 次";
+            }
+            return autoReconnectInfiniteAttempts
+                    ? "已启用 / 延迟 " + autoReconnectDelayTicks + " tick / 无限重试"
+                    : "已启用 / 延迟 " + autoReconnectDelayTicks + " tick / 最多 " + autoReconnectMaxAttempts + " 次";
+        }
+        if ("auto_respawn".equals(state.id)) {
+            int cooldown = INSTANCE.autoRespawnRuntime.getCooldownTicks();
+            return cooldown > 0
+                    ? "复活冷却中 / " + cooldown + " tick"
+                    : "已启用 / 冷却 " + autoRespawnDelayTicks + " tick";
+        }
+        return "已启用";
+    }
+
+    public static void loadConfig() {
+        try {
+            Path file = ProfileManager.getCurrentProfileDir().resolve("other_features_misc.json");
+            if (!Files.exists(file)) {
+                return;
+            }
+            JsonObject root = JsonParser.parseString(Files.readString(file, StandardCharsets.UTF_8)).getAsJsonObject();
+            JsonObject features = root.has("features") && root.get("features").isJsonObject()
+                    ? root.getAsJsonObject("features")
+                    : root;
+            autoReconnectDelayTicks = root.has("autoReconnectDelayTicks")
+                    ? clampInt(root.get("autoReconnectDelayTicks").getAsInt(), 5, 200)
+                    : DEFAULT_AUTO_RECONNECT_DELAY_TICKS;
+            autoReconnectMaxAttempts = root.has("autoReconnectMaxAttempts")
+                    ? clampInt(root.get("autoReconnectMaxAttempts").getAsInt(), 1, 10)
+                    : DEFAULT_AUTO_RECONNECT_MAX_ATTEMPTS;
+            autoReconnectInfiniteAttempts = root.has("autoReconnectInfiniteAttempts")
+                    ? root.get("autoReconnectInfiniteAttempts").getAsBoolean()
+                    : DEFAULT_AUTO_RECONNECT_INFINITE_ATTEMPTS;
+            autoRespawnDelayTicks = root.has("autoRespawnDelayTicks")
+                    ? clampInt(root.get("autoRespawnDelayTicks").getAsInt(), 1, 100)
+                    : DEFAULT_AUTO_RESPAWN_DELAY_TICKS;
+            for (FeatureState state : FEATURES.values()) {
+                if (features.has(state.id) && features.get(state.id).isJsonObject()) {
+                    JsonObject json = features.getAsJsonObject(state.id);
+                    if (json.has("enabled")) {
+                        state.enabled = json.get("enabled").getAsBoolean();
+                    }
+                    if (json.has("statusHudEnabled")) {
+                        state.statusHudEnabled = json.get("statusHudEnabled").getAsBoolean();
+                    }
+                }
+            }
+        } catch (Exception e) {
+            zszlScriptMod.LOGGER.error("加载杂项功能配置失败", e);
+        }
+    }
+
+    public static void saveConfig() {
+        try {
+            Path file = ProfileManager.getCurrentProfileDir().resolve("other_features_misc.json");
+            Files.createDirectories(file.getParent());
+            JsonObject root = new JsonObject();
+            JsonObject features = new JsonObject();
+            root.addProperty("autoReconnectDelayTicks", autoReconnectDelayTicks);
+            root.addProperty("autoReconnectMaxAttempts", autoReconnectMaxAttempts);
+            root.addProperty("autoReconnectInfiniteAttempts", autoReconnectInfiniteAttempts);
+            root.addProperty("autoRespawnDelayTicks", autoRespawnDelayTicks);
+            for (FeatureState state : FEATURES.values()) {
+                JsonObject json = new JsonObject();
+                json.addProperty("enabled", state.enabled);
+                json.addProperty("statusHudEnabled", state.statusHudEnabled);
+                features.add(state.id, json);
+            }
+            root.add("features", features);
+            Files.writeString(file, root.toString(), StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            zszlScriptMod.LOGGER.error("保存杂项功能配置失败", e);
+        }
+    }
+
+    public void tick(Minecraft mc) {
+        autoReconnectRuntime.tick(mc, isEnabled("auto_reconnect"), autoReconnectDelayTicks, autoReconnectMaxAttempts,
+                autoReconnectInfiniteAttempts);
+        autoRespawnRuntime.tick(mc, isEnabled("auto_respawn"), autoRespawnDelayTicks);
+    }
+
+    public void onClientConnected() {
+        autoReconnectRuntime.clearState();
+        autoRespawnRuntime.onClientDisconnect();
+    }
+
+    public void onClientDisconnect() {
+        autoReconnectRuntime.onClientDisconnected(Minecraft.getInstance(), isEnabled("auto_reconnect"),
+                autoReconnectDelayTicks);
+        autoRespawnRuntime.onClientDisconnect();
+    }
+
+    public static final class ServerReconnectState {
+        public final boolean pending;
+        public final int delayTicks;
+        public final int attemptCount;
+
+        public ServerReconnectState(boolean pending, int delayTicks, int attemptCount) {
+            this.pending = pending;
+            this.delayTicks = delayTicks;
+            this.attemptCount = attemptCount;
+        }
+    }
+
+    private static void register(FeatureState state) {
+        FEATURES.put(state.id, state);
+    }
+
+    private static String safe(String text) {
+        return text == null ? "" : text.trim();
+    }
+
+    private static String normalizeId(String featureId) {
+        return safe(featureId).toLowerCase(Locale.ROOT);
+    }
+
+    private static int clampInt(int value, int min, int max) {
+        return Math.max(min, Math.min(max, value));
     }
 
     private String getRuntimeHudLine() {
         List<String> parts = new ArrayList<>();
-        if (isEnabled("auto_reconnect") && shouldDisplayFeatureStatusHud("auto_reconnect")) {
-            if (this.autoReconnectRuntime.getPendingReconnectServer() == null) {
-                parts.add(autoReconnectInfiniteAttempts ? "§b自动重连(无限)" : "§b自动重连");
-            } else {
+        if (isEnabled("auto_reconnect") && getFeature("auto_reconnect").statusHudEnabled) {
+            ServerReconnectState reconnectState = autoReconnectRuntime.snapshot();
+            if (reconnectState.pending) {
                 parts.add((autoReconnectInfiniteAttempts ? "§b无限重连倒计时: " : "§b重连倒计时: ")
-                        + this.autoReconnectRuntime.getReconnectDelayTicks());
+                        + reconnectState.delayTicks);
+            } else {
+                parts.add(autoReconnectInfiniteAttempts ? "§b自动重连(无限)" : "§b自动重连");
             }
         }
-        if (isEnabled("auto_respawn") && shouldDisplayFeatureStatusHud("auto_respawn")) {
+        if (isEnabled("auto_respawn") && getFeature("auto_respawn").statusHudEnabled) {
             parts.add("§a自动复活");
         }
         if (parts.isEmpty()) {
             return "";
         }
-
         StringBuilder builder = new StringBuilder("§7");
         for (int i = 0; i < parts.size(); i++) {
             if (i > 0) {
@@ -429,32 +386,25 @@ public class MiscFeatureManager {
         if (!isManagedFeature(featureId)) {
             return "未找到功能";
         }
-
         switch (featureId) {
         case "auto_reconnect":
             if (!isEnabled(featureId)) {
                 return "未启用";
             }
-            if (this.autoReconnectRuntime.getPendingReconnectServer() != null) {
-                return "准备重连 " + this.autoReconnectRuntime.getPendingReconnectServer().serverIP
-                        + (autoReconnectInfiniteAttempts
-                                ? "，无限重试，倒计时 " + this.autoReconnectRuntime.getReconnectDelayTicks() + " tick"
-                                : "，倒计时 " + this.autoReconnectRuntime.getReconnectDelayTicks() + " tick");
+            ServerReconnectState reconnectState = autoReconnectRuntime.snapshot();
+            if (reconnectState.pending) {
+                return "等待重连 / " + reconnectState.delayTicks + " tick / 第 "
+                        + (reconnectState.attemptCount + 1) + " 次";
             }
-            return this.autoReconnectRuntime.getReconnectAttemptCount() > 0
-                    ? (autoReconnectInfiniteAttempts
-                            ? "已发起第 " + this.autoReconnectRuntime.getReconnectAttemptCount() + " 次重连尝试（无限模式）"
-                            : "已发起第 " + this.autoReconnectRuntime.getReconnectAttemptCount() + "/" + autoReconnectMaxAttempts + " 次重连尝试")
-                    : (autoReconnectInfiniteAttempts ? "等待断线界面（无限重试）" : "等待断线界面");
+            return autoReconnectInfiniteAttempts
+                    ? "已启用 / 延迟 " + autoReconnectDelayTicks + " tick / 无限重试"
+                    : "已启用 / 延迟 " + autoReconnectDelayTicks + " tick / 最多 " + autoReconnectMaxAttempts + " 次";
         case "auto_respawn":
-            if (!isEnabled(featureId)) {
-                return "未启用";
-            }
-            return this.autoRespawnRuntime.getAutoRespawnCooldownTicks() > 0
-                    ? "复活冷却剩余 " + this.autoRespawnRuntime.getAutoRespawnCooldownTicks() + " tick"
-                    : "检测到死亡界面时自动复活";
+            int cooldown = autoRespawnRuntime.getCooldownTicks();
+            return cooldown > 0 ? "复活冷却中 / " + cooldown + " tick"
+                    : "已启用 / 冷却 " + autoRespawnDelayTicks + " tick";
         default:
-            return "基础逻辑已接入";
+            return "已启用";
         }
     }
 }

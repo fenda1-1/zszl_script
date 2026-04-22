@@ -5,15 +5,17 @@ import com.zszl.zszlScriptMod.gui.components.GuiTheme;
 import com.zszl.zszlScriptMod.gui.components.ThemedButton;
 import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
 import com.zszl.zszlScriptMod.utils.PacketCaptureHandler;
-import net.minecraft.client.renderer.GlStateManager;
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiScreen;
-import net.minecraft.client.gui.GuiTextField;
-import net.minecraft.client.resources.I18n;
-import net.minecraft.util.text.TextComponentString;
-import net.minecraft.util.text.TextFormatting;
-import org.lwjgl.input.Keyboard;
-import org.lwjgl.input.Mouse;
+import com.zszl.zszlScriptMod.utils.PinyinSearchHelper;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiCompatContext;
+import com.mojang.blaze3d.platform.GlStateManager;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiTextField;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.util.text.TextComponentString;
+import net.minecraft.ChatFormatting;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Keyboard;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Mouse;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -215,6 +217,12 @@ public class GuiPacketViewer extends ThemedGuiScreen {
     public void initGui() {
         Keyboard.enableRepeatEvents(true);
         recalcLayout();
+        if (fixedSourcePackets == null
+                && currentMode == DisplayMode.SENT
+                && PacketCaptureHandler.capturedPackets.isEmpty()
+                && !PacketCaptureHandler.capturedReceivedPackets.isEmpty()) {
+            currentMode = DisplayMode.RECEIVED;
+        }
         String oldFilter = filterField == null ? "" : filterField.getText();
         applyFilter(oldFilter, preserveViewStateOnNextInit);
         preserveViewStateOnNextInit = false;
@@ -497,12 +505,12 @@ public class GuiPacketViewer extends ThemedGuiScreen {
 
     private boolean packetMatchesFilter(PacketCaptureHandler.CapturedPacketData packet, String keyword) {
         if (keyword == null || keyword.trim().isEmpty()) return true;
-        String lower = keyword.trim().toLowerCase();
+        String normalizedKeyword = PinyinSearchHelper.normalizeQuery(keyword);
         String normalizedHexKeyword = normalizeHexText(keyword);
         if (isRegexKeyword(keyword)) return packetMatchesRegex(packet, extractRegexPattern(keyword));
-        return safeLower(packet.packetClassName).contains(lower)
-                || safeLower(packet.channel).contains(lower)
-                || safeLower(packet.getDecodedData()).contains(lower)
+        return PinyinSearchHelper.matchesNormalized(packet.packetClassName, normalizedKeyword)
+                || PinyinSearchHelper.matchesNormalized(packet.channel, normalizedKeyword)
+                || PinyinSearchHelper.matchesNormalized(packet.getDecodedData(), normalizedKeyword)
                 || (!normalizedHexKeyword.isEmpty()
                 && normalizeHexText(packet.getHexData()).contains(normalizedHexKeyword));
     }
@@ -542,12 +550,12 @@ public class GuiPacketViewer extends ThemedGuiScreen {
     protected void actionPerformed(GuiButton button) throws IOException {
         switch (button.id) {
             case 0: openSequenceEditorForSelection(); break;
-            case 1: mc.displayGuiScreen(parentScreen); break;
+            case 1: mc.setScreen(parentScreen); break;
             case 2: copySelectedPackets(); break;
             case 3: if (!readOnlyMode) { currentMode = currentMode == DisplayMode.SENT ? DisplayMode.RECEIVED : DisplayMode.SENT; initGui(); } break;
             case 4: saveSelectedSnapshot(); break;
-            case 5: preserveViewStateOnNextInit = true; mc.displayGuiScreen(new GuiPacketSnapshotManager(this)); break;
-            case 6: preserveViewStateOnNextInit = true; mc.displayGuiScreen(new GuiPacketIdRecordViewer(this)); break;
+            case 5: preserveViewStateOnNextInit = true; mc.setScreen(new GuiPacketSnapshotManager(this)); break;
+            case 6: preserveViewStateOnNextInit = true; mc.setScreen(new GuiPacketIdRecordViewer(this)); break;
             case 7:
                 InputTimelineManager.clear();
                 inputEvents = InputTimelineManager.getEventsSnapshot();
@@ -573,7 +581,7 @@ public class GuiPacketViewer extends ThemedGuiScreen {
         List<Integer> sortedIndices = new ArrayList<>(selectedIndices);
         Collections.sort(sortedIndices);
         for (int index : sortedIndices) if (index >= 0 && index < filteredPackets.size()) packetsToSend.add(filteredPackets.get(index));
-        mc.displayGuiScreen(new GuiPacketSequenceEditor(this, packetsToSend));
+        mc.setScreen(new GuiPacketSequenceEditor(this, packetsToSend));
     }
 
     private void copySelectedPackets() {
@@ -596,14 +604,14 @@ public class GuiPacketViewer extends ThemedGuiScreen {
             Path exportPath = exportLongCopyContent(content);
             if (exportPath != null) setClipboardString(exportPath.toAbsolutePath().toString());
         }
-        if (mc.player != null) mc.player.sendMessage(new TextComponentString(TextFormatting.GREEN + I18n.format("msg.packet.viewer.copied_all", selectedIndices.size())));
+        if (mc.player != null) mc.player.sendSystemMessage(new TextComponentString(ChatFormatting.GREEN + I18n.format("msg.packet.viewer.copied_all", selectedIndices.size())));
     }
 
     private void saveSelectedSnapshot() {
         if (selectedIndices.isEmpty()) return;
         String defaultName = "快照-" + new SimpleDateFormat("yyyyMMdd-HHmmss").format(new Date());
         preserveViewStateOnNextInit = true;
-        mc.displayGuiScreen(new GuiTextInput(this, I18n.format("gui.packet.viewer.snapshot_input_name"), defaultName, name -> {
+        mc.setScreen(new GuiTextInput(this, I18n.format("gui.packet.viewer.snapshot_input_name"), defaultName, name -> {
             if (name != null && !name.trim().isEmpty()) {
                 List<PacketCaptureHandler.CapturedPacketData> packetsToSave = new ArrayList<>();
                 for (int index : new java.util.TreeSet<>(selectedIndices)) if (index >= 0 && index < filteredPackets.size()) packetsToSave.add(filteredPackets.get(index));
@@ -612,7 +620,7 @@ public class GuiPacketViewer extends ThemedGuiScreen {
                 PacketSnapshotManager.saveSnapshot(name.trim(), packetsToSave, mode);
             }
             preserveViewStateOnNextInit = true;
-            mc.displayGuiScreen(this);
+            mc.setScreen(this);
         }));
     }
 
@@ -629,7 +637,7 @@ public class GuiPacketViewer extends ThemedGuiScreen {
                 samples.add(filteredPackets.get(index).getHexData());
             }
         }
-        mc.displayGuiScreen(new GuiCapturedIdSmartGenerator(this, "", samples));
+        mc.setScreen(new GuiCapturedIdSmartGenerator(this, "", samples));
     }
 
     @Override
@@ -814,10 +822,10 @@ public class GuiPacketViewer extends ThemedGuiScreen {
             drawString(fontRenderer, trimmed, x, y, color);
             return;
         }
-        GlStateManager.pushMatrix();
-        GlStateManager.scale(scale, scale, 1.0f);
+        GuiCompatContext.current().pose().pushPose();
+        GuiCompatContext.current().pose().scale(scale, scale, 1.0F);
         fontRenderer.drawString(trimmed, Math.round(x / scale), Math.round(y / scale), color);
-        GlStateManager.popMatrix();
+        GuiCompatContext.current().pose().popPose();
     }
 
     private void recalcInputHorizontalScroll() {
@@ -1040,8 +1048,8 @@ public class GuiPacketViewer extends ThemedGuiScreen {
         super.handleMouseInput();
         int dWheel = Mouse.getEventDWheel();
         if (dWheel == 0) return;
-        int mouseX = Mouse.getEventX() * this.width / this.mc.displayWidth;
-        int mouseY = this.height - Mouse.getEventY() * this.height / this.mc.displayHeight - 1;
+        int mouseX = Mouse.getEventX() * this.width / Math.max(1, this.mc.getWindow().getScreenWidth());
+        int mouseY = this.height - Mouse.getEventY() * this.height / Math.max(1, this.mc.getWindow().getScreenHeight()) - 1;
         if (isInside(mouseX, mouseY, leftX, inputListY, leftWidth, inputListHeight) && inputMaxScroll > 0) {
             inputScrollOffset = dWheel > 0 ? Math.max(0, inputScrollOffset - 1) : Math.min(inputMaxScroll, inputScrollOffset + 1);
             return;
@@ -1073,7 +1081,7 @@ public class GuiPacketViewer extends ThemedGuiScreen {
 
     private void openPacketDetail(PacketCaptureHandler.CapturedPacketData packet, int actualIndex, GuiPacketDetailViewer.ViewSection section) {
         preserveViewStateOnNextInit = true;
-        mc.displayGuiScreen(new GuiPacketDetailViewer(this, packet, actualIndex + 1, resolveDirectionLabel(), section));
+        mc.setScreen(new GuiPacketDetailViewer(this, packet, actualIndex + 1, resolveDirectionLabel(), section));
     }
 
     private String resolveDirectionLabel() {
@@ -1083,12 +1091,12 @@ public class GuiPacketViewer extends ThemedGuiScreen {
 
     private void copyTextWithToast(String text, String successMessage) {
         setClipboardString(text == null ? "" : text);
-        if (mc.player != null) mc.player.sendMessage(new TextComponentString(TextFormatting.GREEN + successMessage));
+        if (mc.player != null) mc.player.sendSystemMessage(new TextComponentString(ChatFormatting.GREEN + successMessage));
     }
 
     private Path exportLongCopyContent(String content) {
         try {
-            Path exportDir = mc.mcDataDir.toPath().resolve("zszl_script").resolve("packet_exports");
+            Path exportDir = mc.gameDirectory.toPath().resolve("zszl_script").resolve("packet_exports");
             Files.createDirectories(exportDir);
             String fileName = "packet-copy-" + new SimpleDateFormat("yyyyMMdd-HHmmss-SSS").format(new Date()) + ".txt";
             Path filePath = exportDir.resolve(fileName);
@@ -1213,3 +1221,5 @@ public class GuiPacketViewer extends ThemedGuiScreen {
         return indexes;
     }
 }
+
+

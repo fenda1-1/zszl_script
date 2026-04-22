@@ -4,7 +4,7 @@ import com.zszl.zszlScriptMod.gui.path.GuiActionEditor.model.ConditionExpression
 import com.zszl.zszlScriptMod.gui.path.GuiActionEditor.model.ConditionExpressionParts;
 import com.zszl.zszlScriptMod.gui.path.GuiActionEditor.model.GroupedVariableSelectorBinding;
 
-import net.minecraft.client.resources.I18n;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
 
 import java.util.Objects;
 import java.util.regex.Matcher;
@@ -241,3 +241,4 @@ final class ConditionExpressionEditorSupport {
         return value == null ? "" : value;
     }
 }
+

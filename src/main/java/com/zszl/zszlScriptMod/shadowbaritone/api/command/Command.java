@@ -27,15 +27,11 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /**
- * A default implementation of {@link ICommand} which provides easy access to
- * the
- * command's bound {@link IBaritone} instance, {@link IPlayerContext} and an
- * easy
- * way to provide multiple valid command execution names through the default
- * constructor.
+ * A default implementation of {@link ICommand} which provides easy access to the
+ * command's bound {@link IBaritone} instance, {@link IPlayerContext} and an easy
+ * way to provide multiple valid command execution names through the default constructor.
  * <p>
- * So basically, you should use it because it provides a small amount of
- * boilerplate,
+ * So basically, you should use it because it provides a small amount of boilerplate,
  * but you're not forced to use it.
  *
  * @author LoganDark
@@ -54,8 +50,7 @@ public abstract class Command implements ICommand {
     /**
      * Creates a new Baritone control command.
      *
-     * @param names The names of this command. This is what you put after the
-     *              command prefix.
+     * @param names The names of this command. This is what you put after the command prefix.
      */
     protected Command(IBaritone baritone, String... names) {
         this.names = Collections.unmodifiableList(Stream.of(names)
@@ -70,3 +65,4 @@ public abstract class Command implements ICommand {
         return this.names;
     }
 }
+

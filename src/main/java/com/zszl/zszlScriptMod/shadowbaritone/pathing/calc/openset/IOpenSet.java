@@ -46,10 +46,10 @@ public interface IOpenSet {
     PathNode removeLowest();
 
     /**
-     * A faster path has been found to this node, decreasing its cost. Perform a
-     * decrease-key operation.
+     * A faster path has been found to this node, decreasing its cost. Perform a decrease-key operation.
      *
      * @param node The node
      */
     void update(PathNode node);
 }
+

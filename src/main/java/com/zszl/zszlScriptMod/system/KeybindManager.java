@@ -4,6 +4,7 @@ package com.zszl.zszlScriptMod.system;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.google.gson.reflect.TypeToken;
 import com.zszl.zszlScriptMod.zszlScriptMod;
@@ -11,8 +12,10 @@ import com.zszl.zszlScriptMod.config.ModConfig;
 import com.zszl.zszlScriptMod.gui.GuiHandler;
 import com.zszl.zszlScriptMod.gui.config.GuiLoopCountInput;
 import com.zszl.zszlScriptMod.gui.packet.GuiPacketSequenceEditor;
+import com.zszl.zszlScriptMod.gui.packet.GuiPacketSequenceSelector;
 import com.zszl.zszlScriptMod.gui.packet.PacketSequence;
 import com.zszl.zszlScriptMod.gui.packet.PacketSequenceManager;
+import com.zszl.zszlScriptMod.inventory.InventoryViewerManager;
 import com.zszl.zszlScriptMod.utils.PacketCaptureHandler;
 import com.zszl.zszlScriptMod.handlers.AdExpPanelHandler;
 import com.zszl.zszlScriptMod.handlers.AutoEatHandler;
@@ -22,9 +25,11 @@ import com.zszl.zszlScriptMod.handlers.AutoSigninOnlineHandler;
 import com.zszl.zszlScriptMod.handlers.AutoSkillHandler;
 import com.zszl.zszlScriptMod.handlers.DeathAutoRejoinHandler;
 import com.zszl.zszlScriptMod.handlers.FlyHandler;
+import com.zszl.zszlScriptMod.handlers.FreecamHandler;
 import com.zszl.zszlScriptMod.handlers.KillAuraHandler;
 import com.zszl.zszlScriptMod.handlers.KillTimerHandler;
 import com.zszl.zszlScriptMod.handlers.ShulkerBoxStackingHandler;
+import com.zszl.zszlScriptMod.handlers.ShulkerMiningReboundFixHandler;
 import com.zszl.zszlScriptMod.otherfeatures.handler.block.BlockFeatureManager;
 import com.zszl.zszlScriptMod.otherfeatures.handler.item.ItemFeatureManager;
 import com.zszl.zszlScriptMod.otherfeatures.handler.movement.MovementFeatureManager;
@@ -35,10 +40,10 @@ import com.zszl.zszlScriptMod.otherfeatures.handler.world.WorldFeatureManager;
 import com.zszl.zszlScriptMod.path.PathSequenceEventListener;
 import com.zszl.zszlScriptMod.path.PathSequenceManager;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.resources.I18n;
-import net.minecraft.util.text.TextComponentString;
-import net.minecraft.util.text.TextFormatting;
-import org.lwjgl.input.Keyboard;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.util.text.TextComponentString;
+import net.minecraft.ChatFormatting;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Keyboard;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
@@ -126,7 +131,7 @@ public class KeybindManager {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 
     public static void executeAction(BindableAction action) {
-        Minecraft mc = Minecraft.getMinecraft();
+        Minecraft mc = Minecraft.getInstance();
         if (mc.player == null)
             return;
         if (action != null && action.isFeatureToggle()) {
@@ -138,33 +143,41 @@ public class KeybindManager {
             case STOP_SEQUENCE:
                 PathSequenceEventListener.instance.stopTracking();
                 mc.player
-                        .sendMessage(new TextComponentString(TextFormatting.RED + I18n.format("msg.keybind.stop_all")));
+                        .sendSystemMessage(new TextComponentString(ChatFormatting.RED + I18n.format("msg.keybind.stop_all")));
                 break;
             case SET_LOOP_COUNT:
-                mc.addScheduledTask(() -> mc.displayGuiScreen(new GuiLoopCountInput(null)));
+                mc.execute(() -> mc.setScreen(new GuiLoopCountInput(null)));
                 break;
             case TOGGLE_MOUSE_DETACH:
                 ModConfig.isMouseDetached = !ModConfig.isMouseDetached;
                 String mouseStatus = ModConfig.isMouseDetached ? I18n.format("gui.inventory.mouse.detached")
                         : I18n.format("gui.inventory.mouse.reattached");
-                mc.player.sendMessage(
+                mc.player.sendSystemMessage(
                         new TextComponentString(
-                                TextFormatting.AQUA + I18n.format("msg.keybind.mouse_status", mouseStatus)));
-                if (!ModConfig.isMouseDetached && mc.currentScreen == null) {
-                    mc.mouseHelper.grabMouseCursor();
+                                ChatFormatting.AQUA + I18n.format("msg.keybind.mouse_status", mouseStatus)));
+                if (ModConfig.isMouseDetached) {
+                    mc.mouseHandler.releaseMouse();
+                } else if (mc.screen == null) {
+                    mc.mouseHandler.grabMouse();
                 }
                 break;
             case OPEN_INVENTORY_VIEWER:
-                mc.addScheduledTask(() -> mc.player.openGui(zszlScriptMod.instance, GuiHandler.INVENTORY_VIEWER,
-                        mc.world, 0, 0, 0));
-                mc.player.sendMessage(
-                        new TextComponentString(
-                                TextFormatting.AQUA + I18n.format("msg.keybind.open_inventory_viewer")));
+                mc.execute(() -> {
+                    if (mc.crosshairPickEntity instanceof net.minecraft.world.entity.player.Player) {
+                        InventoryViewerManager.copyInventoryFromTarget();
+                    }
+                    GuiHandler.openInventoryViewer(mc);
+                });
+                mc.player.sendSystemMessage(
+                        new TextComponentString(ChatFormatting.AQUA + I18n.format("msg.keybind.open_inventory_viewer")));
+                break;
+            case TOGGLE_FAST_ATTACK:
+                mc.execute(() -> FreecamHandler.INSTANCE.toggleFastAttack());
                 break;
             case TOGGLE_AUTO_EAT:
                 AutoEatHandler.autoEatEnabled = !AutoEatHandler.autoEatEnabled;
                 AutoEatHandler.saveAutoEatConfig();
-                mc.player.sendMessage(new TextComponentString(I18n.format("msg.keybind.common_toggle_status",
+                mc.player.sendSystemMessage(new TextComponentString(I18n.format("msg.keybind.common_toggle_status",
                         I18n.format("keybind.action.toggle_auto_eat.name"),
                         AutoEatHandler.autoEatEnabled ? I18n.format("gui.common.enabled")
                                 : I18n.format("gui.common.disabled"))));
@@ -181,7 +194,7 @@ public class KeybindManager {
             case TOGGLE_AUTO_SKILL:
                 AutoSkillHandler.autoSkillEnabled = !AutoSkillHandler.autoSkillEnabled;
                 AutoSkillHandler.saveSkillConfig();
-                mc.player.sendMessage(new TextComponentString(I18n.format("msg.keybind.common_toggle_status",
+                mc.player.sendSystemMessage(new TextComponentString(I18n.format("msg.keybind.common_toggle_status",
                         I18n.format("keybind.action.toggle_auto_skill.name"),
                         AutoSkillHandler.autoSkillEnabled ? I18n.format("gui.common.enabled")
                                 : I18n.format("gui.common.disabled"))));
@@ -189,7 +202,7 @@ public class KeybindManager {
             case TOGGLE_SIGNIN_ONLINE:
                 AutoSigninOnlineHandler.enabled = !AutoSigninOnlineHandler.enabled;
                 AutoSigninOnlineHandler.saveConfig();
-                mc.player.sendMessage(new TextComponentString(I18n.format("msg.keybind.common_toggle_status",
+                mc.player.sendSystemMessage(new TextComponentString(I18n.format("msg.keybind.common_toggle_status",
                         I18n.format("keybind.action.toggle_signin_online.name"),
                         AutoSigninOnlineHandler.enabled ? I18n.format("gui.common.enabled")
                                 : I18n.format("gui.common.disabled"))));
@@ -197,14 +210,14 @@ public class KeybindManager {
             case TOGGLE_AUTO_PICKUP:
                 AutoPickupHandler.globalEnabled = !AutoPickupHandler.globalEnabled;
                 AutoPickupHandler.saveConfig();
-                mc.player.sendMessage(new TextComponentString(I18n.format("msg.keybind.common_toggle_status",
+                mc.player.sendSystemMessage(new TextComponentString(I18n.format("msg.keybind.common_toggle_status",
                         I18n.format("keybind.action.toggle_auto_pickup.name"),
                         AutoPickupHandler.globalEnabled ? I18n.format("gui.common.enabled")
                                 : I18n.format("gui.common.disabled"))));
                 break;
             case TOGGLE_PACKET_CAPTURE:
                 PacketCaptureHandler.isCapturing = !PacketCaptureHandler.isCapturing;
-                mc.player.sendMessage(new TextComponentString(I18n.format("msg.keybind.common_toggle_status",
+                mc.player.sendSystemMessage(new TextComponentString(I18n.format("msg.keybind.common_toggle_status",
                         I18n.format("keybind.action.toggle_packet_capture.name"),
                         PacketCaptureHandler.isCapturing ? I18n.format("gui.common.enabled")
                                 : I18n.format("gui.common.disabled"))));
@@ -212,7 +225,7 @@ public class KeybindManager {
             case TOGGLE_DEATH_AUTO_REJOIN:
                 DeathAutoRejoinHandler.deathAutoRejoinEnabled = !DeathAutoRejoinHandler.deathAutoRejoinEnabled;
                 DeathAutoRejoinHandler.saveConfig();
-                mc.player.sendMessage(new TextComponentString(I18n.format("msg.keybind.common_toggle_status",
+                mc.player.sendSystemMessage(new TextComponentString(I18n.format("msg.keybind.common_toggle_status",
                         I18n.format("keybind.action.toggle_death_auto_rejoin.name"),
                         DeathAutoRejoinHandler.deathAutoRejoinEnabled ? I18n.format("gui.common.enabled")
                                 : I18n.format("gui.common.disabled"))));
@@ -223,10 +236,13 @@ public class KeybindManager {
             case TOGGLE_AD_EXP_PANEL:
                 AdExpPanelHandler.toggleEnabled();
                 break;
+            case TOGGLE_SHULKER_REBOUND_FIX:
+                ShulkerMiningReboundFixHandler.toggleEnabled();
+                break;
             case TOGGLE_AUTO_STACK_SHULKER:
                 ShulkerBoxStackingHandler.autoStackingEnabled = !ShulkerBoxStackingHandler.autoStackingEnabled;
                 ShulkerBoxStackingHandler.saveConfig();
-                mc.player.sendMessage(new TextComponentString(I18n.format("msg.keybind.common_toggle_status",
+                mc.player.sendSystemMessage(new TextComponentString(I18n.format("msg.keybind.common_toggle_status",
                         I18n.format("keybind.action.toggle_auto_stack_shulker.name"),
                         ShulkerBoxStackingHandler.autoStackingEnabled ? I18n.format("gui.common.enabled")
                                 : I18n.format("gui.common.disabled"))));
@@ -241,29 +257,25 @@ public class KeybindManager {
                         sender.mc = mc;
                         sender.sendSequence();
                     } else {
-                        mc.player.sendMessage(new TextComponentString(
-                                TextFormatting.RED
+                        mc.player.sendSystemMessage(new TextComponentString(
+                                ChatFormatting.RED
                                         + I18n.format("msg.keybind.packet_sequence_not_found", sequenceName)));
                     }
                 } else {
-                    mc.player.sendMessage(new TextComponentString(
-                            TextFormatting.YELLOW + I18n.format("msg.keybind.packet_sequence_not_bound")));
+                    mc.player.sendSystemMessage(new TextComponentString(
+                            ChatFormatting.YELLOW + I18n.format("msg.keybind.packet_sequence_not_bound")));
                 }
-                break;
-            default:
-                // Feature toggles are handled above by toggleManagedFeature; all other unhandled
-                // enum values intentionally no-op here to keep the switch exhaustive for IDEs.
                 break;
         }
     }
 
     public static void executePathSequenceByName(String sequenceName) {
-        Minecraft mc = Minecraft.getMinecraft();
+        Minecraft mc = Minecraft.getInstance();
         if (mc.player == null || sequenceName == null || sequenceName.trim().isEmpty()) {
             return;
         }
         if (!PathSequenceManager.hasSequence(sequenceName)) {
-            mc.player.sendMessage(new TextComponentString(TextFormatting.RED
+            mc.player.sendSystemMessage(new TextComponentString(ChatFormatting.RED
                     + I18n.format("msg.keybind.path_sequence_not_found", sequenceName)));
             return;
         }
@@ -338,7 +350,7 @@ public class KeybindManager {
                 return;
         }
 
-        mc.player.sendMessage(new TextComponentString(I18n.format("msg.keybind.common_toggle_status",
+        mc.player.sendSystemMessage(new TextComponentString(I18n.format("msg.keybind.common_toggle_status",
                 action.getDisplayName(),
                 targetEnabled ? I18n.format("gui.common.enabled") : I18n.format("gui.common.disabled"))));
     }
@@ -347,8 +359,8 @@ public class KeybindManager {
         if (mc == null || mc.player == null) {
             return;
         }
-        mc.player.sendMessage(new TextComponentString(
-                TextFormatting.RED + "[快捷键] 未找到其他功能: " + featureId));
+        mc.player.sendSystemMessage(new TextComponentString(
+                ChatFormatting.RED + "[快捷键] 未找到其他功能: " + featureId));
     }
 
     private static File getConfigFile() {
@@ -431,4 +443,12 @@ public class KeybindManager {
         }
     }
 }
+
+
+
+
+
+
+
+
 

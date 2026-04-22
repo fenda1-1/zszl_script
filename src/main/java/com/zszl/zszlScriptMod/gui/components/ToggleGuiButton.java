@@ -1,9 +1,8 @@
 package com.zszl.zszlScriptMod.gui.components;
 
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.renderer.GlStateManager;
-import org.lwjgl.input.Mouse;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Mouse;
 import com.zszl.zszlScriptMod.gui.components.GuiTheme.UiState;
 
 public class ToggleGuiButton extends GuiButton {
@@ -26,11 +25,8 @@ public class ToggleGuiButton extends GuiButton {
     @Override
     public void drawButton(Minecraft mc, int mouseX, int mouseY, float partialTicks) {
         if (this.visible) {
-            mc.getTextureManager().bindTexture(BUTTON_TEXTURES);
-            GlStateManager.color(1.0F, 1.0F, 1.0F, 1.0F);
             this.hovered = mouseX >= this.x && mouseY >= this.y && mouseX < this.x + this.width
                     && mouseY < this.y + this.height;
-            this.getHoverState(this.hovered);
             boolean pressed = this.hovered && Mouse.isButtonDown(0);
 
             UiState state;
@@ -45,8 +41,6 @@ public class ToggleGuiButton extends GuiButton {
             }
 
             GuiTheme.drawToggleFrame(this.x, this.y, this.width, this.height, enabledState, state);
-
-            this.mouseDragged(mc, mouseX, mouseY);
             int j = 0xFFFFFFFF; // White text color
 
             if (!this.enabled) {
@@ -59,8 +53,15 @@ public class ToggleGuiButton extends GuiButton {
                 j = GuiTheme.getStateTextColor(UiState.NORMAL);
             }
 
-            this.drawCenteredString(mc.fontRenderer, this.displayString, this.x + this.width / 2,
+            this.drawCenteredString(new com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.FontRenderer(mc.font), this.displayString, this.x + this.width / 2,
                     this.y + (this.height - 8) / 2, j);
         }
     }
 }
+
+
+
+
+
+
+

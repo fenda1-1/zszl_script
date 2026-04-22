@@ -9,16 +9,9 @@ import com.zszl.zszlScriptMod.system.AutoUseItemRule;
 import com.zszl.zszlScriptMod.system.ProfileManager;
 import com.zszl.zszlScriptMod.utils.ModUtils;
 import com.zszl.zszlScriptMod.zszlScriptMod;
-
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.entity.EntityPlayerSP;
-import net.minecraft.item.EnumAction;
-import net.minecraft.item.ItemStack;
-import net.minecraft.network.play.client.CPacketAnimation;
-import net.minecraft.network.play.client.CPacketHeldItemChange;
-import net.minecraft.network.play.client.CPacketPlayerTryUseItem;
-import net.minecraft.util.EnumActionResult;
-import net.minecraft.util.EnumHand;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.world.item.ItemStack;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
@@ -32,33 +25,29 @@ import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 public class AutoUseItemHandler {
+
     public static final AutoUseItemHandler INSTANCE = new AutoUseItemHandler();
 
-    private static final Minecraft mc = Minecraft.getMinecraft();
+    private static final Minecraft MC = Minecraft.getInstance();
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
+    private static final List<String> categories = new CopyOnWriteArrayList<>();
+    private static final String CATEGORY_DEFAULT = "默认";
 
     public static boolean globalEnabled = false;
     public static final List<AutoUseItemRule> rules = new CopyOnWriteArrayList<>();
-    private static final List<String> categories = new CopyOnWriteArrayList<>();
-    private static final String CATEGORY_DEFAULT = "默认";
+
     private long nextCheckAtMs = 0L;
-    private boolean hotbarUseActionPending = false;
-    private int hotbarUseActionToken = 0;
-    private boolean hotbarUseRestorePending = false;
-    private int hotbarUseRestoreToken = 0;
 
     private AutoUseItemHandler() {
     }
 
-    private static Path getConfigFile() {
-        return ProfileManager.getCurrentProfileDir().resolve("auto_use_item_rules.json");
-    }
-
     public static synchronized void loadConfig() {
-        Path configFile = getConfigFile();
+        globalEnabled = false;
+        rules.clear();
         categories.clear();
+
+        Path configFile = getConfigFile();
         if (!Files.exists(configFile)) {
-            rules.clear();
             ensureCategoriesSynced();
             return;
         }
@@ -68,16 +57,10 @@ public class AutoUseItemHandler {
             if (root.has("globalEnabled")) {
                 globalEnabled = root.get("globalEnabled").getAsBoolean();
             }
-
             if (root.has("categories") && root.get("categories").isJsonArray()) {
-                for (com.google.gson.JsonElement element : root.getAsJsonArray("categories")) {
-                    if (element != null && element.isJsonPrimitive()) {
-                        categories.add(element.getAsString());
-                    }
-                }
+                root.getAsJsonArray("categories")
+                        .forEach(element -> categories.add(normalizeCategory(element.getAsString())));
             }
-
-            rules.clear();
             if (root.has("rules")) {
                 Type listType = new TypeToken<ArrayList<AutoUseItemRule>>() {
                 }.getType();
@@ -87,20 +70,7 @@ public class AutoUseItemHandler {
                         if (rule == null) {
                             continue;
                         }
-                        if (rule.intervalMs <= 0) {
-                            rule.intervalMs = 250;
-                        }
-                        if (rule.matchMode == null) {
-                            rule.matchMode = AutoUseItemRule.MatchMode.CONTAINS;
-                        }
-                        if (rule.useMode == null) {
-                            rule.useMode = AutoUseItemRule.UseMode.RIGHT_CLICK;
-                        }
-                        rule.switchItemDelayTicks = Math.max(0, rule.switchItemDelayTicks);
-                        rule.switchDelayTicks = Math.max(0, rule.switchDelayTicks);
-                        rule.restoreDelayTicks = Math.max(0, rule.restoreDelayTicks);
-                        rule.category = normalizeCategory(rule.category);
-                        rule.lastUseAtMs = 0L;
+                        normalizeRule(rule);
                         rules.add(rule);
                     }
                 }
@@ -115,20 +85,239 @@ public class AutoUseItemHandler {
     }
 
     public static synchronized void saveConfig() {
+        ensureCategoriesSynced();
+        Path configFile = getConfigFile();
         try {
-            ensureCategoriesSynced();
-            Path configFile = getConfigFile();
             Files.createDirectories(configFile.getParent());
             try (BufferedWriter writer = Files.newBufferedWriter(configFile, StandardCharsets.UTF_8)) {
                 JsonObject root = new JsonObject();
                 root.addProperty("globalEnabled", globalEnabled);
                 root.add("categories", GSON.toJsonTree(new ArrayList<>(categories)));
-                root.add("rules", GSON.toJsonTree(rules));
+                root.add("rules", GSON.toJsonTree(new ArrayList<>(rules)));
                 GSON.toJson(root, writer);
             }
         } catch (Exception e) {
             zszlScriptMod.LOGGER.error("无法保存静默使用物品配置", e);
         }
+    }
+
+    public static synchronized List<String> getCategoriesSnapshot() {
+        ensureCategoriesSynced();
+        return new ArrayList<>(categories);
+    }
+
+    public static synchronized boolean addCategory(String category) {
+        String normalized = normalizeCategory(category);
+        ensureCategoriesSynced();
+        if (categories.contains(normalized)) {
+            return false;
+        }
+        categories.add(normalized);
+        saveConfig();
+        return true;
+    }
+
+    public static synchronized boolean renameCategory(String oldCategory, String newCategory) {
+        String normalizedOld = normalizeCategory(oldCategory);
+        String normalizedNew = normalizeCategory(newCategory);
+        boolean changed = false;
+        for (int i = 0; i < categories.size(); i++) {
+            if (normalizeCategory(categories.get(i)).equalsIgnoreCase(normalizedOld)) {
+                categories.set(i, normalizedNew);
+                changed = true;
+            }
+        }
+        for (AutoUseItemRule rule : rules) {
+            if (rule != null && normalizeCategory(rule.category).equalsIgnoreCase(normalizedOld)) {
+                rule.category = normalizedNew;
+                changed = true;
+            }
+        }
+        if (changed) {
+            saveConfig();
+        }
+        return changed;
+    }
+
+    public static synchronized boolean deleteCategory(String category) {
+        String normalized = normalizeCategory(category);
+        boolean changed = categories.removeIf(existing -> normalizeCategory(existing).equalsIgnoreCase(normalized));
+        for (AutoUseItemRule rule : rules) {
+            if (rule != null && normalizeCategory(rule.category).equalsIgnoreCase(normalized)) {
+                rule.category = CATEGORY_DEFAULT;
+                changed = true;
+            }
+        }
+        if (changed) {
+            saveConfig();
+        }
+        return changed;
+    }
+
+    public static synchronized void replaceCategoryOrder(List<String> orderedCategories) {
+        LinkedHashSet<String> normalized = new LinkedHashSet<>();
+        if (orderedCategories != null) {
+            for (String category : orderedCategories) {
+                normalized.add(normalizeCategory(category));
+            }
+        }
+        for (AutoUseItemRule rule : rules) {
+            if (rule != null) {
+                normalized.add(normalizeCategory(rule.category));
+            }
+        }
+        if (normalized.isEmpty()) {
+            normalized.add(CATEGORY_DEFAULT);
+        }
+        categories.clear();
+        categories.addAll(normalized);
+        saveConfig();
+    }
+
+    public void tick() {
+        if (!globalEnabled || MC.player == null || MC.level == null) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        if (now < nextCheckAtMs) {
+            return;
+        }
+        nextCheckAtMs = now + 50L;
+
+        for (AutoUseItemRule rule : rules) {
+            if (rule == null || !rule.enabled || rule.name == null || rule.name.trim().isEmpty()) {
+                continue;
+            }
+            int interval = Math.max(10, rule.intervalMs);
+            if (now - rule.lastUseAtMs < interval) {
+                continue;
+            }
+            boolean used = useMatchingHotbarItem(MC.player, rule.name, rule.matchMode, rule.useMode,
+                    rule.changeLocalSlot, rule.switchItemDelayTicks, rule.switchDelayTicks, rule.restoreDelayTicks);
+            if (used) {
+                rule.lastUseAtMs = now;
+            }
+        }
+    }
+
+    public boolean useMatchingHotbarItem(LocalPlayer player, String itemName, AutoUseItemRule.MatchMode matchMode,
+            AutoUseItemRule.UseMode useMode) {
+        return useMatchingHotbarItem(player, itemName, matchMode, useMode, false, 0, 0, 0);
+    }
+
+    public boolean useMatchingHotbarItem(LocalPlayer player, String itemName, AutoUseItemRule.MatchMode matchMode,
+            AutoUseItemRule.UseMode useMode, boolean changeLocalSlot, int switchItemDelayTicks, int switchDelayTicks,
+            int switchBackDelayTicks) {
+        if (player == null || itemName == null || itemName.trim().isEmpty()) {
+            return false;
+        }
+
+        int matchedHotbarSlot = findMatchedHotbarSlotByName(itemName, matchMode);
+        if (matchedHotbarSlot < 0) {
+            return false;
+        }
+
+        int originalHotbarSlot = player.getInventory().selected;
+        Runnable useAction = () -> {
+            if (useMode == AutoUseItemRule.UseMode.LEFT_CLICK) {
+                try {
+                    java.lang.reflect.Method method = Minecraft.class.getDeclaredMethod("startAttack");
+                    method.setAccessible(true);
+                    method.invoke(MC);
+                } catch (Exception ignored) {
+                }
+            } else {
+                ModUtils.useHeldItem(player, 0);
+            }
+        };
+
+        Runnable switchBack = () -> {
+            if (changeLocalSlot && originalHotbarSlot != matchedHotbarSlot) {
+                ModUtils.switchToHotbarSlot(originalHotbarSlot + 1);
+            }
+        };
+
+        Runnable beginUse = () -> {
+            if (changeLocalSlot && originalHotbarSlot != matchedHotbarSlot) {
+                ModUtils.switchToHotbarSlot(matchedHotbarSlot + 1);
+            }
+            schedule(() -> {
+                useAction.run();
+                schedule(switchBack, switchBackDelayTicks);
+            }, switchDelayTicks);
+        };
+
+        schedule(beginUse, switchItemDelayTicks);
+        return true;
+    }
+
+    public void resetSchedule() {
+        nextCheckAtMs = 0L;
+        long now = System.currentTimeMillis();
+        for (AutoUseItemRule rule : rules) {
+            if (rule != null) {
+                rule.lastUseAtMs = Math.min(rule.lastUseAtMs, now);
+            }
+        }
+    }
+
+    public int findMatchedHotbarSlotByName(String itemName, AutoUseItemRule.MatchMode matchMode) {
+        if (MC.player == null) {
+            return -1;
+        }
+        String target = normalizeName(itemName);
+        if (target.isEmpty()) {
+            return -1;
+        }
+
+        AutoUseItemRule.MatchMode safeMode = matchMode == null ? AutoUseItemRule.MatchMode.CONTAINS : matchMode;
+        for (int slot = 0; slot < 9 && slot < MC.player.getInventory().items.size(); slot++) {
+            ItemStack stack = MC.player.getInventory().items.get(slot);
+            if (stack == null || stack.isEmpty()) {
+                continue;
+            }
+            String currentName = normalizeName(stack.getHoverName().getString());
+            boolean matched = safeMode == AutoUseItemRule.MatchMode.EXACT
+                    ? currentName.equals(target)
+                    : currentName.contains(target);
+            if (matched) {
+                return slot;
+            }
+        }
+        return -1;
+    }
+
+    private static void schedule(Runnable runnable, int delayTicks) {
+        ModUtils.DelayScheduler.init();
+        if (delayTicks <= 0 || ModUtils.DelayScheduler.instance == null) {
+            Minecraft.getInstance().execute(runnable);
+            return;
+        }
+        ModUtils.DelayScheduler.instance.schedule(() -> Minecraft.getInstance().execute(runnable),
+                Math.max(0, delayTicks));
+    }
+
+    private static Path getConfigFile() {
+        return ProfileManager.getCurrentProfileDir().resolve("auto_use_item_rules.json");
+    }
+
+    private static void normalizeRule(AutoUseItemRule rule) {
+        if (rule == null) {
+            return;
+        }
+        rule.category = normalizeCategory(rule.category);
+        if (rule.intervalMs <= 0) {
+            rule.intervalMs = 250;
+        }
+        if (rule.matchMode == null) {
+            rule.matchMode = AutoUseItemRule.MatchMode.CONTAINS;
+        }
+        if (rule.useMode == null) {
+            rule.useMode = AutoUseItemRule.UseMode.RIGHT_CLICK;
+        }
+        rule.switchItemDelayTicks = Math.max(0, rule.switchItemDelayTicks);
+        rule.switchDelayTicks = Math.max(0, rule.switchDelayTicks);
+        rule.restoreDelayTicks = Math.max(0, rule.restoreDelayTicks);
     }
 
     private static String normalizeCategory(String category) {
@@ -142,11 +331,10 @@ public class AutoUseItemHandler {
             normalized.add(normalizeCategory(category));
         }
         for (AutoUseItemRule rule : rules) {
-            if (rule == null) {
-                continue;
+            if (rule != null) {
+                normalizeRule(rule);
+                normalized.add(rule.category);
             }
-            rule.category = normalizeCategory(rule.category);
-            normalized.add(rule.category);
         }
         if (normalized.isEmpty()) {
             normalized.add(CATEGORY_DEFAULT);
@@ -155,571 +343,7 @@ public class AutoUseItemHandler {
         categories.addAll(normalized);
     }
 
-    private static boolean containsCategoryIgnoreCase(String category) {
-        for (String existing : categories) {
-            if (normalizeCategory(existing).equalsIgnoreCase(normalizeCategory(category))) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private static boolean removeCategoryIgnoreCase(String category) {
-        for (int i = 0; i < categories.size(); i++) {
-            if (normalizeCategory(categories.get(i)).equalsIgnoreCase(normalizeCategory(category))) {
-                categories.remove(i);
-                return true;
-            }
-        }
-        return false;
-    }
-
-    public static synchronized List<String> getCategoriesSnapshot() {
-        ensureCategoriesSynced();
-        return new ArrayList<>(categories);
-    }
-
-    public static synchronized void replaceCategoryOrder(List<String> orderedCategories) {
-        ensureCategoriesSynced();
-        LinkedHashSet<String> normalized = new LinkedHashSet<>();
-        if (orderedCategories != null) {
-            for (String category : orderedCategories) {
-                normalized.add(normalizeCategory(category));
-            }
-        }
-        for (String category : categories) {
-            normalized.add(normalizeCategory(category));
-        }
-        categories.clear();
-        categories.addAll(normalized);
-        saveConfig();
-    }
-
-    public static synchronized boolean addCategory(String category) {
-        String normalized = normalizeCategory(category);
-        ensureCategoriesSynced();
-        if (containsCategoryIgnoreCase(normalized)) {
-            return false;
-        }
-        categories.add(normalized);
-        saveConfig();
-        return true;
-    }
-
-    public static synchronized boolean renameCategory(String oldCategory, String newCategory) {
-        String normalizedOld = normalizeCategory(oldCategory);
-        String normalizedNew = normalizeCategory(newCategory);
-        ensureCategoriesSynced();
-
-        if (normalizedOld.equalsIgnoreCase(normalizedNew)) {
-            return true;
-        }
-        if (containsCategoryIgnoreCase(normalizedNew)) {
-            return false;
-        }
-
-        boolean changed = false;
-        for (int i = 0; i < categories.size(); i++) {
-            if (normalizeCategory(categories.get(i)).equalsIgnoreCase(normalizedOld)) {
-                categories.set(i, normalizedNew);
-                changed = true;
-                break;
-            }
-        }
-
-        for (AutoUseItemRule rule : rules) {
-            if (rule != null && normalizeCategory(rule.category).equalsIgnoreCase(normalizedOld)) {
-                rule.category = normalizedNew;
-                changed = true;
-            }
-        }
-
-        if (!changed) {
-            return false;
-        }
-
-        ensureCategoriesSynced();
-        saveConfig();
-        return true;
-    }
-
-    public static synchronized boolean deleteCategory(String category) {
-        String normalized = normalizeCategory(category);
-        ensureCategoriesSynced();
-
-        boolean changed = removeCategoryIgnoreCase(normalized);
-        for (AutoUseItemRule rule : rules) {
-            if (rule != null && normalizeCategory(rule.category).equalsIgnoreCase(normalized)) {
-                rule.category = CATEGORY_DEFAULT;
-                changed = true;
-            }
-        }
-
-        if (!changed) {
-            return false;
-        }
-
-        ensureCategoriesSynced();
-        saveConfig();
-        return true;
-    }
-
-    public void tick() {
-        if (!globalEnabled || mc.player == null || mc.world == null || mc.player.connection == null) {
-            return;
-        }
-
-        long now = System.currentTimeMillis();
-        if (isHotbarUseBusy()) {
-            nextCheckAtMs = now + 50L;
-            return;
-        }
-        if (now < nextCheckAtMs) {
-            return;
-        }
-
-        int minWaitMs = Integer.MAX_VALUE;
-        for (AutoUseItemRule rule : rules) {
-            if (rule == null || !rule.enabled || rule.name == null || rule.name.trim().isEmpty()) {
-                continue;
-            }
-
-            int interval = Math.max(10, rule.intervalMs);
-            long elapsed = now - rule.lastUseAtMs;
-            if (elapsed < interval) {
-                int remain = (int) (interval - elapsed);
-                if (remain < minWaitMs) {
-                    minWaitMs = remain;
-                }
-                continue;
-            }
-
-            int slot = findMatchedHotbarSlot(rule);
-            if (slot < 0) {
-                if (interval < minWaitMs) {
-                    minWaitMs = interval;
-                }
-                continue;
-            }
-
-            if (useHotbarItemSilently(mc.player, slot, rule.useMode, rule.changeLocalSlot,
-                    rule.switchItemDelayTicks, rule.switchDelayTicks, rule.restoreDelayTicks)) {
-                rule.lastUseAtMs = now;
-                if (interval < minWaitMs) {
-                    minWaitMs = interval;
-                }
-            }
-        }
-
-        if (minWaitMs == Integer.MAX_VALUE) {
-            nextCheckAtMs = now + 100L;
-        } else {
-            nextCheckAtMs = now + Math.max(10, minWaitMs);
-        }
-    }
-
-    public void resetSchedule() {
-        nextCheckAtMs = 0L;
-        long now = System.currentTimeMillis();
-        for (AutoUseItemRule rule : rules) {
-            if (rule != null) {
-                rule.lastUseAtMs = Math.min(rule.lastUseAtMs, now);
-            }
-        }
-        clearPendingHotbarUseAction();
-        clearPendingHotbarUseRestore();
-    }
-
-    public int findMatchedHotbarSlotByName(String itemName, AutoUseItemRule.MatchMode matchMode) {
-        if (mc.player == null) {
-            return -1;
-        }
-
-        String target = normalizeName(itemName);
-        if (target.isEmpty()) {
-            return -1;
-        }
-
-        AutoUseItemRule.MatchMode safeMatchMode = matchMode == null
-                ? AutoUseItemRule.MatchMode.CONTAINS
-                : matchMode;
-
-        for (int slot = 0; slot < 9; slot++) {
-            ItemStack stack = mc.player.inventory.getStackInSlot(slot);
-            if (stack == null || stack.isEmpty()) {
-                continue;
-            }
-
-            String currentName = normalizeName(stack.getDisplayName());
-            boolean matched = safeMatchMode == AutoUseItemRule.MatchMode.EXACT
-                    ? currentName.equals(target)
-                    : currentName.contains(target);
-
-            if (matched) {
-                return slot;
-            }
-        }
-        return -1;
-    }
-
-    public boolean useMatchingHotbarItem(EntityPlayerSP player, String itemName,
-            AutoUseItemRule.MatchMode matchMode, AutoUseItemRule.UseMode useMode) {
-        return useMatchingHotbarItem(player, itemName, matchMode, useMode, false, 0, 0, 0);
-    }
-
-    public boolean useMatchingHotbarItem(EntityPlayerSP player, String itemName,
-            AutoUseItemRule.MatchMode matchMode, AutoUseItemRule.UseMode useMode,
-            int switchDelayTicks, int restoreDelayTicks) {
-        return useMatchingHotbarItem(player, itemName, matchMode, useMode, false, 0, switchDelayTicks,
-                restoreDelayTicks);
-    }
-
-    public boolean useMatchingHotbarItem(EntityPlayerSP player, String itemName,
-            AutoUseItemRule.MatchMode matchMode, AutoUseItemRule.UseMode useMode,
-            boolean changeLocalSlot, int switchItemDelayTicks, int switchDelayTicks, int restoreDelayTicks) {
-        if (player == null || player.connection == null) {
-            return false;
-        }
-
-        int slot = findMatchedHotbarSlotByName(itemName, matchMode);
-        if (slot < 0) {
-            return false;
-        }
-
-        AutoUseItemRule.UseMode safeUseMode = useMode == null
-                ? AutoUseItemRule.UseMode.RIGHT_CLICK
-                : useMode;
-        return useHotbarItemSilently(player, slot, safeUseMode,
-                changeLocalSlot, switchItemDelayTicks, switchDelayTicks, restoreDelayTicks);
-    }
-
-    public boolean useMatchingHotbarItem(EntityPlayerSP player, String itemName,
-            AutoUseItemRule.MatchMode matchMode, AutoUseItemRule.UseMode useMode,
-            int switchItemDelayTicks, int switchDelayTicks, int restoreDelayTicks) {
-        return useMatchingHotbarItem(player, itemName, matchMode, useMode, false,
-                switchItemDelayTicks, switchDelayTicks, restoreDelayTicks);
-    }
-
-    private int findMatchedHotbarSlot(AutoUseItemRule rule) {
-        String target = normalizeName(rule.name);
-        if (target.isEmpty()) {
-            return -1;
-        }
-
-        for (int slot = 0; slot < 9; slot++) {
-            ItemStack stack = mc.player.inventory.getStackInSlot(slot);
-            if (stack == null || stack.isEmpty()) {
-                continue;
-            }
-
-            String itemName = normalizeName(stack.getDisplayName());
-            boolean matched = rule.matchMode == AutoUseItemRule.MatchMode.EXACT
-                    ? itemName.equals(target)
-                    : itemName.contains(target);
-
-            if (matched) {
-                return slot;
-            }
-        }
-        return -1;
-    }
-
-    private boolean useHotbarItemSilently(EntityPlayerSP player, int targetSlot, AutoUseItemRule.UseMode useMode,
-            boolean changeLocalSlot, int switchItemDelayTicks, int switchDelayTicks, int restoreDelayTicks) {
-        if (player == null || player.connection == null || targetSlot < 0 || targetSlot >= 9) {
-            return false;
-        }
-        if (isHotbarUseBusy()) {
-            return false;
-        }
-
-        ItemStack targetStack = player.inventory.getStackInSlot(targetSlot);
-        if (targetStack == null || targetStack.isEmpty()) {
-            return false;
-        }
-
-        int originalSlot = player.inventory.currentItem;
-        try {
-            AutoUseItemRule.UseMode safeUseMode = useMode == null
-                    ? AutoUseItemRule.UseMode.RIGHT_CLICK
-                    : useMode;
-            int safeSwitchItemDelayTicks = Math.max(0, switchItemDelayTicks);
-            int safeSwitchDelayTicks = Math.max(0, switchDelayTicks);
-            int safeRestoreDelayTicks = Math.max(0, restoreDelayTicks);
-
-            if (originalSlot != targetSlot && safeSwitchItemDelayTicks > 0) {
-                beginHotbarSlotSwitch(player, originalSlot, targetSlot, safeUseMode, changeLocalSlot,
-                        safeSwitchDelayTicks, safeRestoreDelayTicks, safeSwitchItemDelayTicks);
-                return true;
-            }
-
-            if (originalSlot != targetSlot) {
-                if (changeLocalSlot) {
-                    player.inventory.currentItem = targetSlot;
-                }
-                player.connection.sendPacket(new CPacketHeldItemChange(targetSlot));
-            }
-
-            if (safeSwitchDelayTicks > 0) {
-                beginHotbarUseAction(player, originalSlot, targetSlot, safeUseMode, changeLocalSlot,
-                        safeSwitchDelayTicks, safeRestoreDelayTicks);
-                return true;
-            }
-
-            return executeHotbarUseAction(player, originalSlot, targetSlot, safeUseMode, changeLocalSlot,
-                    safeRestoreDelayTicks);
-        } catch (Exception e) {
-            if (changeLocalSlot) {
-                player.inventory.currentItem = originalSlot;
-            }
-            zszlScriptMod.LOGGER.debug("静默使用物品发包失败: {}", e.getMessage());
-            clearPendingHotbarUseAction();
-            return false;
-        }
-    }
-
-    private void beginHotbarSlotSwitch(EntityPlayerSP player, int originalSlot, int targetSlot,
-            AutoUseItemRule.UseMode useMode, boolean changeLocalSlot,
-            int switchDelayTicks, int restoreDelayTicks, int switchItemDelayTicks) {
-        this.hotbarUseActionPending = true;
-        final int token = ++this.hotbarUseActionToken;
-
-        if (ModUtils.DelayScheduler.instance == null) {
-            executeDelayedHotbarSlotSwitch(player, originalSlot, targetSlot, useMode, changeLocalSlot,
-                    switchDelayTicks, restoreDelayTicks, token);
-            return;
-        }
-
-        ModUtils.DelayScheduler.instance.schedule(
-                () -> executeDelayedHotbarSlotSwitch(player, originalSlot, targetSlot, useMode, changeLocalSlot,
-                        switchDelayTicks, restoreDelayTicks, token),
-                switchItemDelayTicks);
-    }
-
-    private void executeDelayedHotbarSlotSwitch(EntityPlayerSP player, int originalSlot, int targetSlot,
-            AutoUseItemRule.UseMode useMode, boolean changeLocalSlot,
-            int switchDelayTicks, int restoreDelayTicks, int token) {
-        if (!isHotbarUseActionTokenActive(token)) {
-            return;
-        }
-        clearPendingHotbarUseAction();
-
-        if (player == null || mc.player != player || player.connection == null) {
-            clearPendingHotbarUseRestore();
-            return;
-        }
-
-        if (originalSlot != targetSlot) {
-            if (changeLocalSlot) {
-                player.inventory.currentItem = targetSlot;
-            }
-            player.connection.sendPacket(new CPacketHeldItemChange(targetSlot));
-        }
-
-        if (switchDelayTicks > 0) {
-            beginHotbarUseAction(player, originalSlot, targetSlot, useMode, changeLocalSlot,
-                    switchDelayTicks, restoreDelayTicks);
-            return;
-        }
-
-        if (!executeHotbarUseAction(player, originalSlot, targetSlot, useMode, changeLocalSlot, restoreDelayTicks)) {
-            if (changeLocalSlot) {
-                player.inventory.currentItem = originalSlot;
-            }
-            if (originalSlot != targetSlot && player.connection != null) {
-                player.connection.sendPacket(new CPacketHeldItemChange(originalSlot));
-            }
-        }
-    }
-
-    private void beginHotbarUseAction(EntityPlayerSP player, int originalSlot, int targetSlot,
-            AutoUseItemRule.UseMode useMode, boolean changeLocalSlot, int switchDelayTicks, int restoreDelayTicks) {
-        this.hotbarUseActionPending = true;
-        final int token = ++this.hotbarUseActionToken;
-
-        if (ModUtils.DelayScheduler.instance == null) {
-            executeDelayedHotbarUseAction(player, originalSlot, targetSlot, useMode, changeLocalSlot,
-                    restoreDelayTicks, token);
-            return;
-        }
-
-        ModUtils.DelayScheduler.instance.schedule(
-                () -> executeDelayedHotbarUseAction(player, originalSlot, targetSlot, useMode, changeLocalSlot,
-                        restoreDelayTicks, token),
-                switchDelayTicks);
-    }
-
-    private void executeDelayedHotbarUseAction(EntityPlayerSP player, int originalSlot, int targetSlot,
-            AutoUseItemRule.UseMode useMode, boolean changeLocalSlot, int restoreDelayTicks, int token) {
-        if (!isHotbarUseActionTokenActive(token)) {
-            return;
-        }
-        clearPendingHotbarUseAction();
-
-        if (player == null || mc.player != player || player.connection == null) {
-            clearPendingHotbarUseRestore();
-            return;
-        }
-
-        if (originalSlot != targetSlot) {
-            if (changeLocalSlot) {
-                player.inventory.currentItem = targetSlot;
-            }
-            player.connection.sendPacket(new CPacketHeldItemChange(targetSlot));
-        }
-
-        if (!executeHotbarUseAction(player, originalSlot, targetSlot, useMode, changeLocalSlot, restoreDelayTicks)) {
-            if (changeLocalSlot) {
-                player.inventory.currentItem = originalSlot;
-            }
-            if (originalSlot != targetSlot && player.connection != null) {
-                player.connection.sendPacket(new CPacketHeldItemChange(originalSlot));
-            }
-        }
-    }
-
-    private boolean executeHotbarUseAction(EntityPlayerSP player, int originalSlot, int targetSlot,
-            AutoUseItemRule.UseMode useMode, boolean changeLocalSlot, int restoreDelayTicks) {
-        ItemStack targetStack = player.inventory.getStackInSlot(targetSlot);
-        if (targetStack == null || targetStack.isEmpty()) {
-            return false;
-        }
-
-        AutoUseItemRule.UseMode safeUseMode = useMode == null
-                ? AutoUseItemRule.UseMode.RIGHT_CLICK
-                : useMode;
-
-        if (safeUseMode == AutoUseItemRule.UseMode.LEFT_CLICK) {
-            if (changeLocalSlot) {
-                player.swingArm(EnumHand.MAIN_HAND);
-            }
-            player.connection.sendPacket(new CPacketAnimation(EnumHand.MAIN_HAND));
-            restoreHotbarSlotNow(player, originalSlot, targetSlot, changeLocalSlot, 0);
-            return true;
-        }
-
-        boolean triggered = false;
-        if ((changeLocalSlot || originalSlot == targetSlot) && mc.playerController != null && player.world != null) {
-            EnumActionResult result = mc.playerController.processRightClick(player, player.world, EnumHand.MAIN_HAND);
-            triggered = result != EnumActionResult.FAIL;
-        }
-
-        if (!triggered) {
-            player.connection.sendPacket(new CPacketPlayerTryUseItem(EnumHand.MAIN_HAND));
-            triggered = true;
-        }
-
-        if (!triggered) {
-            return false;
-        }
-
-        beginHotbarUseRestore(player, originalSlot, targetSlot, changeLocalSlot,
-                getHotbarUseRestoreTimeoutTicks(targetStack, safeUseMode, restoreDelayTicks));
-        return true;
-    }
-
-    private int getHotbarUseRestoreTimeoutTicks(ItemStack stack, AutoUseItemRule.UseMode useMode,
-            int restoreDelayTicks) {
-        int autoTimeoutTicks = getAutoHotbarUseRestoreTimeoutTicks(stack, useMode);
-        return Math.max(autoTimeoutTicks, Math.max(0, restoreDelayTicks));
-    }
-
-    private int getAutoHotbarUseRestoreTimeoutTicks(ItemStack stack, AutoUseItemRule.UseMode useMode) {
-        if (useMode != AutoUseItemRule.UseMode.RIGHT_CLICK || stack == null || stack.isEmpty()) {
-            return 0;
-        }
-
-        EnumAction action = stack.getItemUseAction();
-        if (action == EnumAction.EAT || action == EnumAction.DRINK) {
-            return Math.min(40, Math.max(2, stack.getMaxItemUseDuration() + 2));
-        }
-        if (action == EnumAction.BOW || action == EnumAction.BLOCK) {
-            return 8;
-        }
-        return 1;
-    }
-
-    private void beginHotbarUseRestore(EntityPlayerSP player, int originalSlot, int targetSlot,
-            boolean changeLocalSlot, int restoreTimeoutTicks) {
-        this.hotbarUseRestorePending = true;
-        final int token = ++this.hotbarUseRestoreToken;
-
-        if (ModUtils.DelayScheduler.instance == null) {
-            restoreHotbarSlotNow(player, originalSlot, targetSlot, changeLocalSlot, token);
-            return;
-        }
-
-        scheduleHotbarRestorePoll(player, originalSlot, targetSlot, changeLocalSlot,
-                Math.max(0, restoreTimeoutTicks), token);
-    }
-
-    private void scheduleHotbarRestorePoll(EntityPlayerSP player, int originalSlot, int targetSlot,
-            boolean changeLocalSlot, int remainingTicks, int token) {
-        ModUtils.DelayScheduler.instance.schedule(
-                () -> pollHotbarRestore(player, originalSlot, targetSlot, changeLocalSlot, remainingTicks, token), 1);
-    }
-
-    private void pollHotbarRestore(EntityPlayerSP player, int originalSlot, int targetSlot,
-            boolean changeLocalSlot, int remainingTicks, int token) {
-        if (!isHotbarRestoreTokenActive(token)) {
-            return;
-        }
-        if (player == null || mc.player != player || player.connection == null) {
-            clearPendingHotbarUseRestore();
-            return;
-        }
-
-        boolean stillUsing = player.isHandActive() && player.inventory.currentItem == targetSlot;
-        if (stillUsing || remainingTicks > 0) {
-            scheduleHotbarRestorePoll(player, originalSlot, targetSlot, changeLocalSlot,
-                    Math.max(0, remainingTicks - 1), token);
-            return;
-        }
-
-        restoreHotbarSlotNow(player, originalSlot, targetSlot, changeLocalSlot, token);
-    }
-
-    private void restoreHotbarSlotNow(EntityPlayerSP player, int originalSlot, int targetSlot,
-            boolean changeLocalSlot, int token) {
-        if (token != 0 && !isHotbarRestoreTokenActive(token)) {
-            return;
-        }
-        if (player != null && originalSlot != targetSlot && player.connection != null) {
-            if (changeLocalSlot) {
-                player.inventory.currentItem = originalSlot;
-            }
-            player.connection.sendPacket(new CPacketHeldItemChange(originalSlot));
-        }
-        clearPendingHotbarUseRestore();
-    }
-
-    private boolean isHotbarRestoreTokenActive(int token) {
-        return this.hotbarUseRestorePending && token == this.hotbarUseRestoreToken;
-    }
-
-    private boolean isHotbarUseActionTokenActive(int token) {
-        return this.hotbarUseActionPending && token == this.hotbarUseActionToken;
-    }
-
-    private boolean isHotbarUseBusy() {
-        return this.hotbarUseActionPending || this.hotbarUseRestorePending;
-    }
-
-    private void clearPendingHotbarUseAction() {
-        this.hotbarUseActionPending = false;
-    }
-
-    private void clearPendingHotbarUseRestore() {
-        this.hotbarUseRestorePending = false;
-    }
-
-    private String normalizeName(String text) {
-        if (text == null) {
-            return "";
-        }
-        return text.replaceAll("(?i)§[0-9A-FK-OR]", "")
-                .replace('\u00A0', ' ')
-                .trim()
-                .toLowerCase();
+    private static String normalizeName(String value) {
+        return value == null ? "" : value.trim().toLowerCase();
     }
 }

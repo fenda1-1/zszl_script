@@ -25,15 +25,9 @@ import com.zszl.zszlScriptMod.shadowbaritone.api.utils.Helper;
 import com.zszl.zszlScriptMod.shadowbaritone.pathing.movement.CalculationContext;
 import com.zszl.zszlScriptMod.shadowbaritone.pathing.movement.Movement;
 import com.zszl.zszlScriptMod.shadowbaritone.pathing.movement.Moves;
-import com.zszl.zszlScriptMod.shadowbaritone.pathing.movement.movements.MovementRouteTraverse;
 import com.zszl.zszlScriptMod.shadowbaritone.pathing.path.CutoffPath;
-import com.zszl.zszlScriptMod.shadowbaritone.pathing.movement.movements.MovementNarrowGapTraverse;
-import com.zszl.zszlScriptMod.shadowbaritone.pathing.portal.EdgePortal;
-import com.zszl.zszlScriptMod.shadowbaritone.pathing.portal.EdgePortalDetector;
-import com.zszl.zszlScriptMod.shadowbaritone.pathing.portal.PortalNodeRef;
 import com.zszl.zszlScriptMod.shadowbaritone.utils.pathing.PathBase;
-import net.minecraft.block.state.IBlockState;
-import net.minecraft.util.math.Vec3d;
+import com.google.common.collect.Lists;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -62,7 +56,6 @@ class Path extends PathBase {
      * path.get(path.size()-1) equals end
      */
     private final List<BetterBlockPos> path;
-    private final List<BetterBlockPos> rawPath;
 
     private final List<Movement> movements;
 
@@ -76,31 +69,40 @@ class Path extends PathBase {
 
     private volatile boolean verified;
 
-    Path(PathNode start, PathNode end, int numNodes, Goal goal, CalculationContext context) {
-        this.start = new BetterBlockPos(start.x, start.y, start.z);
+    Path(BetterBlockPos realStart, PathNode start, PathNode end, int numNodes, Goal goal, CalculationContext context) {
         this.end = new BetterBlockPos(end.x, end.y, end.z);
         this.numNodes = numNodes;
         this.movements = new ArrayList<>();
-        this.path = new ArrayList<>();
         this.goal = goal;
         this.context = context;
+
         PathNode current = end;
-        LinkedList<BetterBlockPos> tempPath = new LinkedList<>();
-        LinkedList<PathNode> tempNodes = new LinkedList<>();
-        // Repeatedly inserting to the beginning of an arraylist is O(n^2)
-        // Instead, do it into a linked list, then convert at the end
+        List<BetterBlockPos> tempPath = new ArrayList<>();
+        List<PathNode> tempNodes = new ArrayList<>();
         while (current != null) {
-            tempNodes.addFirst(current);
-            tempPath.addFirst(new BetterBlockPos(current.x, current.y, current.z));
+            tempNodes.add(current);
+            tempPath.add(new BetterBlockPos(current.x, current.y, current.z));
             current = current.previous;
         }
-        // Can't directly convert from the PathNode pseudo linked list to an array
-        // because we don't know how long it is
-        // inserting into a LinkedList<E> keeps track of length, then when we addall
-        // (which calls .toArray) it's able
-        // to performantly do that conversion since it knows the length.
-        this.rawPath = new ArrayList<>(tempPath);
-        this.nodes = new ArrayList<>(tempNodes);
+
+        // If the position the player is at is different from the position we told A* to start from,
+        // and A* gave us no movements, then add a fake node that will allow a movement to be created
+        // that gets us to the single position in the path.
+        // See PathingBehavior#createPathfinder and https://github.com/cabaletta/baritone/pull/4519
+        var startNodePos = new BetterBlockPos(start.x, start.y, start.z);
+        if (!realStart.equals(startNodePos) && start.equals(end)) {
+            this.start = realStart;
+            PathNode fakeNode = new PathNode(realStart.x, realStart.y, realStart.z, goal);
+            fakeNode.cost = 0;
+            tempNodes.add(fakeNode);
+            tempPath.add(realStart);
+        } else {
+            this.start = startNodePos;
+        }
+
+        // Nodes are traversed last to first so we need to reverse the list
+        this.path = Lists.reverse(tempPath);
+        this.nodes = Lists.reverse(tempNodes);
     }
 
     @Override
@@ -109,161 +111,41 @@ class Path extends PathBase {
     }
 
     private boolean assembleMovements() {
-        if (rawPath.isEmpty() || !movements.isEmpty()) {
-            throw new IllegalStateException();
+        if (path.isEmpty() || !movements.isEmpty()) {
+            throw new IllegalStateException("Path must not be empty");
         }
-        path.clear();
-        path.add(new BetterBlockPos(nodes.get(0).x, nodes.get(0).y, nodes.get(0).z));
-        for (int i = 0; i < nodes.size() - 1;) {
-            PathNode srcNode = nodes.get(i);
-            PathNode nextNode = nodes.get(i + 1);
-            if (srcNode.isCenter() && nextNode.isPortal()) {
-                int firstCenterAfterPortal = i + 2;
-                while (firstCenterAfterPortal < nodes.size() && nodes.get(firstCenterAfterPortal).isPortal()) {
-                    firstCenterAfterPortal++;
-                }
-                if (firstCenterAfterPortal >= nodes.size() || !nodes.get(firstCenterAfterPortal).isCenter()) {
-                    return true;
-                }
-                PathNode destNode = nodes.get(firstCenterAfterPortal);
-                double portalCost = destNode.cost - srcNode.cost;
-                Movement portalMove;
-                if (firstCenterAfterPortal == i + 2) {
-                    portalMove = buildPortalMovement(srcNode, nextNode, destNode, portalCost);
-                } else {
-                    portalMove = buildPortalChainMovement(srcNode, nodes.subList(i + 1, firstCenterAfterPortal),
-                            destNode, portalCost);
-                }
-                if (portalMove == null) {
-                    return true;
-                }
-                movements.add(portalMove);
-                path.add(new BetterBlockPos(destNode.x, destNode.y, destNode.z));
-                i = firstCenterAfterPortal;
-                continue;
-            }
-            if (srcNode.isPortal()) {
-                return true;
-            }
-            BetterBlockPos srcPos = new BetterBlockPos(srcNode.x, srcNode.y, srcNode.z);
-            BetterBlockPos destPos = new BetterBlockPos(nextNode.x, nextNode.y, nextNode.z);
-            double cost = nextNode.cost - srcNode.cost;
-            Movement move = runBackwards(srcPos, destPos, nextNode.previousMove, cost);
+        for (int i = 0; i < path.size() - 1; i++) {
+            double cost = nodes.get(i + 1).cost - nodes.get(i).cost;
+            Movement move = runBackwards(path.get(i), path.get(i + 1), cost);
             if (move == null) {
                 return true;
             } else {
                 movements.add(move);
-                path.add(destPos);
             }
-            i++;
         }
         return false;
     }
 
-    private Movement buildPortalMovement(PathNode srcNode, PathNode portalNode, PathNode destNode, double cost) {
-        PortalNodeRef portalRef = portalNode.portalRef;
-        if (portalRef == null) {
-            return null;
-        }
-        BetterBlockPos srcPos = new BetterBlockPos(srcNode.x, srcNode.y, srcNode.z);
-        BetterBlockPos destPos = new BetterBlockPos(destNode.x, destNode.y, destNode.z);
-        Movement move = new MovementNarrowGapTraverse(context.getBaritone(), srcPos, destPos,
-                portalRef.getBarrierA(), portalRef.getBarrierB());
-        move.override(Math.min(move.calculateCost(context), cost));
-        return move;
-    }
-
-    private Movement buildPortalChainMovement(PathNode srcNode, List<PathNode> portalNodes, PathNode destNode, double cost) {
-        List<Vec3d> routePoints = new ArrayList<>();
-        Vec3d srcCenter = blockCenter(srcNode.x, srcNode.y, srcNode.z);
-        Vec3d destCenter = blockCenter(destNode.x, destNode.y, destNode.z);
-        appendRoute(routePoints, srcCenter);
-        for (int i = 0; i < portalNodes.size(); i++) {
-            EdgePortal portal = resolvePortal(portalNodes.get(i));
-            if (portal == null) {
-                return null;
-            }
-            if (i == 0) {
-                appendRoute(routePoints, portal.routeFromCenterToGap(srcCenter));
-            } else {
-                appendRoute(routePoints, portal.getGapCenter());
-            }
-        }
-        EdgePortal lastPortal = resolvePortal(portalNodes.get(portalNodes.size() - 1));
-        if (lastPortal == null) {
-            return null;
-        }
-        appendRoute(routePoints, lastPortal.routeFromGapToCenter(destCenter));
-        Movement move = new MovementRouteTraverse(context.getBaritone(),
-                new BetterBlockPos(srcNode.x, srcNode.y, srcNode.z),
-                new BetterBlockPos(destNode.x, destNode.y, destNode.z),
-                true,
-                routePoints.toArray(new Vec3d[0]));
-        move.override(Math.min(move.calculateCost(context), cost));
-        return move;
-    }
-
-    private EdgePortal resolvePortal(PathNode portalNode) {
-        PortalNodeRef portalRef = portalNode.portalRef;
-        if (portalRef == null) {
-            return null;
-        }
-        IBlockState stateA = context.get(portalRef.getBarrierA().x, portalRef.getBarrierA().y, portalRef.getBarrierA().z);
-        IBlockState stateB = context.get(portalRef.getBarrierB().x, portalRef.getBarrierB().y, portalRef.getBarrierB().z);
-        return EdgePortalDetector.detect(context, portalRef.getBarrierA(), stateA,
-                portalRef.getBarrierB(), stateB, portalRef.getTravelFacing(), portalNode.y);
-    }
-
-    private static void appendRoute(List<Vec3d> points, Vec3d... segment) {
-        if (segment == null) {
-            return;
-        }
-        for (Vec3d point : segment) {
-            if (point == null) {
-                continue;
-            }
-            if (points.isEmpty() || points.get(points.size() - 1).squareDistanceTo(point) > 1.0E-4D) {
-                points.add(point);
-            }
-        }
-    }
-
-    private static Vec3d blockCenter(int x, int y, int z) {
-        return new Vec3d(x + 0.5D, y + 0.5D, z + 0.5D);
-    }
-
-    private Movement runBackwards(BetterBlockPos src, BetterBlockPos dest, Moves moveUsed, double cost) {
-        if (moveUsed != null) {
-            Movement move = moveUsed.apply0(context, src);
-            if (move.getDest().equals(dest)) {
-                move.override(Math.min(move.calculateCost(context), cost));
-                return move;
-            }
-        }
+    private Movement runBackwards(BetterBlockPos src, BetterBlockPos dest, double cost) {
         for (Moves moves : Moves.values()) {
             Movement move = moves.apply0(context, src);
             if (move.getDest().equals(dest)) {
-                // have to calculate the cost at calculation time so we can accurately judge
-                // whether a cost increase happened between cached calculation and real
-                // execution
-                // however, taking into account possible favoring that could skew the node cost,
-                // we really want the stricter limit of the two
-                // so we take the minimum of the path node cost difference, and the calculated
-                // cost
+                // have to calculate the cost at calculation time so we can accurately judge whether a cost increase happened between cached calculation and real execution
+                // however, taking into account possible favoring that could skew the node cost, we really want the stricter limit of the two
+                // so we take the minimum of the path node cost difference, and the calculated cost
                 move.override(Math.min(move.calculateCost(context), cost));
                 return move;
             }
         }
         // this is no longer called from bestPathSoFar, now it's in postprocessing
-        Helper.HELPER.logDebug(
-                "Movement became impossible during calculation " + src + " " + dest + " " + dest.subtract(src));
+        Helper.HELPER.logDebug("Movement became impossible during calculation " + src + " " + dest + " " + dest.subtract(src));
         return null;
     }
 
     @Override
     public IPath postProcess() {
         if (verified) {
-            throw new IllegalStateException();
+            throw new IllegalStateException("Path must not be verified twice");
         }
         verified = true;
         boolean failed = assembleMovements();
@@ -272,7 +154,7 @@ class Path extends PathBase {
         if (failed) { // at least one movement became impossible during calculation
             CutoffPath res = new CutoffPath(this, movements().size());
             if (res.movements().size() != movements.size()) {
-                throw new IllegalStateException();
+                throw new IllegalStateException("Path has wrong size after cutoff");
             }
             return res;
         }
@@ -284,14 +166,15 @@ class Path extends PathBase {
     @Override
     public List<IMovement> movements() {
         if (!verified) {
-            throw new IllegalStateException();
+            // edge case note: this is called during verification
+            throw new IllegalStateException("Path not yet verified");
         }
         return Collections.unmodifiableList(movements);
     }
 
     @Override
     public List<BetterBlockPos> positions() {
-        return Collections.unmodifiableList(verified ? path : rawPath);
+        return Collections.unmodifiableList(path);
     }
 
     @Override
@@ -301,17 +184,12 @@ class Path extends PathBase {
 
     @Override
     public BetterBlockPos getSrc() {
-        if (verified && !path.isEmpty()) {
-            return path.get(0);
-        }
         return start;
     }
 
     @Override
     public BetterBlockPos getDest() {
-        if (verified && !path.isEmpty()) {
-            return path.get(path.size() - 1);
-        }
         return end;
     }
 }
+

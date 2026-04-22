@@ -30,18 +30,15 @@ import java.util.regex.Pattern;
  */
 public final class CommandArguments {
 
-    private CommandArguments() {
-    }
+    private CommandArguments() {}
 
     private static final Pattern ARG_PATTERN = Pattern.compile("\\S+");
 
     /**
-     * Turn a string into a list of {@link ICommandArgument}s. This is needed
-     * because of {@link ICommandArgument#getRawRest()}
+     * Turn a string into a list of {@link ICommandArgument}s. This is needed because of {@link ICommandArgument#getRawRest()}
      *
      * @param string            The string to convert
-     * @param preserveEmptyLast If the string ends with whitespace, add an empty
-     *                          {@link ICommandArgument} to the end This
+     * @param preserveEmptyLast If the string ends with whitespace, add an empty {@link ICommandArgument} to the end This
      *                          is useful for tab completion
      * @return A list of {@link ICommandArgument}s
      */
@@ -53,7 +50,8 @@ public final class CommandArguments {
             args.add(new CommandArgument(
                     args.size(),
                     argMatcher.group(),
-                    string.substring(argMatcher.start())));
+                    string.substring(argMatcher.start())
+            ));
             lastEnd = argMatcher.end();
         }
         if (preserveEmptyLast && lastEnd < string.length()) {
@@ -70,8 +68,7 @@ public final class CommandArguments {
     }
 
     /**
-     * Returns an "unknown" {@link CommandArgument}. This shouldn't be used unless
-     * you absolutely have no information -
+     * Returns an "unknown" {@link CommandArgument}. This shouldn't be used unless you absolutely have no information -
      * ESPECIALLY not with {@link CommandInvalidArgumentException}s
      *
      * @return The unknown {@link CommandArgument}
@@ -80,3 +77,4 @@ public final class CommandArguments {
         return new CommandArgument(-1, "<unknown>", "");
     }
 }
+

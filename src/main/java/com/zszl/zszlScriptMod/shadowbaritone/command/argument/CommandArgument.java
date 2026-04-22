@@ -94,3 +94,4 @@ class CommandArgument implements ICommandArgument {
         }
     }
 }
+

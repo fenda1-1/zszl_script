@@ -23,7 +23,7 @@ import com.zszl.zszlScriptMod.shadowbaritone.api.event.events.TickEvent;
 import com.zszl.zszlScriptMod.shadowbaritone.api.utils.IInputOverrideHandler;
 import com.zszl.zszlScriptMod.shadowbaritone.api.utils.input.Input;
 import com.zszl.zszlScriptMod.shadowbaritone.behavior.Behavior;
-import net.minecraft.util.MovementInputFromOptions;
+import net.minecraft.client.player.KeyboardInput;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -94,30 +94,25 @@ public final class InputOverrideHandler extends Behavior implements IInputOverri
         blockPlaceHelper.tick(isInputForcedDown(Input.CLICK_RIGHT));
 
         if (inControl()) {
-            if (ctx.player().movementInput.getClass() != PlayerMovementInput.class) {
-                ctx.player().movementInput = new PlayerMovementInput(this);
+            if (ctx.player().input.getClass() != PlayerMovementInput.class) {
+                ctx.player().input = new PlayerMovementInput(this);
             }
         } else {
-            if (ctx.player().movementInput.getClass() == PlayerMovementInput.class) { // allow other movement inputs
-                                                                                      // that aren't this one, e.g. for
-                                                                                      // a freecam
-                ctx.player().movementInput = new MovementInputFromOptions(ctx.minecraft().gameSettings);
+            if (ctx.player().input.getClass() == PlayerMovementInput.class) { // allow other movement inputs that aren't this one, e.g. for a freecam
+                ctx.player().input = new KeyboardInput(ctx.minecraft().options);
             }
         }
         // only set it if it was previously incorrect
-        // gotta do it this way, or else it constantly thinks you're beginning a double
-        // tap W sprint lol
+        // gotta do it this way, or else it constantly thinks you're beginning a double tap W sprint lol
     }
 
     private boolean inControl() {
-        for (Input input : new Input[] { Input.MOVE_FORWARD, Input.MOVE_BACK, Input.MOVE_LEFT, Input.MOVE_RIGHT,
-                Input.SNEAK, Input.JUMP }) {
+        for (Input input : new Input[]{Input.MOVE_FORWARD, Input.MOVE_BACK, Input.MOVE_LEFT, Input.MOVE_RIGHT, Input.SNEAK, Input.JUMP}) {
             if (isInputForcedDown(input)) {
                 return true;
             }
         }
-        // if we are not primary (a bot) we should set the movementinput even when idle
-        // (not pathing)
+        // if we are not primary (a bot) we should set the movementinput even when idle (not pathing)
         return baritone.getPathingBehavior().isPathing() || baritone != BaritoneAPI.getProvider().getPrimaryBaritone();
     }
 
@@ -126,7 +121,7 @@ public final class InputOverrideHandler extends Behavior implements IInputOverri
     }
 
     float getPlayerYaw() {
-        return ctx.player().rotationYaw;
+        return ctx.player().getYRot();
     }
 
     float getMovementYaw() {
@@ -136,3 +131,4 @@ public final class InputOverrideHandler extends Behavior implements IInputOverri
                 .orElseGet(this::getPlayerYaw);
     }
 }
+

@@ -77,6 +77,8 @@ public final class UnpackedSegment {
     public static UnpackedSegment from(final PathSegment segment) {
         return new UnpackedSegment(
                 Arrays.stream(segment.packed).mapToObj(BetterBlockPos::deserializeFromLong),
-                segment.finished);
+                segment.finished
+        );
     }
 }
+

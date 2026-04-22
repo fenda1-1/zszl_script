@@ -29,6 +29,10 @@ public final class PacketFieldRuleManager {
     private static final Map<String, CapturedFieldSnapshot> LAST_CAPTURED_FIELDS = new ConcurrentHashMap<>();
     private static volatile CapturedFieldSnapshot lastCapturedField = null;
     private static volatile boolean initialized = false;
+    private static volatile int inboundEnabledRuleCount = 0;
+    private static volatile int outboundEnabledRuleCount = 0;
+    private static volatile int inboundDecodedRuleCount = 0;
+    private static volatile int outboundDecodedRuleCount = 0;
 
     public static final class CapturedFieldSnapshot {
         private final String ruleName;
@@ -168,6 +172,11 @@ public final class PacketFieldRuleManager {
         RULES.clear();
         LAST_CAPTURED_FIELDS.clear();
         lastCapturedField = null;
+        initialized = true;
+        inboundEnabledRuleCount = 0;
+        outboundEnabledRuleCount = 0;
+        inboundDecodedRuleCount = 0;
+        outboundDecodedRuleCount = 0;
         Path path = getConfigPath();
         ensureConfigExists(path);
         try (Reader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
@@ -193,6 +202,23 @@ public final class PacketFieldRuleManager {
                         rule.compiledPattern = Pattern.compile(rule.pattern, Pattern.CASE_INSENSITIVE);
                     }
                     RULES.add(rule);
+                    if (rule.enabled) {
+                        boolean inbound = matchesDirection(rule.direction, "inbound");
+                        boolean outbound = matchesDirection(rule.direction, "outbound");
+                        boolean decoded = "decoded".equals(rule.source);
+                        if (inbound) {
+                            inboundEnabledRuleCount++;
+                            if (decoded) {
+                                inboundDecodedRuleCount++;
+                            }
+                        }
+                        if (outbound) {
+                            outboundEnabledRuleCount++;
+                            if (decoded) {
+                                outboundDecodedRuleCount++;
+                            }
+                        }
+                    }
                 } catch (Exception e) {
                     zszlScriptMod.LOGGER.error("[PacketFieldRule] 编译规则失败: {}", rule.name, e);
                 }
@@ -200,6 +226,16 @@ public final class PacketFieldRuleManager {
         } catch (Exception e) {
             zszlScriptMod.LOGGER.error("[PacketFieldRule] 加载规则失败", e);
         }
+    }
+
+    public static boolean hasEnabledRulesForDirection(boolean outbound) {
+        initialize();
+        return outbound ? outboundEnabledRuleCount > 0 : inboundEnabledRuleCount > 0;
+    }
+
+    public static boolean hasDecodedRulesForDirection(boolean outbound) {
+        initialize();
+        return outbound ? outboundDecodedRuleCount > 0 : inboundDecodedRuleCount > 0;
     }
 
     public static synchronized List<RuleEditModel> getRuleModels() {
@@ -305,24 +341,6 @@ public final class PacketFieldRuleManager {
                 zszlScriptMod.LOGGER.error("[PacketFieldRule] 执行规则失败: {}", rule.name, e);
             }
         }
-    }
-
-    public static boolean hasEnabledRulesForChannel(String channel, boolean outbound) {
-        initialize();
-        if (RULES.isEmpty()) {
-            return false;
-        }
-        String direction = outbound ? "outbound" : "inbound";
-        for (FieldRule rule : RULES) {
-            if (rule == null || !rule.enabled) {
-                continue;
-            }
-            if (!matchesChannel(rule.channel, channel) || !matchesDirection(rule.direction, direction)) {
-                continue;
-            }
-            return true;
-        }
-        return false;
     }
 
     private static ExtractionResult extractValue(FieldRule rule, String channel, String decodedText,
@@ -661,3 +679,4 @@ public final class PacketFieldRuleManager {
         }
     }
 }
+

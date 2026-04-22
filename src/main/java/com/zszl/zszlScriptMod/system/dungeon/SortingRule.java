@@ -1,7 +1,7 @@
 // 文件路径: src/main/java/com/zszl/zszlScriptMod/system/dungeon/SortingRule.java
 package com.zszl.zszlScriptMod.system.dungeon;
 
-import net.minecraft.client.resources.I18n;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -31,3 +31,6 @@ public class SortingRule {
         this.itemType = ItemType.ANY;
     }
 }
+
+
+

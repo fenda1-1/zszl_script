@@ -1,14 +1,16 @@
 // 文件路径: src/main/java/com/zszl/zszlScriptMod/gui/components/GuiTextInput.java
 package com.zszl.zszlScriptMod.gui.components;
 
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiScreen;
-import net.minecraft.client.gui.GuiTextField;
-import net.minecraft.client.resources.I18n;
-import org.lwjgl.input.Keyboard;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiTextField;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Keyboard;
 
 import java.io.IOException;
 import java.util.function.Consumer;
+import com.zszl.zszlScriptMod.gui.components.GuiTheme;
 
 /**
  * 通用文本输入GUI
@@ -65,14 +67,14 @@ public class GuiTextInput extends ThemedGuiScreen {
     @Override
     protected void actionPerformed(GuiButton button) throws IOException {
         if (button.id == 0) { // 确认
-            GuiScreen screenBeforeCallback = this.mc.currentScreen;
+            net.minecraft.client.gui.screens.Screen screenBeforeCallback = this.mc.screen;
             this.callback.accept(this.inputField.getText());
-            if (this.mc.currentScreen == null || this.mc.currentScreen == screenBeforeCallback
-                    || this.mc.currentScreen == this) {
-                this.mc.displayGuiScreen(this.parentScreen);
+            if (this.mc.screen == null || this.mc.screen == screenBeforeCallback
+                    || this.mc.screen == this) {
+                this.mc.setScreen(this.parentScreen);
             }
         } else if (button.id == 1) { // 取消
-            this.mc.displayGuiScreen(this.parentScreen);
+            this.mc.setScreen(this.parentScreen);
         }
     }
 
@@ -118,3 +120,10 @@ public class GuiTextInput extends ThemedGuiScreen {
         super.drawScreen(mouseX, mouseY, partialTicks);
     }
 }
+
+
+
+
+
+
+

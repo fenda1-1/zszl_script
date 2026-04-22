@@ -48,8 +48,7 @@ public class WaypointCollection implements IWaypointCollection {
         if (!Files.exists(directory)) {
             try {
                 Files.createDirectories(directory);
-            } catch (IOException ignored) {
-            }
+            } catch (IOException ignored) {}
         }
         System.out.println("Would save waypoints to " + directory);
         this.waypoints = new HashMap<>();
@@ -73,7 +72,8 @@ public class WaypointCollection implements IWaypointCollection {
         try (
                 FileInputStream fileIn = new FileInputStream(fileName.toFile());
                 BufferedInputStream bufIn = new BufferedInputStream(fileIn);
-                DataInputStream in = new DataInputStream(bufIn)) {
+                DataInputStream in = new DataInputStream(bufIn)
+        ) {
             long magic = in.readLong();
             if (magic != WAYPOINT_MAGIC_VALUE) {
                 throw new IOException("Bad magic value " + magic);
@@ -88,8 +88,7 @@ public class WaypointCollection implements IWaypointCollection {
                 int z = in.readInt();
                 this.waypoints.get(tag).add(new Waypoint(name, tag, new BetterBlockPos(x, y, z), creationTimestamp));
             }
-        } catch (IOException ignored) {
-        }
+        } catch (IOException ignored) {}
     }
 
     private synchronized void save(Waypoint.Tag tag) {
@@ -97,7 +96,8 @@ public class WaypointCollection implements IWaypointCollection {
         try (
                 FileOutputStream fileOut = new FileOutputStream(fileName.toFile());
                 BufferedOutputStream bufOut = new BufferedOutputStream(fileOut);
-                DataOutputStream out = new DataOutputStream(bufOut)) {
+                DataOutputStream out = new DataOutputStream(bufOut)
+        ) {
             out.writeLong(WAYPOINT_MAGIC_VALUE);
             out.writeLong(this.waypoints.get(tag).size());
             for (IWaypoint waypoint : this.waypoints.get(tag)) {
@@ -129,10 +129,8 @@ public class WaypointCollection implements IWaypointCollection {
 
     @Override
     public IWaypoint getMostRecentByTag(IWaypoint.Tag tag) {
-        // Find a waypoint of the given tag which has the greatest timestamp value,
-        // indicating the most recent
-        return this.waypoints.get(tag).stream().min(Comparator.comparingLong(w -> -w.getCreationTimestamp()))
-                .orElse(null);
+        // Find a waypoint of the given tag which has the greatest timestamp value, indicating the most recent
+        return this.waypoints.get(tag).stream().min(Comparator.comparingLong(w -> -w.getCreationTimestamp())).orElse(null);
     }
 
     @Override
@@ -145,3 +143,4 @@ public class WaypointCollection implements IWaypointCollection {
         return this.waypoints.values().stream().flatMap(Collection::stream).collect(Collectors.toSet());
     }
 }
+

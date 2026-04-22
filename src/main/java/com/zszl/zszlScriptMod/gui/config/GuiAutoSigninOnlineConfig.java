@@ -4,11 +4,11 @@ import com.zszl.zszlScriptMod.gui.components.ToggleGuiButton;
 import com.zszl.zszlScriptMod.gui.components.GuiTheme;
 import com.zszl.zszlScriptMod.gui.components.ThemedButton;
 import com.zszl.zszlScriptMod.handlers.AutoSigninOnlineHandler;
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
 import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
-import net.minecraft.client.resources.I18n;
-import org.lwjgl.input.Keyboard;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Keyboard;
 
 import java.io.IOException;
 
@@ -80,10 +80,10 @@ public class GuiAutoSigninOnlineConfig extends ThemedGuiScreen {
                     stateText(AutoSigninOnlineHandler.onlineEnabled));
         } else if (button.id == 100) {
             AutoSigninOnlineHandler.saveConfig();
-            mc.displayGuiScreen(parentScreen);
+            mc.setScreen(parentScreen);
         } else if (button.id == 101) {
             AutoSigninOnlineHandler.loadConfig();
-            mc.displayGuiScreen(parentScreen);
+            mc.setScreen(parentScreen);
         }
     }
 
@@ -140,3 +140,9 @@ public class GuiAutoSigninOnlineConfig extends ThemedGuiScreen {
     }
 
 }
+
+
+
+
+
+

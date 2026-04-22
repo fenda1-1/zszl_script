@@ -21,15 +21,13 @@ import com.zszl.zszlScriptMod.shadowbaritone.Baritone;
 import com.zszl.zszlScriptMod.shadowbaritone.api.cache.IWorldData;
 import com.zszl.zszlScriptMod.shadowbaritone.api.utils.*;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.entity.EntityPlayerSP;
-import net.minecraft.entity.Entity;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.RayTraceResult;
-import net.minecraft.world.World;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.phys.HitResult;
 
 /**
- * Implementation of {@link IPlayerContext} that provides information about the
- * primary player.
+ * Implementation of {@link IPlayerContext} that provides information about the primary player.
  *
  * @author Brady
  * @since 11/12/2018
@@ -52,7 +50,7 @@ public final class BaritonePlayerContext implements IPlayerContext {
     }
 
     @Override
-    public EntityPlayerSP player() {
+    public LocalPlayer player() {
         return this.mc.player;
     }
 
@@ -62,8 +60,8 @@ public final class BaritonePlayerContext implements IPlayerContext {
     }
 
     @Override
-    public World world() {
-        return this.mc.world;
+    public Level world() {
+        return this.mc.level;
     }
 
     @Override
@@ -73,8 +71,8 @@ public final class BaritonePlayerContext implements IPlayerContext {
 
     @Override
     public BetterBlockPos viewerPos() {
-        final Entity entity = this.mc.getRenderViewEntity();
-        return entity == null ? this.playerFeet() : BetterBlockPos.from(new BlockPos(entity));
+        final Entity entity = this.mc.getCameraEntity();
+        return entity == null ? this.playerFeet() : BetterBlockPos.from(entity.blockPosition());
     }
 
     @Override
@@ -83,7 +81,8 @@ public final class BaritonePlayerContext implements IPlayerContext {
     }
 
     @Override
-    public RayTraceResult objectMouseOver() {
+    public HitResult objectMouseOver() {
         return RayTraceUtils.rayTraceTowards(player(), playerRotations(), playerController().getBlockReachDistance());
     }
 }
+

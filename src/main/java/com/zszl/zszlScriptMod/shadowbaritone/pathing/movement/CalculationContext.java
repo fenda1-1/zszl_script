@@ -19,24 +19,22 @@ package com.zszl.zszlScriptMod.shadowbaritone.pathing.movement;
 
 import com.zszl.zszlScriptMod.shadowbaritone.Baritone;
 import com.zszl.zszlScriptMod.shadowbaritone.api.IBaritone;
-import com.zszl.zszlScriptMod.shadowbaritone.api.pathing.goals.Goal;
-import com.zszl.zszlScriptMod.shadowbaritone.api.pathing.movement.ParkourProfile;
 import com.zszl.zszlScriptMod.shadowbaritone.api.pathing.movement.ActionCosts;
 import com.zszl.zszlScriptMod.shadowbaritone.cache.WorldData;
 import com.zszl.zszlScriptMod.shadowbaritone.pathing.precompute.PrecomputedData;
 import com.zszl.zszlScriptMod.shadowbaritone.utils.BlockStateInterface;
 import com.zszl.zszlScriptMod.shadowbaritone.utils.ToolSet;
 import com.zszl.zszlScriptMod.shadowbaritone.utils.pathing.BetterWorldBorder;
-import net.minecraft.block.Block;
-import net.minecraft.block.state.IBlockState;
-import net.minecraft.client.entity.EntityPlayerSP;
-import net.minecraft.enchantment.EnchantmentHelper;
-import net.minecraft.entity.player.InventoryPlayer;
-import net.minecraft.init.Enchantments;
-import net.minecraft.init.Items;
-import net.minecraft.item.ItemStack;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.world.World;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.item.enchantment.EnchantmentHelper;
+import net.minecraft.world.item.enchantment.Enchantments;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.state.BlockState;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -53,8 +51,7 @@ public class CalculationContext {
 
     public final boolean safeForThreadedUse;
     public final IBaritone baritone;
-    public final Goal goal;
-    public final World world;
+    public final Level world;
     public final WorldData worldData;
     public final BlockStateInterface bsi;
     public final ToolSet toolSet;
@@ -64,12 +61,9 @@ public class CalculationContext {
     protected final double placeBlockCost; // protected because you should call the function instead
     public final boolean allowBreak;
     public final List<Block> allowBreakAnyway;
-    public final boolean parkourMode;
-    public final ParkourProfile parkourProfile;
-    public final boolean parkourDebugRender;
     public final boolean allowParkour;
     public final boolean allowParkourPlace;
-    public final boolean allowJumpAt256;
+    public final boolean allowJumpAtBuildLimit;
     public final boolean allowParkourAscend;
     public final boolean assumeWalkOnWater;
     public boolean allowFallIntoLava;
@@ -85,6 +79,7 @@ public class CalculationContext {
     public double backtrackCostFavoringCoefficient;
     public double jumpPenalty;
     public final double walkOnWaterOnePenalty;
+    public final boolean allowWalkOnMagmaBlocks;
     public final BetterWorldBorder worldBorder;
 
     public final PrecomputedData precomputedData;
@@ -97,39 +92,31 @@ public class CalculationContext {
         this.precomputedData = new PrecomputedData();
         this.safeForThreadedUse = forUseOnAnotherThread;
         this.baritone = baritone;
-        this.goal = baritone.getPathingBehavior() == null ? null : baritone.getPathingBehavior().getGoal();
-        EntityPlayerSP player = baritone.getPlayerContext().player();
+        LocalPlayer player = baritone.getPlayerContext().player();
         this.world = baritone.getPlayerContext().world();
         this.worldData = (WorldData) baritone.getPlayerContext().worldData();
         this.bsi = new BlockStateInterface(baritone.getPlayerContext(), forUseOnAnotherThread);
         this.toolSet = new ToolSet(player);
-        this.hasThrowaway = Baritone.settings().allowPlace.value
-                && ((Baritone) baritone).getInventoryBehavior().hasGenericThrowaway();
-        this.hasWaterBucket = Baritone.settings().allowWaterBucketFall.value
-                && InventoryPlayer.isHotbar(player.inventory.getSlotFor(STACK_BUCKET_WATER))
-                && !world.provider.isNether();
-        this.canSprint = Baritone.settings().allowSprint.value && player.getFoodStats().getFoodLevel() > 6;
+        this.hasThrowaway = Baritone.settings().allowPlace.value && ((Baritone) baritone).getInventoryBehavior().hasGenericThrowaway();
+        this.hasWaterBucket = Baritone.settings().allowWaterBucketFall.value && Inventory.isHotbarSlot(player.getInventory().findSlotMatchingItem(STACK_BUCKET_WATER)) && world.dimension() != Level.NETHER;
+        this.canSprint = Baritone.settings().allowSprint.value && player.getFoodData().getFoodLevel() > 6;
         this.placeBlockCost = Baritone.settings().blockPlacementPenalty.value;
         this.allowBreak = Baritone.settings().allowBreak.value;
         this.allowBreakAnyway = new ArrayList<>(Baritone.settings().allowBreakAnyway.value);
-        this.parkourMode = Baritone.settings().parkourMode.value;
-        this.parkourProfile = ParkourProfile.orDefault(Baritone.settings().parkourProfile.value);
-        this.parkourDebugRender = Baritone.settings().parkourDebugRender.value;
-        this.allowParkour = Baritone.settings().allowParkour.value || this.parkourMode;
-        this.allowParkourPlace = !this.parkourMode && Baritone.settings().allowParkourPlace.value;
-        this.allowJumpAt256 = Baritone.settings().allowJumpAt256.value;
+        this.allowParkour = Baritone.settings().allowParkour.value;
+        this.allowParkourPlace = Baritone.settings().allowParkourPlace.value;
+        this.allowJumpAtBuildLimit = Baritone.settings().allowJumpAtBuildLimit.value;
         this.allowParkourAscend = Baritone.settings().allowParkourAscend.value;
         this.assumeWalkOnWater = Baritone.settings().assumeWalkOnWater.value;
         this.allowFallIntoLava = false; // Super secret internal setting for ElytraBehavior
-        this.frostWalker = EnchantmentHelper.getMaxEnchantmentLevel(Enchantments.FROST_WALKER,
-                baritone.getPlayerContext().player());
-        this.allowDiagonalDescend = Baritone.settings().allowDiagonalDescend.value || this.parkourMode;
-        this.allowDiagonalAscend = Baritone.settings().allowDiagonalAscend.value || this.parkourMode;
+        this.frostWalker = EnchantmentHelper.getEnchantmentLevel(Enchantments.FROST_WALKER, baritone.getPlayerContext().player());
+        this.allowDiagonalDescend = Baritone.settings().allowDiagonalDescend.value;
+        this.allowDiagonalAscend = Baritone.settings().allowDiagonalAscend.value;
         this.allowDownward = Baritone.settings().allowDownward.value;
         this.minFallHeight = 3; // Minimum fall height used by MovementFall
         this.maxFallHeightNoWater = Baritone.settings().maxFallHeightNoWater.value;
         this.maxFallHeightBucket = Baritone.settings().maxFallHeightBucket.value;
-        int depth = EnchantmentHelper.getDepthStriderModifier(player);
+        int depth = EnchantmentHelper.getDepthStrider(player);
         if (depth > 3) {
             depth = 3;
         }
@@ -139,12 +126,10 @@ public class CalculationContext {
         this.backtrackCostFavoringCoefficient = Baritone.settings().backtrackCostFavoringCoefficient.value;
         this.jumpPenalty = Baritone.settings().jumpPenalty.value;
         this.walkOnWaterOnePenalty = Baritone.settings().walkOnWaterOnePenalty.value;
-        // why cache these things here, why not let the movements just get directly from
-        // settings?
-        // because if some movements are calculated one way and others are calculated
-        // another way,
-        // then you get a wildly inconsistent path that isn't optimal for either
-        // scenario.
+        this.allowWalkOnMagmaBlocks = Baritone.settings().allowWalkOnMagmaBlocks.value;
+        // why cache these things here, why not let the movements just get directly from settings?
+        // because if some movements are calculated one way and others are calculated another way,
+        // then you get a wildly inconsistent path that isn't optimal for either scenario.
         this.worldBorder = new BetterWorldBorder(world.getWorldBorder());
     }
 
@@ -152,15 +137,7 @@ public class CalculationContext {
         return baritone;
     }
 
-    public boolean isGoal(int x, int y, int z) {
-        return goal != null && goal.isInGoal(x, y, z);
-    }
-
-    public boolean isGoal(BlockPos pos) {
-        return pos != null && isGoal(pos.getX(), pos.getY(), pos.getZ());
-    }
-
-    public IBlockState get(int x, int y, int z) {
+    public BlockState get(int x, int y, int z) {
         return bsi.get0(x, y, z); // laughs maniacally
     }
 
@@ -168,7 +145,7 @@ public class CalculationContext {
         return bsi.isLoaded(x, z);
     }
 
-    public IBlockState get(BlockPos pos) {
+    public BlockState get(BlockPos pos) {
         return get(pos.getX(), pos.getY(), pos.getZ());
     }
 
@@ -176,7 +153,7 @@ public class CalculationContext {
         return get(x, y, z).getBlock();
     }
 
-    public double costOfPlacingAt(int x, int y, int z, IBlockState current) {
+    public double costOfPlacingAt(int x, int y, int z, BlockState current) {
         if (!hasThrowaway) { // only true if allowPlace is true, see constructor
             return COST_INF;
         }
@@ -186,10 +163,16 @@ public class CalculationContext {
         if (!worldBorder.canPlaceAt(x, z)) {
             return COST_INF;
         }
+        if (!Baritone.settings().allowPlaceInFluidsSource.value && current.getFluidState().isSource()) {
+            return COST_INF;
+        }
+        if (!Baritone.settings().allowPlaceInFluidsFlow.value && !current.getFluidState().isEmpty() && !current.getFluidState().isSource()) {
+            return COST_INF;
+        }
         return placeBlockCost;
     }
 
-    public double breakCostMultiplierAt(int x, int y, int z, IBlockState current) {
+    public double breakCostMultiplierAt(int x, int y, int z, BlockState current) {
         if (!allowBreak && !allowBreakAnyway.contains(current.getBlock())) {
             return COST_INF;
         }
@@ -208,3 +191,4 @@ public class CalculationContext {
         return false;
     }
 }
+

@@ -24,14 +24,16 @@ import com.zszl.zszlScriptMod.shadowbaritone.api.command.datatypes.BlockById;
 import com.zszl.zszlScriptMod.shadowbaritone.api.command.exception.CommandException;
 import com.zszl.zszlScriptMod.shadowbaritone.api.command.helpers.TabCompleteHelper;
 import com.zszl.zszlScriptMod.shadowbaritone.api.utils.BetterBlockPos;
-import com.zszl.zszlScriptMod.shadowbaritone.api.utils.ShadowBaritoneI18n;
+import com.zszl.zszlScriptMod.shadowbaritone.api.utils.BlockUtils;
 import com.zszl.zszlScriptMod.shadowbaritone.cache.CachedChunk;
-import net.minecraft.block.Block;
-import net.minecraft.util.text.ITextComponent;
-import net.minecraft.util.text.TextComponentString;
-import net.minecraft.util.text.TextFormatting;
-import net.minecraft.util.text.event.ClickEvent;
-import net.minecraft.util.text.event.HoverEvent;
+import net.minecraft.core.Registry;
+import net.minecraft.ChatFormatting;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.network.chat.ClickEvent;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.HoverEvent;
+import net.minecraft.network.chat.MutableComponent;
+import net.minecraft.world.level.block.Block;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -54,35 +56,36 @@ public class FindCommand extends Command {
             toFind.add(args.getDatatypeFor(BlockById.INSTANCE));
         }
         BetterBlockPos origin = ctx.playerFeet();
-        ITextComponent[] components = toFind.stream()
-                .flatMap(block -> ctx.worldData().getCachedWorld().getLocationsOf(
-                        Block.REGISTRY.getNameForObject(block).getResourcePath(),
-                        Integer.MAX_VALUE,
-                        origin.x,
-                        origin.y,
-                        4).stream())
-                .map(pos -> new BetterBlockPos(pos.getX(), pos.getY(), pos.getZ()))
+        Component[] components = toFind.stream()
+                .flatMap(block ->
+                        ctx.worldData().getCachedWorld().getLocationsOf(
+                                BlockUtils.blockToString(block),
+                                Integer.MAX_VALUE,
+                                origin.x,
+                                origin.y,
+                                4
+                        ).stream()
+                )
+                .map(BetterBlockPos::new)
                 .map(this::positionToComponent)
-                .toArray(ITextComponent[]::new);
+                .toArray(Component[]::new);
         if (components.length > 0) {
             Arrays.asList(components).forEach(this::logDirect);
         } else {
-            logDirect(ShadowBaritoneI18n.trKey(
-                    "shadowbaritone.command.find.status.no_positions_known"));
+            logDirect("No positions known, are you sure the blocks are cached?");
         }
     }
 
-    private ITextComponent positionToComponent(BetterBlockPos pos) {
+    private Component positionToComponent(BetterBlockPos pos) {
         String positionText = String.format("%s %s %s", pos.x, pos.y, pos.z);
         String command = String.format("%sgoal %s", FORCE_COMMAND_PREFIX, positionText);
-        ITextComponent baseComponent = new TextComponentString(pos.toString());
-        ITextComponent hoverComponent = new TextComponentString(ShadowBaritoneI18n.trKey(
-                "shadowbaritone.command.find.hover.set_goal"));
-        baseComponent.getStyle()
-                .setColor(TextFormatting.GRAY)
-                .setInsertion(positionText)
-                .setClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, command))
-                .setHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, hoverComponent));
+        MutableComponent baseComponent = Component.literal(pos.toString());
+        MutableComponent hoverComponent = Component.literal("Click to set goal to this position");
+        baseComponent.setStyle(baseComponent.getStyle()
+                .withColor(ChatFormatting.GRAY)
+                .withInsertion(positionText)
+                .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, command))
+                .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, hoverComponent)));
         return baseComponent;
     }
 
@@ -91,8 +94,9 @@ public class FindCommand extends Command {
         return new TabCompleteHelper()
                 .append(
                         CachedChunk.BLOCKS_TO_KEEP_TRACK_OF.stream()
-                                .map(Block.REGISTRY::getNameForObject)
-                                .map(Object::toString))
+                                .map(BuiltInRegistries.BLOCK::getKey)
+                                .map(Object::toString)
+                )
                 .filterPrefixNamespaced(args.getString())
                 .sortAlphabetically()
                 .stream();
@@ -100,21 +104,18 @@ public class FindCommand extends Command {
 
     @Override
     public String getShortDesc() {
-        return ShadowBaritoneI18n.trKey(
-                "shadowbaritone.command.find.short_desc");
+        return "Find positions of a certain block";
     }
 
     @Override
     public List<String> getLongDesc() {
         return Arrays.asList(
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.find.long_desc.1"),
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.find.long_desc.2"),
+                "The find command searches through Baritone's cache and attempts to find the location of the block.",
+                "Tab completion will suggest only cached blocks and uncached blocks can not be found.",
                 "",
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.find.long_desc.usage"),
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.find.long_desc.example.default"));
+                "Usage:",
+                "> find <block> [...] - Try finding the listed blocks"
+        );
     }
 }
+

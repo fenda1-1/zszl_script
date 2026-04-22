@@ -1,9 +1,9 @@
 package com.zszl.zszlScriptMod.path;
 
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Vec3d;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.common.MinecraftForge;
-import net.minecraft.client.resources.I18n;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -17,12 +17,12 @@ public class PathRecordingManager {
 
     // 内部类，用于存储每一步录制的详细信息
     public static class RecordedStep {
-        public final Vec3d playerPos;
+        public final Vec3 playerPos;
         public final float playerYaw;
         public final float playerPitch;
         public final BlockPos chestPos;
 
-        public RecordedStep(Vec3d playerPos, float playerYaw, float playerPitch, BlockPos chestPos) {
+        public RecordedStep(Vec3 playerPos, float playerYaw, float playerPitch, BlockPos chestPos) {
             this.playerPos = playerPos;
             this.playerYaw = playerYaw;
             this.playerPitch = playerPitch;
@@ -95,3 +95,7 @@ public class PathRecordingManager {
         return recordedSteps;
     }
 }
+
+
+
+

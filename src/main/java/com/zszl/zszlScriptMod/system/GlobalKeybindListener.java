@@ -1,17 +1,16 @@
-// 文件路径: src/main/java/com/keycommand2/zszlScriptMod/system/GlobalKeybindListener.java
-// (使用此版本完全替换旧文件)
 package com.zszl.zszlScriptMod.system;
 
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiTextField;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraftforge.fml.common.gameevent.InputEvent;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraftforge.fml.common.gameevent.TickEvent;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Keyboard;
 import com.zszl.zszlScriptMod.gui.packet.InputTimelineManager;
-import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiChat;
-import net.minecraft.client.gui.GuiTextField;
-import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
-import net.minecraftforge.fml.common.gameevent.InputEvent;
-import net.minecraftforge.fml.common.gameevent.TickEvent;
-import org.lwjgl.input.Keyboard;
-
 import com.zszl.zszlScriptMod.system.KeybindManager.Keybind;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.client.gui.screens.ChatScreen;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraftforge.eventbus.api.SubscribeEvent;
 
 import java.lang.reflect.Field;
 import java.util.ArrayList;
@@ -20,10 +19,6 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
-/**
- * 全局快捷键监听器。
- * 监听所有键盘输入，并触发在KeybindManager中定义的动作。
- */
 public class GlobalKeybindListener {
 
     private final Map<Integer, Boolean> lastPhysicalKeyStates = new HashMap<>();
@@ -58,17 +53,13 @@ public class GlobalKeybindListener {
         pollPhysicalKeybindPresses();
     }
 
-    private void handleTriggeredKey(int keyCode) {
-        handleTriggeredKey(keyCode, null);
-    }
-
     private void handleTriggeredKey(int keyCode, Set<Integer> providedModifiers) {
-        Minecraft mc = Minecraft.getMinecraft();
-        if (mc.player == null || mc.world == null) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null || mc.level == null) {
             return;
         }
 
-        if (mc.currentScreen instanceof GuiChat || isAnyTextFieldFocused()) {
+        if (mc.screen instanceof ChatScreen || isAnyTextFieldFocused()) {
             return;
         }
 
@@ -76,7 +67,9 @@ public class GlobalKeybindListener {
 
         for (Map.Entry<BindableAction, Keybind> entry : KeybindManager.keybinds.entrySet()) {
             Keybind keybind = entry.getValue();
-            if (keybind.getKeyCode() == keyCode && areModifierSetsEqual(keybind.getModifiers(), currentModifiers)) {
+            if (keybind != null
+                    && keybind.getKeyCode() == keyCode
+                    && areModifierSetsEqual(keybind.getModifiers(), currentModifiers)) {
                 KeybindManager.executeAction(entry.getKey());
                 return;
             }
@@ -84,7 +77,9 @@ public class GlobalKeybindListener {
 
         for (Map.Entry<BindableDebugAction, Keybind> entry : DebugKeybindManager.keybinds.entrySet()) {
             Keybind keybind = entry.getValue();
-            if (keybind.getKeyCode() == keyCode && areModifierSetsEqual(keybind.getModifiers(), currentModifiers)) {
+            if (keybind != null
+                    && keybind.getKeyCode() == keyCode
+                    && areModifierSetsEqual(keybind.getModifiers(), currentModifiers)) {
                 DebugKeybindManager.executeAction(entry.getKey());
                 return;
             }
@@ -95,7 +90,8 @@ public class GlobalKeybindListener {
             if (keybind == null) {
                 continue;
             }
-            if (keybind.getKeyCode() == keyCode && areModifierSetsEqual(keybind.getModifiers(), currentModifiers)) {
+            if (keybind.getKeyCode() == keyCode
+                    && areModifierSetsEqual(keybind.getModifiers(), currentModifiers)) {
                 KeybindManager.executePathSequenceByName(entry.getKey());
                 return;
             }
@@ -103,8 +99,8 @@ public class GlobalKeybindListener {
     }
 
     private void pollPhysicalKeybindPresses() {
-        Minecraft mc = Minecraft.getMinecraft();
-        if (mc.player == null || mc.world == null) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null || mc.level == null) {
             this.lastPhysicalKeyStates.clear();
             return;
         }
@@ -151,11 +147,6 @@ public class GlobalKeybindListener {
         }
     }
 
-    /**
-     * 获取当前按下的所有修饰键的集合。
-     * 
-     * @return 一个包含修饰键 KeyCode 的 Set。
-     */
     private Set<Integer> getActiveModifiers() {
         Set<Integer> modifiers = new HashSet<>();
         if (SimulatedKeyInputManager.isEitherKeyDown(Keyboard.KEY_LCONTROL, Keyboard.KEY_RCONTROL)) {
@@ -184,37 +175,36 @@ public class GlobalKeybindListener {
         return modifiers;
     }
 
-    /**
-     * 比较两个修饰键集合是否相等。
-     */
     private boolean areModifierSetsEqual(Set<Integer> required, Set<Integer> actual) {
-        // 为了简单起见，我们只要求实际按下的修饰键包含所有必需的修饰键
-        // 并且实际按下的修饰键数量与必需的数量相同，以实现精确匹配
         return actual.equals(required);
     }
 
-    /**
-     * 检查当前GUI中是否有任何GuiTextField是聚焦状态。
-     * 
-     * @return 如果有文本框正在输入，返回true。
-     */
     private boolean isAnyTextFieldFocused() {
-        Minecraft mc = Minecraft.getMinecraft();
-        if (mc.currentScreen == null) {
+        Minecraft mc = Minecraft.getInstance();
+        Screen screen = mc.screen;
+        if (screen == null) {
             return false;
         }
         try {
-            for (Field field : mc.currentScreen.getClass().getDeclaredFields()) {
-                if (GuiTextField.class.isAssignableFrom(field.getType())) {
+            for (Class<?> clazz = screen.getClass(); clazz != null; clazz = clazz.getSuperclass()) {
+                for (Field field : clazz.getDeclaredFields()) {
                     field.setAccessible(true);
-                    GuiTextField textField = (GuiTextField) field.get(mc.currentScreen);
-                    if (textField != null && textField.isFocused()) {
+                    Object value = field.get(screen);
+                    if (value instanceof GuiTextField && ((GuiTextField) value).isFocused()) {
+                        return true;
+                    }
+                    if (value instanceof EditBox && ((EditBox) value).isFocused()) {
                         return true;
                     }
                 }
             }
-        } catch (Exception e) {
-            // 静默处理反射异常
+        } catch (IllegalAccessException ignored) {
+        }
+
+        for (Object child : screen.children()) {
+            if (child instanceof EditBox && ((EditBox) child).isFocused()) {
+                return true;
+            }
         }
         return false;
     }

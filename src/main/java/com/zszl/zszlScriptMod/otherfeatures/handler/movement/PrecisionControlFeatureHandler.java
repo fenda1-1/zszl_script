@@ -1,15 +1,15 @@
 package com.zszl.zszlScriptMod.otherfeatures.handler.movement;
 
-import net.minecraft.client.entity.EntityPlayerSP;
+import net.minecraft.client.player.LocalPlayer;
 
 final class PrecisionControlFeatureHandler {
 
     private PrecisionControlFeatureHandler() {
     }
 
-    static void apply(EntityPlayerSP player) {
+    static void apply(LocalPlayer player) {
         if (!MovementFeatureManager.isEnabled("precision_control")
-                || !player.isSneaking()
+                || !player.isShiftKeyDown()
                 || !MovementFeatureSupport.isMoving(player)) {
             return;
         }
@@ -18,3 +18,5 @@ final class PrecisionControlFeatureHandler {
         MovementFeatureSupport.capHorizontalSpeed(player, limited);
     }
 }
+
+

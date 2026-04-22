@@ -23,6 +23,7 @@ public final class OtherFeatureGroupManager {
 
     private static final String RESOURCE_PATH = "other_features/groups.json";
     private static volatile List<GroupDef> groups = new ArrayList<>();
+    private static volatile boolean loaded = false;
 
     private OtherFeatureGroupManager() {
     }
@@ -57,9 +58,13 @@ public final class OtherFeatureGroupManager {
             loaded = buildFallbackGroups();
         }
         groups = loaded;
+        OtherFeatureGroupManager.loaded = true;
     }
 
     public static List<GroupDef> getGroups() {
+        if (!loaded) {
+            reload();
+        }
         return groups == null ? Collections.emptyList() : new ArrayList<>(groups);
     }
 
@@ -198,3 +203,4 @@ public final class OtherFeatureGroupManager {
         return text == null ? "" : text.trim();
     }
 }
+

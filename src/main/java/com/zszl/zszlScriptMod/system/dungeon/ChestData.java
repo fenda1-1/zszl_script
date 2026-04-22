@@ -1,18 +1,19 @@
 // 文件路径: src/main/java/com/zszl/zszlScriptMod/system/dungeon/ChestData.java
 package com.zszl.zszlScriptMod.system.dungeon;
 
-import net.minecraft.inventory.ItemStackHelper;
-import net.minecraft.item.ItemStack;
-import net.minecraft.nbt.JsonToNBT;
-import net.minecraft.nbt.NBTException;
-import net.minecraft.nbt.NBTTagCompound;
-import net.minecraft.util.NonNullList;
-import net.minecraft.util.math.BlockPos;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.inventory.ItemStackHelper;
+import com.mojang.brigadier.exceptions.CommandSyntaxException;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.TagParser;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.NonNullList;
 import java.util.HashSet;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import com.zszl.zszlScriptMod.zszlScriptMod;
+import com.zszl.zszlScriptMod.system.dungeon.SortingRule;
 
 public class ChestData {
     public BlockPos pos;
@@ -37,7 +38,7 @@ public class ChestData {
     }
 
     public void snapshotContents(NonNullList<ItemStack> items) {
-        NBTTagCompound compound = new NBTTagCompound();
+        CompoundTag compound = new CompoundTag();
         ItemStackHelper.saveAllItems(compound, items);
         this.itemsNBTString = compound.toString();
         this.hasBeenScanned = true;
@@ -49,12 +50,14 @@ public class ChestData {
             return items;
         }
         try {
-            NBTTagCompound compound = JsonToNBT.getTagFromJson(this.itemsNBTString);
+            CompoundTag compound = TagParser.parseTag(this.itemsNBTString);
             ItemStackHelper.loadAllItems(compound, items);
-        } catch (NBTException e) {
+        } catch (CommandSyntaxException e) {
             zszlScriptMod.LOGGER.error("Failed to parse NBT snapshot from string for chest @ " + this.pos, e);
         }
         return items;
     }
 }
+
+
 

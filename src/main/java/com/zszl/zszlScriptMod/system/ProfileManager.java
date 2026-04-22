@@ -5,6 +5,7 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.reflect.TypeToken;
 import com.zszl.zszlScriptMod.zszlScriptMod;
 import com.zszl.zszlScriptMod.config.ModConfig;
+import com.zszl.zszlScriptMod.utils.ClientPerformanceWarmupManager;
 
 import net.minecraft.client.Minecraft;
 
@@ -27,7 +28,6 @@ import java.util.stream.Stream;
 public class ProfileManager {
 
     private static final Path BASE_DIR = Paths.get(ModConfig.CONFIG_DIR);
-    private static final Path LEGACY_BASE_DIR = Paths.get(ModConfig.LEGACY_CONFIG_DIR);
     private static final Path PROFILES_DIR = BASE_DIR.resolve("profiles");
     private static final Path MAPPING_FILE = BASE_DIR.resolve("profile_mapping.json");
     public static final String DEFAULT_PROFILE_NAME = "Default";
@@ -42,12 +42,11 @@ public class ProfileManager {
      */
     public static void initialize() {
         try {
-            migrateLegacyBaseDir();
             Files.createDirectories(PROFILES_DIR);
             ensureDefaultProfileExists();
             loadMappings();
 
-            String currentUser = Minecraft.getMinecraft().getSession().getUsername().toLowerCase();
+            String currentUser = Minecraft.getInstance().getUser().getName().toLowerCase();
             activeProfileName = profileMappings.getOrDefault(currentUser, DEFAULT_PROFILE_NAME);
 
             // 确保用户的配置存在，如果不存在则回退到默认
@@ -64,50 +63,6 @@ public class ProfileManager {
         } catch (IOException e) {
             zszlScriptMod.LOGGER.error("Failed to initialize profile system", e);
         }
-    }
-
-    private static void migrateLegacyBaseDir() throws IOException {
-        if (LEGACY_BASE_DIR == null || BASE_DIR == null || LEGACY_BASE_DIR.equals(BASE_DIR)
-                || !Files.exists(LEGACY_BASE_DIR)) {
-            return;
-        }
-
-        if (!Files.exists(BASE_DIR)) {
-            Path parent = BASE_DIR.getParent();
-            if (parent != null) {
-                Files.createDirectories(parent);
-            }
-            Files.move(LEGACY_BASE_DIR, BASE_DIR, StandardCopyOption.REPLACE_EXISTING);
-            zszlScriptMod.LOGGER.info("Migrated legacy config directory '{}' to '{}'", LEGACY_BASE_DIR, BASE_DIR);
-            return;
-        }
-
-        try (Stream<Path> walk = Files.walk(LEGACY_BASE_DIR)) {
-            for (Path source : walk.sorted().collect(Collectors.toList())) {
-                Path relative = LEGACY_BASE_DIR.relativize(source);
-                Path target = BASE_DIR.resolve(relative);
-                if (Files.isDirectory(source)) {
-                    Files.createDirectories(target);
-                    continue;
-                }
-                Path parent = target.getParent();
-                if (parent != null) {
-                    Files.createDirectories(parent);
-                }
-                Files.move(source, target, StandardCopyOption.REPLACE_EXISTING);
-            }
-        }
-
-        try (Stream<Path> cleanup = Files.walk(LEGACY_BASE_DIR)) {
-            cleanup.sorted(Comparator.reverseOrder()).forEach(path -> {
-                try {
-                    Files.deleteIfExists(path);
-                } catch (IOException e) {
-                    zszlScriptMod.LOGGER.warn("Failed to delete legacy config path '{}'", path, e);
-                }
-            });
-        }
-        zszlScriptMod.LOGGER.info("Merged legacy config directory '{}' into '{}'", LEGACY_BASE_DIR, BASE_DIR);
     }
 
     /**
@@ -155,6 +110,7 @@ public class ProfileManager {
 
         // 关键步骤：切换后立即重新加载所有配置
         ModConfig.loadAllConfigs();
+        ClientPerformanceWarmupManager.warmupCurrentProfileAsync("profile-switch");
     }
 
     /**
@@ -244,7 +200,7 @@ public class ProfileManager {
     }
 
     private static void setActiveProfileForCurrentUser(String profileName) {
-        String currentUser = Minecraft.getMinecraft().getSession().getUsername().toLowerCase();
+        String currentUser = Minecraft.getInstance().getUser().getName().toLowerCase();
         profileMappings.put(currentUser, profileName);
         saveMappings();
     }
@@ -275,3 +231,4 @@ public class ProfileManager {
         }
     }
 }
+

@@ -19,9 +19,8 @@ package com.zszl.zszlScriptMod.shadowbaritone.api.process;
 
 import com.zszl.zszlScriptMod.shadowbaritone.api.utils.BlockOptionalMeta;
 import com.zszl.zszlScriptMod.shadowbaritone.api.utils.BlockOptionalMetaLookup;
-import net.minecraft.block.Block;
-
 import java.util.stream.Stream;
+import net.minecraft.world.level.block.Block;
 
 /**
  * @author Brady
@@ -95,7 +94,8 @@ public interface IMineProcess extends IBaritoneProcess {
         mine(quantity, new BlockOptionalMetaLookup(
                 Stream.of(blocks)
                         .map(BlockOptionalMeta::new)
-                        .toArray(BlockOptionalMeta[]::new)));
+                        .toArray(BlockOptionalMeta[]::new)
+        ));
     }
 
     /**
@@ -114,3 +114,4 @@ public interface IMineProcess extends IBaritoneProcess {
         onLostControl();
     }
 }
+

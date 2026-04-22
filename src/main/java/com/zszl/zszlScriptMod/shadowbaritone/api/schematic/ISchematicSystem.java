@@ -21,6 +21,7 @@ import com.zszl.zszlScriptMod.shadowbaritone.api.command.registry.Registry;
 import com.zszl.zszlScriptMod.shadowbaritone.api.schematic.format.ISchematicFormat;
 
 import java.io.File;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -35,12 +36,16 @@ public interface ISchematicSystem {
     Registry<ISchematicFormat> getRegistry();
 
     /**
-     * Attempts to find an {@link ISchematicFormat} that supports the specified
-     * schematic file.
+     * Attempts to find an {@link ISchematicFormat} that supports the specified schematic file.
      *
      * @param file A schematic file
-     * @return The corresponding format for the file, {@link Optional#empty()} if no
-     *         candidates were found.
+     * @return The corresponding format for the file, {@link Optional#empty()} if no candidates were found.
      */
     Optional<ISchematicFormat> getByFile(File file);
+
+    /**
+     * @return A list of file extensions used by supported formats
+     */
+    List<String> getFileExtensions();
 }
+

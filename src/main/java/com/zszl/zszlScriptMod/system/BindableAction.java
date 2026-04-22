@@ -1,7 +1,7 @@
 // 文件路径: src/main/java/com/zszl/zszlScriptMod/system/BindableAction.java
 package com.zszl.zszlScriptMod.system;
 
-import net.minecraft.client.resources.I18n;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
 
 /**
  * 定义所有可以被快捷键绑定的动作。
@@ -104,6 +104,8 @@ public enum BindableAction {
             "keybind.action.toggle_render_entity_tags.desc", FeatureGroup.RENDER, "entity_tags"),
     TOGGLE_RENDER_BLOCK_HIGHLIGHT("keybind.action.toggle_render_block_highlight.name",
             "keybind.action.toggle_render_block_highlight.desc", FeatureGroup.RENDER, "block_highlight"),
+    TOGGLE_RENDER_XRAY("keybind.action.toggle_render_xray.name",
+            "keybind.action.toggle_render_xray.desc", FeatureGroup.RENDER, "xray"),
     TOGGLE_RENDER_ITEM_ESP("keybind.action.toggle_render_item_esp.name",
             "keybind.action.toggle_render_item_esp.desc", FeatureGroup.RENDER, "item_esp"),
     TOGGLE_RENDER_TRAJECTORY_LINE("keybind.action.toggle_render_trajectory_line.name",
@@ -192,3 +194,6 @@ public enum BindableAction {
         return featureGroup == FeatureGroup.MOVEMENT;
     }
 }
+
+
+

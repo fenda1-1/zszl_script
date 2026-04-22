@@ -1,11 +1,12 @@
 package com.zszl.zszlScriptMod.gui.config;
 
 import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
+import com.zszl.zszlScriptMod.gui.components.GuiTheme;
 import com.zszl.zszlScriptMod.system.PerformanceMonitor;
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiScreen;
-import net.minecraft.client.resources.I18n;
-import net.minecraft.util.text.TextFormatting;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
+import net.minecraft.ChatFormatting;
 
 import java.io.IOException;
 
@@ -58,9 +59,9 @@ public class GuiPerformanceMonitor extends ThemedGuiScreen {
         switch (button.id) {
             case 0: // 返回
                 if (parentScreen != null) {
-                    mc.displayGuiScreen(parentScreen);
+                    mc.setScreen(parentScreen);
                 } else {
-                    mc.displayGuiScreen(null);
+                    mc.setScreen(null);
                 }
                 break;
             case 1: // 重置统计数据
@@ -177,7 +178,7 @@ public class GuiPerformanceMonitor extends ThemedGuiScreen {
 
         // 功能名称
         String displayName = PerformanceMonitor.getFeatureDisplayName(feature);
-        drawString(this.fontRenderer, TextFormatting.BOLD + displayName, x + 10, y + 8, 0xFFFFFFFF);
+        drawString(this.fontRenderer, ChatFormatting.BOLD + displayName, x + 10, y + 8, 0xFFFFFFFF);
 
         // 开关按钮
         int buttonY = y + 25;
@@ -249,3 +250,9 @@ public class GuiPerformanceMonitor extends ThemedGuiScreen {
         }
     }
 }
+
+
+
+
+
+

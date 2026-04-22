@@ -20,7 +20,6 @@ package com.zszl.zszlScriptMod.shadowbaritone.command.defaults;
 import com.zszl.zszlScriptMod.shadowbaritone.api.IBaritone;
 import com.zszl.zszlScriptMod.shadowbaritone.api.command.Command;
 import com.zszl.zszlScriptMod.shadowbaritone.api.command.argument.IArgConsumer;
-import com.zszl.zszlScriptMod.shadowbaritone.api.utils.ShadowBaritoneI18n;
 
 import java.util.Collections;
 import java.util.List;
@@ -55,13 +54,12 @@ public class CommandAlias extends Command {
 
     @Override
     public String getShortDesc() {
-        return ShadowBaritoneI18n.trKey(shortDesc);
+        return shortDesc;
     }
 
     @Override
     public List<String> getLongDesc() {
-        return Collections.singletonList(ShadowBaritoneI18n.trKey(
-                "shadowbaritone.command.alias.long_desc",
-                target));
+        return Collections.singletonList(String.format("This command is an alias, for: %s ...", target));
     }
 }
+

@@ -52,3 +52,4 @@ public final class BlockStateOctreeInterface {
         return Octree.getBlock(this.chunkPtr, x & 0xF, y & 0x7F, z & 0xF);
     }
 }
+

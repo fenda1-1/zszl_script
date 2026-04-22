@@ -13,6 +13,30 @@ shadowbaritone.command.help.long_desc.1=使用此命令可查看 Baritone 某些
 shadowbaritone.command.help.long_desc.usage=用法：
 shadowbaritone.command.help.long_desc.example.list=> help - 列出所有命令及其简短说明。
 shadowbaritone.command.help.long_desc.example.command=> help <command> - 显示某个具体命令的帮助信息。
+shadowbaritone.command.error.not_found=未找到命令：%s
+
+# Structured i18n - command.modified
+shadowbaritone.command.modified.short_desc=列出已修改设置
+shadowbaritone.command.modified.long_desc.1=此命令是一个别名，实际执行：set modified ...
+
+# Structured i18n - command.reset
+shadowbaritone.command.reset.short_desc=重置全部设置或单项设置
+shadowbaritone.command.reset.long_desc.1=此命令是一个别名，实际执行：set reset ...
+
+# Structured i18n - command.sethome
+shadowbaritone.command.sethome.short_desc=设置你的 home 航点
+shadowbaritone.command.sethome.long_desc.1=此命令是一个别名，实际执行：waypoints save home ...
+
+# Structured i18n - command.home
+shadowbaritone.command.home.short_desc=前往你的 home 航点
+shadowbaritone.command.home.long_desc.1=此命令是一个别名，实际执行：waypoints goto home ...
+
+# Structured i18n - command.pickup
+shadowbaritone.command.pickup.short_desc=拾取物品
+shadowbaritone.command.pickup.long_desc.1=pickup 命令会让 Baritone 开始拾取附近掉落物。
+shadowbaritone.command.pickup.long_desc.usage=用法：
+shadowbaritone.command.pickup.long_desc.example.all=> pickup - 拾取任意物品
+shadowbaritone.command.pickup.long_desc.example.filtered=> pickup <item1> <item2> <...> - 只拾取指定物品
 
 # Structured i18n - command.goto
 shadowbaritone.command.goto.status.going_to=正在前往：%s

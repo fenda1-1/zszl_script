@@ -3,10 +3,10 @@ package com.zszl.zszlScriptMod.gui.config;
 import com.zszl.zszlScriptMod.gui.components.ThemedButton;
 import com.zszl.zszlScriptMod.handlers.BlockReplacementHandler;
 import com.zszl.zszlScriptMod.system.BlockReplacementRule;
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiScreen;
-import net.minecraft.client.gui.GuiTextField;
-import net.minecraft.client.resources.I18n;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiTextField;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -100,12 +100,6 @@ public class GuiBlockReplacementConfig extends AbstractThreePaneRuleManager<Bloc
     @Override
     protected boolean deleteCategoryInSource(String category) {
         return BlockReplacementHandler.deleteCategory(category);
-    }
-
-    @Override
-    protected boolean replaceCategoryOrderInSource(List<String> orderedCategories) {
-        BlockReplacementHandler.replaceCategoryOrder(orderedCategories);
-        return true;
     }
 
     @Override
@@ -478,10 +472,10 @@ public class GuiBlockReplacementConfig extends AbstractThreePaneRuleManager<Bloc
         if (button.id == BTN_EDIT_REPLACEMENT) {
             if (selectedReplacementIndex >= 0 && selectedReplacementIndex < workingRule.replacements.size()) {
                 final int editIndex = selectedReplacementIndex;
-                mc.displayGuiScreen(new GuiEditBlockReplacementEntry(this, workingRule.replacements.get(editIndex), edited -> {
+                mc.setScreen(new GuiEditBlockReplacementEntry(this, workingRule.replacements.get(editIndex), edited -> {
                     workingRule.replacements.set(editIndex, copyReplacementEntry(edited));
                     BlockReplacementHandler.markRuleDirty(workingRule);
-                    mc.displayGuiScreen(this);
+                    mc.setScreen(this);
                 }));
             }
             return true;
@@ -763,3 +757,7 @@ public class GuiBlockReplacementConfig extends AbstractThreePaneRuleManager<Bloc
         return enabled ? "开" : "关";
     }
 }
+
+
+
+

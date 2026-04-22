@@ -2,7 +2,7 @@ package com.zszl.zszlScriptMod.gui.path.GuiActionEditor.library.groups.flow;
 
 import com.zszl.zszlScriptMod.gui.path.GuiActionEditor.model.ActionLibraryNode;
 
-import net.minecraft.client.resources.I18n;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
 
 import java.util.function.Function;
 
@@ -16,7 +16,6 @@ public final class FlowActionLibraryGroup {
                 ActionLibraryNode.group("group_flow_control",
                         I18n.format("gui.path.action_editor.group.flow.control"),
                         itemFactory.apply("delay"),
-                        itemFactory.apply("runlastsequence"),
                         itemFactory.apply("set_var"),
                         itemFactory.apply("goto_action"),
                         itemFactory.apply("skip_actions"),

@@ -22,7 +22,6 @@ import com.zszl.zszlScriptMod.shadowbaritone.api.command.Command;
 import com.zszl.zszlScriptMod.shadowbaritone.api.command.argument.IArgConsumer;
 import com.zszl.zszlScriptMod.shadowbaritone.api.command.exception.CommandException;
 import com.zszl.zszlScriptMod.shadowbaritone.api.pathing.goals.GoalXZ;
-import com.zszl.zszlScriptMod.shadowbaritone.api.utils.ShadowBaritoneI18n;
 
 import java.util.Arrays;
 import java.util.List;
@@ -39,12 +38,11 @@ public class ThisWayCommand extends Command {
         args.requireExactly(1);
         GoalXZ goal = GoalXZ.fromDirection(
                 ctx.playerFeetAsVec(),
-                ctx.player().rotationYawHead,
-                args.getAs(Double.class));
+                ctx.player().getYHeadRot(),
+                args.getAs(Double.class)
+        );
         baritone.getCustomGoalProcess().setGoal(goal);
-        logDirect(ShadowBaritoneI18n.trKey(
-                "shadowbaritone.command.thisway.status.goal",
-                goal));
+        logDirect(String.format("Goal: %s", goal));
     }
 
     @Override
@@ -54,19 +52,17 @@ public class ThisWayCommand extends Command {
 
     @Override
     public String getShortDesc() {
-        return ShadowBaritoneI18n.trKey(
-                "shadowbaritone.command.thisway.short_desc");
+        return "Travel in your current direction";
     }
 
     @Override
     public List<String> getLongDesc() {
         return Arrays.asList(
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.thisway.long_desc.1"),
+                "Creates a GoalXZ some amount of blocks in the direction you're currently looking",
                 "",
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.thisway.long_desc.usage"),
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.thisway.long_desc.example.default"));
+                "Usage:",
+                "> thisway <distance> - makes a GoalXZ distance blocks in front of you"
+        );
     }
 }
+

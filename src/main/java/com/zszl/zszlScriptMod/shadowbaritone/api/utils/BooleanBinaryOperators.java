@@ -36,3 +36,4 @@ public enum BooleanBinaryOperators implements BooleanBinaryOperator {
         return this.op.applyAsBoolean(a, b);
     }
 }
+

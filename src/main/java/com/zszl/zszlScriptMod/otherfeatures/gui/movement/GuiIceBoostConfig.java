@@ -1,6 +1,6 @@
 package com.zszl.zszlScriptMod.otherfeatures.gui.movement;
 
-import net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
 
 public class GuiIceBoostConfig extends SingleMovementFeatureConfigScreen {
 
@@ -8,3 +8,6 @@ public class GuiIceBoostConfig extends SingleMovementFeatureConfigScreen {
         super(parentScreen, "ice_boost", "冰面加速设置");
     }
 }
+
+
+

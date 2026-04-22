@@ -1,34 +1,20 @@
 package com.zszl.zszlScriptMod.gui.config;
 
-import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
 import com.zszl.zszlScriptMod.gui.components.GuiTextInput;
 import com.zszl.zszlScriptMod.gui.components.GuiTheme;
 import com.zszl.zszlScriptMod.gui.components.ThemedButton;
 import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
-import com.zszl.zszlScriptMod.otherfeatures.handler.block.BlockFeatureManager;
-import com.zszl.zszlScriptMod.otherfeatures.handler.item.ItemFeatureManager;
-import com.zszl.zszlScriptMod.otherfeatures.handler.misc.MiscFeatureManager;
-import com.zszl.zszlScriptMod.otherfeatures.handler.movement.MovementFeatureManager;
-import com.zszl.zszlScriptMod.otherfeatures.handler.movement.SpeedHandler;
-import com.zszl.zszlScriptMod.otherfeatures.handler.render.RenderFeatureManager;
-import com.zszl.zszlScriptMod.otherfeatures.handler.world.WorldFeatureManager;
 import com.zszl.zszlScriptMod.system.ProfileManager;
 import com.zszl.zszlScriptMod.system.ProfileShareCodeManager;
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiScreen;
-import net.minecraft.client.gui.GuiTextField;
-import net.minecraft.client.resources.I18n;
-import org.lwjgl.input.Keyboard;
-import org.lwjgl.input.Mouse;
+import com.zszl.zszlScriptMod.utils.PinyinSearchHelper;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiTextField;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Keyboard;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Mouse;
 
-import java.awt.Rectangle;
 import java.io.IOException;
-import java.io.Reader;
-import java.io.Writer;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -36,15 +22,6 @@ import java.util.Locale;
 import java.util.Set;
 
 public class GuiProfileManager extends ThemedGuiScreen {
-    private static final String PREFERENCES_FILE_NAME = "gui_profile_manager_layout.json";
-    private static final int DIVIDER_WIDTH = 12;
-    private static final int DIVIDER_HIT_WIDTH = 24;
-    private static final int MIN_PROFILE_COLUMN_WIDTH = 150;
-    private static final int MIN_FILE_COLUMN_WIDTH = 190;
-    private static final int MIN_PREVIEW_COLUMN_WIDTH = 260;
-    private static boolean preferencesLoaded = false;
-    private static double savedProfileColumnRatio = 0.18D;
-    private static double savedFileColumnRatio = 0.28D;
 
     private final GuiScreen parentScreen;
 
@@ -78,139 +55,9 @@ public class GuiProfileManager extends ThemedGuiScreen {
     private GuiButton btnClearFileSelection;
     private GuiButton btnRefresh;
     private GuiTextField fileSearchField;
-    private boolean draggingProfileDivider = false;
-    private boolean draggingFileDivider = false;
-    private Rectangle profileDividerBounds = null;
-    private Rectangle fileDividerBounds = null;
 
     public GuiProfileManager(GuiScreen parent) {
-        ensurePreferencesLoaded();
         this.parentScreen = parent;
-    }
-
-    private static synchronized void ensurePreferencesLoaded() {
-        if (preferencesLoaded) {
-            return;
-        }
-        preferencesLoaded = true;
-        savedProfileColumnRatio = 0.18D;
-        savedFileColumnRatio = 0.28D;
-
-        Path path = getPreferencesPath();
-        if (path == null || !Files.exists(path)) {
-            return;
-        }
-
-        try (Reader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
-            JsonObject root = new JsonParser().parse(reader).getAsJsonObject();
-            if (root == null) {
-                return;
-            }
-            if (root.has("profileColumnRatio")) {
-                savedProfileColumnRatio = root.get("profileColumnRatio").getAsDouble();
-            }
-            if (root.has("fileColumnRatio")) {
-                savedFileColumnRatio = root.get("fileColumnRatio").getAsDouble();
-            }
-        } catch (Exception ignored) {
-            savedProfileColumnRatio = 0.18D;
-            savedFileColumnRatio = 0.28D;
-        }
-    }
-
-    private static Path getPreferencesPath() {
-        try {
-            return ProfileManager.getCurrentProfileDir().resolve(PREFERENCES_FILE_NAME);
-        } catch (Exception ignored) {
-            return null;
-        }
-    }
-
-    private static synchronized void saveLayoutPreferences() {
-        Path path = getPreferencesPath();
-        if (path == null) {
-            return;
-        }
-
-        try {
-            if (path.getParent() != null) {
-                Files.createDirectories(path.getParent());
-            }
-            JsonObject root = new JsonObject();
-            root.addProperty("profileColumnRatio", savedProfileColumnRatio);
-            root.addProperty("fileColumnRatio", savedFileColumnRatio);
-            try (Writer writer = Files.newBufferedWriter(path, StandardCharsets.UTF_8)) {
-                writer.write(root.toString());
-            }
-        } catch (Exception ignored) {
-        }
-    }
-
-    private void persistCurrentLayoutRatios() {
-        savedProfileColumnRatio = Math.max(0.10D, Math.min(0.40D, savedProfileColumnRatio));
-        savedFileColumnRatio = Math.max(0.16D, Math.min(0.55D, savedFileColumnRatio));
-        saveLayoutPreferences();
-    }
-
-    private void updateResponsiveWidgets() {
-        if (fileSearchField != null) {
-            fileSearchField.x = getFileSearchX() + 4;
-            fileSearchField.y = getFileSearchY() + 5;
-            fileSearchField.width = getFileSearchWidth() - 8;
-            fileSearchField.height = 10;
-        }
-        updateDividerBounds();
-    }
-
-    private void updateDividerBounds() {
-        int dividerCenterOne = getProfileListX() + getProfileListWidth() + 5;
-        int dividerCenterTwo = getFileListX() + getFileListWidth() + 5;
-        int hitOffset = DIVIDER_HIT_WIDTH / 2;
-        int y = getListY() + 4;
-        int height = Math.max(36, getListHeight() - 8);
-        profileDividerBounds = new Rectangle(dividerCenterOne - hitOffset, y, DIVIDER_HIT_WIDTH, height);
-        fileDividerBounds = new Rectangle(dividerCenterTwo - hitOffset, y, DIVIDER_HIT_WIDTH, height);
-    }
-
-    private void drawDividerHandle(Rectangle bounds, int mouseX, int mouseY, boolean dragging) {
-        if (bounds == null) {
-            return;
-        }
-        boolean hovered = bounds.contains(mouseX, mouseY);
-        int accent = dragging ? 0xFF7CD9FF : (hovered ? 0xFF63BFEF : 0xFF3E617A);
-        int actualX = bounds.x + Math.max(0, (bounds.width - DIVIDER_WIDTH) / 2);
-        if (hovered || dragging) {
-            drawRect(bounds.x, bounds.y, bounds.x + bounds.width, bounds.y + bounds.height, 0x33111922);
-        }
-        drawRect(actualX, bounds.y, actualX + DIVIDER_WIDTH, bounds.y + bounds.height, 0x77111922);
-        drawRect(actualX + 5, bounds.y + 18, actualX + 7, bounds.y + bounds.height - 18, accent);
-        int centerY = bounds.y + bounds.height / 2 - 12;
-        for (int i = 0; i < 4; i++) {
-            drawRect(actualX + 3, centerY + i * 7, actualX + DIVIDER_WIDTH - 3, centerY + i * 7 + 2, accent);
-        }
-    }
-
-    private void applyProfileDividerDrag(int mouseX) {
-        int[] widths = getColumnWidths();
-        int total = getPanelWidth() - 40;
-        int[] minimums = getColumnMinimums(total);
-        int desiredWidth = mouseX - getPanelX() - 15;
-        int maxProfileWidth = Math.max(minimums[0], total - widths[1] - minimums[2]);
-        widths[0] = Math.max(minimums[0], Math.min(desiredWidth, maxProfileWidth));
-        savedProfileColumnRatio = widths[0] / (double) Math.max(1, total);
-        updateResponsiveWidgets();
-    }
-
-    private void applyFileDividerDrag(int mouseX) {
-        int[] widths = getColumnWidths();
-        int total = getPanelWidth() - 40;
-        int[] minimums = getColumnMinimums(total);
-        int desiredWidth = mouseX - getFileListX() - 5;
-        int remainingAfterProfile = Math.max(1, total - widths[0]);
-        int maxFileWidth = Math.max(minimums[1], total - widths[0] - minimums[2]);
-        widths[1] = Math.max(minimums[1], Math.min(desiredWidth, maxFileWidth));
-        savedFileColumnRatio = widths[1] / (double) Math.max(1, remainingAfterProfile);
-        updateResponsiveWidgets();
     }
 
     @Override
@@ -264,7 +111,6 @@ public class GuiProfileManager extends ThemedGuiScreen {
         fileSearchField.setText(fileSearchQuery == null ? "" : fileSearchQuery);
 
         applyFileFilter(getSelectedFilePath());
-        updateResponsiveWidgets();
         updateButtonStates();
     }
 
@@ -354,18 +200,13 @@ public class GuiProfileManager extends ThemedGuiScreen {
         if (keyword.isEmpty()) {
             return true;
         }
-
-        String normalizedPath = normalizeSearchText(path);
-        String localizedName = normalizeSearchText(getDisplayNameForFile(path));
-        String label = normalizeSearchText(getDisplayLabelForFile(path));
-        return normalizedPath.contains(keyword) || localizedName.contains(keyword) || label.contains(keyword);
+        return PinyinSearchHelper.matchesNormalized(path, keyword)
+                || PinyinSearchHelper.matchesNormalized(getDisplayNameForFile(path), keyword)
+                || PinyinSearchHelper.matchesNormalized(getDisplayLabelForFile(path), keyword);
     }
 
     private String normalizeSearchText(String text) {
-        if (text == null) {
-            return "";
-        }
-        return text.replace('\\', '/').replace(" ", "").trim().toLowerCase(Locale.ROOT);
+        return PinyinSearchHelper.normalizeQuery(text == null ? "" : text.replace('\\', '/'));
     }
 
     private void loadPreviewForSelectedFile() {
@@ -410,7 +251,6 @@ public class GuiProfileManager extends ThemedGuiScreen {
             case 0:
                 if (btnSelect.enabled) {
                     ProfileManager.setActiveProfile(getSelectedProfileName());
-                    reloadOtherFeatureConfigsForActiveProfile();
                     setStatus("§a已切换到配置: " + getSelectedProfileName(), 0xFF8CFF9E);
                     refreshProfiles();
                     refreshFilesForSelectedProfile();
@@ -418,7 +258,7 @@ public class GuiProfileManager extends ThemedGuiScreen {
                 }
                 break;
             case 1:
-                mc.displayGuiScreen(new GuiTextInput(this, I18n.format("gui.profile.input_new"), newName -> {
+                mc.setScreen(new GuiTextInput(this, I18n.format("gui.profile.input_new"), newName -> {
                     if (newName != null && !newName.trim().isEmpty()) {
                         if (ProfileManager.createProfile(newName.trim())) {
                             profiles = ProfileManager.getAllProfileNames();
@@ -478,7 +318,7 @@ public class GuiProfileManager extends ThemedGuiScreen {
                 setStatus("§7已清空分享勾选", 0xFFB8C7D9);
                 break;
             case 9:
-                mc.displayGuiScreen(parentScreen);
+                mc.setScreen(parentScreen);
                 break;
             default:
                 break;
@@ -493,7 +333,7 @@ public class GuiProfileManager extends ThemedGuiScreen {
         }
         try {
             String content = ProfileShareCodeManager.loadProfileFileContent(profileName, relativePath);
-            mc.displayGuiScreen(new GuiProfileConfigEditor(this, profileName, relativePath, content));
+            mc.setScreen(new GuiProfileConfigEditor(this, profileName, relativePath, content));
         } catch (Exception e) {
             setStatus("§c打开编辑器失败: " + e.getMessage(), 0xFFFF8E8E);
         }
@@ -527,7 +367,7 @@ public class GuiProfileManager extends ThemedGuiScreen {
         if (targetProfile == null) {
             return;
         }
-        mc.displayGuiScreen(new GuiTextInput(this, "粘贴分享码到当前配置: " + targetProfile, code -> {
+        mc.setScreen(new GuiTextInput(this, "粘贴分享码到当前配置: " + targetProfile, code -> {
             if (code == null || code.trim().isEmpty()) {
                 setStatus("§7已取消导入", 0xFFB8C7D9);
                 return;
@@ -535,7 +375,7 @@ public class GuiProfileManager extends ThemedGuiScreen {
             try {
                 ProfileShareCodeManager.ImportPreview preview = ProfileShareCodeManager.previewImport(code,
                         targetProfile);
-                mc.displayGuiScreen(new GuiShareImportPreview(this, targetProfile, preview));
+                mc.setScreen(new GuiShareImportPreview(this, targetProfile, preview));
             } catch (Exception e) {
                 setStatus("§c导入失败: " + e.getMessage(), 0xFFFF8E8E);
             }
@@ -564,8 +404,8 @@ public class GuiProfileManager extends ThemedGuiScreen {
             return;
         }
 
-        int mouseX = Mouse.getEventX() * this.width / this.mc.displayWidth;
-        int mouseY = this.height - Mouse.getEventY() * this.height / this.mc.displayHeight - 1;
+        int mouseX = Mouse.getEventX() * this.width / this.mc.getWindow().getWidth();
+        int mouseY = this.height - Mouse.getEventY() * this.height / this.mc.getWindow().getHeight() - 1;
 
         if (isInside(mouseX, mouseY, getProfileListX(), getListY(), getProfileListWidth(), getListHeight())) {
             if (dWheel > 0) {
@@ -596,16 +436,6 @@ public class GuiProfileManager extends ThemedGuiScreen {
 
     @Override
     protected void mouseClicked(int mouseX, int mouseY, int mouseButton) throws IOException {
-        if (mouseButton == 0) {
-            if (profileDividerBounds != null && profileDividerBounds.contains(mouseX, mouseY)) {
-                draggingProfileDivider = true;
-                return;
-            }
-            if (fileDividerBounds != null && fileDividerBounds.contains(mouseX, mouseY)) {
-                draggingFileDivider = true;
-                return;
-            }
-        }
         super.mouseClicked(mouseX, mouseY, mouseButton);
 
         if (fileSearchField != null) {
@@ -621,30 +451,6 @@ public class GuiProfileManager extends ThemedGuiScreen {
 
         handleProfileListClick(mouseX, mouseY);
         handleFileListClick(mouseX, mouseY);
-    }
-
-    @Override
-    protected void mouseClickMove(int mouseX, int mouseY, int clickedMouseButton, long timeSinceLastClick) {
-        if (draggingProfileDivider) {
-            applyProfileDividerDrag(mouseX);
-            return;
-        }
-        if (draggingFileDivider) {
-            applyFileDividerDrag(mouseX);
-            return;
-        }
-        super.mouseClickMove(mouseX, mouseY, clickedMouseButton, timeSinceLastClick);
-    }
-
-    @Override
-    protected void mouseReleased(int mouseX, int mouseY, int state) {
-        if (state == 0 && (draggingProfileDivider || draggingFileDivider)) {
-            draggingProfileDivider = false;
-            draggingFileDivider = false;
-            persistCurrentLayoutRatios();
-            return;
-        }
-        super.mouseReleased(mouseX, mouseY, state);
     }
 
     @Override
@@ -775,8 +581,6 @@ public class GuiProfileManager extends ThemedGuiScreen {
         drawProfileList(mouseX, mouseY);
         drawFileList(mouseX, mouseY);
         drawPreviewPanel();
-        drawDividerHandle(profileDividerBounds, mouseX, mouseY, draggingProfileDivider);
-        drawDividerHandle(fileDividerBounds, mouseX, mouseY, draggingFileDivider);
 
         String filterHint = fileSearchQuery == null || fileSearchQuery.trim().isEmpty()
                 ? "§7未过滤"
@@ -788,14 +592,6 @@ public class GuiProfileManager extends ThemedGuiScreen {
                 panelX + 10, panelY + panelHeight - 70, 0xFFB8C7D9);
 
         super.drawScreen(mouseX, mouseY, partialTicks);
-
-        if (profileDividerBounds != null && profileDividerBounds.contains(mouseX, mouseY)) {
-            drawHoveringText(java.util.Collections.singletonList("拖动调整左侧配置方案与中间文件列表宽度"), mouseX, mouseY);
-            return;
-        }
-        if (fileDividerBounds != null && fileDividerBounds.contains(mouseX, mouseY)) {
-            drawHoveringText(java.util.Collections.singletonList("拖动调整中间文件列表与右侧预览宽度"), mouseX, mouseY);
-        }
     }
 
     private void drawProfileList(int mouseX, int mouseY) {
@@ -1034,192 +830,30 @@ public class GuiProfileManager extends ThemedGuiScreen {
 
     private int[] getColumnWidths() {
         int total = getPanelWidth() - 40;
-        int[] minimums = getColumnMinimums(total);
-        int profileMin = minimums[0];
-        int fileMin = minimums[1];
-        int previewMin = minimums[2];
-
-        int maxProfileWidth = Math.max(profileMin, total - fileMin - previewMin);
-        int profileWidth = Math.max(profileMin,
-                Math.min((int) Math.round(total * savedProfileColumnRatio), maxProfileWidth));
-        int remainingAfterProfile = Math.max(1, total - profileWidth);
-
+        int profileWidth = Math.max(160, Math.min(220, total / 4));
         int preferredFileWidth = getPreferredFileListWidth();
-        int suggestedFileWidth = Math.max(fileMin, Math.min(preferredFileWidth, remainingAfterProfile - previewMin));
-        int maxFileWidth = Math.max(fileMin, remainingAfterProfile - previewMin);
-        int fileWidth = Math.max(fileMin,
-                Math.min(Math.max((int) Math.round(remainingAfterProfile * savedFileColumnRatio), suggestedFileWidth),
-                        maxFileWidth));
-
+        int fileWidth = Math.max(190, Math.min(320, preferredFileWidth));
         int previewWidth = total - profileWidth - fileWidth;
-        if (previewWidth < previewMin) {
-            int need = previewMin - previewWidth;
-            int reducibleFile = Math.max(0, fileWidth - fileMin);
-            int reduceFile = Math.min(need, reducibleFile);
-            fileWidth -= reduceFile;
-            previewWidth += reduceFile;
-            need -= reduceFile;
-            if (need > 0) {
-                int reducibleProfile = Math.max(0, profileWidth - profileMin);
-                int reduceProfile = Math.min(need, reducibleProfile);
-                profileWidth -= reduceProfile;
-                previewWidth += reduceProfile;
-            }
+
+        if (previewWidth < 360) {
+            int need = 360 - previewWidth;
+            int reducible = Math.max(0, fileWidth - 190);
+            int reduce = Math.min(need, reducible);
+            fileWidth -= reduce;
+            previewWidth += reduce;
+        }
+        if (previewWidth < 300) {
+            int need = 300 - previewWidth;
+            int reducible = Math.max(0, profileWidth - 150);
+            int reduce = Math.min(need, reducible);
+            profileWidth -= reduce;
+            previewWidth += reduce;
+        }
+        if (previewWidth < 260) {
+            previewWidth = 260;
+            fileWidth = Math.max(170, total - profileWidth - previewWidth);
         }
         return new int[] { profileWidth, fileWidth, total - profileWidth - fileWidth };
-    }
-
-    private int[] getColumnMinimums(int total) {
-        int profilePreferred = Math.max(120, Math.min(MIN_PROFILE_COLUMN_WIDTH, Math.max(120, total / 4)));
-        int filePreferred = Math.max(170, Math.min(MIN_FILE_COLUMN_WIDTH, Math.max(170, total / 3)));
-        int previewPreferred = Math.max(220, Math.min(MIN_PREVIEW_COLUMN_WIDTH, Math.max(220, total / 3)));
-        return fitWidthsToTotal(total,
-                new int[] { profilePreferred, filePreferred, previewPreferred },
-                new int[] { Math.min(profilePreferred, 96), Math.min(filePreferred, 132), Math.min(previewPreferred, 168) });
-    }
-
-    private int[] fitWidthsToTotal(int totalWidth, int[] preferredWidths, int[] floorWidths) {
-        int count = Math.min(preferredWidths.length, floorWidths.length);
-        int[] result = new int[count];
-        if (count == 0 || totalWidth <= 0) {
-            return result;
-        }
-
-        int preferredSum = 0;
-        int floorSum = 0;
-        for (int i = 0; i < count; i++) {
-            int floor = Math.max(1, floorWidths[i]);
-            int preferred = Math.max(floor, preferredWidths[i]);
-            floorWidths[i] = floor;
-            result[i] = preferred;
-            preferredSum += preferred;
-            floorSum += floor;
-        }
-
-        if (preferredSum <= totalWidth) {
-            return result;
-        }
-
-        if (floorSum >= totalWidth) {
-            return scaleWidthsToTotal(totalWidth, floorWidths);
-        }
-
-        int overflow = preferredSum - totalWidth;
-        while (overflow > 0) {
-            int reducibleTotal = 0;
-            for (int i = 0; i < count; i++) {
-                reducibleTotal += Math.max(0, result[i] - floorWidths[i]);
-            }
-            if (reducibleTotal <= 0) {
-                break;
-            }
-
-            int reducedThisPass = 0;
-            for (int i = 0; i < count && overflow > 0; i++) {
-                int reducible = Math.max(0, result[i] - floorWidths[i]);
-                if (reducible <= 0) {
-                    continue;
-                }
-                int reduce = Math.max(1, (int) Math.floor(overflow * (reducible / (double) reducibleTotal)));
-                reduce = Math.min(reduce, reducible);
-                result[i] -= reduce;
-                overflow -= reduce;
-                reducedThisPass += reduce;
-            }
-
-            if (reducedThisPass <= 0) {
-                break;
-            }
-        }
-
-        while (overflow > 0) {
-            boolean reduced = false;
-            for (int i = count - 1; i >= 0 && overflow > 0; i--) {
-                if (result[i] > floorWidths[i]) {
-                    result[i]--;
-                    overflow--;
-                    reduced = true;
-                }
-            }
-            if (!reduced) {
-                break;
-            }
-        }
-
-        return result;
-    }
-
-    private int[] scaleWidthsToTotal(int totalWidth, int[] basisWidths) {
-        int[] result = new int[basisWidths.length];
-        if (basisWidths.length == 0 || totalWidth <= 0) {
-            return result;
-        }
-
-        int basisSum = 0;
-        for (int width : basisWidths) {
-            basisSum += Math.max(1, width);
-        }
-        if (basisSum <= 0) {
-            basisSum = basisWidths.length;
-        }
-
-        int used = 0;
-        double[] fractions = new double[basisWidths.length];
-        for (int i = 0; i < basisWidths.length; i++) {
-            double scaled = Math.max(1, basisWidths[i]) * (double) totalWidth / (double) basisSum;
-            int width = Math.max(1, (int) Math.floor(scaled));
-            result[i] = width;
-            fractions[i] = scaled - width;
-            used += width;
-        }
-
-        while (used > totalWidth) {
-            int index = indexOfLargestWidth(result);
-            if (index < 0 || result[index] <= 1) {
-                break;
-            }
-            result[index]--;
-            used--;
-        }
-
-        while (used < totalWidth) {
-            int index = indexOfLargestFraction(fractions);
-            if (index < 0) {
-                index = indexOfLargestWidth(basisWidths);
-            }
-            if (index < 0) {
-                break;
-            }
-            result[index]++;
-            fractions[index] = 0.0D;
-            used++;
-        }
-
-        return result;
-    }
-
-    private int indexOfLargestFraction(double[] values) {
-        int index = -1;
-        double best = Double.NEGATIVE_INFINITY;
-        for (int i = 0; i < values.length; i++) {
-            if (values[i] > best) {
-                best = values[i];
-                index = i;
-            }
-        }
-        return index;
-    }
-
-    private int indexOfLargestWidth(int[] values) {
-        int index = -1;
-        int best = Integer.MIN_VALUE;
-        for (int i = 0; i < values.length; i++) {
-            if (values[i] > best) {
-                best = values[i];
-                index = i;
-            }
-        }
-        return index;
     }
 
     private int getPreferredFileListWidth() {
@@ -1319,14 +953,11 @@ public class GuiProfileManager extends ThemedGuiScreen {
     private int getFileListContentHeight() {
         return getListHeight() - 52;
     }
-
-    private void reloadOtherFeatureConfigsForActiveProfile() {
-        SpeedHandler.loadConfig();
-        MovementFeatureManager.loadConfig();
-        BlockFeatureManager.loadConfig();
-        WorldFeatureManager.loadConfig();
-        RenderFeatureManager.loadConfig();
-        ItemFeatureManager.loadConfig();
-        MiscFeatureManager.loadConfig();
-    }
 }
+
+
+
+
+
+
+

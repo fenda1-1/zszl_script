@@ -19,6 +19,7 @@ package com.zszl.zszlScriptMod.shadowbaritone.api.command.exception;
 
 import com.zszl.zszlScriptMod.shadowbaritone.api.command.ICommand;
 import com.zszl.zszlScriptMod.shadowbaritone.api.command.argument.ICommandArgument;
+import com.zszl.zszlScriptMod.shadowbaritone.api.utils.ShadowBaritoneI18n;
 
 import java.util.List;
 
@@ -29,7 +30,10 @@ public class CommandNotFoundException extends CommandException {
     public final String command;
 
     public CommandNotFoundException(String command) {
-        super(String.format("Command not found: %s", command));
+        super(ShadowBaritoneI18n.trKeyOrDefault(
+                "shadowbaritone.command.error.not_found",
+                "未找到命令：%s",
+                command));
         this.command = command;
     }
 
@@ -38,3 +42,4 @@ public class CommandNotFoundException extends CommandException {
         HELPER.logDirect(getMessage());
     }
 }
+

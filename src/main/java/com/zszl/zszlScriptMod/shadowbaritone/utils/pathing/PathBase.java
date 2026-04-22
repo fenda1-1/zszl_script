@@ -23,7 +23,7 @@ import com.zszl.zszlScriptMod.shadowbaritone.api.pathing.calc.IPath;
 import com.zszl.zszlScriptMod.shadowbaritone.api.pathing.goals.Goal;
 import com.zszl.zszlScriptMod.shadowbaritone.pathing.path.CutoffPath;
 import com.zszl.zszlScriptMod.shadowbaritone.utils.BlockStateInterface;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.core.BlockPos;
 
 public abstract class PathBase implements IPath {
 
@@ -56,3 +56,4 @@ public abstract class PathBase implements IPath {
         return new CutoffPath(this, newLength);
     }
 }
+

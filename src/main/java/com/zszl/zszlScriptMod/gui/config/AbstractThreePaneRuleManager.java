@@ -1,25 +1,16 @@
 package com.zszl.zszlScriptMod.gui.config;
 
-import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
 import com.zszl.zszlScriptMod.gui.components.GuiTextInput;
 import com.zszl.zszlScriptMod.gui.components.GuiTheme;
 import com.zszl.zszlScriptMod.gui.components.ThemedButton;
 import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
-import com.zszl.zszlScriptMod.system.ProfileManager;
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiScreen;
-import net.minecraft.client.gui.GuiTextField;
-import org.lwjgl.input.Keyboard;
-import org.lwjgl.input.Mouse;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiTextField;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Keyboard;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Mouse;
 
-import java.awt.Rectangle;
 import java.io.IOException;
-import java.io.Reader;
-import java.io.Writer;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -37,12 +28,6 @@ public abstract class AbstractThreePaneRuleManager<T> extends ThemedGuiScreen {
 
     protected static final int TREE_ROW_HEIGHT = 18;
     protected static final int EDITOR_ROW_HEIGHT = 24;
-    protected static final int PANE_DIVIDER_WIDTH = 12;
-    protected static final int PANE_DIVIDER_HIT_WIDTH = 24;
-    protected static final int MIN_TREE_PANE_WIDTH = 122;
-    protected static final int MIN_LIST_PANE_WIDTH = 190;
-    protected static final int MIN_EDITOR_PANE_WIDTH = 260;
-    protected static final String LAYOUT_PREFERENCES_PREFIX = "three_pane_rule_manager_";
 
     protected final GuiScreen parentScreen;
 
@@ -85,9 +70,6 @@ public abstract class AbstractThreePaneRuleManager<T> extends ThemedGuiScreen {
     protected int editorFieldX;
     protected int editorRowStartY;
     protected int editorVisibleRows;
-    protected int layoutInnerX;
-    protected int layoutInnerWidth;
-    protected int layoutColumnGap;
 
     protected GuiButton btnNew;
     protected GuiButton btnDelete;
@@ -106,86 +88,9 @@ public abstract class AbstractThreePaneRuleManager<T> extends ThemedGuiScreen {
     private int contextMenuTargetIndex = -1;
     private String contextMenuTargetType = "card";
     private String contextMenuTargetCategory = "";
-    private int pendingTreePressIndex = -1;
-    private int pendingTreePressMouseX = 0;
-    private int pendingTreePressMouseY = 0;
-    private boolean treeDragging = false;
-    private DragPayload activeDragPayload = null;
-    private TreeDropTarget currentTreeDropTarget = null;
-    private boolean layoutPreferencesLoaded = false;
-    private double savedTreePaneRatio = 0.18D;
-    private double savedListPaneRatio = 0.34D;
-    private boolean draggingTreeDivider = false;
-    private boolean draggingListDivider = false;
-    private Rectangle treeDividerBounds = null;
-    private Rectangle listDividerBounds = null;
 
     protected AbstractThreePaneRuleManager(GuiScreen parentScreen) {
         this.parentScreen = parentScreen;
-    }
-
-    private void ensureLayoutPreferencesLoaded() {
-        if (layoutPreferencesLoaded) {
-            return;
-        }
-        layoutPreferencesLoaded = true;
-        savedTreePaneRatio = 0.18D;
-        savedListPaneRatio = 0.34D;
-
-        Path path = getLayoutPreferencesPath();
-        if (path == null || !Files.exists(path)) {
-            return;
-        }
-
-        try (Reader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
-            JsonObject root = new JsonParser().parse(reader).getAsJsonObject();
-            if (root == null) {
-                return;
-            }
-            if (root.has("treePaneRatio")) {
-                savedTreePaneRatio = root.get("treePaneRatio").getAsDouble();
-            }
-            if (root.has("listPaneRatio")) {
-                savedListPaneRatio = root.get("listPaneRatio").getAsDouble();
-            }
-        } catch (Exception ignored) {
-            savedTreePaneRatio = 0.18D;
-            savedListPaneRatio = 0.34D;
-        }
-    }
-
-    private Path getLayoutPreferencesPath() {
-        try {
-            return ProfileManager.getCurrentProfileDir()
-                    .resolve(LAYOUT_PREFERENCES_PREFIX + getClass().getSimpleName() + ".json");
-        } catch (Exception ignored) {
-            return null;
-        }
-    }
-
-    private void saveLayoutPreferences() {
-        Path path = getLayoutPreferencesPath();
-        if (path == null) {
-            return;
-        }
-        try {
-            if (path.getParent() != null) {
-                Files.createDirectories(path.getParent());
-            }
-            JsonObject root = new JsonObject();
-            root.addProperty("treePaneRatio", savedTreePaneRatio);
-            root.addProperty("listPaneRatio", savedListPaneRatio);
-            try (Writer writer = Files.newBufferedWriter(path, StandardCharsets.UTF_8)) {
-                writer.write(root.toString());
-            }
-        } catch (Exception ignored) {
-        }
-    }
-
-    private void persistCurrentLayoutRatios() {
-        savedTreePaneRatio = Math.max(0.08D, Math.min(0.55D, savedTreePaneRatio));
-        savedListPaneRatio = Math.max(0.18D, Math.min(0.72D, savedListPaneRatio));
-        saveLayoutPreferences();
     }
 
     @Override
@@ -203,7 +108,6 @@ public abstract class AbstractThreePaneRuleManager<T> extends ThemedGuiScreen {
     }
 
     protected void recalcLayout() {
-        ensureLayoutPreferencesLoaded();
         panelWidth = Math.min(1140, this.width - 20);
         panelHeight = Math.min(620, this.height - 20);
         panelX = (this.width - panelWidth) / 2;
@@ -212,246 +116,31 @@ public abstract class AbstractThreePaneRuleManager<T> extends ThemedGuiScreen {
         int sidePadding = 12;
         int columnGap = this.width < 960 ? 8 : 10;
         int availableWidth = panelWidth - sidePadding * 2;
-        int usableWidth = Math.max(1, availableWidth - columnGap * 2);
-        int[] paneMinimums = resolvePaneMinimums(usableWidth);
-        int treeMin = paneMinimums[0];
-        int listMin = paneMinimums[1];
-        int editorMin = paneMinimums[2];
 
-        int treePaneWidth;
-        if (treeCollapsed) {
-            treePaneWidth = treeMin;
-        } else {
-            int maxTreeWidth = Math.max(treeMin, usableWidth - listMin - editorMin);
-            treePaneWidth = Math.max(treeMin,
-                    Math.min((int) Math.round(usableWidth * savedTreePaneRatio), maxTreeWidth));
-        }
-
-        int remainingAfterTree = Math.max(1, usableWidth - treePaneWidth);
-        int listPaneWidth;
-        if (listCollapsed) {
-            listPaneWidth = listMin;
-        } else {
-            int maxListWidth = Math.max(listMin, remainingAfterTree - editorMin);
-            listPaneWidth = Math.max(listMin,
-                    Math.min((int) Math.round(remainingAfterTree * savedListPaneRatio), maxListWidth));
-        }
-
-        int editorPaneWidth = usableWidth - treePaneWidth - listPaneWidth;
-        if (editorPaneWidth < editorMin && !listCollapsed) {
-            int needed = editorMin - editorPaneWidth;
-            int reducible = Math.max(0, listPaneWidth - listMin);
-            int reduce = Math.min(needed, reducible);
-            listPaneWidth -= reduce;
-            editorPaneWidth += reduce;
-        }
-        if (editorPaneWidth < editorMin && !treeCollapsed) {
-            int needed = editorMin - editorPaneWidth;
-            int reducible = Math.max(0, treePaneWidth - treeMin);
-            int reduce = Math.min(needed, reducible);
-            treePaneWidth -= reduce;
-            editorPaneWidth += reduce;
-        }
-        editorPaneWidth = Math.max(1, usableWidth - treePaneWidth - listPaneWidth);
-
-        if (!treeCollapsed) {
-            savedTreePaneRatio = treePaneWidth / (double) Math.max(1, usableWidth);
-        }
-        if (!listCollapsed) {
-            savedListPaneRatio = listPaneWidth / (double) Math.max(1, usableWidth - treePaneWidth);
-        }
-
-        layoutInnerX = panelX + sidePadding;
-        layoutInnerWidth = usableWidth;
-        layoutColumnGap = columnGap;
-
-        treeX = layoutInnerX;
+        treeX = panelX + sidePadding;
         treeY = panelY + 46;
         treeHeight = panelHeight - 104;
-        treeWidth = treePaneWidth;
+        treeWidth = treeCollapsed
+                ? getCollapsedSectionWidth(getTreeCollapsedTitle())
+                : Math.max(122, Math.min(170, availableWidth / 6));
 
         listX = treeX + treeWidth + columnGap;
         listY = treeY;
         listHeight = treeHeight;
-        listWidth = listPaneWidth;
+        listWidth = listCollapsed
+                ? getCollapsedSectionWidth(getListCollapsedTitle())
+                : Math.max(190, Math.min(250, availableWidth / 4));
 
         int rightX = listX + listWidth + columnGap;
         editorX = rightX;
         editorY = treeY;
-        editorWidth = editorPaneWidth;
+        editorWidth = panelX + panelWidth - sidePadding - rightX;
         editorHeight = treeHeight;
-
-        int dividerHitOffset = Math.max(0, (PANE_DIVIDER_HIT_WIDTH - PANE_DIVIDER_WIDTH) / 2);
-        treeDividerBounds = treeCollapsed ? null
-                : new Rectangle(treeX + treeWidth + columnGap / 2 - PANE_DIVIDER_HIT_WIDTH / 2, treeY + 4,
-                        PANE_DIVIDER_HIT_WIDTH, Math.max(36, treeHeight - 8));
-        listDividerBounds = listCollapsed ? null
-                : new Rectangle(listX + listWidth + columnGap / 2 - PANE_DIVIDER_HIT_WIDTH / 2, listY + 4,
-                        PANE_DIVIDER_HIT_WIDTH, Math.max(36, listHeight - 8));
 
         editorLabelX = editorX + 10;
         editorFieldX = editorX + getEditorLabelWidth();
         editorRowStartY = editorY + 28;
         editorVisibleRows = Math.max(1, (editorHeight - 38) / EDITOR_ROW_HEIGHT);
-    }
-
-    private int[] resolvePaneMinimums(int usableWidth) {
-        int treePreferred = treeCollapsed ? getCollapsedSectionWidth(getTreeCollapsedTitle()) : MIN_TREE_PANE_WIDTH;
-        int listPreferred = listCollapsed ? getCollapsedSectionWidth(getListCollapsedTitle()) : MIN_LIST_PANE_WIDTH;
-        int editorPreferred = MIN_EDITOR_PANE_WIDTH;
-
-        int treeFloor = treeCollapsed ? Math.min(treePreferred, 48) : Math.min(treePreferred, 78);
-        int listFloor = listCollapsed ? Math.min(listPreferred, 48) : Math.min(listPreferred, 112);
-        int editorFloor = Math.min(editorPreferred, 156);
-
-        return fitWidthsToTotal(usableWidth,
-                new int[] { treePreferred, listPreferred, editorPreferred },
-                new int[] { treeFloor, listFloor, editorFloor });
-    }
-
-    private int[] fitWidthsToTotal(int totalWidth, int[] preferredWidths, int[] floorWidths) {
-        int count = Math.min(preferredWidths.length, floorWidths.length);
-        int[] result = new int[count];
-        if (count == 0 || totalWidth <= 0) {
-            return result;
-        }
-
-        int floorSum = 0;
-        int preferredSum = 0;
-        for (int i = 0; i < count; i++) {
-            int floor = Math.max(1, floorWidths[i]);
-            int preferred = Math.max(floor, preferredWidths[i]);
-            result[i] = preferred;
-            floorWidths[i] = floor;
-            floorSum += floor;
-            preferredSum += preferred;
-        }
-
-        if (preferredSum <= totalWidth) {
-            return result;
-        }
-
-        if (floorSum >= totalWidth) {
-            return scaleWidthsToTotal(totalWidth, floorWidths);
-        }
-
-        int overflow = preferredSum - totalWidth;
-        while (overflow > 0) {
-            int reducibleTotal = 0;
-            for (int i = 0; i < count; i++) {
-                reducibleTotal += Math.max(0, result[i] - floorWidths[i]);
-            }
-            if (reducibleTotal <= 0) {
-                break;
-            }
-
-            int reducedThisPass = 0;
-            for (int i = 0; i < count && overflow > 0; i++) {
-                int reducible = Math.max(0, result[i] - floorWidths[i]);
-                if (reducible <= 0) {
-                    continue;
-                }
-                int reduce = Math.max(1, (int) Math.floor(overflow * (reducible / (double) reducibleTotal)));
-                reduce = Math.min(reduce, reducible);
-                result[i] -= reduce;
-                overflow -= reduce;
-                reducedThisPass += reduce;
-            }
-
-            if (reducedThisPass <= 0) {
-                break;
-            }
-        }
-
-        while (overflow > 0) {
-            boolean reduced = false;
-            for (int i = count - 1; i >= 0 && overflow > 0; i--) {
-                if (result[i] > floorWidths[i]) {
-                    result[i]--;
-                    overflow--;
-                    reduced = true;
-                }
-            }
-            if (!reduced) {
-                break;
-            }
-        }
-
-        return result;
-    }
-
-    private int[] scaleWidthsToTotal(int totalWidth, int[] basisWidths) {
-        int count = basisWidths.length;
-        int[] result = new int[count];
-        if (count == 0 || totalWidth <= 0) {
-            return result;
-        }
-
-        int basisSum = 0;
-        for (int width : basisWidths) {
-            basisSum += Math.max(1, width);
-        }
-        if (basisSum <= 0) {
-            basisSum = count;
-        }
-
-        int used = 0;
-        double[] fractions = new double[count];
-        for (int i = 0; i < count; i++) {
-            double scaled = Math.max(1, basisWidths[i]) * (double) totalWidth / (double) basisSum;
-            int width = Math.max(1, (int) Math.floor(scaled));
-            result[i] = width;
-            fractions[i] = scaled - width;
-            used += width;
-        }
-
-        while (used > totalWidth) {
-            int index = indexOfLargestWidth(result);
-            if (index < 0 || result[index] <= 1) {
-                break;
-            }
-            result[index]--;
-            used--;
-        }
-
-        while (used < totalWidth) {
-            int index = indexOfLargestFraction(fractions);
-            if (index < 0) {
-                index = indexOfLargestWidth(basisWidths);
-            }
-            if (index < 0) {
-                break;
-            }
-            result[index]++;
-            fractions[index] = 0.0D;
-            used++;
-        }
-
-        return result;
-    }
-
-    private int indexOfLargestFraction(double[] values) {
-        int index = -1;
-        double best = Double.NEGATIVE_INFINITY;
-        for (int i = 0; i < values.length; i++) {
-            if (values[i] > best) {
-                best = values[i];
-                index = i;
-            }
-        }
-        return index;
-    }
-
-    private int indexOfLargestWidth(int[] values) {
-        int index = -1;
-        int best = Integer.MIN_VALUE;
-        for (int i = 0; i < values.length; i++) {
-            if (values[i] > best) {
-                best = values[i];
-                index = i;
-            }
-        }
-        return index;
     }
 
     private void initCoreButtons() {
@@ -567,11 +256,10 @@ public abstract class AbstractThreePaneRuleManager<T> extends ThemedGuiScreen {
         for (String category : categories) {
             visibleTreeRows.add(TreeRow.categoryRow(category));
             if (expandedCategories.contains(category)) {
-                for (int itemIndex = 0; itemIndex < allItems.size(); itemIndex++) {
-                    T item = allItems.get(itemIndex);
+                for (T item : allItems) {
                     if (category.equals(normalizeCategory(getItemCategory(item)))) {
                         String name = safe(getItemName(item));
-                        visibleTreeRows.add(TreeRow.itemRow(category, name, name, itemIndex));
+                        visibleTreeRows.add(TreeRow.itemRow(category, name, name));
                     }
                 }
             }
@@ -908,38 +596,6 @@ public abstract class AbstractThreePaneRuleManager<T> extends ThemedGuiScreen {
         return Math.max(34, textWidth + 24);
     }
 
-    protected void applyTreeDividerDrag(int mouseX) {
-        if (treeCollapsed) {
-            return;
-        }
-        int[] paneMinimums = resolvePaneMinimums(layoutInnerWidth);
-        int treeMin = paneMinimums[0];
-        int listFloor = paneMinimums[1];
-        int editorMin = paneMinimums[2];
-        int maxTreeWidth = Math.max(treeMin, layoutInnerWidth - listFloor - editorMin);
-        int desiredWidth = mouseX - layoutInnerX - layoutColumnGap / 2;
-        treeWidth = Math.max(treeMin, Math.min(desiredWidth, maxTreeWidth));
-        savedTreePaneRatio = treeWidth / (double) Math.max(1, layoutInnerWidth);
-        recalcLayout();
-        layoutAllWidgets();
-    }
-
-    protected void applyListDividerDrag(int mouseX) {
-        if (listCollapsed) {
-            return;
-        }
-        int[] paneMinimums = resolvePaneMinimums(layoutInnerWidth);
-        int listMin = paneMinimums[1];
-        int editorMin = paneMinimums[2];
-        int remainingWidth = Math.max(1, layoutInnerWidth - treeWidth);
-        int desiredWidth = mouseX - listX - layoutColumnGap / 2;
-        int maxListWidth = Math.max(listMin, remainingWidth - editorMin);
-        listWidth = Math.max(listMin, Math.min(desiredWidth, maxListWidth));
-        savedListPaneRatio = listWidth / (double) Math.max(1, remainingWidth);
-        recalcLayout();
-        layoutAllWidgets();
-    }
-
     protected void setStatus(String message, int color) {
         this.statusMessage = safe(message);
         this.statusColor = color;
@@ -984,7 +640,7 @@ public abstract class AbstractThreePaneRuleManager<T> extends ThemedGuiScreen {
         if (button.id == BTN_DONE) {
             persistChanges();
             onDone();
-            mc.displayGuiScreen(parentScreen);
+            mc.setScreen(parentScreen);
             return;
         }
         if (button.id == BTN_NEW) {
@@ -1010,24 +666,11 @@ public abstract class AbstractThreePaneRuleManager<T> extends ThemedGuiScreen {
 
     @Override
     protected void mouseClicked(int mouseX, int mouseY, int mouseButton) throws IOException {
-        resetTreeDragState();
-
         if (contextMenuVisible) {
             if (handleContextMenuClick(mouseX, mouseY, mouseButton)) {
                 return;
             }
             closeContextMenu();
-        }
-
-        if (mouseButton == 0) {
-            if (treeDividerBounds != null && treeDividerBounds.contains(mouseX, mouseY)) {
-                draggingTreeDivider = true;
-                return;
-            }
-            if (listDividerBounds != null && listDividerBounds.contains(mouseX, mouseY)) {
-                draggingListDivider = true;
-                return;
-            }
         }
 
         if (mouseButton == 0) {
@@ -1060,14 +703,11 @@ public abstract class AbstractThreePaneRuleManager<T> extends ThemedGuiScreen {
             return;
         }
 
+        super.mouseClicked(mouseX, mouseY, mouseButton);
+
         if (!treeCollapsed && isInTree(mouseX, mouseY)) {
             if (mouseButton == 0) {
-                int actualIndex = getTreeRowIndexAt(mouseY);
-                if (actualIndex >= 0 && actualIndex < visibleTreeRows.size()) {
-                    pendingTreePressIndex = actualIndex;
-                    pendingTreePressMouseX = mouseX;
-                    pendingTreePressMouseY = mouseY;
-                }
+                handleTreeClick(mouseY);
                 return;
             }
             if (mouseButton == 1) {
@@ -1075,8 +715,6 @@ public abstract class AbstractThreePaneRuleManager<T> extends ThemedGuiScreen {
                 return;
             }
         }
-
-        super.mouseClicked(mouseX, mouseY, mouseButton);
 
         if (!listCollapsed && mouseButton == 0 && isInCardList(mouseX, mouseY)) {
             int actual = getCardIndexAt(mouseY);
@@ -1108,66 +746,12 @@ public abstract class AbstractThreePaneRuleManager<T> extends ThemedGuiScreen {
         onAfterEditorMouseClicked(mouseX, mouseY, mouseButton);
     }
 
-    @Override
-    protected void mouseReleased(int mouseX, int mouseY, int state) {
-        if (state == 0 && (draggingTreeDivider || draggingListDivider)) {
-            draggingTreeDivider = false;
-            draggingListDivider = false;
-            persistCurrentLayoutRatios();
-            return;
-        }
-        if (state == 0) {
-            if (treeDragging) {
-                completeTreeDrag();
-                resetTreeDragState();
-                return;
-            }
-            if (pendingTreePressIndex >= 0) {
-                handleTreeClickByIndex(pendingTreePressIndex);
-                pendingTreePressIndex = -1;
-                return;
-            }
-        }
-        super.mouseReleased(mouseX, mouseY, state);
-    }
-
-    @Override
-    protected void mouseClickMove(int mouseX, int mouseY, int clickedMouseButton, long timeSinceLastClick) {
-        if (draggingTreeDivider) {
-            applyTreeDividerDrag(mouseX);
-            return;
-        }
-        if (draggingListDivider) {
-            applyListDividerDrag(mouseX);
-            return;
-        }
-        if (clickedMouseButton == 0 && pendingTreePressIndex >= 0 && !treeDragging) {
-            if (Math.abs(mouseX - pendingTreePressMouseX) >= 4 || Math.abs(mouseY - pendingTreePressMouseY) >= 4) {
-                TreeRow row = pendingTreePressIndex >= 0 && pendingTreePressIndex < visibleTreeRows.size()
-                        ? visibleTreeRows.get(pendingTreePressIndex)
-                        : null;
-                activeDragPayload = buildDragPayload(row);
-                treeDragging = activeDragPayload != null;
-                currentTreeDropTarget = treeDragging ? computeTreeDropTarget(mouseX, mouseY, activeDragPayload) : null;
-            }
-        } else if (treeDragging) {
-            currentTreeDropTarget = computeTreeDropTarget(mouseX, mouseY, activeDragPayload);
-        }
-        super.mouseClickMove(mouseX, mouseY, clickedMouseButton, timeSinceLastClick);
-    }
-
     protected void handleTreeClick(int mouseY) {
         int actualIndex = getTreeRowIndexAt(mouseY);
         if (actualIndex < 0 || actualIndex >= visibleTreeRows.size()) {
             return;
         }
-        handleTreeClickByIndex(actualIndex);
-    }
 
-    protected void handleTreeClickByIndex(int actualIndex) {
-        if (actualIndex < 0 || actualIndex >= visibleTreeRows.size()) {
-            return;
-        }
         selectedTreeIndex = actualIndex;
         TreeRow row = visibleTreeRows.get(actualIndex);
         if (row.type == TreeRow.TYPE_ALL) {
@@ -1226,8 +810,8 @@ public abstract class AbstractThreePaneRuleManager<T> extends ThemedGuiScreen {
             return;
         }
 
-        int mouseX = Mouse.getEventX() * this.width / this.mc.displayWidth;
-        int mouseY = this.height - Mouse.getEventY() * this.height / this.mc.displayHeight - 1;
+        int mouseX = Mouse.getEventX() * this.width / this.mc.getWindow().getWidth();
+        int mouseY = this.height - Mouse.getEventY() * this.height / this.mc.getWindow().getHeight() - 1;
 
         if (isInEditor(mouseX, mouseY)) {
             if (handleEditorMouseWheel(mouseX, mouseY, wheel)) {
@@ -1266,7 +850,7 @@ public abstract class AbstractThreePaneRuleManager<T> extends ThemedGuiScreen {
                 return;
             }
             onEscape();
-            mc.displayGuiScreen(parentScreen);
+            mc.setScreen(parentScreen);
             return;
         }
 
@@ -1312,35 +896,11 @@ public abstract class AbstractThreePaneRuleManager<T> extends ThemedGuiScreen {
         drawTreePanel(mouseX, mouseY);
         drawCardPanel(mouseX, mouseY);
         drawEditorPanel(mouseX, mouseY, partialTicks);
-        drawPaneDivider(treeDividerBounds, mouseX, mouseY, draggingTreeDivider);
-        drawPaneDivider(listDividerBounds, mouseX, mouseY, draggingListDivider);
 
         super.drawScreen(mouseX, mouseY, partialTicks);
 
-        if (treeDragging) {
-            drawTreeDragOverlay(mouseX, mouseY);
-        }
-
         if (contextMenuVisible) {
             drawContextMenu(mouseX, mouseY);
-        }
-    }
-
-    protected void drawPaneDivider(Rectangle bounds, int mouseX, int mouseY, boolean dragging) {
-        if (bounds == null) {
-            return;
-        }
-        boolean hovered = bounds.contains(mouseX, mouseY);
-        int actualX = bounds.x + Math.max(0, (bounds.width - PANE_DIVIDER_WIDTH) / 2);
-        int accent = dragging ? 0xFF7CD9FF : (hovered ? 0xFF63BFEF : 0xFF3E617A);
-        if (hovered || dragging) {
-            drawRect(bounds.x, bounds.y, bounds.x + bounds.width, bounds.y + bounds.height, 0x33111922);
-        }
-        drawRect(actualX, bounds.y, actualX + PANE_DIVIDER_WIDTH, bounds.y + bounds.height, 0x77111922);
-        drawRect(actualX + 5, bounds.y + 18, actualX + 7, bounds.y + bounds.height - 18, accent);
-        int centerY = bounds.y + bounds.height / 2 - 12;
-        for (int i = 0; i < 4; i++) {
-            drawRect(actualX + 3, centerY + i * 7, actualX + PANE_DIVIDER_WIDTH - 3, centerY + i * 7 + 2, accent);
         }
     }
 
@@ -1397,10 +957,6 @@ public abstract class AbstractThreePaneRuleManager<T> extends ThemedGuiScreen {
             } else {
                 drawString(fontRenderer, trimToWidth(row.label, maxTextWidth), textX, rowY + 5, 0xFFE8F1FA);
             }
-        }
-
-        if (treeDragging && currentTreeDropTarget != null) {
-            drawTreeDropIndicator(currentTreeDropTarget);
         }
 
         if (visibleTreeRows.size() > visibleRows) {
@@ -1515,240 +1071,6 @@ public abstract class AbstractThreePaneRuleManager<T> extends ThemedGuiScreen {
             }
             drawString(fontRenderer, item.label, x + 8, itemY + 5, item.enabled ? 0xFFFFFFFF : 0xFF777777);
         }
-    }
-
-    protected void drawTreeDragOverlay(int mouseX, int mouseY) {
-        if (activeDragPayload == null) {
-            return;
-        }
-        String label = activeDragPayload.type == DragPayload.TYPE_CATEGORY
-                ? "移动分组: " + activeDragPayload.label
-                : "移动" + getEntityDisplayName() + ": " + activeDragPayload.label;
-        int width = Math.min(260, fontRenderer.getStringWidth(label) + 16);
-        int x = Math.min(mouseX + 12, this.width - width - 8);
-        int y = Math.min(mouseY + 10, this.height - 22);
-        drawRect(x, y, x + width, y + 18, 0xDD16212B);
-        drawHorizontalLine(x, x + width, y, 0xFF77C4FF);
-        drawHorizontalLine(x, x + width, y + 18, 0xFF35536C);
-        drawVerticalLine(x, y, y + 18, 0xFF35536C);
-        drawVerticalLine(x + width, y, y + 18, 0xFF35536C);
-        drawString(fontRenderer, trimToWidth(label, width - 10), x + 5, y + 5, 0xFFFFFFFF);
-    }
-
-    protected void drawTreeDropIndicator(TreeDropTarget target) {
-        if (target == null) {
-            return;
-        }
-        if (target.highlightCategoryIndex >= 0 && target.highlightCategoryIndex < visibleTreeRows.size()) {
-            int drawIndex = target.highlightCategoryIndex - treeScrollOffset;
-            if (drawIndex >= 0 && drawIndex < getVisibleTreeRowCount()) {
-                int rowY = treeY + 22 + drawIndex * TREE_ROW_HEIGHT;
-                drawRect(treeX + 5, rowY, treeX + treeWidth - 9, rowY + TREE_ROW_HEIGHT - 2, 0x553A86B8);
-            }
-        }
-        if (target.lineY > 0) {
-            drawRect(treeX + 8, target.lineY - 1, treeX + treeWidth - 12, target.lineY + 1, 0xFF7FD4FF);
-            drawRect(treeX + 8, target.lineY - 3, treeX + 12, target.lineY + 3, 0xFF7FD4FF);
-            drawRect(treeX + treeWidth - 16, target.lineY - 3, treeX + treeWidth - 12, target.lineY + 3, 0xFF7FD4FF);
-        }
-    }
-
-    protected DragPayload buildDragPayload(TreeRow row) {
-        if (row == null) {
-            return null;
-        }
-        if (row.type == TreeRow.TYPE_CATEGORY) {
-            return DragPayload.forCategory(row.category, row.label);
-        }
-        if (row.type == TreeRow.TYPE_ITEM && row.itemIndex >= 0 && row.itemIndex < allItems.size()) {
-            T item = allItems.get(row.itemIndex);
-            return DragPayload.forItem(item, safe(getItemName(item)));
-        }
-        return null;
-    }
-
-    protected TreeDropTarget computeTreeDropTarget(int mouseX, int mouseY, DragPayload payload) {
-        if (payload == null || treeCollapsed || !isInTree(mouseX, mouseY)) {
-            return null;
-        }
-        int actualIndex = getTreeRowIndexAt(mouseY);
-        if (actualIndex < 0 || actualIndex >= visibleTreeRows.size()) {
-            return null;
-        }
-        TreeRow row = visibleTreeRows.get(actualIndex);
-        if (payload.type == DragPayload.TYPE_CATEGORY) {
-            if (row.type != TreeRow.TYPE_CATEGORY || row.category.equalsIgnoreCase(payload.category)) {
-                return null;
-            }
-            boolean after = mouseY >= getTreeRowTop(actualIndex) + TREE_ROW_HEIGHT / 2;
-            return TreeDropTarget.forCategory(actualIndex, row.category, after, getInsertionLineY(actualIndex, after));
-        }
-        if (row.type == TreeRow.TYPE_ALL || !isConcreteCategory(row.category)) {
-            return null;
-        }
-        if (row.type == TreeRow.TYPE_CATEGORY) {
-            boolean append = mouseY >= getTreeRowTop(actualIndex) + TREE_ROW_HEIGHT / 2;
-            int anchorIndex = append ? findLastRowIndexOfCategory(row.category) : actualIndex;
-            return TreeDropTarget.forCategoryItem(row.category, append, actualIndex,
-                    getInsertionLineY(anchorIndex, append));
-        }
-        if (row.itemIndex < 0 || row.itemIndex >= allItems.size()) {
-            return null;
-        }
-        Object targetItem = allItems.get(row.itemIndex);
-        if (payload.item == targetItem) {
-            return null;
-        }
-        boolean before = mouseY < getTreeRowTop(actualIndex) + TREE_ROW_HEIGHT / 2;
-        return TreeDropTarget.forItem(row.category, targetItem, before, !before, actualIndex,
-                getInsertionLineY(actualIndex, !before));
-    }
-
-    protected int getTreeRowTop(int actualIndex) {
-        return treeY + 22 + (actualIndex - treeScrollOffset) * TREE_ROW_HEIGHT;
-    }
-
-    protected int getInsertionLineY(int actualIndex, boolean afterRow) {
-        return getTreeRowTop(actualIndex) + (afterRow ? TREE_ROW_HEIGHT - 2 : 0);
-    }
-
-    protected int findLastRowIndexOfCategory(String category) {
-        int last = -1;
-        for (int i = 0; i < visibleTreeRows.size(); i++) {
-            TreeRow row = visibleTreeRows.get(i);
-            if (safe(category).equalsIgnoreCase(row.category)) {
-                last = i;
-            } else if (last >= 0 && row.type == TreeRow.TYPE_CATEGORY) {
-                break;
-            }
-        }
-        return last >= 0 ? last : 0;
-    }
-
-    protected void completeTreeDrag() {
-        if (!treeDragging || activeDragPayload == null || currentTreeDropTarget == null) {
-            return;
-        }
-        boolean changed = activeDragPayload.type == DragPayload.TYPE_CATEGORY
-                ? applyCategoryDrag(activeDragPayload, currentTreeDropTarget)
-                : applyItemDrag(activeDragPayload, currentTreeDropTarget);
-        if (!changed) {
-            return;
-        }
-        if (activeDragPayload.type == DragPayload.TYPE_ITEM) {
-            @SuppressWarnings("unchecked")
-            T item = (T) activeDragPayload.item;
-            selectedCategory = normalizeCategory(getItemCategory(item));
-            refreshData(false);
-            selectByItemName(getItemName(item));
-        } else {
-            refreshData(false);
-        }
-    }
-
-    protected boolean applyCategoryDrag(DragPayload payload, TreeDropTarget target) {
-        if (payload == null || target == null || !isConcreteCategory(payload.category)
-                || !isConcreteCategory(target.category)) {
-            return false;
-        }
-        List<String> reordered = new ArrayList<>(categories);
-        int fromIndex = findCategoryIndex(reordered, payload.category);
-        int targetIndex = findCategoryIndex(reordered, target.category);
-        if (fromIndex < 0 || targetIndex < 0 || fromIndex == targetIndex) {
-            return false;
-        }
-        String moved = reordered.remove(fromIndex);
-        int insertIndex = target.after ? targetIndex + (fromIndex < targetIndex ? 0 : 1) : targetIndex;
-        insertIndex = Math.max(0, Math.min(insertIndex, reordered.size()));
-        reordered.add(insertIndex, moved);
-        categories.clear();
-        categories.addAll(reordered);
-        persistTreeStructureChanges();
-        setStatus("§a已调整分组顺序: " + moved, 0xFF8CFF9E);
-        return true;
-    }
-
-    protected boolean applyItemDrag(DragPayload payload, TreeDropTarget target) {
-        if (payload == null || payload.item == null || target == null || !isConcreteCategory(target.category)) {
-            return false;
-        }
-        @SuppressWarnings("unchecked")
-        T dragged = (T) payload.item;
-        List<String> categoryOrder = new ArrayList<>(categories);
-        if (findCategoryIndex(categoryOrder, target.category) < 0) {
-            categoryOrder.add(target.category);
-        }
-        java.util.LinkedHashMap<String, List<T>> grouped = buildGroupedItems(categoryOrder);
-        String sourceCategory = normalizeCategory(getItemCategory(dragged));
-        List<T> sourceItems = grouped.get(sourceCategory);
-        if (sourceItems == null || !sourceItems.remove(dragged)) {
-            return false;
-        }
-        setItemCategory(dragged, target.category);
-        List<T> targetItems = grouped.get(target.category);
-        if (targetItems == null) {
-            targetItems = new ArrayList<>();
-            grouped.put(target.category, targetItems);
-        }
-        int insertIndex;
-        if (target.targetItem != null) {
-            @SuppressWarnings("unchecked")
-            T targetItem = (T) target.targetItem;
-            insertIndex = targetItems.indexOf(targetItem);
-            if (insertIndex < 0) {
-                insertIndex = targetItems.size();
-            } else if (target.after) {
-                insertIndex++;
-            }
-        } else {
-            insertIndex = target.appendToCategory ? targetItems.size() : 0;
-        }
-        insertIndex = Math.max(0, Math.min(insertIndex, targetItems.size()));
-        targetItems.add(insertIndex, dragged);
-
-        List<T> rebuilt = new ArrayList<>();
-        for (String category : categoryOrder) {
-            List<T> items = grouped.get(normalizeCategory(category));
-            if (items != null) {
-                rebuilt.addAll(items);
-            }
-        }
-        allItems.clear();
-        allItems.addAll(rebuilt);
-        persistTreeStructureChanges();
-        setStatus("§a已移动" + getEntityDisplayName() + ": " + safe(getItemName(dragged)), 0xFF8CFF9E);
-        return true;
-    }
-
-    protected java.util.LinkedHashMap<String, List<T>> buildGroupedItems(List<String> categoryOrder) {
-        java.util.LinkedHashMap<String, List<T>> grouped = new java.util.LinkedHashMap<>();
-        for (String category : categoryOrder) {
-            grouped.put(normalizeCategory(category), new ArrayList<T>());
-        }
-        for (T item : allItems) {
-            String category = normalizeCategory(getItemCategory(item));
-            if (!grouped.containsKey(category)) {
-                grouped.put(category, new ArrayList<T>());
-            }
-            grouped.get(category).add(item);
-        }
-        return grouped;
-    }
-
-    protected int findCategoryIndex(List<String> source, String category) {
-        for (int i = 0; i < source.size(); i++) {
-            if (normalizeCategory(source.get(i)).equalsIgnoreCase(normalizeCategory(category))) {
-                return i;
-            }
-        }
-        return -1;
-    }
-
-    protected void resetTreeDragState() {
-        pendingTreePressIndex = -1;
-        treeDragging = false;
-        activeDragPayload = null;
-        currentTreeDropTarget = null;
     }
 
     protected boolean handleContextMenuClick(int mouseX, int mouseY, int mouseButton) {
@@ -1905,7 +1227,7 @@ public abstract class AbstractThreePaneRuleManager<T> extends ThemedGuiScreen {
     }
 
     protected void openAddCategoryDialog() {
-        mc.displayGuiScreen(new GuiTextInput(this, "输入新分组名称", value -> {
+        mc.setScreen(new GuiTextInput(this, "输入新分组名称", value -> {
             String normalized = value == null ? "" : value.trim();
             if (normalized.isEmpty()) {
                 setStatus("§7已取消创建分组", 0xFFB8C7D9);
@@ -1957,7 +1279,7 @@ public abstract class AbstractThreePaneRuleManager<T> extends ThemedGuiScreen {
             setStatus("§c该分组不能重命名", 0xFFFF8E8E);
             return;
         }
-        mc.displayGuiScreen(new GuiTextInput(this, "重命名分组", normalized, value -> {
+        mc.setScreen(new GuiTextInput(this, "重命名分组", normalized, value -> {
             String newName = value == null ? "" : value.trim();
             if (newName.isEmpty()) {
                 setStatus("§7已取消重命名分组", 0xFFB8C7D9);
@@ -2176,15 +1498,6 @@ public abstract class AbstractThreePaneRuleManager<T> extends ThemedGuiScreen {
         persistChanges();
     }
 
-    protected void persistTreeStructureChanges() {
-        replaceCategoryOrderInSource(new ArrayList<>(categories));
-        persistChanges();
-    }
-
-    protected boolean replaceCategoryOrderInSource(List<String> orderedCategories) {
-        return false;
-    }
-
     protected static final class TreeRow {
         private static final int TYPE_ALL = 0;
         private static final int TYPE_CATEGORY = 1;
@@ -2195,27 +1508,25 @@ public abstract class AbstractThreePaneRuleManager<T> extends ThemedGuiScreen {
         private final String category;
         private final String itemName;
         private final int indent;
-        private final int itemIndex;
 
-        private TreeRow(int type, String label, String category, String itemName, int indent, int itemIndex) {
+        private TreeRow(int type, String label, String category, String itemName, int indent) {
             this.type = type;
             this.label = label == null ? "" : label;
             this.category = category == null ? "" : category;
             this.itemName = itemName == null ? "" : itemName;
             this.indent = indent;
-            this.itemIndex = itemIndex;
         }
 
         private static TreeRow allRow(String label) {
-            return new TreeRow(TYPE_ALL, label, CATEGORY_ALL, "", 0, -1);
+            return new TreeRow(TYPE_ALL, label, CATEGORY_ALL, "", 0);
         }
 
         private static TreeRow categoryRow(String category) {
-            return new TreeRow(TYPE_CATEGORY, category, category, "", 0, -1);
+            return new TreeRow(TYPE_CATEGORY, category, category, "", 0);
         }
 
-        private static TreeRow itemRow(String category, String itemName, String displayName, int itemIndex) {
-            return new TreeRow(TYPE_ITEM, displayName, category, itemName, 1, itemIndex);
+        private static TreeRow itemRow(String category, String itemName, String displayName) {
+            return new TreeRow(TYPE_ITEM, displayName, category, itemName, 1);
         }
     }
 
@@ -2230,65 +1541,8 @@ public abstract class AbstractThreePaneRuleManager<T> extends ThemedGuiScreen {
             this.enabled = enabled;
         }
     }
-
-    protected static final class DragPayload {
-        private static final int TYPE_CATEGORY = 1;
-        private static final int TYPE_ITEM = 2;
-
-        private final int type;
-        private final String category;
-        private final String label;
-        private final Object item;
-
-        private DragPayload(int type, String category, String label, Object item) {
-            this.type = type;
-            this.category = category == null ? "" : category;
-            this.label = label == null ? "" : label;
-            this.item = item;
-        }
-
-        private static DragPayload forCategory(String category, String label) {
-            return new DragPayload(TYPE_CATEGORY, category, label, null);
-        }
-
-        private static DragPayload forItem(Object item, String label) {
-            return new DragPayload(TYPE_ITEM, "", label, item);
-        }
-    }
-
-    protected static final class TreeDropTarget {
-        private final String category;
-        private final Object targetItem;
-        private final boolean before;
-        private final boolean after;
-        private final boolean appendToCategory;
-        private final int highlightCategoryIndex;
-        private final int lineY;
-
-        private TreeDropTarget(String category, Object targetItem, boolean before, boolean after,
-                boolean appendToCategory, int highlightCategoryIndex, int lineY) {
-            this.category = category == null ? "" : category;
-            this.targetItem = targetItem;
-            this.before = before;
-            this.after = after;
-            this.appendToCategory = appendToCategory;
-            this.highlightCategoryIndex = highlightCategoryIndex;
-            this.lineY = lineY;
-        }
-
-        private static TreeDropTarget forCategory(int highlightCategoryIndex, String category, boolean after, int lineY) {
-            return new TreeDropTarget(category, null, !after, after, false, highlightCategoryIndex, lineY);
-        }
-
-        private static TreeDropTarget forItem(String category, Object targetItem, boolean before, boolean after,
-                int highlightCategoryIndex, int lineY) {
-            return new TreeDropTarget(category, targetItem, before, after, false, highlightCategoryIndex, lineY);
-        }
-
-        private static TreeDropTarget forCategoryItem(String category, boolean appendToCategory,
-                int highlightCategoryIndex, int lineY) {
-            return new TreeDropTarget(category, null, !appendToCategory, appendToCategory, appendToCategory,
-                    highlightCategoryIndex, lineY);
-        }
-    }
 }
+
+
+
+

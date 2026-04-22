@@ -15,6 +15,7 @@
  * along with Baritone.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+
 package com.zszl.zszlScriptMod.shadowbaritone.process.elytra;
 
 /**
@@ -26,3 +27,4 @@ public final class PathCalculationException extends RuntimeException {
         super(message);
     }
 }
+

@@ -1,6 +1,6 @@
 package com.zszl.zszlScriptMod.otherfeatures.gui.movement;
 
-import net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
 
 public class GuiPrecisionControlConfig extends SingleMovementFeatureConfigScreen {
 
@@ -8,3 +8,6 @@ public class GuiPrecisionControlConfig extends SingleMovementFeatureConfigScreen
         super(parentScreen, "precision_control", "精确控制设置");
     }
 }
+
+
+

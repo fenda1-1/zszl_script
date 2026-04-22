@@ -19,20 +19,19 @@ package com.zszl.zszlScriptMod.shadowbaritone.process.elytra;
 
 import com.zszl.zszlScriptMod.shadowbaritone.Baritone;
 import com.zszl.zszlScriptMod.shadowbaritone.api.event.events.BlockChangeEvent;
-import com.zszl.zszlScriptMod.shadowbaritone.utils.accessor.IBitArray;
-import com.zszl.zszlScriptMod.shadowbaritone.utils.accessor.IBlockStateContainer;
+import com.zszl.zszlScriptMod.shadowbaritone.utils.accessor.IPalettedContainer;
 import dev.babbaj.pathfinder.NetherPathfinder;
 import dev.babbaj.pathfinder.Octree;
 import dev.babbaj.pathfinder.PathSegment;
-import net.minecraft.block.state.IBlockState;
-import net.minecraft.init.Blocks;
-import net.minecraft.util.BitArray;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.ChunkPos;
-import net.minecraft.util.math.Vec3d;
-import net.minecraft.world.chunk.BlockStateContainer;
-import net.minecraft.world.chunk.Chunk;
-import net.minecraft.world.chunk.storage.ExtendedBlockStorage;
+import net.minecraft.core.BlockPos;
+import net.minecraft.util.BitStorage;
+import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.chunk.LevelChunk;
+import net.minecraft.world.level.chunk.LevelChunkSection;
+import net.minecraft.world.level.chunk.PalettedContainer;
+import net.minecraft.world.phys.Vec3;
 
 import java.lang.ref.SoftReference;
 import java.util.concurrent.CompletableFuture;
@@ -45,10 +44,9 @@ import java.util.concurrent.TimeUnit;
  */
 public final class NetherPathfinderContext {
 
-    private static final IBlockState AIR_BLOCK_STATE = Blocks.AIR.getDefaultState();
+    private static final BlockState AIR_BLOCK_STATE = Blocks.AIR.defaultBlockState();
     // This lock must be held while there are active pointers to chunks in java,
-    // but we just hold it for the entire tick so we don't have to think much about
-    // it.
+    // but we just hold it for the entire tick so we don't have to think much about it.
     public final Object cullingLock = new Object();
 
     // Visible for access in BlockStateOctreeInterface
@@ -62,6 +60,10 @@ public final class NetherPathfinderContext {
         this.executor = Executors.newSingleThreadExecutor();
     }
 
+    public boolean hasChunk(ChunkPos pos) {
+        return NetherPathfinder.hasChunkFromJava(this.context, pos.x, pos.z);
+    }
+
     public void queueCacheCulling(int chunkX, int chunkZ, int maxDistanceBlocks, BlockStateOctreeInterface boi) {
         this.executor.execute(() -> {
             synchronized (this.cullingLock) {
@@ -71,15 +73,14 @@ public final class NetherPathfinderContext {
         });
     }
 
-    public void queueForPacking(final Chunk chunkIn) {
-        final SoftReference<Chunk> ref = new SoftReference<>(chunkIn);
+    public void queueForPacking(final LevelChunk chunkIn) {
+        final SoftReference<LevelChunk> ref = new SoftReference<>(chunkIn);
         this.executor.execute(() -> {
-            // TODO: Prioritize packing recent chunks and/or ones that the path goes
-            // through,
-            // and prune the oldest chunks per chunkPackerQueueMaxSize
-            final Chunk chunk = ref.get();
+            // TODO: Prioritize packing recent chunks and/or ones that the path goes through,
+            //       and prune the oldest chunks per chunkPackerQueueMaxSize
+            final LevelChunk chunk = ref.get();
             if (chunk != null) {
-                long ptr = NetherPathfinder.getOrCreateChunk(this.context, chunk.x, chunk.z);
+                long ptr = NetherPathfinder.getOrCreateChunk(this.context, chunk.getPos().x, chunk.getPos().z);
                 writeChunkData(chunk, ptr);
             }
         });
@@ -89,12 +90,10 @@ public final class NetherPathfinderContext {
         this.executor.execute(() -> {
             ChunkPos chunkPos = event.getChunkPos();
             long ptr = NetherPathfinder.getChunkPointer(this.context, chunkPos.x, chunkPos.z);
-            if (ptr == 0)
-                return; // this shouldn't ever happen
+            if (ptr == 0) return; // this shouldn't ever happen
             event.getBlocks().forEach(pair -> {
                 BlockPos pos = pair.first();
-                if (pos.getY() >= 128)
-                    return;
+                if (pos.getY() >= 128) return;
                 boolean isSolid = pair.second() != AIR_BLOCK_STATE;
                 Octree.setBlock(ptr, pos.getX() & 15, pos.getY(), pos.getZ() & 15, isSolid);
             });
@@ -110,7 +109,8 @@ public final class NetherPathfinderContext {
                     true,
                     false,
                     10000,
-                    !Baritone.settings().elytraPredictTerrain.value);
+                    !Baritone.settings().elytraPredictTerrain.value
+            );
             if (segment == null) {
                 throw new PathCalculationException("Path calculation failed");
             }
@@ -119,8 +119,7 @@ public final class NetherPathfinderContext {
     }
 
     /**
-     * Performs a raytrace from the given start position to the given end position,
-     * returning {@code true} if there is
+     * Performs a raytrace from the given start position to the given end position, returning {@code true} if there is
      * visibility between the two points.
      *
      * @param startX The start X coordinate
@@ -132,43 +131,36 @@ public final class NetherPathfinderContext {
      * @return {@code true} if there is visibility between the points
      */
     public boolean raytrace(final double startX, final double startY, final double startZ,
-            final double endX, final double endY, final double endZ) {
-        return NetherPathfinder.isVisible(this.context, NetherPathfinder.CACHE_MISS_SOLID, startX, startY, startZ, endX,
-                endY, endZ);
+                            final double endX, final double endY, final double endZ) {
+        return NetherPathfinder.isVisible(this.context, NetherPathfinder.CACHE_MISS_SOLID, startX, startY, startZ, endX, endY, endZ);
     }
 
     /**
-     * Performs a raytrace from the given start position to the given end position,
-     * returning {@code true} if there is
+     * Performs a raytrace from the given start position to the given end position, returning {@code true} if there is
      * visibility between the two points.
      *
      * @param start The starting point
      * @param end   The ending point
      * @return {@code true} if there is visibility between the points
      */
-    public boolean raytrace(final Vec3d start, final Vec3d end) {
-        return NetherPathfinder.isVisible(this.context, NetherPathfinder.CACHE_MISS_SOLID, start.x, start.y, start.z,
-                end.x, end.y, end.z);
+    public boolean raytrace(final Vec3 start, final Vec3 end) {
+        return NetherPathfinder.isVisible(this.context, NetherPathfinder.CACHE_MISS_SOLID, start.x, start.y, start.z, end.x, end.y, end.z);
     }
 
     public boolean raytrace(final int count, final double[] src, final double[] dst, final int visibility) {
         switch (visibility) {
             case Visibility.ALL:
-                return NetherPathfinder.isVisibleMulti(this.context, NetherPathfinder.CACHE_MISS_SOLID, count, src, dst,
-                        false) == -1;
+                return NetherPathfinder.isVisibleMulti(this.context, NetherPathfinder.CACHE_MISS_SOLID, count, src, dst, false) == -1;
             case Visibility.NONE:
-                return NetherPathfinder.isVisibleMulti(this.context, NetherPathfinder.CACHE_MISS_SOLID, count, src, dst,
-                        true) == -1;
+                return NetherPathfinder.isVisibleMulti(this.context, NetherPathfinder.CACHE_MISS_SOLID, count, src, dst, true) == -1;
             case Visibility.ANY:
-                return NetherPathfinder.isVisibleMulti(this.context, NetherPathfinder.CACHE_MISS_SOLID, count, src, dst,
-                        true) != -1;
+                return NetherPathfinder.isVisibleMulti(this.context, NetherPathfinder.CACHE_MISS_SOLID, count, src, dst, true) != -1;
             default:
                 throw new IllegalArgumentException("lol");
         }
     }
 
-    public void raytrace(final int count, final double[] src, final double[] dst, final boolean[] hitsOut,
-            final double[] hitPosOut) {
+    public void raytrace(final int count, final double[] src, final double[] dst, final boolean[] hitsOut, final double[] hitPosOut) {
         NetherPathfinder.raytrace(this.context, NetherPathfinder.CACHE_MISS_SOLID, count, src, dst, hitsOut, hitPosOut);
     }
 
@@ -182,8 +174,7 @@ public final class NetherPathfinderContext {
         this.executor.shutdownNow();
 
         try {
-            while (!this.executor.awaitTermination(Long.MAX_VALUE, TimeUnit.NANOSECONDS)) {
-            }
+            while (!this.executor.awaitTermination(Long.MAX_VALUE, TimeUnit.NANOSECONDS)) {}
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
@@ -195,43 +186,34 @@ public final class NetherPathfinderContext {
         return this.seed;
     }
 
-    private static void writeChunkData(Chunk chunk, long ptr) {
+    private static void writeChunkData(LevelChunk chunk, long ptr) {
         try {
-            ExtendedBlockStorage[] chunkInternalStorageArray = chunk.getBlockStorageArray();
+            LevelChunkSection[] chunkInternalStorageArray = chunk.getSections();
             for (int y0 = 0; y0 < 8; y0++) {
-                final ExtendedBlockStorage extendedblockstorage = chunkInternalStorageArray[y0];
+                final LevelChunkSection extendedblockstorage = chunkInternalStorageArray[y0];
                 if (extendedblockstorage == null) {
                     continue;
                 }
-                final BlockStateContainer bsc = extendedblockstorage.getData();
-                final int airId = ((IBlockStateContainer) bsc).getPalette().idFor(AIR_BLOCK_STATE);
+                final PalettedContainer<BlockState> bsc = extendedblockstorage.getStates();
+                final int airId = ((IPalettedContainer<BlockState>) bsc).getPalette().idFor(AIR_BLOCK_STATE);
                 // pasted from FasterWorldScanner
-                final BitArray array = ((IBlockStateContainer) bsc).getStorage();
-                if (array == null)
-                    continue;
-                final long[] longArray = array.getBackingLongArray();
-                final int arraySize = array.size();
-                final int bitsPerEntry = ((IBitArray) array).getBitsPerEntry();
-                final long maxEntryValue = ((IBitArray) array).getMaxEntryValue();
+                final BitStorage array = ((IPalettedContainer<BlockState>) bsc).getStorage();
+                if (array == null) continue;
+                final long[] longArray = array.getRaw();
+                final int arraySize = array.getSize();
+                int bitsPerEntry = array.getBits();
+                long maxEntryValue = (1L << bitsPerEntry) - 1L;
 
                 final int yReal = y0 << 4;
-                for (int idx = 0, kl = bitsPerEntry - 1; idx < arraySize; idx++, kl += bitsPerEntry) {
-                    final int i = idx * bitsPerEntry;
-                    final int j = i >> 6;
-                    final int l = i & 63;
-                    final int k = kl >> 6;
-                    final long jl = longArray[j] >>> l;
-
-                    final int id;
-                    if (j == k) {
-                        id = (int) (jl & maxEntryValue);
-                    } else {
-                        id = (int) ((jl | longArray[k] << (64 - l)) & maxEntryValue);
+                for (int i = 0, idx = 0; i < longArray.length && idx < arraySize; ++i) {
+                    long l = longArray[i];
+                    for (int offset = 0; offset <= (64 - bitsPerEntry) && idx < arraySize; offset += bitsPerEntry, ++idx) {
+                        int value = (int) ((l >> offset) & maxEntryValue);
+                        int x = (idx & 15);
+                        int y = yReal + (idx >> 8);
+                        int z = ((idx >> 4) & 15);
+                        Octree.setBlock(ptr, x, y, z, value != airId);
                     }
-                    int x = (idx & 15);
-                    int y = yReal + (idx >> 8);
-                    int z = ((idx >> 4) & 15);
-                    Octree.setBlock(ptr, x, y, z, id != airId);
                 }
             }
             Octree.setIsFromJava(ptr);
@@ -247,11 +229,11 @@ public final class NetherPathfinderContext {
         public static final int NONE = 1;
         public static final int ANY = 2;
 
-        private Visibility() {
-        }
+        private Visibility() {}
     }
 
     public static boolean isSupported() {
         return NetherPathfinder.isThisSystemSupported();
     }
 }
+

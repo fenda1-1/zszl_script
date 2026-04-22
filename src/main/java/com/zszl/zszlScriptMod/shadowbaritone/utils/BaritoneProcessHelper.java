@@ -37,3 +37,4 @@ public abstract class BaritoneProcessHelper implements IBaritoneProcess, Helper 
         return false;
     }
 }
+

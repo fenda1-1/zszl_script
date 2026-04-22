@@ -1,13 +1,14 @@
 // File path: src/main/java/com/keycommand2/zszlScriptMod/gui/packet/GuiPacketSequenceManager.java
 package com.zszl.zszlScriptMod.gui.packet;
 
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiYesNoCallback;
 import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
 import com.zszl.zszlScriptMod.gui.components.ThemedButton;
-import net.minecraft.client.gui.GuiYesNo;
-import net.minecraft.client.resources.I18n;
-import org.lwjgl.input.Mouse;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiYesNo;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Mouse;
 
 import com.zszl.zszlScriptMod.gui.components.GuiTextInput;
 
@@ -15,7 +16,7 @@ import java.io.IOException;
 import java.util.List;
 import com.zszl.zszlScriptMod.gui.components.GuiTheme;
 
-public class GuiPacketSequenceManager extends ThemedGuiScreen {
+public class GuiPacketSequenceManager extends ThemedGuiScreen implements GuiYesNoCallback {
     private final GuiScreen parentScreen;
     private List<String> sequenceFiles;
     private int selectedIndex = -1;
@@ -72,7 +73,7 @@ public class GuiPacketSequenceManager extends ThemedGuiScreen {
             case 0: // Load
                 PacketSequence seqToLoad = PacketSequenceManager.loadSequence(selectedName);
                 if (seqToLoad != null) {
-                    mc.displayGuiScreen(new GuiPacketSequenceEditor(this, seqToLoad));
+                    mc.setScreen(new GuiPacketSequenceEditor(this, seqToLoad));
                 }
                 break;
             case 1: // Send
@@ -85,22 +86,22 @@ public class GuiPacketSequenceManager extends ThemedGuiScreen {
                 }
                 break;
             case 2: // Rename
-                mc.displayGuiScreen(new GuiTextInput(this, I18n.format("gui.path.manager.input_new_name"), selectedName,
+                mc.setScreen(new GuiTextInput(this, I18n.format("gui.path.manager.input_new_name"), selectedName,
                         newName -> {
                             if (newName != null && !newName.trim().isEmpty() && !newName.equals(selectedName)) {
                                 if (PacketSequenceManager.renameSequence(selectedName, newName.trim())) {
                                     this.initGui();
                                 }
                             }
-                            mc.displayGuiScreen(this);
+                            mc.setScreen(this);
                         }));
                 break;
             case 3: // Delete
-                mc.displayGuiScreen(new GuiYesNo(this, I18n.format("gui.common.confirm_delete"),
+                mc.setScreen(new GuiYesNo((GuiYesNoCallback) this, I18n.format("gui.common.confirm_delete"),
                         I18n.format("gui.packet.seq_mgr.delete_confirm", selectedName), 0));
                 break;
             case 4: // Done
-                mc.displayGuiScreen(parentScreen);
+                mc.setScreen(parentScreen);
                 break;
         }
     }
@@ -112,7 +113,7 @@ public class GuiPacketSequenceManager extends ThemedGuiScreen {
             selectedIndex = -1;
             this.initGui();
         }
-        mc.displayGuiScreen(this);
+        mc.setScreen(this);
     }
 
     @Override
@@ -221,3 +222,5 @@ public class GuiPacketSequenceManager extends ThemedGuiScreen {
         drawSimpleTooltip(tooltip, mouseX, mouseY);
     }
 }
+
+

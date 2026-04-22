@@ -38,3 +38,4 @@ public class Cancellable implements ICancellable {
         return this.cancelled;
     }
 }
+

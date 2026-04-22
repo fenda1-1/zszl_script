@@ -1,6 +1,6 @@
 package com.zszl.zszlScriptMod.system;
 
-import net.minecraft.client.resources.I18n;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -136,3 +136,5 @@ public class AutoEscapeRule {
         return false;
     }
 }
+
+

@@ -22,7 +22,6 @@ import com.zszl.zszlScriptMod.shadowbaritone.api.command.Command;
 import com.zszl.zszlScriptMod.shadowbaritone.api.command.argument.IArgConsumer;
 import com.zszl.zszlScriptMod.shadowbaritone.api.command.exception.CommandException;
 import com.zszl.zszlScriptMod.shadowbaritone.api.command.exception.CommandInvalidStateException;
-import com.zszl.zszlScriptMod.shadowbaritone.api.utils.ShadowBaritoneI18n;
 
 import java.util.Arrays;
 import java.util.List;
@@ -39,12 +38,9 @@ public class VersionCommand extends Command {
         args.requireMax(0);
         String version = getClass().getPackage().getImplementationVersion();
         if (version == null) {
-            throw new CommandInvalidStateException(ShadowBaritoneI18n.trKey(
-                    "shadowbaritone.command.version.error.null_version"));
+            throw new CommandInvalidStateException("Null version (this is normal in a dev environment)");
         } else {
-            logDirect(ShadowBaritoneI18n.trKey(
-                    "shadowbaritone.command.version.status.current",
-                    version));
+            logDirect(String.format("You are running Baritone v%s", version));
         }
     }
 
@@ -55,19 +51,17 @@ public class VersionCommand extends Command {
 
     @Override
     public String getShortDesc() {
-        return ShadowBaritoneI18n.trKey(
-                "shadowbaritone.command.version.short_desc");
+        return "View the Baritone version";
     }
 
     @Override
     public List<String> getLongDesc() {
         return Arrays.asList(
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.version.long_desc.1"),
+                "The version command prints the version of Baritone you're currently running.",
                 "",
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.version.long_desc.usage"),
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.version.long_desc.example.default"));
+                "Usage:",
+                "> version - View version information, if present"
+        );
     }
 }
+

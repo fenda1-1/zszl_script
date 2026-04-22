@@ -1,15 +1,20 @@
 // !! REFACTORED FILE (Editor Mode) !!
 package com.zszl.zszlScriptMod.gui.config;
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiScreen;
+
+import net.minecraft.client.Minecraft;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
 import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
-import net.minecraft.client.gui.GuiTextField;
-import net.minecraft.client.resources.I18n;
-import net.minecraft.entity.Entity;
-import org.lwjgl.input.Keyboard;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiTextField;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
+import net.minecraft.world.entity.Entity;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Keyboard;
+
+import com.zszl.zszlScriptMod.handlers.AutoFollowHandler;
 import com.zszl.zszlScriptMod.gui.components.GuiTheme;
 import com.zszl.zszlScriptMod.gui.components.ThemedButton;
 import com.zszl.zszlScriptMod.system.AutoFollowRule;
+import com.zszl.zszlScriptMod.utils.CapturingFontRenderer;
 
 import java.io.IOException;
 import java.text.DecimalFormat;
@@ -174,16 +179,19 @@ public class GuiAutoFollowConfig extends ThemedGuiScreen {
                 }
                 break;
             case 15: // 取消
-                mc.displayGuiScreen(parentScreen);
+                mc.setScreen(parentScreen);
                 break;
         }
     }
 
     private void updatePointFromPlayer(GuiTextField xField, GuiTextField zField) {
-        Entity viewEntity = mc.getRenderViewEntity();
+        Entity viewEntity = mc.getCameraEntity();
+        if (viewEntity == null) {
+            viewEntity = mc.player;
+        }
         if (viewEntity != null) {
-            xField.setText(COORD_FORMAT.format(viewEntity.posX));
-            zField.setText(COORD_FORMAT.format(viewEntity.posZ));
+            xField.setText(COORD_FORMAT.format(viewEntity.getX()));
+            zField.setText(COORD_FORMAT.format(viewEntity.getZ()));
         }
     }
 
@@ -221,3 +229,8 @@ public class GuiAutoFollowConfig extends ThemedGuiScreen {
                 I18n.format(rule.visualizeRange ? "gui.autofollow.reenable.on" : "gui.autofollow.reenable.off"));
     }
 }
+
+
+
+
+

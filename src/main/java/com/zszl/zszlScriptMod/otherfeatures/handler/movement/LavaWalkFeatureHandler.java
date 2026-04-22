@@ -1,15 +1,12 @@
 package com.zszl.zszlScriptMod.otherfeatures.handler.movement;
 
-import net.minecraft.block.Block;
-import net.minecraft.block.material.Material;
-import net.minecraft.block.state.IBlockState;
-import net.minecraft.client.entity.EntityPlayerSP;
-import net.minecraft.util.math.AxisAlignedBB;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.MathHelper;
-import net.minecraftforge.event.world.GetCollisionBoxesEvent;
-
-import java.util.List;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.core.BlockPos;
+import net.minecraft.tags.FluidTags;
+import net.minecraft.util.Mth;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
 
 final class LavaWalkFeatureHandler {
 
@@ -20,7 +17,7 @@ final class LavaWalkFeatureHandler {
     private LavaWalkFeatureHandler() {
     }
 
-    static void apply(EntityPlayerSP player) {
+    static void apply(LocalPlayer player) {
         if (!isAvailable(player)) {
             return;
         }
@@ -30,93 +27,55 @@ final class LavaWalkFeatureHandler {
             return;
         }
 
-        boolean pressingJump = player.movementInput != null && player.movementInput.jump;
+        boolean pressingJump = player.input != null && player.input.jumping;
         double liftStrength = 0.06D + 0.05D * MovementFeatureManager.getConfiguredValue("lava_walk", 0.90F);
-        double distanceToSurface = surfaceY - player.posY;
+        double distanceToSurface = surfaceY - player.getY();
 
         if (isInsideWalkableLiquid(player)) {
-            player.motionY = Math.max(player.motionY, liftStrength);
+            Vec3 motion = player.getDeltaMovement();
+            player.setDeltaMovement(motion.x, Math.max(motion.y, liftStrength), motion.z);
             if (!pressingJump && distanceToSurface >= 0.0D && distanceToSurface <= SURFACE_SNAP_RANGE) {
-                player.setPosition(player.posX, surfaceY, player.posZ);
-                player.motionY = Math.max(player.motionY, 0.0D);
+                player.setPos(player.getX(), surfaceY, player.getZ());
+                player.setDeltaMovement(player.getDeltaMovement().x, Math.max(player.getDeltaMovement().y, 0.0D),
+                        player.getDeltaMovement().z);
             }
             player.fallDistance = 0.0F;
-            player.velocityChanged = true;
+            player.hurtMarked = true;
             return;
         }
 
-        if (!pressingJump && player.motionY < 0.0D && distanceToSurface >= -0.05D && distanceToSurface <= 0.20D) {
-            player.motionY = Math.max(player.motionY, -0.02D);
+        if (!pressingJump && player.getDeltaMovement().y < 0.0D && distanceToSurface >= -0.05D && distanceToSurface <= 0.20D) {
+            Vec3 motion = player.getDeltaMovement();
+            player.setDeltaMovement(motion.x, Math.max(motion.y, -0.02D), motion.z);
             player.fallDistance = 0.0F;
-            player.velocityChanged = true;
+            player.hurtMarked = true;
         }
     }
 
-    static void addCollisionBoxes(GetCollisionBoxesEvent event, EntityPlayerSP player) {
-        if (!isAvailable(player) || event == null || event.getWorld() == null) {
-            return;
-        }
-
-        AxisAlignedBB queryBox = event.getAabb();
-        if (queryBox == null) {
-            return;
-        }
-
-        int minX = MathHelper.floor(queryBox.minX) - 1;
-        int maxX = MathHelper.floor(queryBox.maxX + 1.0D);
-        int minY = MathHelper.floor(queryBox.minY) - 1;
-        int maxY = MathHelper.floor(queryBox.maxY + 1.0D);
-        int minZ = MathHelper.floor(queryBox.minZ) - 1;
-        int maxZ = MathHelper.floor(queryBox.maxZ + 1.0D);
-
-        BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
-        List<AxisAlignedBB> collisionBoxes = event.getCollisionBoxesList();
-        for (int x = minX; x <= maxX; x++) {
-            for (int y = minY; y <= maxY; y++) {
-                for (int z = minZ; z <= maxZ; z++) {
-                    cursor.setPos(x, y, z);
-                    IBlockState state = event.getWorld().getBlockState(cursor);
-                    if (!isWalkableLiquid(state)) {
-                        continue;
-                    }
-                    if (cursor.getY() >= player.posY - COLLISION_TRIGGER_OFFSET) {
-                        continue;
-                    }
-
-                    AxisAlignedBB collision = Block.FULL_BLOCK_AABB.offset(cursor);
-                    if (collision.intersects(queryBox)) {
-                        collisionBoxes.add(collision);
-                    }
-                }
-            }
-        }
-    }
-
-    private static boolean isAvailable(EntityPlayerSP player) {
+    private static boolean isAvailable(LocalPlayer player) {
         return MovementFeatureManager.isEnabled("lava_walk")
                 && player != null
-                && player.world != null
-                && !player.capabilities.isFlying
-                && !player.isRiding()
+                && player.level() != null
+                && !player.getAbilities().flying
+                && !player.isPassenger()
                 && !isSneakBypassActive(player);
     }
 
-    private static double findSupportingSurfaceY(EntityPlayerSP player) {
-        AxisAlignedBB footprint = player.getEntityBoundingBox().grow(-FOOTPRINT_SHRINK, 0.0D, -FOOTPRINT_SHRINK);
-        int minX = MathHelper.floor(footprint.minX);
-        int maxX = MathHelper.floor(footprint.maxX + 0.999D);
-        int minY = MathHelper.floor(footprint.minY - 1.20D);
-        int maxY = MathHelper.floor(footprint.minY + 0.20D);
-        int minZ = MathHelper.floor(footprint.minZ);
-        int maxZ = MathHelper.floor(footprint.maxZ + 0.999D);
+    private static double findSupportingSurfaceY(LocalPlayer player) {
+        AABB footprint = player.getBoundingBox().deflate(FOOTPRINT_SHRINK, 0.0D, FOOTPRINT_SHRINK);
+        int minX = Mth.floor(footprint.minX);
+        int maxX = Mth.floor(footprint.maxX + 0.999D);
+        int minY = Mth.floor(footprint.minY - 1.20D);
+        int maxY = Mth.floor(footprint.minY + 0.20D);
+        int minZ = Mth.floor(footprint.minZ);
+        int maxZ = Mth.floor(footprint.maxZ + 0.999D);
 
         double bestSurfaceY = Double.NaN;
-        BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
         for (int x = minX; x <= maxX; x++) {
             for (int y = minY; y <= maxY; y++) {
                 for (int z = minZ; z <= maxZ; z++) {
-                    cursor.setPos(x, y, z);
-                    if (!isWalkableLiquid(player.world.getBlockState(cursor))) {
+                    BlockPos cursor = new BlockPos(x, y, z);
+                    if (!isWalkableLiquid(player.level().getBlockState(cursor))) {
                         continue;
                     }
                     double candidateSurfaceY = cursor.getY() + 1.0D;
@@ -129,42 +88,39 @@ final class LavaWalkFeatureHandler {
         return bestSurfaceY;
     }
 
-    private static boolean isWalkableLiquid(IBlockState state) {
+    private static boolean isWalkableLiquid(BlockState state) {
         if (state == null) {
             return false;
         }
-        Material material = state.getMaterial();
-        if (material == null || !material.isLiquid()) {
+        if (state.getFluidState().isEmpty()) {
             return false;
         }
         if (MovementFeatureManager.isLiquidWalkDangerousOnly()) {
-            return material == Material.LAVA;
+            return state.getFluidState().is(FluidTags.LAVA);
         }
-        if (material == Material.WATER && !MovementFeatureManager.shouldLiquidWalkOnWater()) {
+        if (state.getFluidState().is(FluidTags.WATER) && !MovementFeatureManager.shouldLiquidWalkOnWater()) {
             return false;
         }
-        return true;
+        return state.getFluidState().is(FluidTags.WATER) || state.getFluidState().is(FluidTags.LAVA);
     }
 
-    private static boolean isInsideWalkableLiquid(EntityPlayerSP player) {
-        if (player == null || player.world == null) {
+    private static boolean isInsideWalkableLiquid(LocalPlayer player) {
+        if (player == null || player.level() == null) {
             return false;
         }
 
-        AxisAlignedBB bounds = player.getEntityBoundingBox().grow(-0.001D, 0.0D, -0.001D);
-        int minX = MathHelper.floor(bounds.minX);
-        int maxX = MathHelper.floor(bounds.maxX + 0.999D);
-        int minY = MathHelper.floor(bounds.minY);
-        int maxY = MathHelper.floor(bounds.maxY + 0.999D);
-        int minZ = MathHelper.floor(bounds.minZ);
-        int maxZ = MathHelper.floor(bounds.maxZ + 0.999D);
+        AABB bounds = player.getBoundingBox().deflate(0.001D, 0.0D, 0.001D);
+        int minX = Mth.floor(bounds.minX);
+        int maxX = Mth.floor(bounds.maxX + 0.999D);
+        int minY = Mth.floor(bounds.minY);
+        int maxY = Mth.floor(bounds.maxY + 0.999D);
+        int minZ = Mth.floor(bounds.minZ);
+        int maxZ = Mth.floor(bounds.maxZ + 0.999D);
 
-        BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
         for (int x = minX; x <= maxX; x++) {
             for (int y = minY; y <= maxY; y++) {
                 for (int z = minZ; z <= maxZ; z++) {
-                    cursor.setPos(x, y, z);
-                    if (isWalkableLiquid(player.world.getBlockState(cursor))) {
+                    if (isWalkableLiquid(player.level().getBlockState(new BlockPos(x, y, z)))) {
                         return true;
                     }
                 }
@@ -173,10 +129,14 @@ final class LavaWalkFeatureHandler {
         return false;
     }
 
-    private static boolean isSneakBypassActive(EntityPlayerSP player) {
+    private static boolean isSneakBypassActive(LocalPlayer player) {
         return player != null
                 && MovementFeatureManager.shouldLiquidWalkSneakToDescend()
-                && player.movementInput != null
-                && player.movementInput.sneak;
+                && player.input != null
+                && player.input.shiftKeyDown;
     }
 }
+
+
+
+

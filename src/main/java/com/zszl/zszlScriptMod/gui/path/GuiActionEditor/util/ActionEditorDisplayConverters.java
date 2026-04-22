@@ -5,7 +5,7 @@ import com.zszl.zszlScriptMod.handlers.KillAuraHandler;
 import com.zszl.zszlScriptMod.utils.ModUtils;
 import com.zszl.zszlScriptMod.utils.locator.ActionTargetLocator;
 
-import net.minecraft.client.resources.I18n;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
 
 public final class ActionEditorDisplayConverters {
     private ActionEditorDisplayConverters() {
@@ -33,6 +33,34 @@ public final class ActionEditorDisplayConverters {
 
     public static String leftToDisplay(String leftRaw) {
         return "false".equalsIgnoreCase(leftRaw) ? "右键" : "左键";
+    }
+
+    public static String clickCoordinateModeToDisplay(String mode) {
+        if (ModUtils.CLICK_COORDINATE_MODE_SCALED.equalsIgnoreCase(mode)) {
+            return I18n.format("gui.path.action_editor.option.click_coordinate_mode.scaled");
+        }
+        return I18n.format("gui.path.action_editor.option.click_coordinate_mode.raw");
+    }
+
+    public static String displayToClickCoordinateMode(String display) {
+        if (I18n.format("gui.path.action_editor.option.click_coordinate_mode.scaled").equals(display)) {
+            return ModUtils.CLICK_COORDINATE_MODE_SCALED;
+        }
+        return ModUtils.CLICK_COORDINATE_MODE_RAW;
+    }
+
+    public static String mouseMoveModeToDisplay(String mode) {
+        if (ModUtils.CLICK_MOUSE_MOVE_MODE_MOVE.equalsIgnoreCase(mode)) {
+            return I18n.format("gui.path.action_editor.option.click_mouse_move_mode.move");
+        }
+        return I18n.format("gui.path.action_editor.option.click_mouse_move_mode.silent");
+    }
+
+    public static String displayToMouseMoveMode(String display) {
+        if (I18n.format("gui.path.action_editor.option.click_mouse_move_mode.move").equals(display)) {
+            return ModUtils.CLICK_MOUSE_MOVE_MODE_MOVE;
+        }
+        return ModUtils.CLICK_MOUSE_MOVE_MODE_SILENT;
     }
 
     public static String clickTypeToDisplay(String clickType) {
@@ -227,13 +255,14 @@ public final class ActionEditorDisplayConverters {
     }
 
     public static String clickLocatorModeToDisplay(String mode) {
-        if (ActionTargetLocator.CLICK_MODE_BUTTON_TEXT.equalsIgnoreCase(mode)) {
+        String normalized = ActionTargetLocator.normalizeClickLocatorMode(mode);
+        if (ActionTargetLocator.CLICK_MODE_BUTTON_TEXT.equalsIgnoreCase(normalized)) {
             return I18n.format("gui.path.action_editor.option.locator.click.button_text");
         }
-        if (ActionTargetLocator.CLICK_MODE_SLOT_TEXT.equalsIgnoreCase(mode)) {
+        if (ActionTargetLocator.CLICK_MODE_SLOT_TEXT.equalsIgnoreCase(normalized)) {
             return I18n.format("gui.path.action_editor.option.locator.click.slot_text");
         }
-        if (ActionTargetLocator.CLICK_MODE_ELEMENT_PATH.equalsIgnoreCase(mode)) {
+        if (ActionTargetLocator.CLICK_MODE_ELEMENT_PATH.equalsIgnoreCase(normalized)) {
             return I18n.format("gui.path.action_editor.option.locator.click.element_path");
         }
         return I18n.format("gui.path.action_editor.option.locator.click.coordinate");
@@ -253,7 +282,8 @@ public final class ActionEditorDisplayConverters {
     }
 
     public static String worldLocatorModeToDisplay(String mode) {
-        if (ActionTargetLocator.TARGET_MODE_NAME.equalsIgnoreCase(mode)) {
+        String normalized = ActionTargetLocator.normalizeWorldLocatorMode(mode);
+        if (ActionTargetLocator.TARGET_MODE_NAME.equalsIgnoreCase(normalized)) {
             return I18n.format("gui.path.action_editor.option.locator.world.name");
         }
         return I18n.format("gui.path.action_editor.option.locator.world.position");
@@ -353,6 +383,13 @@ public final class ActionEditorDisplayConverters {
     }
 
     public static String displayToLocatorMode(String display) {
+        if (ActionTargetLocator.TARGET_MODE_POSITION.equalsIgnoreCase(display)
+                || ActionTargetLocator.LEGACY_TARGET_MODE_POSITION_TYPO.equalsIgnoreCase(display)) {
+            return ActionTargetLocator.TARGET_MODE_POSITION;
+        }
+        if (ActionTargetLocator.TARGET_MODE_NAME.equalsIgnoreCase(display)) {
+            return ActionTargetLocator.TARGET_MODE_NAME;
+        }
         if (I18n.format("gui.path.action_editor.option.locator.click.button_text").equals(display)) {
             return ActionTargetLocator.CLICK_MODE_BUTTON_TEXT;
         }
@@ -401,3 +438,4 @@ public final class ActionEditorDisplayConverters {
                 || "true".equalsIgnoreCase(display);
     }
 }
+

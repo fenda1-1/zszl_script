@@ -1,23 +1,28 @@
 package com.zszl.zszlScriptMod.gui.donate;
 
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.Gui;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiCompatContext;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Mouse;
 import com.zszl.zszlScriptMod.gui.GuiInventory;
 import com.zszl.zszlScriptMod.gui.components.GuiTheme;
 import com.zszl.zszlScriptMod.gui.components.ThemedButton;
 import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
 import com.zszl.zszlScriptMod.utils.DonationLeaderboardManager;
+import com.zszl.zszlScriptMod.utils.NativeImageHelper;
 import com.zszl.zszlScriptMod.zszlScriptMod;
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiScreen;
-import net.minecraft.client.renderer.GlStateManager;
+import com.mojang.blaze3d.platform.NativeImage;
+import com.mojang.blaze3d.systems.RenderSystem;
+import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.renderer.texture.DynamicTexture;
-import net.minecraft.client.resources.I18n;
-import net.minecraft.util.ResourceLocation;
-import org.lwjgl.input.Mouse;
+import net.minecraft.resources.ResourceLocation;
 
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
-import java.io.InputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.util.List;
 
 public class GuiDonationSupport extends ThemedGuiScreen {
@@ -27,16 +32,25 @@ public class GuiDonationSupport extends ThemedGuiScreen {
 
     private final GuiScreen parentScreen;
 
-    private int panelX, panelY, panelWidth, panelHeight;
-    private int leftX, leftY, leftW, leftH;
-    private int rightX, rightY, rightW, rightH;
+    private int panelX;
+    private int panelY;
+    private int panelWidth;
+    private int panelHeight;
+    private int leftX;
+    private int leftY;
+    private int leftW;
+    private int leftH;
+    private int rightX;
+    private int rightY;
+    private int rightW;
+    private int rightH;
+    private int qrBoxSize;
 
     private int scrollOffset = 0;
     private int maxScroll = 0;
-
     private ResourceLocation qrTexture;
-    private int qrTexW = 0;
-    private int qrTexH = 0;
+    private int qrTexW;
+    private int qrTexH;
 
     public GuiDonationSupport(GuiScreen parentScreen) {
         this.parentScreen = parentScreen;
@@ -44,7 +58,7 @@ public class GuiDonationSupport extends ThemedGuiScreen {
 
     private void returnToMainMenuOverlay() {
         if (parentScreen != null) {
-            mc.displayGuiScreen(parentScreen);
+            mc.setScreen(parentScreen);
             return;
         }
         GuiInventory.openOverlayScreen();
@@ -71,13 +85,12 @@ public class GuiDonationSupport extends ThemedGuiScreen {
         rightY = contentY;
         leftH = contentH;
         rightH = contentH;
+        qrBoxSize = Math.min(leftW - 20, 170);
 
-        this.buttonList
-                .add(new ThemedButton(BTN_BACK, panelX + panelWidth / 2 - 110, panelY + panelHeight - 28, 100, 20,
-                        I18n.format("gui.common.back")));
-        this.buttonList
-                .add(new ThemedButton(BTN_REFRESH, panelX + panelWidth / 2 + 10, panelY + panelHeight - 28, 100, 20,
-                        I18n.format("gui.donate.refresh")));
+        this.buttonList.add(new ThemedButton(BTN_BACK, panelX + panelWidth / 2 - 110, panelY + panelHeight - 28,
+                100, 20, I18n.format("gui.common.back")));
+        this.buttonList.add(new ThemedButton(BTN_REFRESH, panelX + panelWidth / 2 + 10, panelY + panelHeight - 28,
+                100, 20, I18n.format("gui.donate.refresh")));
 
         DonationLeaderboardManager.fetchContent();
         loadQrTexture();
@@ -96,41 +109,80 @@ public class GuiDonationSupport extends ThemedGuiScreen {
     }
 
     private void loadQrTexture() {
-        qrTexture = null;
-        qrTexW = 0;
-        qrTexH = 0;
+        releaseQrTexture();
 
-        try (InputStream is = DonationLeaderboardManager.class.getClassLoader()
+        try (InputStream input = DonationLeaderboardManager.class.getClassLoader()
                 .getResourceAsStream(DonationLeaderboardManager.PAYMENT_QR_RESOURCE)) {
-            if (is == null) {
-                zszlScriptMod.LOGGER.warn("[Donation] 未找到打赏码资源: {}", DonationLeaderboardManager.PAYMENT_QR_RESOURCE);
+            if (input == null) {
+                zszlScriptMod.LOGGER.warn("[Donation] 未找到内置付款码资源: {}",
+                        DonationLeaderboardManager.PAYMENT_QR_RESOURCE);
                 return;
             }
 
-            BufferedImage image = ImageIO.read(is);
+            BufferedImage image = ImageIO.read(input);
             if (image == null) {
+                zszlScriptMod.LOGGER.warn("[Donation] 内置付款码图片解码失败: {}",
+                        DonationLeaderboardManager.PAYMENT_QR_RESOURCE);
                 return;
             }
 
             qrTexW = image.getWidth();
             qrTexH = image.getHeight();
-            DynamicTexture dynamicTexture = new DynamicTexture(image);
-            qrTexture = mc.getTextureManager().getDynamicTextureLocation("zszl_donation_qr", dynamicTexture);
+            NativeImage nativeImage = toNativeImage(image);
+            if (nativeImage == null) {
+                zszlScriptMod.LOGGER.warn("[Donation] 内置付款码转换 NativeImage 失败: {}",
+                        DonationLeaderboardManager.PAYMENT_QR_RESOURCE);
+                qrTexW = 0;
+                qrTexH = 0;
+                return;
+            }
+
+            try {
+                qrTexture = mc.getTextureManager().register("zszl_donation_qr", new DynamicTexture(nativeImage));
+                zszlScriptMod.LOGGER.info("[Donation] 内置付款码加载成功: resource={} size={}x{}",
+                        DonationLeaderboardManager.PAYMENT_QR_RESOURCE, qrTexW, qrTexH);
+            } catch (Exception e) {
+                nativeImage.close();
+                qrTexW = 0;
+                qrTexH = 0;
+                zszlScriptMod.LOGGER.warn("[Donation] 内置付款码动态纹理注册失败: {}",
+                        DonationLeaderboardManager.PAYMENT_QR_RESOURCE, e);
+            }
         } catch (Exception e) {
-            zszlScriptMod.LOGGER.warn("[Donation] 读取内置打赏码图片失败", e);
+            qrTexW = 0;
+            qrTexH = 0;
+            zszlScriptMod.LOGGER.warn("[Donation] 读取内置付款码图片失败: {}",
+                    DonationLeaderboardManager.PAYMENT_QR_RESOURCE, e);
         }
+    }
+
+    private static NativeImage toNativeImage(BufferedImage image) {
+        return NativeImageHelper.fromBufferedImage(image);
+    }
+
+    private void releaseQrTexture() {
+        qrTexW = 0;
+        qrTexH = 0;
+        if (qrTexture != null && mc != null) {
+            mc.getTextureManager().release(qrTexture);
+        }
+        qrTexture = null;
     }
 
     @Override
     public void handleMouseInput() throws IOException {
         super.handleMouseInput();
-        int dWheel = Mouse.getDWheel();
+        int dWheel = Mouse.getEventDWheel();
         if (dWheel == 0) {
             return;
         }
 
-        int mouseX = Mouse.getX() * this.width / mc.displayWidth;
-        int mouseY = this.height - Mouse.getY() * this.height / mc.displayHeight - 1;
+        int mouseX = 0;
+        int mouseY = 0;
+        if (this.mc != null && this.width > 0 && this.height > 0) {
+            mouseX = Mouse.getEventX() * this.width / Math.max(1, this.mc.getWindow().getWidth());
+            mouseY = this.height - Mouse.getEventY() * this.height / Math.max(1, this.mc.getWindow().getHeight()) - 1;
+        }
         if (mouseX >= rightX && mouseX <= rightX + rightW && mouseY >= rightY && mouseY <= rightY + rightH) {
             if (dWheel > 0) {
                 scrollOffset = Math.max(0, scrollOffset - 1);
@@ -142,42 +194,51 @@ public class GuiDonationSupport extends ThemedGuiScreen {
 
     @Override
     public void drawScreen(int mouseX, int mouseY, float partialTicks) {
-        this.drawDefaultBackground();
+        drawDefaultBackground();
 
         GuiTheme.drawPanel(panelX, panelY, panelWidth, panelHeight);
         GuiTheme.drawTitleBar(panelX, panelY, panelWidth, I18n.format("gui.donate.title"), this.fontRenderer);
 
-        // 左侧：二维码与说明
         drawRect(leftX, leftY, leftX + leftW, leftY + leftH, 0x66000000);
-        this.drawCenteredString(this.fontRenderer, I18n.format("gui.donate.qr_title"), leftX + leftW / 2, leftY + 6,
+        drawCenteredString(this.fontRenderer, I18n.format("gui.donate.qr_title"), leftX + leftW / 2, leftY + 6,
                 0xFFFFFF);
 
-        int qrBoxSize = Math.min(leftW - 20, 170);
         int qrX = leftX + (leftW - qrBoxSize) / 2;
         int qrY = leftY + 22;
 
         drawRect(qrX - 1, qrY - 1, qrX + qrBoxSize + 1, qrY + qrBoxSize + 1, 0xFFB0B0B0);
         drawRect(qrX, qrY, qrX + qrBoxSize, qrY + qrBoxSize, 0xFFFFFFFF);
 
-        if (qrTexture != null && qrTexW > 0 && qrTexH > 0) {
-            mc.getTextureManager().bindTexture(qrTexture);
-            GlStateManager.color(1F, 1F, 1F, 1F);
-            drawScaledCustomSizeModalRect(qrX, qrY, 0, 0, qrTexW, qrTexH, qrBoxSize, qrBoxSize, qrTexW, qrTexH);
+        GuiGraphics graphics = GuiCompatContext.current();
+        if (graphics != null && qrTexture != null && qrTexW > 0 && qrTexH > 0) {
+            int drawWidth = qrBoxSize;
+            int drawHeight = qrBoxSize;
+            if (qrTexW > 0 && qrTexH > 0) {
+                double scale = Math.min(qrBoxSize / (double) qrTexW, qrBoxSize / (double) qrTexH);
+                drawWidth = Math.max(1, (int) Math.round(qrTexW * scale));
+                drawHeight = Math.max(1, (int) Math.round(qrTexH * scale));
+            }
+            int drawX = qrX + (qrBoxSize - drawWidth) / 2;
+            int drawY = qrY + (qrBoxSize - drawHeight) / 2;
+            RenderSystem.setShaderTexture(0, qrTexture);
+            RenderSystem.enableBlend();
+            RenderSystem.defaultBlendFunc();
+            RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
+            Gui.drawScaledCustomSizeModalRect(drawX, drawY, 0.0F, 0.0F, qrTexW, qrTexH, drawWidth, drawHeight,
+                    qrTexW, qrTexH);
         } else {
-            this.drawCenteredString(this.fontRenderer, I18n.format("gui.donate.qr_placeholder"), leftX + leftW / 2,
-                    qrY + qrBoxSize / 2 - 4,
-                    0x666666);
+            drawCenteredString(this.fontRenderer, I18n.format("gui.donate.qr_placeholder"), leftX + leftW / 2,
+                    qrY + qrBoxSize / 2 - 4, 0x666666);
         }
 
         int textY = qrY + qrBoxSize + 10;
-        this.drawString(this.fontRenderer, I18n.format("gui.donate.desc.free"), leftX + 8, textY, 0xFFFFFF);
-        this.drawString(this.fontRenderer, I18n.format("gui.donate.desc.support"), leftX + 8, textY + 14, 0xFFFFFF);
-        this.drawString(this.fontRenderer, I18n.format("gui.donate.desc.remark"), leftX + 8, textY + 28, 0xFFFFFF);
-        this.drawString(this.fontRenderer, I18n.format("gui.donate.desc.realtime"), leftX + 8, textY + 42, 0xFFFFFF);
+        drawString(this.fontRenderer, I18n.format("gui.donate.desc.free"), leftX + 8, textY, 0xFFFFFF);
+        drawString(this.fontRenderer, I18n.format("gui.donate.desc.support"), leftX + 8, textY + 14, 0xFFFFFF);
+        drawString(this.fontRenderer, I18n.format("gui.donate.desc.remark"), leftX + 8, textY + 28, 0xFFFFFF);
+        drawString(this.fontRenderer, I18n.format("gui.donate.desc.realtime"), leftX + 8, textY + 42, 0xFFFFFF);
 
-        // 右侧：打赏榜
         drawRect(rightX, rightY, rightX + rightW, rightY + rightH, 0x66000000);
-        this.drawCenteredString(this.fontRenderer, I18n.format("gui.donate.rank_title"), rightX + rightW / 2,
+        drawCenteredString(this.fontRenderer, I18n.format("gui.donate.rank_title"), rightX + rightW / 2,
                 rightY + 6, 0xFFFFFF);
 
         int headerY = rightY + 24;
@@ -187,10 +248,10 @@ public class GuiDonationSupport extends ThemedGuiScreen {
 
         int rowStartX = rightX + 5;
         drawRect(rowStartX, headerY - 2, rowStartX + rightW - 10, headerY + 12, 0x55334455);
-        this.drawString(this.fontRenderer, I18n.format("gui.donate.col.rank"), rowStartX + 4, headerY + 1, 0xFFFFFF);
-        this.drawString(this.fontRenderer, I18n.format("gui.donate.col.name"), rowStartX + rankColW + 4, headerY + 1,
+        drawString(this.fontRenderer, I18n.format("gui.donate.col.rank"), rowStartX + 4, headerY + 1, 0xFFFFFF);
+        drawString(this.fontRenderer, I18n.format("gui.donate.col.name"), rowStartX + rankColW + 4, headerY + 1,
                 0xFFFFFF);
-        this.drawString(this.fontRenderer, I18n.format("gui.donate.col.amount"), rowStartX + rankColW + nameColW + 4,
+        drawString(this.fontRenderer, I18n.format("gui.donate.col.amount"), rowStartX + rankColW + nameColW + 4,
                 headerY + 1, 0xFFFFFF);
 
         List<DonationLeaderboardManager.Entry> entries = DonationLeaderboardManager.leaderboard;
@@ -203,7 +264,7 @@ public class GuiDonationSupport extends ThemedGuiScreen {
         }
 
         if (entries.isEmpty()) {
-            this.drawCenteredString(this.fontRenderer, I18n.format("gui.donate.rank_loading"), rightX + rightW / 2,
+            drawCenteredString(this.fontRenderer, I18n.format("gui.donate.rank_loading"), rightX + rightW / 2,
                     listTop + 30, 0xAAAAAA);
         } else {
             for (int i = 0; i < visibleRows; i++) {
@@ -211,16 +272,23 @@ public class GuiDonationSupport extends ThemedGuiScreen {
                 if (idx >= entries.size()) {
                     break;
                 }
-                DonationLeaderboardManager.Entry e = entries.get(idx);
+                DonationLeaderboardManager.Entry entry = entries.get(idx);
                 int y = listTop + i * rowHeight;
                 if ((idx & 1) == 0) {
                     drawRect(rowStartX, y - 1, rowStartX + rightW - 10, y + rowHeight - 1, 0x22111111);
                 }
-                this.drawString(this.fontRenderer, String.valueOf(e.rank), rowStartX + 8, y + 2, 0xFFFFFF);
-                this.drawString(this.fontRenderer, e.name, rowStartX + rankColW + 4, y + 2, 0xFFEFD280);
-                this.drawString(this.fontRenderer, e.amount, rowStartX + rankColW + nameColW + 4, y + 2, 0xFF98FB98);
+                drawString(this.fontRenderer, String.valueOf(entry.rank), rowStartX + 8, y + 2, 0xFFFFFF);
+                drawString(this.fontRenderer, entry.name, rowStartX + rankColW + 4, y + 2, 0xFFEFD280);
+                drawString(this.fontRenderer, entry.amount, rowStartX + rankColW + nameColW + 4, y + 2, 0xFF98FB98);
             }
         }
+
         super.drawScreen(mouseX, mouseY, partialTicks);
+    }
+
+    @Override
+    public void onGuiClosed() {
+        releaseQrTexture();
+        super.onGuiClosed();
     }
 }

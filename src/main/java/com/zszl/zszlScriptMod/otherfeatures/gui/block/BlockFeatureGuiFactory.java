@@ -1,6 +1,6 @@
 package com.zszl.zszlScriptMod.otherfeatures.gui.block;
 
-import net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
 
 public final class BlockFeatureGuiFactory {
 
@@ -33,3 +33,6 @@ public final class BlockFeatureGuiFactory {
         }
     }
 }
+
+
+

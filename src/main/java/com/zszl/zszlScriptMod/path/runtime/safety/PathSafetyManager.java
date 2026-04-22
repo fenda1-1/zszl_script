@@ -2,6 +2,7 @@ package com.zszl.zszlScriptMod.path.runtime.safety;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.zszl.zszlScriptMod.path.PathSequenceManager;
 import com.zszl.zszlScriptMod.path.PathSequenceManager.PathSequence;
 import com.zszl.zszlScriptMod.system.ProfileManager;
 import com.zszl.zszlScriptMod.zszlScriptMod;
@@ -163,6 +164,7 @@ public final class PathSafetyManager {
 
     public static synchronized void reload() {
         config = new Config();
+        initialized = true;
         Path path = getConfigPath();
         ensureConfigExists(path);
         try (Reader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
@@ -254,7 +256,6 @@ public final class PathSafetyManager {
             case "switch_hotbar_slot":
             case "silentuse":
             case "use_hotbar_item":
-            case "use_held_item":
                 return true;
             default:
                 return false;

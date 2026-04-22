@@ -1,68 +1,94 @@
-// 文件路径: src/main/java/com/keycommand2/zszlScriptMod/inventory/InventoryViewerManager.java
 package com.zszl.zszlScriptMod.inventory;
 
+import net.minecraft.ChatFormatting;
+import net.minecraft.core.NonNullList;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.entity.EntityPlayerSP;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.player.EntityPlayer;
-import net.minecraft.inventory.IInventory;
-import net.minecraft.inventory.InventoryBasic;
-import net.minecraft.util.text.TextComponentString;
-import net.minecraft.util.text.TextFormatting;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.network.chat.Component;
+import net.minecraft.world.Container;
+import net.minecraft.world.SimpleContainer;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
 
-public class InventoryViewerManager {
+public final class InventoryViewerManager {
 
-    // 使用一个标准的IInventory实现来存储物品，大小为54（大箱子）
-    private static final IInventory copiedInventory = new InventoryBasic("CopiedInventory", false, 54);
+    private static final int VIEWER_SIZE = 54;
+    private static final int ARMOR_START_SLOT = 45;
+    private static final int OFFHAND_SLOT = 49;
+    private static final SimpleContainer COPIED_INVENTORY = new SimpleContainer(VIEWER_SIZE);
+    private static String lastCopiedPlayerName = "";
+    private static boolean hasCopiedInventoryData = false;
 
-    /**
-     * 获取存储被复制物品的物品栏实例。
-     * @return IInventory 实例
-     */
-    public static IInventory getCopiedInventory() {
-        return copiedInventory;
+    private InventoryViewerManager() {
     }
 
-    /**
-     * 核心逻辑：复制当前目标玩家的物品栏。
-     */
+    public static Container getCopiedInventory() {
+        return COPIED_INVENTORY;
+    }
+
+    public static NonNullList<ItemStack> snapshotCopiedInventory() {
+        NonNullList<ItemStack> snapshot = NonNullList.withSize(VIEWER_SIZE, ItemStack.EMPTY);
+        for (int i = 0; i < VIEWER_SIZE; i++) {
+            snapshot.set(i, copyOrEmpty(COPIED_INVENTORY.getItem(i)));
+        }
+        return snapshot;
+    }
+
+    public static String getLastCopiedPlayerName() {
+        return lastCopiedPlayerName == null ? "" : lastCopiedPlayerName;
+    }
+
+    public static boolean hasCopiedInventoryData() {
+        return hasCopiedInventoryData;
+    }
+
     public static void copyInventoryFromTarget() {
-        Minecraft mc = Minecraft.getMinecraft();
-        EntityPlayerSP player = mc.player;
+        Minecraft mc = Minecraft.getInstance();
+        LocalPlayer localPlayer = mc.player;
+        if (localPlayer == null) {
+            return;
+        }
 
-        if (player == null) return;
+        Entity targetEntity = mc.crosshairPickEntity;
+        if (!(targetEntity instanceof Player)) {
+            localPlayer.sendSystemMessage(Component.literal("[物品查看器] 准星未对准任何玩家！")
+                    .withStyle(ChatFormatting.RED));
+            return;
+        }
 
-        Entity targetEntity = mc.pointedEntity;
-        if (targetEntity instanceof EntityPlayer) {
-            EntityPlayer targetPlayer = (EntityPlayer) targetEntity;
+        Player targetPlayer = (Player) targetEntity;
+        clearCopiedInventory();
+        lastCopiedPlayerName = targetPlayer.getName().getString();
 
-            // 清空上一次的物品
-            copiedInventory.clear();
+        for (int i = 0; i < targetPlayer.getInventory().items.size() && i < VIEWER_SIZE; i++) {
+            COPIED_INVENTORY.setItem(i, copyOrEmpty(targetPlayer.getInventory().items.get(i)));
+        }
 
-            // 复制主物品栏 (0-35)
-            for (int i = 0; i < targetPlayer.inventory.mainInventory.size(); i++) {
-                if (i < copiedInventory.getSizeInventory()) {
-                    copiedInventory.setInventorySlotContents(i, targetPlayer.inventory.mainInventory.get(i).copy());
-                }
+        for (int i = 0; i < targetPlayer.getInventory().armor.size(); i++) {
+            int targetSlot = ARMOR_START_SLOT + (3 - i);
+            if (targetSlot >= 0 && targetSlot < VIEWER_SIZE) {
+                COPIED_INVENTORY.setItem(targetSlot, copyOrEmpty(targetPlayer.getInventory().armor.get(i)));
             }
-            
-            // 复制盔甲栏 (倒序放入，符合视觉习惯)
-            for (int i = 0; i < targetPlayer.inventory.armorInventory.size(); i++) {
-                int targetSlot = 45 + (3 - i); // 放入 45, 46, 47, 48
-                if (targetSlot < copiedInventory.getSizeInventory()) {
-                    copiedInventory.setInventorySlotContents(targetSlot, targetPlayer.inventory.armorInventory.get(i).copy());
-                }
-            }
+        }
 
-            // 复制副手
-            if (49 < copiedInventory.getSizeInventory()) {
-                 copiedInventory.setInventorySlotContents(49, targetPlayer.inventory.offHandInventory.get(0).copy());
-            }
+        if (!targetPlayer.getInventory().offhand.isEmpty() && OFFHAND_SLOT < VIEWER_SIZE) {
+            COPIED_INVENTORY.setItem(OFFHAND_SLOT, copyOrEmpty(targetPlayer.getInventory().offhand.get(0)));
+        }
+        hasCopiedInventoryData = true;
 
-            player.sendMessage(new TextComponentString(TextFormatting.GREEN + "[物品查看器] 已成功复制玩家 " + TextFormatting.AQUA + targetPlayer.getName() + TextFormatting.GREEN + " 的物品栏。"));
-        } else {
-            player.sendMessage(new TextComponentString(TextFormatting.RED + "[物品查看器] 准星未对准任何玩家！"));
+        localPlayer.sendSystemMessage(Component.literal("[物品查看器] 已成功复制玩家 " + targetPlayer.getName().getString() + " 的物品栏。")
+                .withStyle(ChatFormatting.GREEN));
+    }
+
+    private static void clearCopiedInventory() {
+        hasCopiedInventoryData = false;
+        for (int i = 0; i < VIEWER_SIZE; i++) {
+            COPIED_INVENTORY.setItem(i, ItemStack.EMPTY);
         }
     }
-}
 
+    private static ItemStack copyOrEmpty(ItemStack stack) {
+        return stack == null ? ItemStack.EMPTY : stack.copy();
+    }
+}

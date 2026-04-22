@@ -4,7 +4,6 @@ import com.zszl.zszlScriptMod.gui.path.GuiActionEditor.library.groups.flow.FlowA
 import com.zszl.zszlScriptMod.gui.path.GuiActionEditor.library.groups.interaction.InteractionActionLibraryGroup;
 import com.zszl.zszlScriptMod.gui.path.GuiActionEditor.library.groups.items.ItemsActionLibraryGroup;
 import com.zszl.zszlScriptMod.gui.path.GuiActionEditor.library.groups.movement.MovementActionLibraryGroup;
-import com.zszl.zszlScriptMod.gui.path.GuiActionEditor.library.groups.rsl.RslActionLibraryGroup;
 import com.zszl.zszlScriptMod.gui.path.GuiActionEditor.library.groups.toggle.ToggleActionLibraryGroup;
 import com.zszl.zszlScriptMod.gui.path.GuiActionEditor.model.ActionLibraryNode;
 
@@ -37,7 +36,6 @@ public final class ActionLibraryTreeFactory {
         roots.add(MovementActionLibraryGroup.buildRoot(itemFactory));
         roots.add(ItemsActionLibraryGroup.buildRoot(itemFactory));
         roots.add(ToggleActionLibraryGroup.buildRoot(itemFactory));
-        roots.add(RslActionLibraryGroup.buildRoot(itemFactory));
         roots.add(FlowActionLibraryGroup.buildRoot(itemFactory));
         return roots;
     }

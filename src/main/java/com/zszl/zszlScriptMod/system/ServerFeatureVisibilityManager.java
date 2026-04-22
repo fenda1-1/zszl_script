@@ -43,9 +43,7 @@ public final class ServerFeatureVisibilityManager {
     }
 
     private static void ensureDefaults() {
-        if (rules.stream().noneMatch(r -> Objects.equals(r.id, "mota"))) {
-            rules.add(new ServerFeatureRule("mota", "魔塔之巅", true));
-        }
+        // 1.20.1 迁移阶段已移除服务器定制分组，保留配置文件结构但不再注入默认规则。
     }
 
     public static void loadConfig() {
@@ -97,20 +95,11 @@ public final class ServerFeatureVisibilityManager {
     }
 
     public static boolean shouldHideMotaFeatures() {
-        for (ServerFeatureRule r : rules) {
-            if ("mota".equals(r.id)) {
-                return r.enabled;
-            }
-        }
         return false;
     }
 
     public static boolean isAnyRuleEnabled() {
-        for (ServerFeatureRule r : rules) {
-            if (r != null && r.enabled) {
-                return true;
-            }
-        }
         return false;
     }
 }
+

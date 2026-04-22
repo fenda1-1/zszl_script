@@ -21,7 +21,6 @@ import com.zszl.zszlScriptMod.shadowbaritone.api.pathing.movement.MovementStatus
 import com.zszl.zszlScriptMod.shadowbaritone.api.utils.Rotation;
 import com.zszl.zszlScriptMod.shadowbaritone.api.utils.input.Input;
 
-import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -59,15 +58,6 @@ public class MovementState {
         return this.inputState;
     }
 
-    public MovementState retainInputs(Collection<Input> allowedInputs) {
-        if (allowedInputs == null) {
-            this.inputState.clear();
-            return this;
-        }
-        this.inputState.entrySet().removeIf(entry -> !allowedInputs.contains(entry.getKey()));
-        return this;
-    }
-
     public static class MovementTarget {
 
         /**
@@ -78,8 +68,7 @@ public class MovementState {
         /**
          * Whether or not this target must force rotations.
          * <p>
-         * {@code true} if we're trying to place or break blocks, {@code false} if we're
-         * trying to look at the movement location
+         * {@code true} if we're trying to place or break blocks, {@code false} if we're trying to look at the movement location
          */
         private boolean forceRotations;
 
@@ -101,3 +90,4 @@ public class MovementState {
         }
     }
 }
+

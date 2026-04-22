@@ -5,10 +5,12 @@ import com.zszl.zszlScriptMod.gui.path.GuiActionEditor.model.ExpressionEditorBin
 import com.zszl.zszlScriptMod.gui.path.GuiActionEditor.model.ExpressionTemplateCard;
 import com.zszl.zszlScriptMod.gui.path.GuiActionEditor.model.ExpressionTemplateLayoutEntry;
 import com.zszl.zszlScriptMod.gui.path.GuiActionEditor.template.ExpressionTemplateCatalog;
+import com.zszl.zszlScriptMod.utils.PinyinSearchHelper;
 
-import net.minecraft.client.gui.Gui;
-import net.minecraft.client.gui.GuiTextField;
-import org.lwjgl.input.Keyboard;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.Gui;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiTextField;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Keyboard;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -27,7 +29,7 @@ final class ExpressionPopupSupport {
         GuiTextField targetField = editor.getFieldByKey(binding.paramKey);
         open(editor, editor.safe(targetField == null ? "" : targetField.getText()),
                 binding.title.isEmpty() ? "表达式" : binding.title,
-                false);
+                GuiActionEditor.EXPRESSION_TEMPLATE_MODE_SET_VAR);
         editor.activeExpressionEditorBinding = binding;
     }
 
@@ -39,15 +41,27 @@ final class ExpressionPopupSupport {
         }
         open(editor, initialValue,
                 editIndex == GuiActionEditor.BOOLEAN_EXPRESSION_EDIT_NEW
-                        ? net.minecraft.client.resources.I18n
-                                .format("gui.path.action_editor.popup.add_boolean_expression")
-                        : net.minecraft.client.resources.I18n
-                                .format("gui.path.action_editor.popup.edit_boolean_expression"),
-                true);
+                        ? I18n.format("gui.path.action_editor.popup.add_boolean_expression")
+                        : I18n.format("gui.path.action_editor.popup.edit_boolean_expression"),
+                GuiActionEditor.EXPRESSION_TEMPLATE_MODE_BOOLEAN);
         editor.activeBooleanExpressionEditIndex = editIndex;
     }
 
-    static void open(GuiActionEditor editor, String initialValue, String title, boolean booleanOnly) {
+    static void openItemFilter(GuiActionEditor editor, int editIndex) {
+        List<String> expressions = editor.getInventoryItemFilterExpressionList();
+        String initialValue = "";
+        if (editIndex >= 0 && editIndex < expressions.size()) {
+            initialValue = expressions.get(editIndex);
+        }
+        open(editor, initialValue,
+                editIndex == GuiActionEditor.ITEM_FILTER_EXPRESSION_EDIT_NEW
+                        ? I18n.format("gui.path.action_editor.popup.add_item_filter_expression")
+                        : I18n.format("gui.path.action_editor.popup.edit_item_filter_expression"),
+                GuiActionEditor.EXPRESSION_TEMPLATE_MODE_ITEM_FILTER);
+        editor.activeInventoryItemFilterExpressionEditIndex = editIndex;
+    }
+
+    static void open(GuiActionEditor editor, String initialValue, String title, String templateMode) {
         editor.collapseAllDropdowns();
         if (editor.actionSearchField != null) {
             editor.actionSearchField.setFocused(false);
@@ -57,8 +71,13 @@ final class ExpressionPopupSupport {
         }
         editor.activeExpressionEditorBinding = null;
         editor.activeBooleanExpressionEditIndex = GuiActionEditor.BOOLEAN_EXPRESSION_EDIT_NONE;
+        editor.activeInventoryItemFilterExpressionEditIndex = GuiActionEditor.ITEM_FILTER_EXPRESSION_EDIT_NONE;
         editor.activeExpressionPopupTitle = title == null ? "" : title;
-        editor.activeExpressionPopupBooleanOnly = booleanOnly;
+        editor.activeExpressionPopupTemplateMode = templateMode == null
+                ? GuiActionEditor.EXPRESSION_TEMPLATE_MODE_SET_VAR
+                : templateMode;
+        editor.activeExpressionPopupBooleanOnly = GuiActionEditor.EXPRESSION_TEMPLATE_MODE_BOOLEAN
+                .equals(editor.activeExpressionPopupTemplateMode);
         editor.expressionPopupSearchField = new GuiTextField(7001, editor.getEditorFontRenderer(), 0, 0, 120, 18);
         editor.expressionPopupSearchField.setMaxStringLength(80);
         editor.expressionPopupSearchField.setFocused(false);
@@ -74,8 +93,10 @@ final class ExpressionPopupSupport {
     static void close(GuiActionEditor editor) {
         editor.activeExpressionEditorBinding = null;
         editor.activeBooleanExpressionEditIndex = GuiActionEditor.BOOLEAN_EXPRESSION_EDIT_NONE;
+        editor.activeInventoryItemFilterExpressionEditIndex = GuiActionEditor.ITEM_FILTER_EXPRESSION_EDIT_NONE;
         editor.activeExpressionPopupTitle = "";
         editor.activeExpressionPopupBooleanOnly = false;
+        editor.activeExpressionPopupTemplateMode = GuiActionEditor.EXPRESSION_TEMPLATE_MODE_SET_VAR;
         editor.expressionPopupSearchField = null;
         editor.expressionPopupInputField = null;
         editor.expressionPopupOriginalValue = "";
@@ -101,6 +122,22 @@ final class ExpressionPopupSupport {
                     editor.selectedBooleanExpressionIndex = editor.activeBooleanExpressionEditIndex;
                 }
                 editor.applyBooleanExpressionListToCurrentParams(expressions);
+                editor.hasUnsavedChanges = true;
+                editor.pendingSwitchActionType = null;
+                editor.refreshDynamicParamLayout();
+            }
+        } else if (editor.activeInventoryItemFilterExpressionEditIndex != GuiActionEditor.ITEM_FILTER_EXPRESSION_EDIT_NONE) {
+            List<String> expressions = editor.getInventoryItemFilterExpressionList();
+            if (!nextValue.isEmpty()) {
+                if (editor.activeInventoryItemFilterExpressionEditIndex == GuiActionEditor.ITEM_FILTER_EXPRESSION_EDIT_NEW) {
+                    expressions.add(nextValue);
+                    editor.selectedInventoryItemFilterExpressionIndex = expressions.size() - 1;
+                } else if (editor.activeInventoryItemFilterExpressionEditIndex >= 0
+                        && editor.activeInventoryItemFilterExpressionEditIndex < expressions.size()) {
+                    expressions.set(editor.activeInventoryItemFilterExpressionEditIndex, nextValue);
+                    editor.selectedInventoryItemFilterExpressionIndex = editor.activeInventoryItemFilterExpressionEditIndex;
+                }
+                editor.applyInventoryItemFilterExpressionListToCurrentParams(expressions);
                 editor.hasUnsavedChanges = true;
                 editor.pendingSwitchActionType = null;
                 editor.refreshDynamicParamLayout();
@@ -156,7 +193,8 @@ final class ExpressionPopupSupport {
         int viewportW = editor.getExpressionPopupViewportWidth();
         int viewportH = editor.getExpressionPopupViewportHeight();
 
-        Gui.drawRect(0, 0, editor.getScreenWidth(), editor.getScreenHeight(), 0xA0000000);
+        Gui.drawRect(0, 0, editor.getScreenWidth(), editor.getScreenHeight(), 0xC0000000);
+        Gui.drawRect(popupX, popupY, popupX + popupW, popupY + popupH, 0xF0141C24);
         GuiTheme.drawPanel(popupX, popupY, popupW, popupH);
         GuiTheme.drawTitleBar(popupX, popupY, popupW, "编辑表达式", editor.getEditorFontRenderer());
 
@@ -187,7 +225,7 @@ final class ExpressionPopupSupport {
         editor.expressionPopupScrollOffset = Math.max(0,
                 Math.min(editor.expressionPopupScrollOffset, editor.expressionPopupMaxScroll));
 
-        Gui.drawRect(viewportX + 1, viewportY + 1, viewportX + viewportW - 1, viewportY + viewportH - 1, 0x33151E28);
+        Gui.drawRect(viewportX + 1, viewportY + 1, viewportX + viewportW - 1, viewportY + viewportH - 1, 0xF0151E28);
         editor.beginScissor(viewportX + 1, viewportY + 1, viewportW - 2, viewportH - 2);
         for (ExpressionTemplateLayoutEntry entry : entries) {
             int drawY = entry.y - editor.expressionPopupScrollOffset;
@@ -229,9 +267,11 @@ final class ExpressionPopupSupport {
                 GuiTheme.UiState.NORMAL);
 
         editor.getEditorFontRenderer().drawString(
-                editor.activeExpressionPopupBooleanOnly
+                GuiActionEditor.EXPRESSION_TEMPLATE_MODE_ITEM_FILTER.equals(editor.activeExpressionPopupTemplateMode)
+                        ? "当前提供物品过滤表达式模板；一条表达式就是一条过滤规则，点击卡片可直接填入示例"
+                        : (editor.activeExpressionPopupBooleanOnly
                         ? "当前只提供输出为布尔值的模板；点击卡片填入示例，确定保存"
-                        : "点击卡片可填入示例，悬浮查看详细说明；确定保存，取消 / Esc 放弃修改",
+                        : "点击卡片可填入示例，悬浮查看详细说明；确定保存，取消 / Esc 放弃修改"),
                 popupX + 12, popupY + popupH - 10, 0xFF9FB0C0);
 
         ExpressionTemplateLayoutEntry hoveredEntry = getHoveredEntry(editor, entries, mouseX, mouseY);
@@ -341,10 +381,15 @@ final class ExpressionPopupSupport {
     }
 
     static List<ExpressionTemplateCard> getFilteredCards(GuiActionEditor editor, String searchText) {
-        List<ExpressionTemplateCard> allCards = editor.activeExpressionPopupBooleanOnly
-                ? ExpressionTemplateCatalog.buildBooleanCards()
-                : ExpressionTemplateCatalog.buildSetVarCards();
-        String keyword = editor.safe(searchText).trim().toLowerCase(Locale.ROOT);
+        List<ExpressionTemplateCard> allCards;
+        if (GuiActionEditor.EXPRESSION_TEMPLATE_MODE_BOOLEAN.equals(editor.activeExpressionPopupTemplateMode)) {
+            allCards = ExpressionTemplateCatalog.buildBooleanCards();
+        } else if (GuiActionEditor.EXPRESSION_TEMPLATE_MODE_ITEM_FILTER.equals(editor.activeExpressionPopupTemplateMode)) {
+            allCards = ExpressionTemplateCatalog.buildItemFilterCards();
+        } else {
+            allCards = ExpressionTemplateCatalog.buildSetVarCards();
+        }
+        String keyword = PinyinSearchHelper.normalizeQuery(editor.safe(searchText));
         if (keyword.isEmpty()) {
             return allCards;
         }
@@ -444,19 +489,21 @@ final class ExpressionPopupSupport {
         if (card == null) {
             return false;
         }
-        if (editor.safe(card.name).toLowerCase(Locale.ROOT).contains(keyword)
-                || editor.safe(card.example).toLowerCase(Locale.ROOT).contains(keyword)
-                || editor.safe(card.description).toLowerCase(Locale.ROOT).contains(keyword)
-                || editor.safe(card.format).toLowerCase(Locale.ROOT).contains(keyword)
-                || editor.safe(card.outputExample).toLowerCase(Locale.ROOT).contains(keyword)) {
-            return true;
-        }
-        for (String alias : card.keywords) {
-            if (editor.safe(alias).toLowerCase(Locale.ROOT).contains(keyword)) {
-                return true;
+        StringBuilder searchText = new StringBuilder();
+        searchText.append(editor.safe(card.name)).append(' ')
+                .append(editor.safe(card.example)).append(' ')
+                .append(editor.safe(card.description)).append(' ')
+                .append(editor.safe(card.format)).append(' ')
+                .append(editor.safe(card.outputExample));
+        if (card.keywords != null) {
+            for (String alias : card.keywords) {
+                if (searchText.length() > 0) {
+                    searchText.append(' ');
+                }
+                searchText.append(editor.safe(alias));
             }
         }
-        return false;
+        return PinyinSearchHelper.matchesNormalized(searchText.toString(), keyword);
     }
 
     private static List<String> buildTooltip(ExpressionTemplateCard card) {
@@ -493,3 +540,4 @@ final class ExpressionPopupSupport {
         return result;
     }
 }
+

@@ -19,43 +19,20 @@ package com.zszl.zszlScriptMod.shadowbaritone.api.command.datatypes;
 
 import com.zszl.zszlScriptMod.shadowbaritone.api.command.exception.CommandException;
 import com.zszl.zszlScriptMod.shadowbaritone.api.command.helpers.TabCompleteHelper;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.EntityList;
-import net.minecraft.util.ResourceLocation;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.entity.EntityType;
 
-import java.lang.reflect.Field;
-import java.lang.reflect.Method;
 import java.util.stream.Stream;
 
-public enum EntityClassById implements IDatatypeFor<Class<? extends Entity>> {
+public enum EntityClassById implements IDatatypeFor<EntityType> {
     INSTANCE;
 
     @Override
-    @SuppressWarnings("unchecked")
-    public Class<? extends Entity> get(IDatatypeContext ctx) throws CommandException {
+    public EntityType get(IDatatypeContext ctx) throws CommandException {
         ResourceLocation id = new ResourceLocation(ctx.getConsumer().getString());
-        Class<? extends Entity> entity = null;
-        try {
-            Method getClassMethod = EntityList.class.getMethod("getClass", ResourceLocation.class);
-            entity = (Class<? extends Entity>) getClassMethod.invoke(null, id);
-        } catch (ReflectiveOperationException ignored) {
-            // Fallback to reflected REGISTRY access for environments where getClass is
-            // absent
-            try {
-                Field registryField = EntityList.class.getDeclaredField("REGISTRY");
-                registryField.setAccessible(true);
-                Object registry = registryField.get(null);
-
-                Method getObjectMethod = registry.getClass().getMethod("getObject", Object.class);
-                entity = (Class<? extends Entity>) getObjectMethod.invoke(registry, id);
-            } catch (ReflectiveOperationException ex) {
-                throw new RuntimeException(
-                        "Failed to resolve entity class via EntityList.getClass(ResourceLocation) and reflected REGISTRY fallback",
-                        ex);
-            }
-        }
-
-        if (entity == null) {
+        EntityType entity;
+        if ((entity = BuiltInRegistries.ENTITY_TYPE.getOptional(id).orElse(null)) == null) {
             throw new IllegalArgumentException("no entity found by that id");
         }
         return entity;
@@ -64,9 +41,10 @@ public enum EntityClassById implements IDatatypeFor<Class<? extends Entity>> {
     @Override
     public Stream<String> tabComplete(IDatatypeContext ctx) throws CommandException {
         return new TabCompleteHelper()
-                .append(EntityList.getEntityNameList().stream().map(Object::toString))
+                .append(BuiltInRegistries.ENTITY_TYPE.stream().map(Object::toString))
                 .filterPrefixNamespaced(ctx.getConsumer().getString())
                 .sortAlphabetically()
                 .stream();
     }
 }
+

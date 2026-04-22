@@ -3,13 +3,14 @@ package com.zszl.zszlScriptMod.gui.packet;
 import com.zszl.zszlScriptMod.gui.components.GuiTheme;
 import com.zszl.zszlScriptMod.gui.components.ThemedButton;
 import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiScreen;
-import net.minecraft.client.gui.GuiTextField;
-import net.minecraft.util.text.TextComponentString;
-import net.minecraft.util.text.TextFormatting;
-import org.lwjgl.input.Keyboard;
-import org.lwjgl.input.Mouse;
+import com.zszl.zszlScriptMod.utils.PinyinSearchHelper;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiTextField;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.util.text.TextComponentString;
+import net.minecraft.ChatFormatting;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Keyboard;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Mouse;
 
 import java.io.IOException;
 import java.text.SimpleDateFormat;
@@ -75,23 +76,20 @@ public class GuiPacketIdRecordViewer extends ThemedGuiScreen {
     }
 
     private void applyFilter() {
-        String keyword = filterField == null ? "" : safe(filterField.getText()).trim().toLowerCase();
+        String keyword = PinyinSearchHelper.normalizeQuery(filterField == null ? "" : safe(filterField.getText()));
         filteredRecords.clear();
 
         if (keyword.isEmpty()) {
             filteredRecords.addAll(allRecords);
         } else {
             for (PacketIdRecordManager.PacketIdRecord record : allRecords) {
-                String className = safe(record.packetClassName).toLowerCase();
-                String direction = safe(record.direction).toLowerCase();
-                String channel = safe(record.channel).toLowerCase();
                 String idText = record.packetId == null ? "" : String.format("0x%02x", record.packetId);
                 String idDec = record.packetId == null ? "" : String.valueOf(record.packetId);
-                if (className.contains(keyword)
-                        || direction.contains(keyword)
-                        || channel.contains(keyword)
-                        || idText.contains(keyword)
-                        || idDec.contains(keyword)) {
+                String searchText = safe(record.packetClassName) + " "
+                        + safe(record.direction) + " "
+                        + safe(record.channel) + " "
+                        + idText + " " + idDec;
+                if (PinyinSearchHelper.matchesNormalized(searchText, keyword)) {
                     filteredRecords.add(record);
                 }
             }
@@ -140,8 +138,8 @@ public class GuiPacketIdRecordViewer extends ThemedGuiScreen {
 
         setClipboardString(sb.toString().trim());
         if (mc.player != null) {
-            mc.player.sendMessage(new TextComponentString(
-                    TextFormatting.GREEN + "已复制 " + selectedIndices.size() + " 条数据包ID记录"));
+            mc.player.sendSystemMessage(new TextComponentString(
+                    ChatFormatting.GREEN + "已复制 " + selectedIndices.size() + " 条数据包ID记录"));
         }
     }
 
@@ -149,7 +147,7 @@ public class GuiPacketIdRecordViewer extends ThemedGuiScreen {
     protected void actionPerformed(GuiButton button) throws IOException {
         switch (button.id) {
             case 0:
-                mc.displayGuiScreen(parentScreen);
+                mc.setScreen(parentScreen);
                 break;
             case 1:
                 reloadRecords();
@@ -157,7 +155,7 @@ public class GuiPacketIdRecordViewer extends ThemedGuiScreen {
             case 2:
                 if (PacketIdRecordManager.clearRecords()) {
                     if (mc.player != null) {
-                        mc.player.sendMessage(new TextComponentString(TextFormatting.GREEN + "已清空数据包ID记录"));
+                        mc.player.sendSystemMessage(new TextComponentString(ChatFormatting.GREEN + "已清空数据包ID记录"));
                     }
                     selectedIndices.clear();
                     lastSelectedIndex = -1;
@@ -384,3 +382,11 @@ public class GuiPacketIdRecordViewer extends ThemedGuiScreen {
         return end <= 0 ? ellipsis : text.substring(0, end) + ellipsis;
     }
 }
+
+
+
+
+
+
+
+

@@ -3,14 +3,15 @@ package com.zszl.zszlScriptMod.gui.path;
 import com.zszl.zszlScriptMod.gui.components.GuiTheme;
 import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
 import com.zszl.zszlScriptMod.utils.CapturedIdRuleManager;
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiScreen;
-import net.minecraft.client.resources.I18n;
-import org.lwjgl.input.Mouse;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Mouse;
 
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.function.Consumer;
 
 public class GuiCapturedIdSelector extends ThemedGuiScreen {
@@ -129,7 +130,7 @@ public class GuiCapturedIdSelector extends ThemedGuiScreen {
     @Override
     protected void actionPerformed(GuiButton button) throws IOException {
         if (button.id == 0) {
-            mc.displayGuiScreen(parentScreen);
+            mc.setScreen(parentScreen);
         }
     }
 
@@ -265,8 +266,8 @@ public class GuiCapturedIdSelector extends ThemedGuiScreen {
             return;
         }
 
-        int mouseX = Mouse.getEventX() * this.width / this.mc.displayWidth;
-        int mouseY = this.height - Mouse.getEventY() * this.height / this.mc.displayHeight - 1;
+        int mouseX = Mouse.getEventX() * this.width / this.mc.getWindow().getWidth();
+        int mouseY = this.height - Mouse.getEventY() * this.height / this.mc.getWindow().getHeight() - 1;
 
         if (mouseX >= categoryListX && mouseX <= categoryListX + categoryListWidth && mouseY >= listY
                 && mouseY <= listY + listHeight) {
@@ -293,3 +294,9 @@ public class GuiCapturedIdSelector extends ThemedGuiScreen {
         return false;
     }
 }
+
+
+
+
+
+

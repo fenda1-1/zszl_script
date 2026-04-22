@@ -119,5 +119,7 @@ public class DefaultArgParsers {
             LongArgumentParser.INSTANCE,
             FloatArgumentParser.INSTANCE,
             DoubleArgumentParser.INSTANCE,
-            BooleanArgumentParser.INSTANCE);
+            BooleanArgumentParser.INSTANCE
+    );
 }
+

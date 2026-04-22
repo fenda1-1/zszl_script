@@ -21,8 +21,7 @@ import java.util.Arrays;
 
 /**
  * A composite of many goals, any one of which satisfies the composite.
- * For example, a GoalComposite of block goals for every oak log in loaded
- * chunks
+ * For example, a GoalComposite of block goals for every oak log in loaded chunks
  * would result in it pathing to the easiest oak log to get to
  *
  * @author avecowa
@@ -95,3 +94,4 @@ public class GoalComposite implements Goal {
         return goals;
     }
 }
+

@@ -3,15 +3,15 @@ package com.zszl.zszlScriptMod.gui.packet;
 
 import java.io.IOException;
 
-import org.lwjgl.input.Keyboard;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Keyboard;
 
 import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
 
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiScreen;
-import net.minecraft.client.gui.GuiTextField;
-import net.minecraft.client.resources.I18n;
-import net.minecraft.util.math.MathHelper;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiTextField;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.util.math.MathHelper;
 
 public class GuiPacketFilter extends ThemedGuiScreen {
 
@@ -90,9 +90,9 @@ public class GuiPacketFilter extends ThemedGuiScreen {
 
             PacketFilterConfig.save();
 
-            mc.displayGuiScreen(parentScreen);
+            mc.setScreen(parentScreen);
         } else if (button.id == 101) { // cancel
-            mc.displayGuiScreen(parentScreen);
+            mc.setScreen(parentScreen);
         }
     }
 
@@ -164,3 +164,10 @@ public class GuiPacketFilter extends ThemedGuiScreen {
         drawSimpleTooltip(tooltip, mouseX, mouseY);
     }
 }
+
+
+
+
+
+
+

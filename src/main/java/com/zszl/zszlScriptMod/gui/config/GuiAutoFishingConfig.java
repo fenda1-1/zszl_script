@@ -1,14 +1,14 @@
 package com.zszl.zszlScriptMod.gui.config;
 
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Mouse;
 import com.zszl.zszlScriptMod.gui.components.GuiTextInput;
 import com.zszl.zszlScriptMod.gui.components.GuiTheme;
 import com.zszl.zszlScriptMod.gui.components.ThemedButton;
 import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
 import com.zszl.zszlScriptMod.gui.components.ToggleGuiButton;
 import com.zszl.zszlScriptMod.handlers.AutoFishingHandler;
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiScreen;
-import org.lwjgl.input.Mouse;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -59,8 +59,36 @@ public class GuiAutoFishingConfig extends ThemedGuiScreen {
     private static final int BTN_DEFAULT = 101;
     private static final int BTN_CANCEL = 102;
 
+    private static final int MOUSE_WHEEL_NOTCH = 120;
+
+    private static final class SectionBox {
+        private final String title;
+        private final int virtualTop;
+        private final int virtualHeight;
+
+        private SectionBox(String title, int virtualTop, int virtualHeight) {
+            this.title = title;
+            this.virtualTop = virtualTop;
+            this.virtualHeight = virtualHeight;
+        }
+    }
+
+    private static final class ButtonPlacement {
+        private final GuiButton button;
+        private final int x;
+        private final int virtualY;
+
+        private ButtonPlacement(GuiButton button, int x, int virtualY) {
+            this.button = button;
+            this.x = x;
+            this.virtualY = virtualY;
+        }
+    }
+
     private final GuiScreen parentScreen;
     private final List<String> instructionLines = new ArrayList<>();
+    private final List<SectionBox> sectionBoxes = new ArrayList<>();
+    private final List<ButtonPlacement> placements = new ArrayList<>();
 
     private ToggleGuiButton requireRodButton;
     private ToggleGuiButton autoSwitchRodButton;
@@ -107,7 +135,6 @@ public class GuiAutoFishingConfig extends ThemedGuiScreen {
     private int panelY;
     private int panelWidth;
     private int panelHeight;
-
     private int contentTop;
     private int contentBottom;
     private int contentScroll;
@@ -122,36 +149,29 @@ public class GuiAutoFishingConfig extends ThemedGuiScreen {
         this.buttonList.clear();
         recalcLayout();
         initButtons();
-        relayoutButtons();
+        layoutButtons();
     }
 
     private void recalcLayout() {
-        int maxWidth = Math.min(440, Math.max(260, this.width - 12));
-        int maxHeight = Math.min(380, Math.max(230, this.height - 12));
-
-        this.panelWidth = Math.min(maxWidth, Math.max(240, this.width - 8));
-        this.panelHeight = Math.min(maxHeight, Math.max(230, this.height - 8));
+        this.panelWidth = Math.min(440, Math.max(280, this.width - 16));
+        this.panelHeight = Math.min(380, Math.max(240, this.height - 16));
         this.panelX = (this.width - this.panelWidth) / 2;
         this.panelY = (this.height - this.panelHeight) / 2;
 
         this.instructionLines.clear();
-        String instruction = "左键主界面按钮为总开关；这里用于细调自动钓鱼的出杆、咬钩判定、补杆与安全限制。";
-        int instructionWidth = Math.max(80, this.panelWidth - 32);
-        this.instructionLines.addAll(this.fontRenderer.listFormattedStringToWidth(instruction, instructionWidth));
+        String intro = "完整自动钓鱼设置：覆盖出杆、鱼漂判定、收杆补杆、异常恢复与安全限制。";
+        this.instructionLines.addAll(this.fontRenderer.listFormattedStringToWidth(intro, this.panelWidth - 32));
 
-        int instructionHeight = this.instructionLines.size() * 10;
-        this.contentTop = this.panelY + 24 + instructionHeight + 8;
-        int footerTop = this.panelY + this.panelHeight - 28;
-        this.contentBottom = footerTop - 8;
-
+        int introHeight = this.instructionLines.size() * 10;
+        this.contentTop = this.panelY + 26 + introHeight + 8;
+        this.contentBottom = this.panelY + this.panelHeight - 36;
         if (this.contentBottom < this.contentTop + 24) {
             this.contentBottom = this.contentTop + 24;
         }
     }
 
     private void initButtons() {
-        requireRodButton = new ToggleGuiButton(BTN_REQUIRE_ROD, 0, 0, 100, 20, "",
-                AutoFishingHandler.requireFishingRod);
+        requireRodButton = new ToggleGuiButton(BTN_REQUIRE_ROD, 0, 0, 100, 20, "", AutoFishingHandler.requireFishingRod);
         autoSwitchRodButton = new ToggleGuiButton(BTN_AUTO_SWITCH_ROD, 0, 0, 100, 20, "",
                 AutoFishingHandler.autoSwitchToRod);
         preferredSlotButton = new ThemedButton(BTN_PREFERRED_SLOT, 0, 0, 100, 20, "");
@@ -204,8 +224,8 @@ public class GuiAutoFishingConfig extends ThemedGuiScreen {
         stopWorldChangeButton = new ToggleGuiButton(BTN_STOP_WORLD_CHANGE, 0, 0, 100, 20, "",
                 AutoFishingHandler.stopOnWorldChange);
 
-        saveButton = new ThemedButton(BTN_SAVE, 0, 0, 90, 20, "§a保存并关闭");
-        defaultButton = new ThemedButton(BTN_DEFAULT, 0, 0, 90, 20, "§e恢复默认");
+        saveButton = new ThemedButton(BTN_SAVE, 0, 0, 110, 20, "保存并关闭");
+        defaultButton = new ThemedButton(BTN_DEFAULT, 0, 0, 90, 20, "恢复默认");
         cancelButton = new ThemedButton(BTN_CANCEL, 0, 0, 90, 20, "取消");
 
         this.buttonList.add(requireRodButton);
@@ -263,7 +283,7 @@ public class GuiAutoFishingConfig extends ThemedGuiScreen {
                 + (AutoFishingHandler.preferredRodSlot <= 0 ? "自动" : AutoFishingHandler.preferredRodSlot);
 
         disableWhenGuiButton.setEnabledState(AutoFishingHandler.disableWhenGuiOpen);
-        disableWhenGuiButton.displayString = "打开本模组界面时暂停: " + stateText(AutoFishingHandler.disableWhenGuiOpen);
+        disableWhenGuiButton.displayString = "打开模组界面时暂停: " + stateText(AutoFishingHandler.disableWhenGuiOpen);
 
         allowMovingButton.setEnabledState(AutoFishingHandler.allowWhilePlayerMoving);
         allowMovingButton.displayString = "移动时继续工作: " + stateText(AutoFishingHandler.allowWhilePlayerMoving);
@@ -341,154 +361,99 @@ public class GuiAutoFishingConfig extends ThemedGuiScreen {
         minDuraButton.enabled = AutoFishingHandler.stopWhenRodDurabilityLow;
     }
 
-    private void relayoutButtons() {
+    private void layoutButtons() {
         recalcLayout();
+        refreshButtonTexts();
 
         int innerPadding = 12;
         int columnGap = 8;
+        int buttonWidth = Math.max(96, (this.panelWidth - innerPadding * 2 - columnGap) / 2);
         int buttonHeight = 20;
         int rowGap = 6;
         int rowStep = buttonHeight + rowGap;
         int sectionGap = 12;
-        int sectionHeaderHeight = 18;
+        int headerHeight = 18;
 
         int leftX = this.panelX + innerPadding;
-        int buttonW = Math.max(90, (this.panelWidth - innerPadding * 2 - columnGap) / 2);
-        int rightX = this.panelX + this.panelWidth - innerPadding - buttonW;
+        int rightX = leftX + buttonWidth + columnGap;
 
-        int baseY = 0;
+        this.sectionBoxes.clear();
+        this.placements.clear();
 
-        int basicTop = baseY + sectionHeaderHeight;
-        layoutScrollableButton(requireRodButton, leftX, basicTop, buttonW, buttonHeight);
-        layoutScrollableButton(autoSwitchRodButton, rightX, basicTop, buttonW, buttonHeight);
-        layoutScrollableButton(preferredSlotButton, leftX, basicTop + rowStep, buttonW, buttonHeight);
-        layoutScrollableButton(disableWhenGuiButton, rightX, basicTop + rowStep, buttonW, buttonHeight);
-        layoutScrollableButton(allowMovingButton, leftX, basicTop + rowStep * 2, buttonW, buttonHeight);
-        layoutScrollableButton(statusMessageButton, rightX, basicTop + rowStep * 2, buttonW, buttonHeight);
-        baseY = basicTop + rowStep * 3 + sectionGap;
+        int currentY = 0;
+        currentY = addSection("基础控制", currentY, leftX, rightX, headerHeight, rowStep, sectionGap,
+                new GuiButton[][] {
+                        { requireRodButton, autoSwitchRodButton },
+                        { preferredSlotButton, disableWhenGuiButton },
+                        { allowMovingButton, statusMessageButton }
+                });
+        currentY = addSection("出杆设置", currentY, leftX, rightX, headerHeight, rowStep, sectionGap,
+                new GuiButton[][] {
+                        { autoCastOnStartButton, initialCastDelayButton },
+                        { autoRecastButton, recastDelayMinButton },
+                        { recastDelayMaxButton, retryBobberMissingButton },
+                        { retryCastDelayButton, timeoutRecastButton },
+                        { maxWaitButton, null }
+                });
+        currentY = addSection("咬钩判定", currentY, leftX, rightX, headerHeight, rowStep, sectionGap,
+                new GuiButton[][] {
+                        { biteModeButton, ignoreSettleButton },
+                        { reelDelayButton, verticalThresholdButton },
+                        { horizontalThresholdButton, confirmBiteButton },
+                        { debugBiteButton, null }
+                });
+        currentY = addSection("收杆 / 补杆", currentY, leftX, rightX, headerHeight, rowStep, sectionGap,
+                new GuiButton[][] {
+                        { postReelPauseButton, preventDoubleReelButton },
+                        { recastOnlySuccessButton, resetHookGoneButton },
+                        { autoRecoverButton, null }
+                });
+        currentY = addSection("安全限制", currentY, leftX, rightX, headerHeight, rowStep, 0,
+                new GuiButton[][] {
+                        { stopLowDuraButton, minDuraButton },
+                        { stopNoRodButton, pauseHookEntityButton },
+                        { stopWorldChangeButton, null }
+                });
 
-        int castTop = baseY + sectionHeaderHeight;
-        layoutScrollableButton(autoCastOnStartButton, leftX, castTop, buttonW, buttonHeight);
-        layoutScrollableButton(initialCastDelayButton, rightX, castTop, buttonW, buttonHeight);
-        layoutScrollableButton(autoRecastButton, leftX, castTop + rowStep, buttonW, buttonHeight);
-        layoutScrollableButton(recastDelayMinButton, rightX, castTop + rowStep, buttonW, buttonHeight);
-        layoutScrollableButton(recastDelayMaxButton, leftX, castTop + rowStep * 2, buttonW, buttonHeight);
-        layoutScrollableButton(retryBobberMissingButton, rightX, castTop + rowStep * 2, buttonW, buttonHeight);
-        layoutScrollableButton(retryCastDelayButton, leftX, castTop + rowStep * 3, buttonW, buttonHeight);
-        layoutScrollableButton(timeoutRecastButton, rightX, castTop + rowStep * 3, buttonW, buttonHeight);
-        layoutScrollableButton(maxWaitButton, leftX, castTop + rowStep * 4, buttonW, buttonHeight);
-        baseY = castTop + rowStep * 5 + sectionGap;
-
-        int biteTop = baseY + sectionHeaderHeight;
-        layoutScrollableButton(biteModeButton, leftX, biteTop, buttonW, buttonHeight);
-        layoutScrollableButton(ignoreSettleButton, rightX, biteTop, buttonW, buttonHeight);
-        layoutScrollableButton(reelDelayButton, leftX, biteTop + rowStep, buttonW, buttonHeight);
-        layoutScrollableButton(verticalThresholdButton, rightX, biteTop + rowStep, buttonW, buttonHeight);
-        layoutScrollableButton(horizontalThresholdButton, leftX, biteTop + rowStep * 2, buttonW, buttonHeight);
-        layoutScrollableButton(confirmBiteButton, rightX, biteTop + rowStep * 2, buttonW, buttonHeight);
-        layoutScrollableButton(debugBiteButton, leftX, biteTop + rowStep * 3, buttonW, buttonHeight);
-        baseY = biteTop + rowStep * 4 + sectionGap;
-
-        int reelTop = baseY + sectionHeaderHeight;
-        layoutScrollableButton(postReelPauseButton, leftX, reelTop, buttonW, buttonHeight);
-        layoutScrollableButton(preventDoubleReelButton, rightX, reelTop, buttonW, buttonHeight);
-        layoutScrollableButton(recastOnlySuccessButton, leftX, reelTop + rowStep, buttonW, buttonHeight);
-        layoutScrollableButton(resetHookGoneButton, rightX, reelTop + rowStep, buttonW, buttonHeight);
-        layoutScrollableButton(autoRecoverButton, leftX, reelTop + rowStep * 2, buttonW, buttonHeight);
-        baseY = reelTop + rowStep * 3 + sectionGap;
-
-        int safetyTop = baseY + sectionHeaderHeight;
-        layoutScrollableButton(stopLowDuraButton, leftX, safetyTop, buttonW, buttonHeight);
-        layoutScrollableButton(minDuraButton, rightX, safetyTop, buttonW, buttonHeight);
-        layoutScrollableButton(stopNoRodButton, leftX, safetyTop + rowStep, buttonW, buttonHeight);
-        layoutScrollableButton(pauseHookEntityButton, rightX, safetyTop + rowStep, buttonW, buttonHeight);
-        layoutScrollableButton(stopWorldChangeButton, leftX, safetyTop + rowStep * 2, buttonW, buttonHeight);
-        baseY = safetyTop + rowStep * 3;
-
-        int totalContentHeight = baseY + buttonHeight;
-        int visibleContentHeight = Math.max(24, this.contentBottom - this.contentTop);
-        this.contentMaxScroll = Math.max(0, totalContentHeight - visibleContentHeight);
+        int viewportHeight = Math.max(1, this.contentBottom - this.contentTop);
+        this.contentMaxScroll = Math.max(0, currentY - viewportHeight);
         this.contentScroll = clampInt(this.contentScroll, 0, this.contentMaxScroll);
 
-        basicTop = sectionHeaderHeight;
-        layoutScrollableButton(requireRodButton, leftX, basicTop, buttonW, buttonHeight);
-        layoutScrollableButton(autoSwitchRodButton, rightX, basicTop, buttonW, buttonHeight);
-        layoutScrollableButton(preferredSlotButton, leftX, basicTop + rowStep, buttonW, buttonHeight);
-        layoutScrollableButton(disableWhenGuiButton, rightX, basicTop + rowStep, buttonW, buttonHeight);
-        layoutScrollableButton(allowMovingButton, leftX, basicTop + rowStep * 2, buttonW, buttonHeight);
-        layoutScrollableButton(statusMessageButton, rightX, basicTop + rowStep * 2, buttonW, buttonHeight);
+        for (ButtonPlacement placement : this.placements) {
+            applyPlacement(placement.button, placement.x, placement.virtualY, buttonWidth, buttonHeight);
+        }
 
-        int offsetBase = basicTop + rowStep * 3 + sectionGap;
-        castTop = offsetBase + sectionHeaderHeight;
-        layoutScrollableButton(autoCastOnStartButton, leftX, castTop, buttonW, buttonHeight);
-        layoutScrollableButton(initialCastDelayButton, rightX, castTop, buttonW, buttonHeight);
-        layoutScrollableButton(autoRecastButton, leftX, castTop + rowStep, buttonW, buttonHeight);
-        layoutScrollableButton(recastDelayMinButton, rightX, castTop + rowStep, buttonW, buttonHeight);
-        layoutScrollableButton(recastDelayMaxButton, leftX, castTop + rowStep * 2, buttonW, buttonHeight);
-        layoutScrollableButton(retryBobberMissingButton, rightX, castTop + rowStep * 2, buttonW, buttonHeight);
-        layoutScrollableButton(retryCastDelayButton, leftX, castTop + rowStep * 3, buttonW, buttonHeight);
-        layoutScrollableButton(timeoutRecastButton, rightX, castTop + rowStep * 3, buttonW, buttonHeight);
-        layoutScrollableButton(maxWaitButton, leftX, castTop + rowStep * 4, buttonW, buttonHeight);
-
-        offsetBase = castTop + rowStep * 5 + sectionGap;
-        biteTop = offsetBase + sectionHeaderHeight;
-        layoutScrollableButton(biteModeButton, leftX, biteTop, buttonW, buttonHeight);
-        layoutScrollableButton(ignoreSettleButton, rightX, biteTop, buttonW, buttonHeight);
-        layoutScrollableButton(reelDelayButton, leftX, biteTop + rowStep, buttonW, buttonHeight);
-        layoutScrollableButton(verticalThresholdButton, rightX, biteTop + rowStep, buttonW, buttonHeight);
-        layoutScrollableButton(horizontalThresholdButton, leftX, biteTop + rowStep * 2, buttonW, buttonHeight);
-        layoutScrollableButton(confirmBiteButton, rightX, biteTop + rowStep * 2, buttonW, buttonHeight);
-        layoutScrollableButton(debugBiteButton, leftX, biteTop + rowStep * 3, buttonW, buttonHeight);
-
-        offsetBase = biteTop + rowStep * 4 + sectionGap;
-        reelTop = offsetBase + sectionHeaderHeight;
-        layoutScrollableButton(postReelPauseButton, leftX, reelTop, buttonW, buttonHeight);
-        layoutScrollableButton(preventDoubleReelButton, rightX, reelTop, buttonW, buttonHeight);
-        layoutScrollableButton(recastOnlySuccessButton, leftX, reelTop + rowStep, buttonW, buttonHeight);
-        layoutScrollableButton(resetHookGoneButton, rightX, reelTop + rowStep, buttonW, buttonHeight);
-        layoutScrollableButton(autoRecoverButton, leftX, reelTop + rowStep * 2, buttonW, buttonHeight);
-
-        offsetBase = reelTop + rowStep * 3 + sectionGap;
-        safetyTop = offsetBase + sectionHeaderHeight;
-        layoutScrollableButton(stopLowDuraButton, leftX, safetyTop, buttonW, buttonHeight);
-        layoutScrollableButton(minDuraButton, rightX, safetyTop, buttonW, buttonHeight);
-        layoutScrollableButton(stopNoRodButton, leftX, safetyTop + rowStep, buttonW, buttonHeight);
-        layoutScrollableButton(pauseHookEntityButton, rightX, safetyTop + rowStep, buttonW, buttonHeight);
-        layoutScrollableButton(stopWorldChangeButton, leftX, safetyTop + rowStep * 2, buttonW, buttonHeight);
-
-        int footerY = this.panelY + this.panelHeight - 28;
-        int footerGap = 6;
-        int footerButtonW = Math.max(64, (this.panelWidth - innerPadding * 2 - footerGap * 2) / 3);
-        int footerTotalW = footerButtonW * 3 + footerGap * 2;
-        int footerStartX = this.panelX + (this.panelWidth - footerTotalW) / 2;
-
-        layoutFixedButton(saveButton, footerStartX, footerY, footerButtonW, 20);
-        layoutFixedButton(defaultButton, footerStartX + footerButtonW + footerGap, footerY, footerButtonW, 20);
-        layoutFixedButton(cancelButton, footerStartX + (footerButtonW + footerGap) * 2, footerY, footerButtonW, 20);
+        saveButton.x = this.panelX + 12;
+        saveButton.y = this.panelY + this.panelHeight - 28;
+        defaultButton.x = this.panelX + 130;
+        defaultButton.y = this.panelY + this.panelHeight - 28;
+        cancelButton.x = this.panelX + this.panelWidth - 102;
+        cancelButton.y = this.panelY + this.panelHeight - 28;
     }
 
-    private void layoutScrollableButton(GuiButton button, int x, int baseY, int width, int height) {
-        int y = this.contentTop + baseY - this.contentScroll;
+    private int addSection(String title, int startY, int leftX, int rightX, int headerHeight, int rowStep,
+            int sectionGap, GuiButton[][] rows) {
+        int currentY = startY + headerHeight;
+        for (GuiButton[] row : rows) {
+            if (row.length > 0 && row[0] != null) {
+                this.placements.add(new ButtonPlacement(row[0], leftX, currentY));
+            }
+            if (row.length > 1 && row[1] != null) {
+                this.placements.add(new ButtonPlacement(row[1], rightX, currentY));
+            }
+            currentY += rowStep;
+        }
+        this.sectionBoxes.add(new SectionBox(title, startY, currentY - startY));
+        return currentY + sectionGap;
+    }
+
+    private void applyPlacement(GuiButton button, int x, int virtualY, int width, int height) {
+        int y = this.contentTop + virtualY - this.contentScroll;
         button.x = x;
         button.y = y;
         button.width = width;
         button.height = height;
-        button.visible = y >= this.contentTop && y + height <= this.contentBottom;
-    }
-
-    private void layoutFixedButton(GuiButton button, int x, int y, int width, int height) {
-        button.x = x;
-        button.y = y;
-        button.width = width;
-        button.height = height;
-        button.visible = true;
-    }
-
-    private boolean isInScrollableContent(int mouseX, int mouseY) {
-        return mouseX >= this.panelX + 8
-                && mouseX <= this.panelX + this.panelWidth - 8
-                && mouseY >= this.contentTop
-                && mouseY <= this.contentBottom;
+        button.visible = y + height > this.contentTop && y < this.contentBottom;
     }
 
     @Override
@@ -499,18 +464,31 @@ public class GuiAutoFishingConfig extends ThemedGuiScreen {
             return;
         }
 
-        int mouseX = Mouse.getEventX() * this.width / this.mc.displayWidth;
-        int mouseY = this.height - Mouse.getEventY() * this.height / this.mc.displayHeight - 1;
+        int mouseX = 0;
+        int mouseY = 0;
+        if (this.mc != null && this.width > 0 && this.height > 0) {
+            mouseX = Mouse.getEventX() * this.width / Math.max(1, this.mc.getWindow().getWidth());
+            mouseY = this.height - Mouse.getEventY() * this.height / Math.max(1, this.mc.getWindow().getHeight()) - 1;
+        }
+
         if (!isInScrollableContent(mouseX, mouseY)) {
             return;
         }
 
+        int steps = Math.max(1, Math.abs(wheel) / MOUSE_WHEEL_NOTCH);
         if (wheel < 0) {
-            this.contentScroll = clampInt(this.contentScroll + 18, 0, this.contentMaxScroll);
+            this.contentScroll = clampInt(this.contentScroll + steps * 18, 0, this.contentMaxScroll);
         } else {
-            this.contentScroll = clampInt(this.contentScroll - 18, 0, this.contentMaxScroll);
+            this.contentScroll = clampInt(this.contentScroll - steps * 18, 0, this.contentMaxScroll);
         }
-        relayoutButtons();
+        layoutButtons();
+    }
+
+    private boolean isInScrollableContent(int mouseX, int mouseY) {
+        return mouseX >= this.panelX + 8
+                && mouseX <= this.panelX + this.panelWidth - 8
+                && mouseY >= this.contentTop
+                && mouseY <= this.contentBottom;
     }
 
     @Override
@@ -523,17 +501,10 @@ public class GuiAutoFishingConfig extends ThemedGuiScreen {
                 AutoFishingHandler.autoSwitchToRod = !AutoFishingHandler.autoSwitchToRod;
                 break;
             case BTN_PREFERRED_SLOT:
-                mc.displayGuiScreen(new GuiTextInput(this, "输入优先鱼竿槽位 (0=自动, 1-9)",
-                        String.valueOf(AutoFishingHandler.preferredRodSlot), value -> {
-                            int parsed = AutoFishingHandler.preferredRodSlot;
-                            try {
-                                parsed = Integer.parseInt(value.trim());
-                            } catch (Exception ignored) {
-                            }
-                            AutoFishingHandler.preferredRodSlot = clampInt(parsed, 0, 9);
-                            refreshButtonTexts();
-                            mc.displayGuiScreen(this);
-                        }));
+                openIntInput("输入优先鱼竿槽位 (0=自动, 1-9)", AutoFishingHandler.preferredRodSlot, 0, 9, value -> {
+                    AutoFishingHandler.preferredRodSlot = value;
+                    refreshButtonTexts();
+                });
                 return;
             case BTN_DISABLE_WHEN_GUI:
                 AutoFishingHandler.disableWhenGuiOpen = !AutoFishingHandler.disableWhenGuiOpen;
@@ -549,8 +520,8 @@ public class GuiAutoFishingConfig extends ThemedGuiScreen {
                 AutoFishingHandler.enableAutoCastOnStart = !AutoFishingHandler.enableAutoCastOnStart;
                 break;
             case BTN_INITIAL_CAST_DELAY:
-                openIntInput("输入首次出杆延迟 Tick (0 - 100)", AutoFishingHandler.initialCastDelayTicks,
-                        0, 100, value -> {
+                openIntInput("输入首次出杆延迟 Tick (0 - 100)", AutoFishingHandler.initialCastDelayTicks, 0, 100,
+                        value -> {
                             AutoFishingHandler.initialCastDelayTicks = value;
                             refreshButtonTexts();
                         });
@@ -559,14 +530,13 @@ public class GuiAutoFishingConfig extends ThemedGuiScreen {
                 AutoFishingHandler.autoRecastAfterCatch = !AutoFishingHandler.autoRecastAfterCatch;
                 break;
             case BTN_RECAST_DELAY_MIN:
-                openIntInput("输入补杆最小延迟 Tick (0 - 100)", AutoFishingHandler.recastDelayMinTicks,
-                        0, 100, value -> {
-                            AutoFishingHandler.recastDelayMinTicks = value;
-                            if (AutoFishingHandler.recastDelayMaxTicks < value) {
-                                AutoFishingHandler.recastDelayMaxTicks = value;
-                            }
-                            refreshButtonTexts();
-                        });
+                openIntInput("输入补杆最小延迟 Tick (0 - 100)", AutoFishingHandler.recastDelayMinTicks, 0, 100, value -> {
+                    AutoFishingHandler.recastDelayMinTicks = value;
+                    if (AutoFishingHandler.recastDelayMaxTicks < value) {
+                        AutoFishingHandler.recastDelayMaxTicks = value;
+                    }
+                    refreshButtonTexts();
+                });
                 return;
             case BTN_RECAST_DELAY_MAX:
                 openIntInput("输入补杆最大延迟 Tick", AutoFishingHandler.recastDelayMaxTicks,
@@ -579,8 +549,8 @@ public class GuiAutoFishingConfig extends ThemedGuiScreen {
                 AutoFishingHandler.retryCastWhenBobberMissing = !AutoFishingHandler.retryCastWhenBobberMissing;
                 break;
             case BTN_RETRY_CAST_DELAY:
-                openIntInput("输入重试出杆延迟 Tick (5 - 100)", AutoFishingHandler.retryCastDelayTicks,
-                        5, 100, value -> {
+                openIntInput("输入重试出杆延迟 Tick (5 - 100)", AutoFishingHandler.retryCastDelayTicks, 5, 100,
+                        value -> {
                             AutoFishingHandler.retryCastDelayTicks = value;
                             refreshButtonTexts();
                         });
@@ -600,54 +570,51 @@ public class GuiAutoFishingConfig extends ThemedGuiScreen {
                 cycleBiteMode();
                 break;
             case BTN_IGNORE_SETTLE:
-                openIntInput("输入忽略入水扰动 Tick (0 - 40)", AutoFishingHandler.ignoreInitialBobberSettleTicks,
-                        0, 40, value -> {
+                openIntInput("输入忽略入水扰动 Tick (0 - 40)", AutoFishingHandler.ignoreInitialBobberSettleTicks, 0, 40,
+                        value -> {
                             AutoFishingHandler.ignoreInitialBobberSettleTicks = value;
                             refreshButtonTexts();
                         });
                 return;
             case BTN_REEL_DELAY:
-                openIntInput("输入咬钩后收杆延迟 Tick (0 - 20)", AutoFishingHandler.reelDelayTicks,
-                        0, 20, value -> {
-                            AutoFishingHandler.reelDelayTicks = value;
-                            refreshButtonTexts();
-                        });
+                openIntInput("输入咬钩后收杆延迟 Tick (0 - 20)", AutoFishingHandler.reelDelayTicks, 0, 20, value -> {
+                    AutoFishingHandler.reelDelayTicks = value;
+                    refreshButtonTexts();
+                });
                 return;
             case BTN_VERTICAL_THRESHOLD:
-                openFloatInput("输入鱼漂下沉阈值 (0.01 - 1.0)",
-                        AutoFishingHandler.minVerticalDropThreshold, 0.01F, 1.0F, value -> {
+                openFloatInput("输入鱼漂下沉阈值 (0.01 - 1.0)", AutoFishingHandler.minVerticalDropThreshold,
+                        0.01F, 1.0F, value -> {
                             AutoFishingHandler.minVerticalDropThreshold = value;
                             refreshButtonTexts();
                         });
                 return;
             case BTN_HORIZONTAL_THRESHOLD:
-                openFloatInput("输入鱼漂水平位移阈值 (0.0 - 1.0)",
-                        AutoFishingHandler.minHorizontalMoveThreshold, 0.0F, 1.0F, value -> {
+                openFloatInput("输入鱼漂水平位移阈值 (0.0 - 1.0)", AutoFishingHandler.minHorizontalMoveThreshold,
+                        0.0F, 1.0F, value -> {
                             AutoFishingHandler.minHorizontalMoveThreshold = value;
                             refreshButtonTexts();
                         });
                 return;
             case BTN_CONFIRM_BITE:
-                openIntInput("输入咬钩确认 Tick (1 - 5)", AutoFishingHandler.confirmBiteTicks,
-                        1, 5, value -> {
-                            AutoFishingHandler.confirmBiteTicks = value;
-                            refreshButtonTexts();
-                        });
+                openIntInput("输入咬钩确认 Tick (1 - 5)", AutoFishingHandler.confirmBiteTicks, 1, 5, value -> {
+                    AutoFishingHandler.confirmBiteTicks = value;
+                    refreshButtonTexts();
+                });
                 return;
             case BTN_DEBUG_BITE:
                 AutoFishingHandler.debugBiteInfo = !AutoFishingHandler.debugBiteInfo;
                 break;
 
             case BTN_POST_REEL_PAUSE:
-                openIntInput("输入收杆后等待 Tick (0 - 40)", AutoFishingHandler.postReelPauseTicks,
-                        0, 40, value -> {
-                            AutoFishingHandler.postReelPauseTicks = value;
-                            refreshButtonTexts();
-                        });
+                openIntInput("输入收杆后等待 Tick (0 - 40)", AutoFishingHandler.postReelPauseTicks, 0, 40, value -> {
+                    AutoFishingHandler.postReelPauseTicks = value;
+                    refreshButtonTexts();
+                });
                 return;
             case BTN_PREVENT_DOUBLE_REEL:
-                openIntInput("输入防重复收杆间隔 Tick (0 - 20)", AutoFishingHandler.preventDoubleReelTicks,
-                        0, 20, value -> {
+                openIntInput("输入防重复收杆间隔 Tick (0 - 20)", AutoFishingHandler.preventDoubleReelTicks, 0, 20,
+                        value -> {
                             AutoFishingHandler.preventDoubleReelTicks = value;
                             refreshButtonTexts();
                         });
@@ -666,11 +633,10 @@ public class GuiAutoFishingConfig extends ThemedGuiScreen {
                 AutoFishingHandler.stopWhenRodDurabilityLow = !AutoFishingHandler.stopWhenRodDurabilityLow;
                 break;
             case BTN_MIN_DURA:
-                openIntInput("输入最低鱼竿耐久 (1 - 64)", AutoFishingHandler.minRodDurability,
-                        1, 64, value -> {
-                            AutoFishingHandler.minRodDurability = value;
-                            refreshButtonTexts();
-                        });
+                openIntInput("输入最低鱼竿耐久 (1 - 64)", AutoFishingHandler.minRodDurability, 1, 64, value -> {
+                    AutoFishingHandler.minRodDurability = value;
+                    refreshButtonTexts();
+                });
                 return;
             case BTN_STOP_NO_ROD:
                 AutoFishingHandler.stopWhenNoRodFound = !AutoFishingHandler.stopWhenNoRodFound;
@@ -684,23 +650,21 @@ public class GuiAutoFishingConfig extends ThemedGuiScreen {
 
             case BTN_SAVE:
                 AutoFishingHandler.saveConfig();
-                mc.displayGuiScreen(parentScreen);
+                this.mc.setScreen(parentScreen);
                 return;
             case BTN_DEFAULT:
-                applyDefaultValues();
-                refreshButtonTexts();
-                relayoutButtons();
-                return;
+                AutoFishingHandler.resetToDefaults();
+                break;
             case BTN_CANCEL:
                 AutoFishingHandler.loadConfig();
-                mc.displayGuiScreen(parentScreen);
+                this.mc.setScreen(parentScreen);
                 return;
             default:
                 break;
         }
 
         refreshButtonTexts();
-        relayoutButtons();
+        layoutButtons();
     }
 
     @Override
@@ -710,15 +674,16 @@ public class GuiAutoFishingConfig extends ThemedGuiScreen {
         GuiTheme.drawPanel(panelX, panelY, panelWidth, panelHeight);
         GuiTheme.drawTitleBar(panelX, panelY, panelWidth, "自动钓鱼设置", this.fontRenderer);
 
-        int textY = panelY + 22;
+        int textY = panelY + 24;
         for (String line : instructionLines) {
             this.drawString(this.fontRenderer, line, panelX + 16, textY, GuiTheme.SUB_TEXT);
             textY += 10;
         }
 
-        if (contentMaxScroll > 0) {
-            drawRect(panelX + 8, contentTop - 2, panelX + panelWidth - 8, contentBottom + 2, 0x221A2533);
+        drawRect(panelX + 8, contentTop - 2, panelX + panelWidth - 8, contentBottom + 2, 0x221A2533);
+        drawSectionBoxes();
 
+        if (contentMaxScroll > 0) {
             int trackX = panelX + panelWidth - 10;
             int trackY = contentTop;
             int trackHeight = contentBottom - contentTop;
@@ -729,90 +694,78 @@ public class GuiAutoFishingConfig extends ThemedGuiScreen {
             GuiTheme.drawScrollbar(trackX, trackY, 4, trackHeight, thumbY, thumbHeight);
         }
 
-        drawSectionBox("基础控制", requireRodButton, autoSwitchRodButton, preferredSlotButton,
-                disableWhenGuiButton, allowMovingButton, statusMessageButton);
-        drawSectionBox("出杆设置", autoCastOnStartButton, initialCastDelayButton, autoRecastButton,
-                recastDelayMinButton, recastDelayMaxButton, retryBobberMissingButton, retryCastDelayButton,
-                timeoutRecastButton, maxWaitButton);
-        drawSectionBox("咬钩判定", biteModeButton, ignoreSettleButton, reelDelayButton,
-                verticalThresholdButton, horizontalThresholdButton, confirmBiteButton, debugBiteButton);
-        drawSectionBox("收杆 / 补杆", postReelPauseButton, preventDoubleReelButton, recastOnlySuccessButton,
-                resetHookGoneButton, autoRecoverButton);
-        drawSectionBox("安全限制", stopLowDuraButton, minDuraButton, stopNoRodButton,
-                pauseHookEntityButton, stopWorldChangeButton);
-
         super.drawScreen(mouseX, mouseY, partialTicks);
+        drawTooltips(mouseX, mouseY);
+    }
 
-        if (biteModeButton.visible && isMouseOver(mouseX, mouseY, biteModeButton)) {
+    private void drawSectionBoxes() {
+        int boxX = panelX + 8;
+        int boxWidth = panelWidth - 20;
+        for (SectionBox section : sectionBoxes) {
+            int top = contentTop + section.virtualTop - contentScroll;
+            int bottom = top + section.virtualHeight;
+            if (bottom <= contentTop || top >= contentBottom) {
+                continue;
+            }
+
+            int clippedTop = Math.max(contentTop, top);
+            int clippedBottom = Math.min(contentBottom, bottom);
+            drawRect(boxX, clippedTop, boxX + boxWidth, clippedBottom, 0x44202A36);
+            drawHorizontalLine(boxX, boxX + boxWidth, clippedTop, 0xFF4FA6D9);
+            drawHorizontalLine(boxX, boxX + boxWidth, clippedBottom, 0xFF35536C);
+            drawVerticalLine(boxX, clippedTop, clippedBottom, 0xFF35536C);
+            drawVerticalLine(boxX + boxWidth, clippedTop, clippedBottom, 0xFF35536C);
+
+            int titleY = Math.max(top + 5, clippedTop + 5);
+            if (titleY + this.fontRenderer.FONT_HEIGHT < clippedBottom) {
+                this.drawString(this.fontRenderer, "§b" + section.title, boxX + 6, titleY, 0xFFE8F6FF);
+            }
+        }
+    }
+
+    private void drawTooltips(int mouseX, int mouseY) {
+        if (biteModeButton.visible && isMouseOverButton(mouseX, mouseY, biteModeButton)) {
             drawHoveringText(Arrays.asList(
                     "§e咬钩判定模式",
                     "§7SMART: 综合下沉和位移判断，适合大多数服务器。",
                     "§7MOTION: 只看鱼漂运动，简单直接。",
                     "§7STRICT: 要求更严格，误判更少但更保守。"), mouseX, mouseY);
-        } else if (autoRecastButton.visible && isMouseOver(mouseX, mouseY, autoRecastButton)) {
+            return;
+        }
+        if (autoRecastButton.visible && isMouseOverButton(mouseX, mouseY, autoRecastButton)) {
             drawHoveringText(Arrays.asList(
                     "§e钓完后自动出杆",
                     "§7收杆完成后自动等待一段随机延迟，",
                     "§7然后重新甩杆，形成完整挂机循环。"), mouseX, mouseY);
-        } else if (retryBobberMissingButton.visible && isMouseOver(mouseX, mouseY, retryBobberMissingButton)) {
+            return;
+        }
+        if (retryBobberMissingButton.visible && isMouseOverButton(mouseX, mouseY, retryBobberMissingButton)) {
             drawHoveringText(Arrays.asList(
                     "§e鱼漂缺失时重试",
                     "§7用于处理甩杆后鱼漂实体未正常出现的情况，",
                     "§7开启后会按设定延迟重复尝试出杆。"), mouseX, mouseY);
-        } else if (timeoutRecastButton.visible && isMouseOver(mouseX, mouseY, timeoutRecastButton)) {
+            return;
+        }
+        if (timeoutRecastButton.visible && isMouseOverButton(mouseX, mouseY, timeoutRecastButton)) {
             drawHoveringText(Arrays.asList(
                     "§e超时自动补杆",
                     "§7若长时间没有检测到咬钩，",
                     "§7会自动收杆并重新进入补杆流程。"), mouseX, mouseY);
-        } else if (stopLowDuraButton.visible && isMouseOver(mouseX, mouseY, stopLowDuraButton)) {
+            return;
+        }
+        if (stopLowDuraButton.visible && isMouseOverButton(mouseX, mouseY, stopLowDuraButton)) {
             drawHoveringText(Arrays.asList(
                     "§e耐久低时停止",
                     "§7避免挂机时把鱼竿用坏。",
                     "§7当剩余耐久小于等于下方阈值时自动关闭。"), mouseX, mouseY);
-        } else if (pauseHookEntityButton.visible && isMouseOver(mouseX, mouseY, pauseHookEntityButton)) {
+            return;
+        }
+        if (pauseHookEntityButton.visible && isMouseOverButton(mouseX, mouseY, pauseHookEntityButton)) {
             drawHoveringText(Arrays.asList(
                     "§e钩到实体时暂停",
                     "§7如果鱼钩意外勾到了实体，",
                     "§7开启后会暂停自动收杆，减少误操作。"), mouseX, mouseY);
         }
-    }
-
-    private void drawSectionBox(String title, GuiButton... buttons) {
-        int minX = Integer.MAX_VALUE;
-        int minY = Integer.MAX_VALUE;
-        int maxX = Integer.MIN_VALUE;
-        int maxY = Integer.MIN_VALUE;
-
-        for (GuiButton button : buttons) {
-            if (button == null || !button.visible) {
-                continue;
-            }
-            minX = Math.min(minX, button.x);
-            minY = Math.min(minY, button.y);
-            maxX = Math.max(maxX, button.x + button.width);
-            maxY = Math.max(maxY, button.y + button.height);
-        }
-
-        if (minX == Integer.MAX_VALUE) {
-            return;
-        }
-
-        int boxX = minX - 6;
-        int boxY = minY - 18;
-        int boxW = (maxX - minX) + 12;
-        int boxH = (maxY - minY) + 24;
-
-        drawRect(boxX, boxY, boxX + boxW, boxY + boxH, 0x44202A36);
-        drawHorizontalLine(boxX, boxX + boxW, boxY, 0xFF4FA6D9);
-        drawHorizontalLine(boxX, boxX + boxW, boxY + boxH, 0xFF35536C);
-        drawVerticalLine(boxX, boxY, boxY + boxH, 0xFF35536C);
-        drawVerticalLine(boxX + boxW, boxY, boxY + boxH, 0xFF35536C);
-        this.drawString(this.fontRenderer, "§b" + title, boxX + 6, boxY + 5, 0xFFE8F6FF);
-    }
-
-    private boolean isMouseOver(int mouseX, int mouseY, GuiButton button) {
-        return mouseX >= button.x && mouseX <= button.x + button.width
-                && mouseY >= button.y && mouseY <= button.y + button.height;
     }
 
     private void cycleBiteMode() {
@@ -835,68 +788,27 @@ public class GuiAutoFishingConfig extends ThemedGuiScreen {
         return "智能";
     }
 
-    private void applyDefaultValues() {
-        AutoFishingHandler.requireFishingRod = true;
-        AutoFishingHandler.autoSwitchToRod = false;
-        AutoFishingHandler.preferredRodSlot = 0;
-        AutoFishingHandler.disableWhenGuiOpen = true;
-        AutoFishingHandler.allowWhilePlayerMoving = false;
-        AutoFishingHandler.sendStatusMessage = true;
-
-        AutoFishingHandler.enableAutoCastOnStart = true;
-        AutoFishingHandler.initialCastDelayTicks = 8;
-        AutoFishingHandler.autoRecastAfterCatch = true;
-        AutoFishingHandler.recastDelayMinTicks = 10;
-        AutoFishingHandler.recastDelayMaxTicks = 16;
-        AutoFishingHandler.retryCastWhenBobberMissing = true;
-        AutoFishingHandler.retryCastDelayTicks = 20;
-        AutoFishingHandler.timeoutRecastEnabled = true;
-        AutoFishingHandler.maxFishingWaitTicks = 600;
-
-        AutoFishingHandler.biteDetectMode = AutoFishingHandler.BITE_MODE_SMART;
-        AutoFishingHandler.ignoreInitialBobberSettleTicks = 8;
-        AutoFishingHandler.reelDelayTicks = 2;
-        AutoFishingHandler.minVerticalDropThreshold = 0.08F;
-        AutoFishingHandler.minHorizontalMoveThreshold = 0.03F;
-        AutoFishingHandler.confirmBiteTicks = 1;
-        AutoFishingHandler.debugBiteInfo = false;
-
-        AutoFishingHandler.postReelPauseTicks = 6;
-        AutoFishingHandler.preventDoubleReelTicks = 6;
-        AutoFishingHandler.recastOnlyIfLootSuccess = false;
-        AutoFishingHandler.resetStateWhenHookGone = true;
-        AutoFishingHandler.autoRecoverFromInterruptedCast = true;
-
-        AutoFishingHandler.stopWhenRodDurabilityLow = true;
-        AutoFishingHandler.minRodDurability = 5;
-        AutoFishingHandler.stopWhenNoRodFound = true;
-        AutoFishingHandler.pauseWhenHookedEntity = true;
-        AutoFishingHandler.stopOnWorldChange = true;
-    }
-
-    private void openIntInput(String title, int current, int min, int max, IntConsumer consumer) {
-        mc.displayGuiScreen(new GuiTextInput(this, title, String.valueOf(current), value -> {
-            int parsed = current;
+    private void openIntInput(String title, int currentValue, int min, int max, IntConsumer consumer) {
+        this.mc.setScreen(new GuiTextInput(this, title, String.valueOf(currentValue), value -> {
+            int parsed = currentValue;
             try {
                 parsed = Integer.parseInt(value.trim());
             } catch (Exception ignored) {
             }
-            parsed = clampInt(parsed, min, max);
-            consumer.accept(parsed);
-            mc.displayGuiScreen(this);
+            consumer.accept(clampInt(parsed, min, max));
+            layoutButtons();
         }));
     }
 
-    private void openFloatInput(String title, float current, float min, float max, FloatConsumer consumer) {
-        mc.displayGuiScreen(new GuiTextInput(this, title, formatFloat(current), value -> {
-            float parsed = current;
+    private void openFloatInput(String title, float currentValue, float min, float max, FloatConsumer consumer) {
+        this.mc.setScreen(new GuiTextInput(this, title, formatFloat(currentValue), value -> {
+            float parsed = currentValue;
             try {
                 parsed = Float.parseFloat(value.trim());
             } catch (Exception ignored) {
             }
-            parsed = clampFloat(parsed, min, max);
-            consumer.accept(parsed);
-            mc.displayGuiScreen(this);
+            consumer.accept(clampFloat(parsed, min, max));
+            layoutButtons();
         }));
     }
 

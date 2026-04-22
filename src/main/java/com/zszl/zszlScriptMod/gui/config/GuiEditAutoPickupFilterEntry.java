@@ -5,11 +5,11 @@ import com.zszl.zszlScriptMod.gui.components.ThemedButton;
 import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
 import com.zszl.zszlScriptMod.handlers.KillAuraHandler;
 import com.zszl.zszlScriptMod.system.AutoPickupRule;
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiScreen;
-import net.minecraft.client.gui.GuiTextField;
-import org.lwjgl.input.Keyboard;
-import org.lwjgl.input.Mouse;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiTextField;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Keyboard;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Mouse;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -93,13 +93,13 @@ public class GuiEditAutoPickupFilterEntry extends ThemedGuiScreen {
             if (onSave != null) {
                 onSave.accept(new AutoPickupRule.ItemMatchEntry(entry));
             }
-            if (mc.currentScreen == this) {
-                mc.displayGuiScreen(parentScreen);
+            if (mc.screen == this) {
+                mc.setScreen(parentScreen);
             }
             return;
         }
         if (button.id == 11) {
-            mc.displayGuiScreen(parentScreen);
+            mc.setScreen(parentScreen);
         }
     }
 
@@ -149,7 +149,7 @@ public class GuiEditAutoPickupFilterEntry extends ThemedGuiScreen {
     @Override
     protected void keyTyped(char typedChar, int keyCode) throws IOException {
         if (keyCode == Keyboard.KEY_ESCAPE) {
-            mc.displayGuiScreen(parentScreen);
+            mc.setScreen(parentScreen);
             return;
         }
         if ((keyCode == Keyboard.KEY_RETURN || keyCode == Keyboard.KEY_NUMPADENTER) && nbtInputField.isFocused()) {
@@ -169,8 +169,8 @@ public class GuiEditAutoPickupFilterEntry extends ThemedGuiScreen {
             return;
         }
 
-        int mouseX = Mouse.getEventX() * this.width / this.mc.displayWidth;
-        int mouseY = this.height - Mouse.getEventY() * this.height / this.mc.displayHeight - 1;
+        int mouseX = Mouse.getEventX() * this.width / this.mc.getWindow().getWidth();
+        int mouseY = this.height - Mouse.getEventY() * this.height / this.mc.getWindow().getHeight() - 1;
         int panelX = getPanelX();
         int panelY = getPanelY();
         int listX = panelX + 10;
@@ -326,3 +326,10 @@ public class GuiEditAutoPickupFilterEntry extends ThemedGuiScreen {
         }
     }
 }
+
+
+
+
+
+
+

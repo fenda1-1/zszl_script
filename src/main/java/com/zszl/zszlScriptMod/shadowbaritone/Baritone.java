@@ -17,6 +17,7 @@
 
 package com.zszl.zszlScriptMod.shadowbaritone;
 
+import com.zszl.zszlScriptMod.system.ProfileManager;
 import com.zszl.zszlScriptMod.shadowbaritone.api.BaritoneAPI;
 import com.zszl.zszlScriptMod.shadowbaritone.api.IBaritone;
 import com.zszl.zszlScriptMod.shadowbaritone.api.Settings;
@@ -27,7 +28,6 @@ import com.zszl.zszlScriptMod.shadowbaritone.api.process.IElytraProcess;
 import com.zszl.zszlScriptMod.shadowbaritone.api.utils.IPlayerContext;
 import com.zszl.zszlScriptMod.shadowbaritone.behavior.*;
 import com.zszl.zszlScriptMod.shadowbaritone.cache.WorldProvider;
-import com.zszl.zszlScriptMod.shadowbaritone.command.ExampleBaritoneControl;
 import com.zszl.zszlScriptMod.shadowbaritone.command.manager.CommandManager;
 import com.zszl.zszlScriptMod.shadowbaritone.event.GameEventHandler;
 import com.zszl.zszlScriptMod.shadowbaritone.process.*;
@@ -42,6 +42,8 @@ import net.minecraft.client.Minecraft;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.Executor;
 import java.util.concurrent.SynchronousQueue;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -78,7 +80,6 @@ public class Baritone implements IBaritone {
     private final ExploreProcess exploreProcess;
     private final FarmProcess farmProcess;
     private final InventoryPauserProcess inventoryPauserProcess;
-    private final KillAuraOrbitProcess killAuraOrbitProcess;
     private final IElytraProcess elytraProcess;
 
     private final PathingControlManager pathingControlManager;
@@ -94,113 +95,41 @@ public class Baritone implements IBaritone {
         this.mc = mc;
         this.gameEventHandler = new GameEventHandler(this);
 
-        this.directory = mc.mcDataDir.toPath().resolve("shadowbaritone");
+        this.directory = ProfileManager.getCurrentProfileDir().resolve("shadowbaritone");
         if (!Files.exists(this.directory)) {
             try {
                 Files.createDirectories(this.directory);
-            } catch (IOException ignored) {
-            }
+            } catch (IOException ignored) {}
         }
 
-        // Define this before behaviors try and get it, or else it will be null and the
-        // builds will fail!
+        // Define this before behaviors try and get it, or else it will be null and the builds will fail!
         this.playerContext = new BaritonePlayerContext(this, mc);
 
         {
-            this.lookBehavior = new LookBehavior(this);
-            this.registerBehavior(this.lookBehavior);
-
-            this.pathingBehavior = new PathingBehavior(this);
-            this.registerBehavior(this.pathingBehavior);
-
-            this.inventoryBehavior = new InventoryBehavior(this);
-            this.registerBehavior(this.inventoryBehavior);
-
-            this.inputOverrideHandler = new InputOverrideHandler(this);
-            this.registerBehavior(this.inputOverrideHandler);
-
-            this.registerBehavior(new WaypointBehavior(this));
+            this.lookBehavior         = this.registerBehavior(LookBehavior::new);
+            this.pathingBehavior      = this.registerBehavior(PathingBehavior::new);
+            this.inventoryBehavior    = this.registerBehavior(InventoryBehavior::new);
+            this.inputOverrideHandler = this.registerBehavior(InputOverrideHandler::new);
+            this.registerBehavior(WaypointBehavior::new);
         }
 
         this.pathingControlManager = new PathingControlManager(this);
         {
-            this.followProcess = new FollowProcess(this);
-            this.pathingControlManager.registerProcess(this.followProcess);
-
-            this.mineProcess = new MineProcess(this);
-            this.pathingControlManager.registerProcess(this.mineProcess);
-
-            this.customGoalProcess = new CustomGoalProcess(this); // very high iq
-            this.pathingControlManager.registerProcess(this.customGoalProcess);
-
-            this.getToBlockProcess = new GetToBlockProcess(this);
-            this.pathingControlManager.registerProcess(this.getToBlockProcess);
-
-            BuilderProcess builderProcessTmp = null;
-            try {
-                builderProcessTmp = new BuilderProcess(this);
-                this.pathingControlManager.registerProcess(builderProcessTmp);
-            } catch (Throwable t) {
-                t.printStackTrace();
-            }
-            this.builderProcess = builderProcessTmp;
-
-            ExploreProcess exploreProcessTmp = null;
-            try {
-                exploreProcessTmp = new ExploreProcess(this);
-                this.pathingControlManager.registerProcess(exploreProcessTmp);
-            } catch (Throwable t) {
-                t.printStackTrace();
-            }
-            this.exploreProcess = exploreProcessTmp;
-
-            FarmProcess farmProcessTmp = null;
-            try {
-                farmProcessTmp = new FarmProcess(this);
-                this.pathingControlManager.registerProcess(farmProcessTmp);
-            } catch (Throwable t) {
-                t.printStackTrace();
-            }
-            this.farmProcess = farmProcessTmp;
-
-            InventoryPauserProcess inventoryPauserProcessTmp = null;
-            try {
-                inventoryPauserProcessTmp = new InventoryPauserProcess(this);
-                this.pathingControlManager.registerProcess(inventoryPauserProcessTmp);
-            } catch (Throwable t) {
-                t.printStackTrace();
-            }
-            this.inventoryPauserProcess = inventoryPauserProcessTmp;
-
-            KillAuraOrbitProcess killAuraOrbitProcessTmp = null;
-            try {
-                killAuraOrbitProcessTmp = new KillAuraOrbitProcess(this);
-                this.pathingControlManager.registerProcess(killAuraOrbitProcessTmp);
-            } catch (Throwable t) {
-                t.printStackTrace();
-            }
-            this.killAuraOrbitProcess = killAuraOrbitProcessTmp;
-
-            IElytraProcess elytraProcessTmp = null;
-            try {
-                elytraProcessTmp = ElytraProcess.create(this);
-                this.pathingControlManager.registerProcess(elytraProcessTmp);
-            } catch (Throwable t) {
-                t.printStackTrace();
-            }
-            this.elytraProcess = elytraProcessTmp;
-
-            try {
-                this.pathingControlManager.registerProcess(new BackfillProcess(this));
-            } catch (Throwable t) {
-                t.printStackTrace();
-            }
+            this.followProcess           = this.registerProcess(FollowProcess::new);
+            this.mineProcess             = this.registerProcess(MineProcess::new);
+            this.customGoalProcess       = this.registerProcess(CustomGoalProcess::new); // very high iq
+            this.getToBlockProcess       = this.registerProcess(GetToBlockProcess::new);
+            this.builderProcess          = this.registerProcess(BuilderProcess::new);
+            this.exploreProcess          = this.registerProcess(ExploreProcess::new);
+            this.farmProcess             = this.registerProcess(FarmProcess::new);
+            this.inventoryPauserProcess  = this.registerProcess(InventoryPauserProcess::new);
+            this.elytraProcess           = this.registerProcess(ElytraProcess::create);
+            this.registerProcess(BackfillProcess::new);
         }
 
         this.worldProvider = new WorldProvider(this);
         this.selectionManager = new SelectionManager(this);
         this.commandManager = new CommandManager(this);
-        this.registerBehavior(new ExampleBaritoneControl(this));
     }
 
     public void registerBehavior(IBehavior behavior) {
@@ -282,10 +211,6 @@ public class Baritone implements IBaritone {
         return this.inventoryPauserProcess;
     }
 
-    public KillAuraOrbitProcess getKillAuraOrbitProcess() {
-        return this.killAuraOrbitProcess;
-    }
-
     @Override
     public PathingBehavior getPathingBehavior() {
         return this.pathingBehavior;
@@ -321,9 +246,8 @@ public class Baritone implements IBaritone {
         new Thread(() -> {
             try {
                 Thread.sleep(100);
-                mc.addScheduledTask(() -> mc.displayGuiScreen(new GuiClick()));
-            } catch (Exception ignored) {
-            }
+                mc.execute(() -> mc.setScreen(new GuiClick()));
+            } catch (Exception ignored) {}
         }).start();
     }
 

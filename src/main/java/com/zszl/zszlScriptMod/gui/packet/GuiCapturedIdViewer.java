@@ -5,13 +5,13 @@ import com.zszl.zszlScriptMod.gui.components.GuiTheme;
 import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
 import com.zszl.zszlScriptMod.gui.path.GuiSequenceSelector;
 import com.zszl.zszlScriptMod.utils.CapturedIdRuleManager;
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiScreen;
-import net.minecraft.client.gui.GuiTextField;
-import net.minecraft.client.resources.I18n;
-import net.minecraft.util.text.TextComponentString;
-import org.lwjgl.input.Keyboard;
-import org.lwjgl.input.Mouse;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiTextField;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.util.text.TextComponentString;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Keyboard;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Mouse;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -316,7 +316,7 @@ public class GuiCapturedIdViewer extends ThemedGuiScreen {
     @Override
     protected void actionPerformed(GuiButton button) throws IOException {
         if (button.id == BTN_DONE) {
-            mc.displayGuiScreen(parentScreen);
+            mc.setScreen(parentScreen);
             return;
         }
 
@@ -327,7 +327,7 @@ public class GuiCapturedIdViewer extends ThemedGuiScreen {
 
         if (button.id == BTN_SMART_GENERATOR) {
             String category = isConcreteCategory(selectedCategory) ? selectedCategory : "";
-            mc.displayGuiScreen(new GuiCapturedIdSmartGenerator(this, category));
+            mc.setScreen(new GuiCapturedIdSmartGenerator(this, category));
             return;
         }
 
@@ -336,14 +336,14 @@ public class GuiCapturedIdViewer extends ThemedGuiScreen {
             pendingEditorRestoreCreateMode = creatingNew;
             pendingEditorRestoreCategory = selectedCategory;
             pendingEditorRestoreRuleName = getSelectedRuleName();
-            mc.displayGuiScreen(new GuiSequenceSelector(this, selected -> {
+            mc.setScreen(new GuiSequenceSelector(this, selected -> {
                 if (selected != null) {
                     if (pendingEditorRestoreModel == null) {
                         pendingEditorRestoreModel = buildModelFromEditor();
                     }
                     pendingEditorRestoreModel.updateSequenceName = selected;
                 }
-                mc.displayGuiScreen(this);
+                mc.setScreen(this);
             }));
             return;
         }
@@ -395,7 +395,7 @@ public class GuiCapturedIdViewer extends ThemedGuiScreen {
     }
 
     private void openAddCategoryDialog() {
-        mc.displayGuiScreen(new GuiTextInput(this, "输入新分组名称", value -> {
+        mc.setScreen(new GuiTextInput(this, "输入新分组名称", value -> {
             if (value == null || value.trim().isEmpty()) {
                 setStatus("§7已取消创建分组", 0xFFB8C7D9);
                 return;
@@ -475,7 +475,7 @@ public class GuiCapturedIdViewer extends ThemedGuiScreen {
 
     private void importRuleToCurrentCategory() {
         final String fallbackCategory = isConcreteCategory(selectedCategory) ? selectedCategory : "";
-        mc.displayGuiScreen(new GuiTextInput(this, "粘贴捕获规则分享码", value -> {
+        mc.setScreen(new GuiTextInput(this, "粘贴捕获规则分享码", value -> {
             if (value == null || value.trim().isEmpty()) {
                 setStatus("§7已取消导入规则", 0xFFB8C7D9);
                 return;
@@ -710,8 +710,8 @@ public class GuiCapturedIdViewer extends ThemedGuiScreen {
         if (wheel == 0) {
             return;
         }
-        int mouseX = Mouse.getEventX() * this.width / this.mc.displayWidth;
-        int mouseY = this.height - Mouse.getEventY() * this.height / this.mc.displayHeight - 1;
+        int mouseX = Mouse.getEventX() * this.width / Math.max(1, this.mc.getWindow().getScreenWidth());
+        int mouseY = this.height - Mouse.getEventY() * this.height / Math.max(1, this.mc.getWindow().getScreenHeight()) - 1;
 
         if (isInEditor(mouseX, mouseY)) {
             int max = getMaxEditorScroll();
@@ -1217,7 +1217,7 @@ public class GuiCapturedIdViewer extends ThemedGuiScreen {
             setStatus("§c该分组不能重命名", 0xFFFF8E8E);
             return;
         }
-        mc.displayGuiScreen(new GuiTextInput(this, "重命名分组", normalized, value -> {
+        mc.setScreen(new GuiTextInput(this, "重命名分组", normalized, value -> {
             String newName = value == null ? "" : value.trim();
             if (newName.isEmpty()) {
                 setStatus("§7已取消重命名分组", 0xFFB8C7D9);
@@ -1412,7 +1412,7 @@ public class GuiCapturedIdViewer extends ThemedGuiScreen {
         setText(noteField, "");
         setText(aliasesField, "");
         setText(enabledField, "true");
-        setText(channelField, "OwlViewChannel");
+        setText(channelField, "");
         setText(directionField, "both");
         setText(targetField, "hex");
         setText(patternField, "");
@@ -1913,7 +1913,7 @@ public class GuiCapturedIdViewer extends ThemedGuiScreen {
 
     private void notifyMsg(String text, boolean err) {
         if (mc != null && mc.player != null) {
-            mc.player.sendMessage(new TextComponentString(text));
+            mc.player.sendSystemMessage(new TextComponentString(text));
         } else if (err) {
             System.err.println(text);
         } else {
@@ -2165,4 +2165,6 @@ public class GuiCapturedIdViewer extends ThemedGuiScreen {
         }
     }
 }
+
+
 

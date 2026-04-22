@@ -27,3 +27,4 @@ public interface IDatatypePostFunction<T, O> {
 
     T apply(O original) throws CommandException;
 }
+

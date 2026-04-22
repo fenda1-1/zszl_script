@@ -22,8 +22,7 @@ import com.zszl.zszlScriptMod.shadowbaritone.pathing.calc.PathNode;
 import java.util.Arrays;
 
 /**
- * A binary heap implementation of an open set. This is the one used in the
- * AStarPathFinder.
+ * A binary heap implementation of an open set. This is the one used in the AStarPathFinder.
  *
  * @author leijurv
  */
@@ -93,7 +92,7 @@ public final class BinaryHeapOpenSet implements IOpenSet {
     @Override
     public final PathNode removeLowest() {
         if (size == 0) {
-            throw new IllegalStateException();
+            throw new IllegalStateException("Cannot remove from empty heap");
         }
         PathNode result = array[1];
         PathNode val = array[size];
@@ -132,3 +131,4 @@ public final class BinaryHeapOpenSet implements IOpenSet {
         return result;
     }
 }
+

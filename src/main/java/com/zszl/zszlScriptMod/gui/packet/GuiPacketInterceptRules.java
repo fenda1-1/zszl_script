@@ -4,14 +4,14 @@ import com.zszl.zszlScriptMod.gui.components.ThemedButton;
 import com.zszl.zszlScriptMod.gui.components.GuiTheme;
 import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
 import com.zszl.zszlScriptMod.utils.PacketInterceptManager;
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiScreen;
-import net.minecraft.client.gui.GuiTextField;
-import net.minecraft.client.resources.I18n;
-import net.minecraft.util.text.TextComponentString;
-import net.minecraft.util.text.TextFormatting;
-import org.lwjgl.input.Keyboard;
-import org.lwjgl.input.Mouse;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiTextField;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.util.text.TextComponentString;
+import net.minecraft.ChatFormatting;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Keyboard;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Mouse;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -127,16 +127,10 @@ public class GuiPacketInterceptRules extends ThemedGuiScreen {
 
     private void reloadWorkingCopy() {
         PacketInterceptConfig.load();
-        PacketInterceptConfig.ensureBuiltinRules();
         rules.clear();
         for (PacketInterceptConfig.InterceptRule rule : PacketInterceptConfig.INSTANCE.inboundRules) {
             rules.add(rule.copy());
         }
-    }
-
-    private boolean isSelectedBuiltinSmartCopyRule() {
-        return selected >= 0 && selected < rules.size()
-                && PacketInterceptConfig.isBuiltinSmartCopyRule(rules.get(selected));
     }
 
     private String formatBool(boolean v) {
@@ -162,7 +156,7 @@ public class GuiPacketInterceptRules extends ThemedGuiScreen {
     private void clearEditor() {
         nameField.setText("");
         packetFilterField.setText("");
-        channelField.setText("OwlViewChannel");
+        channelField.setText("");
         matchField.setText("");
         replaceField.setText("");
         editingEnabled = true;
@@ -195,7 +189,7 @@ public class GuiPacketInterceptRules extends ThemedGuiScreen {
         case 1: // new
             PacketInterceptConfig.InterceptRule rule = new PacketInterceptConfig.InterceptRule();
             rule.name = "rule_" + (rules.size() + 1);
-            rule.channel = "OwlViewChannel";
+            rule.channel = "";
             rules.add(rule);
             selected = rules.size() - 1;
             loadFromRule(rule);
@@ -203,10 +197,6 @@ public class GuiPacketInterceptRules extends ThemedGuiScreen {
             break;
         case 2: // delete
             if (selected >= 0 && selected < rules.size()) {
-                if (isSelectedBuiltinSmartCopyRule()) {
-                    toast(TextFormatting.RED + "内置规则不可删除");
-                    break;
-                }
                 rules.remove(selected);
                 if (selected >= rules.size()) {
                     selected = rules.size() - 1;
@@ -231,9 +221,9 @@ public class GuiPacketInterceptRules extends ThemedGuiScreen {
             flushEditorToSelected();
             List<String> errors = PacketInterceptManager.validateRules(rules);
             if (errors.isEmpty()) {
-                toast(TextFormatting.GREEN + I18n.format("msg.packet.intercept.validate_ok"));
+                toast(ChatFormatting.GREEN + I18n.format("msg.packet.intercept.validate_ok"));
             } else {
-                toast(TextFormatting.RED + I18n.format("msg.packet.intercept.validate_failed", errors.get(0)));
+                toast(ChatFormatting.RED + I18n.format("msg.packet.intercept.validate_failed", errors.get(0)));
             }
             break;
         case 5: // save
@@ -243,38 +233,25 @@ public class GuiPacketInterceptRules extends ThemedGuiScreen {
                 PacketInterceptConfig.normalizeRule(r);
                 PacketInterceptConfig.INSTANCE.inboundRules.add(r.copy());
             }
-            PacketInterceptConfig.ensureBuiltinRules();
             PacketInterceptConfig.save();
-            toast(TextFormatting.GREEN + I18n.format("msg.common.save_success"));
+            toast(ChatFormatting.GREEN + I18n.format("msg.common.save_success"));
             break;
         case 6: // back
-            mc.displayGuiScreen(parent);
+            mc.setScreen(parent);
             break;
         case 10:
             PacketInterceptConfig.INSTANCE.inboundInterceptEnabled = !PacketInterceptConfig.INSTANCE.inboundInterceptEnabled;
             refreshToggleText();
             break;
         case 11:
-            if (isSelectedBuiltinSmartCopyRule()) {
-                toast(TextFormatting.RED + "内置规则开关由“智能复制”控制");
-                break;
-            }
             editingEnabled = !editingEnabled;
             refreshToggleText();
             break;
         case 12:
-            if (isSelectedBuiltinSmartCopyRule()) {
-                toast(TextFormatting.RED + "内置规则不可修改");
-                break;
-            }
             editingReplaceAll = !editingReplaceAll;
             refreshToggleText();
             break;
         case 13:
-            if (isSelectedBuiltinSmartCopyRule()) {
-                toast(TextFormatting.RED + "内置规则不可修改");
-                break;
-            }
             editingRegex = !editingRegex;
             refreshToggleText();
             break;
@@ -288,12 +265,6 @@ public class GuiPacketInterceptRules extends ThemedGuiScreen {
             return;
         }
         PacketInterceptConfig.InterceptRule rule = rules.get(selected);
-        if (PacketInterceptConfig.isBuiltinSmartCopyRule(rule)) {
-            PacketInterceptConfig.applyBuiltinSmartCopyRule(rule,
-                    com.zszl.zszlScriptMod.config.ChatOptimizationConfig.INSTANCE.enableSmartCopy);
-            loadFromRule(rule);
-            return;
-        }
         rule.name = nameField.getText().trim();
         rule.packetFilter = packetFilterField.getText().trim();
         rule.channel = channelField.getText().trim();
@@ -354,8 +325,8 @@ public class GuiPacketInterceptRules extends ThemedGuiScreen {
         if (wheel == 0) {
             return;
         }
-        int mouseX = Mouse.getEventX() * this.width / this.mc.displayWidth;
-        int mouseY = this.height - Mouse.getEventY() * this.height / this.mc.displayHeight - 1;
+        int mouseX = Mouse.getEventX() * this.width / this.mc.getWindow().getWidth();
+        int mouseY = this.height - Mouse.getEventY() * this.height / this.mc.getWindow().getHeight() - 1;
         if (mouseX < listX || mouseX > listX + listW || mouseY < listY || mouseY > listY + listH) {
             return;
         }
@@ -393,9 +364,6 @@ public class GuiPacketInterceptRules extends ThemedGuiScreen {
             int bg = idx == selected ? 0x664AA3FF : 0x33223344;
             drawRect(listX, y, listX + listW, y + ROW_H - 2, bg);
             String title = (r.enabled ? "§a● " : "§c○ ") + (r.name == null ? "(unnamed)" : r.name);
-            if (PacketInterceptConfig.isBuiltinSmartCopyRule(r)) {
-                title = "§b[内置] " + title;
-            }
             drawString(fontRenderer, title, listX + 6, y + 5, 0xFFFFFF);
             String sub = (r.channel == null || r.channel.trim().isEmpty()) ? "*" : r.channel;
             drawString(fontRenderer, "§7" + sub, listX + 6, y + 14, 0xFFFFFF);
@@ -420,10 +388,6 @@ public class GuiPacketInterceptRules extends ThemedGuiScreen {
 
         drawString(fontRenderer, "§8" + I18n.format("gui.packet.intercept.hint"), matchField.x, replaceField.y + 24,
                 0xFFFFFF);
-        if (isSelectedBuiltinSmartCopyRule()) {
-            drawString(fontRenderer, "§e该规则为内置规则，不可修改删除；启用状态由“聊天框优化-智能复制”控制。", matchField.x, replaceField.y + 36,
-                    0xFFFFFF);
-        }
 
         super.drawScreen(mouseX, mouseY, partialTicks);
         drawInterceptTooltip(mouseX, mouseY);
@@ -436,7 +400,7 @@ public class GuiPacketInterceptRules extends ThemedGuiScreen {
 
     private void toast(String text) {
         if (mc.player != null) {
-            mc.player.sendMessage(new TextComponentString(text));
+            mc.player.sendSystemMessage(new TextComponentString(text));
         }
     }
 
@@ -499,3 +463,13 @@ public class GuiPacketInterceptRules extends ThemedGuiScreen {
         drawSimpleTooltip(tooltip, mouseX, mouseY);
     }
 }
+
+
+
+
+
+
+
+
+
+

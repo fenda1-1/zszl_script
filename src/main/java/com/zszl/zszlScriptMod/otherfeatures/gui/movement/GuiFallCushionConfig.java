@@ -1,6 +1,6 @@
 package com.zszl.zszlScriptMod.otherfeatures.gui.movement;
 
-import net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
 
 public class GuiFallCushionConfig extends SingleMovementFeatureConfigScreen {
 
@@ -8,3 +8,6 @@ public class GuiFallCushionConfig extends SingleMovementFeatureConfigScreen {
         super(parentScreen, "fall_cushion", "下落缓冲设置");
     }
 }
+
+
+

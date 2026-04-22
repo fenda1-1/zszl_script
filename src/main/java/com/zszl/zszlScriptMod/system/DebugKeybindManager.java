@@ -7,9 +7,9 @@ import com.zszl.zszlScriptMod.zszlScriptMod;
 import com.zszl.zszlScriptMod.gui.path.GuiCustomPathCreator;
 import com.zszl.zszlScriptMod.handlers.AutoEquipHandler;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.resources.I18n;
-import net.minecraft.util.text.TextComponentString;
-import net.minecraft.util.text.TextFormatting;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.util.text.TextComponentString;
+import net.minecraft.ChatFormatting;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
@@ -31,7 +31,7 @@ public class DebugKeybindManager {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 
     public static void executeAction(BindableDebugAction action) {
-        Minecraft mc = Minecraft.getMinecraft();
+        Minecraft mc = Minecraft.getInstance();
         if (mc.player == null)
             return;
 
@@ -44,16 +44,16 @@ public class DebugKeybindManager {
                 }
                 String status = AutoEquipHandler.enabled ? I18n.format("gui.common.enabled")
                         : I18n.format("gui.common.disabled");
-                mc.player.sendMessage(
+                mc.player.sendSystemMessage(
                         new TextComponentString(
-                                TextFormatting.AQUA + I18n.format("msg.debug_keybind.auto_equip_status", status)));
+                                ChatFormatting.AQUA + I18n.format("msg.debug_keybind.auto_equip_status", status)));
                 AutoEquipHandler.saveConfig();
                 break;
             case START_CHEST_RECORDING:
-                mc.player.sendMessage(
+                mc.player.sendSystemMessage(
                         new TextComponentString(
-                                TextFormatting.AQUA + I18n.format("msg.debug_keybind.open_chest_recording")));
-                mc.addScheduledTask(() -> mc.displayGuiScreen(new GuiCustomPathCreator()));
+                                ChatFormatting.AQUA + I18n.format("msg.debug_keybind.open_chest_recording")));
+                mc.execute(() -> mc.setScreen(new GuiCustomPathCreator()));
                 break;
         }
     }
@@ -106,3 +106,9 @@ public class DebugKeybindManager {
         }
     }
 }
+
+
+
+
+
+

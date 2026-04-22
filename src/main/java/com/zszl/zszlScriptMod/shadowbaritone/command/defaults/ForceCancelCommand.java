@@ -22,7 +22,6 @@ import com.zszl.zszlScriptMod.shadowbaritone.api.behavior.IPathingBehavior;
 import com.zszl.zszlScriptMod.shadowbaritone.api.command.Command;
 import com.zszl.zszlScriptMod.shadowbaritone.api.command.argument.IArgConsumer;
 import com.zszl.zszlScriptMod.shadowbaritone.api.command.exception.CommandException;
-import com.zszl.zszlScriptMod.shadowbaritone.api.utils.ShadowBaritoneI18n;
 
 import java.util.Arrays;
 import java.util.List;
@@ -40,8 +39,7 @@ public class ForceCancelCommand extends Command {
         IPathingBehavior pathingBehavior = baritone.getPathingBehavior();
         pathingBehavior.cancelEverything();
         pathingBehavior.forceCancel();
-        logDirect(ShadowBaritoneI18n.trKey(
-                "shadowbaritone.command.forcecancel.status.canceled"));
+        logDirect("ok force canceled");
     }
 
     @Override
@@ -51,19 +49,17 @@ public class ForceCancelCommand extends Command {
 
     @Override
     public String getShortDesc() {
-        return ShadowBaritoneI18n.trKey(
-                "shadowbaritone.command.forcecancel.short_desc");
+        return "Force cancel";
     }
 
     @Override
     public List<String> getLongDesc() {
         return Arrays.asList(
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.forcecancel.long_desc.1"),
+                "Like cancel, but more forceful.",
                 "",
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.forcecancel.long_desc.usage"),
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.forcecancel.long_desc.example.default"));
+                "Usage:",
+                "> forcecancel"
+        );
     }
 }
+

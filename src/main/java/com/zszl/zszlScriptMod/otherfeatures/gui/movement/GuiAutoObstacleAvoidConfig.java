@@ -1,6 +1,6 @@
 package com.zszl.zszlScriptMod.otherfeatures.gui.movement;
 
-import net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
 
 public class GuiAutoObstacleAvoidConfig extends SingleMovementFeatureConfigScreen {
 
@@ -8,3 +8,6 @@ public class GuiAutoObstacleAvoidConfig extends SingleMovementFeatureConfigScree
         super(parentScreen, "auto_obstacle_avoid", "自动避障设置");
     }
 }
+
+
+

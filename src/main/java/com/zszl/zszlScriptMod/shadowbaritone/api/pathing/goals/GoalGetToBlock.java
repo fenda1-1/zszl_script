@@ -20,7 +20,8 @@ package com.zszl.zszlScriptMod.shadowbaritone.api.pathing.goals;
 import com.zszl.zszlScriptMod.shadowbaritone.api.utils.BetterBlockPos;
 import com.zszl.zszlScriptMod.shadowbaritone.api.utils.SettingsUtil;
 import com.zszl.zszlScriptMod.shadowbaritone.api.utils.interfaces.IGoalRenderPos;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.core.BlockPos;
+
 
 /**
  * Don't get into the block, but get directly adjacent to it. Useful for chests.
@@ -86,6 +87,8 @@ public class GoalGetToBlock implements Goal, IGoalRenderPos {
                 "GoalGetToBlock{x=%s,y=%s,z=%s}",
                 SettingsUtil.maybeCensor(x),
                 SettingsUtil.maybeCensor(y),
-                SettingsUtil.maybeCensor(z));
+                SettingsUtil.maybeCensor(z)
+        );
     }
 }
+

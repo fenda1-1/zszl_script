@@ -2,12 +2,13 @@
 // (这是增加了“复制”按钮和“可视化滚动条”的最终版本)
 package com.zszl.zszlScriptMod.gui.config;
 
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
 import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
-import net.minecraft.client.resources.I18n;
-import net.minecraft.util.text.TextComponentString;
-import org.lwjgl.input.Mouse;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.util.text.TextComponentString;
+import net.minecraft.ChatFormatting;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Mouse;
 
 import java.io.IOException;
 import java.util.Arrays;
@@ -51,13 +52,13 @@ public class GuiScanViewer extends ThemedGuiScreen {
     @Override
     protected void actionPerformed(GuiButton button) throws IOException {
         if (button.id == 0) {
-            this.mc.displayGuiScreen(parentScreen);
+            this.mc.setScreen(parentScreen);
         }
         // !! 核心修改：处理“复制”按钮的点击事件 !!
         else if (button.id == 1) {
             setClipboardString(this.fullContent); // 使用存储的完整内容
             if (this.mc.player != null) {
-                this.mc.player.sendMessage(new TextComponentString(I18n.format("msg.scan_viewer.copy_success")));
+                this.mc.player.sendSystemMessage(new TextComponentString(I18n.format("msg.scan_viewer.copy_success")));
             }
         }
     }
@@ -120,4 +121,10 @@ public class GuiScanViewer extends ThemedGuiScreen {
         }
     }
 }
+
+
+
+
+
+
 

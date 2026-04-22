@@ -13,14 +13,15 @@ import com.zszl.zszlScriptMod.path.runtime.log.ExecutionLogManager;
 import com.zszl.zszlScriptMod.path.runtime.log.ExecutionLogManager.ExecutionEvent;
 import com.zszl.zszlScriptMod.path.runtime.log.ExecutionLogManager.SessionSnapshot;
 import com.zszl.zszlScriptMod.system.ProfileManager;
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiScreen;
-import net.minecraft.client.gui.GuiTextField;
-import net.minecraft.client.gui.ScaledResolution;
-import net.minecraft.util.text.TextComponentString;
-import net.minecraft.util.text.TextFormatting;
-import org.lwjgl.input.Keyboard;
-import org.lwjgl.input.Mouse;
+import com.zszl.zszlScriptMod.utils.PinyinSearchHelper;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiTextField;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.ScaledResolution;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.util.text.TextComponentString;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Keyboard;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Mouse;
+import net.minecraft.ChatFormatting;
 import org.lwjgl.opengl.GL11;
 
 import java.io.IOException;
@@ -135,6 +136,16 @@ public class GuiActionVariableManager extends ThemedGuiScreen {
             this.noteLines = noteLines == null ? new ArrayList<String>() : noteLines;
             this.rows = rows == null ? new ArrayList<SourcePopupRow>() : rows;
             this.contentHeight = contentHeight;
+        }
+    }
+
+    private static final class MatchedExecutionLogEvent {
+        private final SessionSnapshot session;
+        private final ExecutionEvent event;
+
+        private MatchedExecutionLogEvent(SessionSnapshot session, ExecutionEvent event) {
+            this.session = session;
+            this.event = event;
         }
     }
 
@@ -362,12 +373,13 @@ public class GuiActionVariableManager extends ThemedGuiScreen {
                         .extractScopeKey(entry.getVariableName()))
                 .thenComparing(entry -> ActionVariableRegistry.extractBaseName(entry.getVariableName()).toLowerCase()));
 
-        String keyword = searchField == null ? "" : safe(searchField.getText()).trim().toLowerCase();
+        String keyword = PinyinSearchHelper.normalizeQuery(searchField == null ? "" : safe(searchField.getText()));
         variables.clear();
         for (ActionVariableRegistry.VariableEntry entry : all) {
-            String full = safe(entry.getVariableName()).toLowerCase();
-            String base = safe(ActionVariableRegistry.extractBaseName(entry.getVariableName())).toLowerCase();
-            if (keyword.isEmpty() || full.contains(keyword) || base.contains(keyword)) {
+            String searchText = safe(entry.getVariableName()) + " "
+                    + safe(ActionVariableRegistry.extractBaseName(entry.getVariableName())) + " "
+                    + safe(ActionVariableRegistry.extractScopeKey(entry.getVariableName()));
+            if (keyword.isEmpty() || PinyinSearchHelper.matchesNormalized(searchText, keyword)) {
                 variables.add(entry);
             }
         }
@@ -535,11 +547,11 @@ public class GuiActionVariableManager extends ThemedGuiScreen {
                     return;
                 }
                 ActionVariableRegistry.VariableEntry target = getFocusedEntry();
-                mc.displayGuiScreen(new GuiTextInput(this, "重命名变量",
+                mc.setScreen(new GuiTextInput(this, "重命名变量",
                         ActionVariableRegistry.extractBaseName(target.getVariableName()), newName -> {
                             String normalized = newName == null ? "" : newName.trim();
                             if (normalized.isEmpty()) {
-                                mc.displayGuiScreen(this);
+                                mc.setScreen(this);
                                 return;
                             }
                             String renamed = ActionVariableRegistry.buildScopedVariableName(target.getScopeKey(),
@@ -548,13 +560,13 @@ public class GuiActionVariableManager extends ThemedGuiScreen {
                                     renamed);
                             statusText = (changed > 0 ? "§a" : "§e") + "重命名完成，受影响动作: " + changed;
                             if (mc.player != null) {
-                                mc.player.sendMessage(new TextComponentString(
-                                        (changed > 0 ? TextFormatting.GREEN : TextFormatting.YELLOW)
+                                mc.player.sendSystemMessage(new TextComponentString(
+                                        (changed > 0 ? ChatFormatting.GREEN : ChatFormatting.YELLOW)
                                                 + "重命名变量完成，受影响动作: " + changed));
                             }
                             reloadVariables(false);
                             focusVariableByName(renamed);
-                            mc.displayGuiScreen(this);
+                            mc.setScreen(this);
                         }));
                 break;
             case 3:
@@ -573,7 +585,7 @@ public class GuiActionVariableManager extends ThemedGuiScreen {
                 reloadVariables(false);
                 break;
             case 4:
-                mc.displayGuiScreen(parentScreen);
+                mc.setScreen(parentScreen);
                 break;
             default:
                 break;
@@ -898,28 +910,9 @@ public class GuiActionVariableManager extends ThemedGuiScreen {
         String prefix = ActionVariableRegistry.extractBaseName(source == null ? "" : source.getVariableName());
         LinkedHashSet<String> variableNames = new LinkedHashSet<>(
                 ActionVariableRegistry.collectProducedVariableNames(source));
-        SessionSnapshot matchedSession = null;
-        ExecutionEvent matchedEvent = null;
-
-        for (SessionSnapshot session : ExecutionLogManager.getSessionsSnapshot()) {
-            if (session == null || !safe(session.getSequenceName()).equalsIgnoreCase(safe(source.getSequenceName()))) {
-                continue;
-            }
-            List<ExecutionEvent> events = session.getEvents();
-            for (int i = events.size() - 1; i >= 0; i--) {
-                ExecutionEvent event = events.get(i);
-                if (event != null
-                        && event.getStepIndex() == source.getStepIndex()
-                        && event.getActionIndex() == source.getActionIndex()) {
-                    matchedSession = session;
-                    matchedEvent = event;
-                    break;
-                }
-            }
-            if (matchedEvent != null) {
-                break;
-            }
-        }
+        MatchedExecutionLogEvent matched = findMatchedExecutionLogEvent(source, prefix);
+        SessionSnapshot matchedSession = matched == null ? null : matched.session;
+        ExecutionEvent matchedEvent = matched == null ? null : matched.event;
 
         LinkedHashMap<String, String> matchedValues = new LinkedHashMap<>();
         if (matchedEvent != null) {
@@ -930,6 +923,7 @@ public class GuiActionVariableManager extends ThemedGuiScreen {
                 }
             }
         }
+        mergeCurrentGlobalValues(prefix, variableNames, matchedValues);
         if (variableNames.isEmpty() && !prefix.isEmpty()) {
             variableNames.add(prefix);
         }
@@ -945,13 +939,113 @@ public class GuiActionVariableManager extends ThemedGuiScreen {
                 ? "最近匹配日志: 未找到"
                 : "最近匹配日志: " + matchedSession.buildSummary();
         String eventSummary = matchedEvent == null
+                ? (matchedValues.isEmpty()
                 ? "匹配事件: 未找到当前来源动作的执行记录"
+                : "匹配事件: 未命中执行日志，已回退到当前全局作用域")
                 : "匹配事件: 步骤 " + (matchedEvent.getStepIndex() + 1)
                         + " · 动作 " + (matchedEvent.getActionIndex() + 1)
                         + " · " + safe(matchedEvent.getType()).toUpperCase();
 
         return new SourcePopupState(source, prefix, sessionSummary, eventSummary,
                 matchedEvent != null, !matchedValues.isEmpty(), variables);
+    }
+
+    private MatchedExecutionLogEvent findMatchedExecutionLogEvent(ActionVariableRegistry.VariableSource source, String prefix) {
+        if (source == null) {
+            return null;
+        }
+        SessionSnapshot bestSession = null;
+        ExecutionEvent bestEvent = null;
+        int bestScore = Integer.MIN_VALUE;
+
+        for (SessionSnapshot session : ExecutionLogManager.getSessionsSnapshot()) {
+            if (session == null || !safe(session.getSequenceName()).equalsIgnoreCase(safe(source.getSequenceName()))) {
+                continue;
+            }
+            List<ExecutionEvent> events = session.getEvents();
+            for (int i = events.size() - 1; i >= 0; i--) {
+                ExecutionEvent event = events.get(i);
+                int score = scoreExecutionLogEvent(source, prefix, event);
+                if (score > bestScore) {
+                    bestScore = score;
+                    bestSession = session;
+                    bestEvent = event;
+                }
+            }
+            if (bestScore >= 1000) {
+                break;
+            }
+        }
+
+        return bestEvent == null ? null : new MatchedExecutionLogEvent(bestSession, bestEvent);
+    }
+
+    private int scoreExecutionLogEvent(ActionVariableRegistry.VariableSource source, String prefix, ExecutionEvent event) {
+        if (source == null || event == null) {
+            return Integer.MIN_VALUE;
+        }
+
+        boolean exactMatch = event.getStepIndex() == source.getStepIndex()
+                && event.getActionIndex() == source.getActionIndex();
+        boolean shiftedControlMatch = safe(event.getType()).equalsIgnoreCase("trace")
+                && safe(event.getMessage()).startsWith("控制流动作")
+                && event.getStepIndex() == source.getStepIndex()
+                && event.getActionIndex() == source.getActionIndex() + 1;
+        boolean sameStep = event.getStepIndex() == source.getStepIndex();
+        boolean hasMatchingValues = eventContainsSourceVariables(event, prefix);
+
+        if (exactMatch && hasMatchingValues) {
+            return 1000;
+        }
+        if (shiftedControlMatch && hasMatchingValues) {
+            return 900;
+        }
+        if (exactMatch) {
+            return 700;
+        }
+        if (shiftedControlMatch) {
+            return 650;
+        }
+        if (hasMatchingValues && sameStep) {
+            return 500;
+        }
+        if (hasMatchingValues) {
+            return 400;
+        }
+        return Integer.MIN_VALUE;
+    }
+
+    private boolean eventContainsSourceVariables(ExecutionEvent event, String prefix) {
+        if (event == null || prefix == null || prefix.trim().isEmpty()) {
+            return false;
+        }
+        for (String key : event.getVariablePreview().keySet()) {
+            if (matchesSourceVariableKey(key, prefix)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void mergeCurrentGlobalValues(String prefix, Set<String> variableNames, Map<String, String> matchedValues) {
+        if (prefix == null || prefix.trim().isEmpty() || variableNames == null || matchedValues == null) {
+            return;
+        }
+        String scopeKey = ActionVariableRegistry.extractScopeKey(prefix);
+        if (!"global".equals(scopeKey) || globalValues == null || globalValues.isEmpty()) {
+            return;
+        }
+        for (String variableName : new ArrayList<>(variableNames)) {
+            if (matchedValues.containsKey(variableName)) {
+                continue;
+            }
+            String baseName = ActionVariableRegistry.extractBaseName(variableName);
+            if (!globalValues.containsKey(baseName)) {
+                continue;
+            }
+            Object value = globalValues.get(baseName);
+            matchedValues.put(variableName, value == null ? "" : String.valueOf(value));
+        }
     }
 
     private boolean matchesSourceVariableKey(String key, String prefix) {
@@ -984,7 +1078,9 @@ public class GuiActionVariableManager extends ThemedGuiScreen {
         }
 
         String note;
-        if (!sourcePopupState.hasMatchedEvent) {
+        if (!sourcePopupState.hasMatchedEvent && sourcePopupState.hasMatchedValues) {
+            note = "未匹配到最近执行日志，以下内容已回退为当前全局作用域里的最新值。";
+        } else if (!sourcePopupState.hasMatchedEvent) {
             note = "未找到这个来源动作的最近执行日志，下面展示该来源会产生的子变量名。";
         } else if (sourcePopupState.hasMatchedValues) {
             note = "以下内容来自最近一次匹配来源动作的执行日志预览。点击可复制";
@@ -1497,7 +1593,7 @@ public class GuiActionVariableManager extends ThemedGuiScreen {
             return;
         }
         if (keyCode == Keyboard.KEY_ESCAPE) {
-            mc.displayGuiScreen(parentScreen);
+            mc.setScreen(parentScreen);
             return;
         }
         super.keyTyped(typedChar, keyCode);
@@ -1520,8 +1616,8 @@ public class GuiActionVariableManager extends ThemedGuiScreen {
             return;
         }
 
-        int mouseX = Mouse.getEventX() * this.width / this.mc.displayWidth;
-        int mouseY = this.height - Mouse.getEventY() * this.height / this.mc.displayHeight - 1;
+        int mouseX = Mouse.getEventX() * this.width / this.mc.getWindow().getWidth();
+        int mouseY = this.height - Mouse.getEventY() * this.height / this.mc.getWindow().getHeight() - 1;
 
         if (isHoverRegion(mouseX, mouseY, listViewportX, listViewportY, listViewportWidth, listViewportHeight)
                 && maxListScroll > 0) {

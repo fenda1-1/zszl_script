@@ -23,3 +23,4 @@ public class CommandNotEnoughArgumentsException extends CommandErrorMessageExcep
         super(String.format("Not enough arguments (expected at least %d)", minArgs));
     }
 }
+

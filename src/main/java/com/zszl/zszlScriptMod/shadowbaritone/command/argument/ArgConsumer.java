@@ -17,6 +17,7 @@
 
 package com.zszl.zszlScriptMod.shadowbaritone.command.argument;
 
+import com.zszl.zszlScriptMod.shadowbaritone.Baritone;
 import com.zszl.zszlScriptMod.shadowbaritone.api.IBaritone;
 import com.zszl.zszlScriptMod.shadowbaritone.api.command.argument.IArgConsumer;
 import com.zszl.zszlScriptMod.shadowbaritone.api.command.argument.ICommandArgument;
@@ -39,14 +40,12 @@ import java.util.stream.Stream;
 public class ArgConsumer implements IArgConsumer {
 
     /**
-     * The parent {@link ICommandManager} for this {@link IArgConsumer}}. Used by
-     * {@link #context}.
+     * The parent {@link ICommandManager} for this {@link IArgConsumer}}. Used by {@link #context}.
      */
     private final ICommandManager manager;
 
     /**
-     * The {@link IDatatypeContext} instance for this {@link IArgConsumer}}, passed
-     * to
+     * The {@link IDatatypeContext} instance for this {@link IArgConsumer}}, passed to
      * datatypes when an operation is performed upon them.
      *
      * @see IDatatype
@@ -60,8 +59,7 @@ public class ArgConsumer implements IArgConsumer {
     private final LinkedList<ICommandArgument> args;
 
     /**
-     * The list of consumed arguments for this ArgConsumer. The most recently
-     * consumed argument is the last one
+     * The list of consumed arguments for this ArgConsumer. The most recently consumed argument is the last one
      */
     private final Deque<ICommandArgument> consumed;
 
@@ -148,20 +146,17 @@ public class ArgConsumer implements IArgConsumer {
     }
 
     @Override
-    public <E extends Enum<?>> E peekEnum(Class<E> enumClass, int index)
-            throws CommandInvalidTypeException, CommandNotEnoughArgumentsException {
+    public <E extends Enum<?>> E peekEnum(Class<E> enumClass, int index) throws CommandInvalidTypeException, CommandNotEnoughArgumentsException {
         return peek(index).getEnum(enumClass);
     }
 
     @Override
-    public <E extends Enum<?>> E peekEnum(Class<E> enumClass)
-            throws CommandInvalidTypeException, CommandNotEnoughArgumentsException {
+    public <E extends Enum<?>> E peekEnum(Class<E> enumClass) throws CommandInvalidTypeException, CommandNotEnoughArgumentsException {
         return peekEnum(enumClass, 0);
     }
 
     @Override
-    public <E extends Enum<?>> E peekEnumOrNull(Class<E> enumClass, int index)
-            throws CommandNotEnoughArgumentsException {
+    public <E extends Enum<?>> E peekEnumOrNull(Class<E> enumClass, int index) throws CommandNotEnoughArgumentsException {
         try {
             return peekEnum(enumClass, index);
         } catch (CommandInvalidTypeException e) {
@@ -175,8 +170,7 @@ public class ArgConsumer implements IArgConsumer {
     }
 
     @Override
-    public <T> T peekAs(Class<T> type, int index)
-            throws CommandInvalidTypeException, CommandNotEnoughArgumentsException {
+    public <T> T peekAs(Class<T> type, int index) throws CommandInvalidTypeException, CommandNotEnoughArgumentsException {
         return peek(index).getAs(type);
     }
 
@@ -210,20 +204,17 @@ public class ArgConsumer implements IArgConsumer {
     }
 
     @Override
-    public <T> T peekDatatype(IDatatypeFor<T> datatype)
-            throws CommandInvalidTypeException, CommandNotEnoughArgumentsException {
+    public <T> T peekDatatype(IDatatypeFor<T> datatype) throws CommandInvalidTypeException, CommandNotEnoughArgumentsException {
         return copy().getDatatypeFor(datatype);
     }
 
     @Override
-    public <T, O> T peekDatatype(IDatatypePost<T, O> datatype)
-            throws CommandInvalidTypeException, CommandNotEnoughArgumentsException {
+    public <T, O> T peekDatatype(IDatatypePost<T, O> datatype) throws CommandInvalidTypeException, CommandNotEnoughArgumentsException {
         return this.peekDatatype(datatype, null);
     }
 
     @Override
-    public <T, O> T peekDatatype(IDatatypePost<T, O> datatype, O original)
-            throws CommandInvalidTypeException, CommandNotEnoughArgumentsException {
+    public <T, O> T peekDatatype(IDatatypePost<T, O> datatype, O original) throws CommandInvalidTypeException, CommandNotEnoughArgumentsException {
         return copy().getDatatypePost(datatype, original);
     }
 
@@ -238,8 +229,7 @@ public class ArgConsumer implements IArgConsumer {
     }
 
     @Override
-    public <T, O, D extends IDatatypePost<T, O>> T peekDatatypePost(D datatype, O original)
-            throws CommandInvalidTypeException, CommandNotEnoughArgumentsException {
+    public <T, O, D extends IDatatypePost<T, O>> T peekDatatypePost(D datatype, O original) throws CommandInvalidTypeException, CommandNotEnoughArgumentsException {
         return copy().getDatatypePost(datatype, original);
     }
 
@@ -282,8 +272,7 @@ public class ArgConsumer implements IArgConsumer {
     }
 
     @Override
-    public <E extends Enum<?>> E getEnum(Class<E> enumClass)
-            throws CommandInvalidTypeException, CommandNotEnoughArgumentsException {
+    public <E extends Enum<?>> E getEnum(Class<E> enumClass) throws CommandInvalidTypeException, CommandNotEnoughArgumentsException {
         return get().getEnum(enumClass);
     }
 
@@ -324,13 +313,14 @@ public class ArgConsumer implements IArgConsumer {
     }
 
     @Override
-    public <T, O, D extends IDatatypePost<T, O>> T getDatatypePost(D datatype, O original)
-            throws CommandInvalidTypeException, CommandNotEnoughArgumentsException {
+    public <T, O, D extends IDatatypePost<T, O>> T getDatatypePost(D datatype, O original) throws CommandInvalidTypeException, CommandNotEnoughArgumentsException {
         try {
             return datatype.apply(this.context, original);
         } catch (Exception e) {
-            throw new CommandInvalidTypeException(hasAny() ? peek() : consumed(), datatype.getClass().getSimpleName(),
-                    e);
+            if (Baritone.settings().verboseCommandExceptions.value) {
+                e.printStackTrace();
+            }
+            throw new CommandInvalidTypeException(hasAny() ? peek() : consumed(), datatype.getClass().getSimpleName(), e);
         }
     }
 
@@ -355,13 +345,14 @@ public class ArgConsumer implements IArgConsumer {
     }
 
     @Override
-    public <T, D extends IDatatypeFor<T>> T getDatatypeFor(D datatype)
-            throws CommandInvalidTypeException, CommandNotEnoughArgumentsException {
+    public <T, D extends IDatatypeFor<T>> T getDatatypeFor(D datatype) throws CommandInvalidTypeException, CommandNotEnoughArgumentsException {
         try {
             return datatype.get(this.context);
         } catch (Exception e) {
-            throw new CommandInvalidTypeException(hasAny() ? peek() : consumed(), datatype.getClass().getSimpleName(),
-                    e);
+            if (Baritone.settings().verboseCommandExceptions.value) {
+                e.printStackTrace();
+            }
+            throw new CommandInvalidTypeException(hasAny() ? peek() : consumed(), datatype.getClass().getSimpleName(), e);
         }
     }
 
@@ -443,8 +434,7 @@ public class ArgConsumer implements IArgConsumer {
     }
 
     /**
-     * Implementation of {@link IDatatypeContext} which adapts to the parent
-     * {@link IArgConsumer}}
+     * Implementation of {@link IDatatypeContext} which adapts to the parent {@link IArgConsumer}}
      */
     private final class Context implements IDatatypeContext {
 
@@ -459,3 +449,4 @@ public class ArgConsumer implements IArgConsumer {
         }
     }
 }
+

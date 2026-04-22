@@ -24,7 +24,6 @@ import com.zszl.zszlScriptMod.shadowbaritone.api.pathing.goals.Goal;
 import com.zszl.zszlScriptMod.shadowbaritone.api.process.ICustomGoalProcess;
 import com.zszl.zszlScriptMod.shadowbaritone.api.process.PathingCommand;
 import com.zszl.zszlScriptMod.shadowbaritone.api.process.PathingCommandType;
-import com.zszl.zszlScriptMod.shadowbaritone.api.utils.ShadowBaritoneI18n;
 import com.zszl.zszlScriptMod.shadowbaritone.utils.BaritoneProcessHelper;
 import com.zszl.zszlScriptMod.shadowbaritone.utils.GoalTargetNormalizer;
 
@@ -50,7 +49,7 @@ public final class CustomGoalProcess extends BaritoneProcessHelper implements IC
      *
      * @see State
      */
-    private State state;
+    private State state = State.NONE;
     private String lastTickDebugKey;
 
     public CustomGoalProcess(Baritone baritone) {
@@ -58,18 +57,20 @@ public final class CustomGoalProcess extends BaritoneProcessHelper implements IC
     }
 
     private void logBaritoneDebug(String message) {
-        if (ModConfig.isDebugFlagEnabled(DebugModule.BARITONE)) {
-            logDirect(message);
-        }
+        ModConfig.debugLog(DebugModule.BARITONE, message);
     }
 
     @Override
     public void setGoal(Goal goal) {
+        Goal rawGoal = goal;
         goal = GoalTargetNormalizer.normalize(baritone, goal);
         this.goal = goal;
         this.mostRecentGoal = goal;
+        if (goal != rawGoal) {
+            logBaritoneDebug(String.format("[DBG][CustomGoalProcess] normalized goal from %s to %s", rawGoal, goal));
+        }
         logBaritoneDebug(String.format("[DBG][CustomGoalProcess] setGoal goal=%s stateBefore=%s", goal, this.state));
-        if (baritone.getElytraProcess() != null && baritone.getElytraProcess().isActive()) {
+        if (baritone.getElytraProcess().isActive()) {
             baritone.getElytraProcess().pathTo(goal);
         }
         if (this.state == State.NONE) {
@@ -109,9 +110,12 @@ public final class CustomGoalProcess extends BaritoneProcessHelper implements IC
             String key = this.state + "|" + calcFailed + "|" + isSafeToCancel + "|" + this.goal;
             if (!key.equals(lastTickDebugKey)) {
                 lastTickDebugKey = key;
-                logBaritoneDebug(
-                        String.format("[DBG][CustomGoalProcess] onTick state=%s calcFailed=%s safeToCancel=%s goal=%s",
-                                this.state, calcFailed, isSafeToCancel, this.goal));
+                logBaritoneDebug(String.format(
+                        "[DBG][CustomGoalProcess] onTick state=%s calcFailed=%s safeToCancel=%s goal=%s",
+                        this.state,
+                        calcFailed,
+                        isSafeToCancel,
+                        this.goal));
             }
         }
         switch (this.state) {
@@ -125,25 +129,24 @@ public final class CustomGoalProcess extends BaritoneProcessHelper implements IC
             case EXECUTING:
                 if (calcFailed) {
                     logBaritoneDebug(String.format(
-                            "[DBG][CustomGoalProcess] calc failed but retaining goal for retry goal=%s", this.goal));
+                            "[DBG][CustomGoalProcess] calc failed but retaining goal for retry goal=%s",
+                            this.goal));
                     this.state = State.PATH_REQUESTED;
                     return new PathingCommand(this.goal, PathingCommandType.FORCE_REVALIDATE_GOAL_AND_PATH);
                 }
-                if (this.goal == null || (this.goal.isInGoal(ctx.playerFeet())
-                        && this.goal.isInGoal(baritone.getPathingBehavior().pathStart()))) {
+                if (this.goal == null || (this.goal.isInGoal(ctx.playerFeet()) && this.goal.isInGoal(baritone.getPathingBehavior().pathStart()))) {
                     onLostControl(); // we're there xd
                     if (Baritone.settings().disconnectOnArrival.value) {
-                        ctx.world().sendQuittingDisconnectingPacket();
+                        ctx.world().disconnect();
                     }
                     if (Baritone.settings().notificationOnPathComplete.value) {
-                        logNotification(ShadowBaritoneI18n.trKey(
-                                "shadowbaritone.process.customgoal.status.pathing_complete"), false);
+                        logNotification("Pathing complete", false);
                     }
                     return new PathingCommand(this.goal, PathingCommandType.CANCEL_AND_SET_GOAL);
                 }
                 return new PathingCommand(this.goal, PathingCommandType.SET_GOAL_AND_PATH);
             default:
-                throw new IllegalStateException();
+                throw new IllegalStateException("Unexpected state " + this.state);
         }
     }
 
@@ -156,9 +159,7 @@ public final class CustomGoalProcess extends BaritoneProcessHelper implements IC
 
     @Override
     public String displayName0() {
-        return ShadowBaritoneI18n.trKey(
-                "shadowbaritone.process.customgoal.display.custom_goal",
-                this.goal);
+        return "Custom Goal " + this.goal;
     }
 
     protected enum State {
@@ -168,3 +169,4 @@ public final class CustomGoalProcess extends BaritoneProcessHelper implements IC
         EXECUTING
     }
 }
+

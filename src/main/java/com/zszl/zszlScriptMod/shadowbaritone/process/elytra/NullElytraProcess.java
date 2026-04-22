@@ -22,7 +22,7 @@ import com.zszl.zszlScriptMod.shadowbaritone.api.pathing.goals.Goal;
 import com.zszl.zszlScriptMod.shadowbaritone.api.process.IElytraProcess;
 import com.zszl.zszlScriptMod.shadowbaritone.api.process.PathingCommand;
 import com.zszl.zszlScriptMod.shadowbaritone.utils.BaritoneProcessHelper;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.core.BlockPos;
 
 /**
  * @author Brady

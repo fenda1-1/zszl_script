@@ -23,7 +23,6 @@ import com.zszl.zszlScriptMod.shadowbaritone.api.command.argument.IArgConsumer;
 import com.zszl.zszlScriptMod.shadowbaritone.api.command.exception.CommandException;
 import com.zszl.zszlScriptMod.shadowbaritone.api.pathing.goals.Goal;
 import com.zszl.zszlScriptMod.shadowbaritone.api.pathing.goals.GoalAxis;
-import com.zszl.zszlScriptMod.shadowbaritone.api.utils.ShadowBaritoneI18n;
 
 import java.util.Arrays;
 import java.util.List;
@@ -40,9 +39,7 @@ public class AxisCommand extends Command {
         args.requireMax(0);
         Goal goal = new GoalAxis();
         baritone.getCustomGoalProcess().setGoal(goal);
-        logDirect(ShadowBaritoneI18n.trKey(
-                "shadowbaritone.command.axis.status.goal",
-                goal.toString()));
+        logDirect(String.format("Goal: %s", goal.toString()));
     }
 
     @Override
@@ -52,19 +49,17 @@ public class AxisCommand extends Command {
 
     @Override
     public String getShortDesc() {
-        return ShadowBaritoneI18n.trKey(
-                "shadowbaritone.command.axis.short_desc");
+        return "Set a goal to the axes";
     }
 
     @Override
     public List<String> getLongDesc() {
         return Arrays.asList(
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.axis.long_desc.1"),
+                "The axis command sets a goal that tells Baritone to head towards the nearest axis. That is, X=0 or Z=0.",
                 "",
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.axis.long_desc.usage"),
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.axis.long_desc.example.default"));
+                "Usage:",
+                "> axis"
+        );
     }
 }
+

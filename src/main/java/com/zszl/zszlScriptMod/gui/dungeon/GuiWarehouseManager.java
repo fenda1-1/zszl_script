@@ -1,14 +1,14 @@
 package com.zszl.zszlScriptMod.gui.dungeon;
 
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiTextField;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
 import com.zszl.zszlScriptMod.gui.components.ThemedButton;
 import com.zszl.zszlScriptMod.gui.config.AbstractThreePaneRuleManager;
 import com.zszl.zszlScriptMod.handlers.WarehouseEventHandler;
 import com.zszl.zszlScriptMod.handlers.WarehouseManager;
 import com.zszl.zszlScriptMod.system.dungeon.Warehouse;
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiScreen;
-import net.minecraft.client.gui.GuiTextField;
-import net.minecraft.client.resources.I18n;
 
 import java.io.IOException;
 import java.text.DecimalFormat;
@@ -44,7 +44,7 @@ public class GuiWarehouseManager extends AbstractThreePaneRuleManager<Warehouse>
     private GuiButton btnAutoDeposit;
 
     private Warehouse workingWarehouse;
-    private boolean editorActive = false;
+    private boolean editorActive;
 
     public GuiWarehouseManager(GuiScreen parent) {
         super(parent);
@@ -57,7 +57,7 @@ public class GuiWarehouseManager extends AbstractThreePaneRuleManager<Warehouse>
 
     @Override
     protected String getGuideText() {
-        return "§7使用指南：左键筛选/折叠分组，右键分组或卡片打开菜单，右侧可编辑区域并管理扫描/存入功能";
+        return "§7左键筛选/折叠分组，右键分组或卡片打开菜单，右侧可编辑区域并管理扫描/自动存入。";
     }
 
     @Override
@@ -135,8 +135,9 @@ public class GuiWarehouseManager extends AbstractThreePaneRuleManager<Warehouse>
             copy.updateBounds();
             return copy;
         }
+
         copy.name = source.name;
-        copy.category = normalizeCategory(source.category);
+        copy.category = normalizeWarehouseCategory(source.category);
         copy.isActive = source.isActive;
         copy.x1 = source.x1;
         copy.z1 = source.z1;
@@ -177,21 +178,19 @@ public class GuiWarehouseManager extends AbstractThreePaneRuleManager<Warehouse>
     @Override
     protected void setItemCategory(Warehouse item, String category) {
         if (item != null) {
-            item.category = normalizeCategory(category);
+            item.category = normalizeWarehouseCategory(category);
         }
     }
 
     @Override
     protected void loadEditor(Warehouse item) {
         workingWarehouse = copyItem(item == null ? createNewItem() : item);
-
         setText(nameField, safe(workingWarehouse.name));
-        setText(categoryField, normalizeCategory(workingWarehouse.category));
+        setText(categoryField, normalizeWarehouseCategory(workingWarehouse.category));
         setText(x1Field, formatDouble(workingWarehouse.x1));
         setText(z1Field, formatDouble(workingWarehouse.z1));
         setText(x2Field, formatDouble(workingWarehouse.x2));
         setText(z2Field, formatDouble(workingWarehouse.z2));
-
         editorActive = workingWarehouse.isActive;
         layoutAllWidgets();
     }
@@ -208,7 +207,7 @@ public class GuiWarehouseManager extends AbstractThreePaneRuleManager<Warehouse>
             return;
         }
         target.name = source.name;
-        target.category = normalizeCategory(source.category);
+        target.category = normalizeWarehouseCategory(source.category);
         target.isActive = source.isActive;
         target.x1 = source.x1;
         target.z1 = source.z1;
@@ -220,12 +219,12 @@ public class GuiWarehouseManager extends AbstractThreePaneRuleManager<Warehouse>
 
     @Override
     protected void initEditorWidgets() {
-        nameField = createField(3301);
-        categoryField = createField(3302);
-        x1Field = createField(3303);
-        z1Field = createField(3304);
-        x2Field = createField(3305);
-        z2Field = createField(3306);
+        nameField = createWarehouseField(3301);
+        categoryField = createWarehouseField(3302);
+        x1Field = createWarehouseField(3303);
+        z1Field = createWarehouseField(3304);
+        x2Field = createWarehouseField(3305);
+        z2Field = createWarehouseField(3306);
     }
 
     @Override
@@ -238,39 +237,34 @@ public class GuiWarehouseManager extends AbstractThreePaneRuleManager<Warehouse>
         btnDepositMode = new ThemedButton(BTN_DEPOSIT_MODE, 0, 0, 100, 20, "");
         btnAutoDeposit = new ThemedButton(BTN_AUTO_DEPOSIT, 0, 0, 100, 20, "自动存入");
 
-        this.buttonList.add(btnGetPoint1);
-        this.buttonList.add(btnGetPoint2);
-        this.buttonList.add(btnToggleActive);
-        this.buttonList.add(btnScanChests);
-        this.buttonList.add(btnInfo);
-        this.buttonList.add(btnDepositMode);
-        this.buttonList.add(btnAutoDeposit);
+        buttonList.add(btnGetPoint1);
+        buttonList.add(btnGetPoint2);
+        buttonList.add(btnToggleActive);
+        buttonList.add(btnScanChests);
+        buttonList.add(btnInfo);
+        buttonList.add(btnDepositMode);
+        buttonList.add(btnAutoDeposit);
     }
 
     @Override
     protected void layoutEditorWidgets() {
         int right = editorX + editorWidth - 14;
-        int fullFieldWidth = Math.max(120, right - editorFieldX);
-        int halfWidth = Math.max(70, (fullFieldWidth - 10) / 2);
+        int fullWidth = Math.max(120, right - editorFieldX);
+        int halfWidth = Math.max(70, (fullWidth - 10) / 2);
 
-        placeField(nameField, 0, editorFieldX, fullFieldWidth);
-        placeField(categoryField, 1, editorFieldX, fullFieldWidth);
-
+        placeField(nameField, 0, editorFieldX, fullWidth);
+        placeField(categoryField, 1, editorFieldX, fullWidth);
         placeField(x1Field, 2, editorFieldX, halfWidth);
         placeField(z1Field, 2, editorFieldX + halfWidth + 10, halfWidth);
-        placeButton(btnGetPoint1, 3, editorFieldX, fullFieldWidth, 20);
-
+        placeButton(btnGetPoint1, 3, editorFieldX, fullWidth, 20);
         placeField(x2Field, 4, editorFieldX, halfWidth);
         placeField(z2Field, 4, editorFieldX + halfWidth + 10, halfWidth);
-        placeButton(btnGetPoint2, 5, editorFieldX, fullFieldWidth, 20);
-
-        placeButton(btnToggleActive, 6, editorFieldX, fullFieldWidth, 20);
-
+        placeButton(btnGetPoint2, 5, editorFieldX, fullWidth, 20);
+        placeButton(btnToggleActive, 6, editorFieldX, fullWidth, 20);
         placeButton(btnScanChests, 7, editorFieldX, halfWidth, 20);
         placeButton(btnInfo, 7, editorFieldX + halfWidth + 10, halfWidth, 20);
-
-        placeButton(btnDepositMode, 8, editorFieldX, fullFieldWidth, 20);
-        placeButton(btnAutoDeposit, 9, editorFieldX, fullFieldWidth, 20);
+        placeButton(btnDepositMode, 8, editorFieldX, fullWidth, 20);
+        placeButton(btnAutoDeposit, 9, editorFieldX, fullWidth, 20);
     }
 
     @Override
@@ -337,29 +331,21 @@ public class GuiWarehouseManager extends AbstractThreePaneRuleManager<Warehouse>
     @Override
     protected void drawCard(Warehouse item, int actualIndex, int x, int y, int width, int height,
             boolean selected, boolean hovered) {
-        int cardBottom = y + height;
-        int bg = selected ? 0xAA255D8A : (hovered ? 0xAA2E4258 : 0x99222222);
-        int border = selected ? 0xFF5FB8FF : (hovered ? 0xFF7EC8FF : 0xFF4B4B4B);
+        int background = selected ? 0xFF234A6A : hovered ? 0xFF1C2733 : 0xFF141B22;
+        drawRect(x, y, x + width, y + height, background);
+        drawRect(x, y, x + width, y + 1, 0xFF33485C);
+        drawRect(x, y + height - 1, x + width, y + height, 0xFF0C1014);
 
-        drawRect(x, y, x + width, cardBottom, bg);
-        drawHorizontalLine(x, x + width, y, border);
-        drawHorizontalLine(x, x + width, cardBottom, border);
-        drawVerticalLine(x, y, cardBottom, border);
-        drawVerticalLine(x + width, y, cardBottom, border);
+        drawString(fontRenderer, trimToWidth(safe(item.name), width - 12), x + 6, y + 6, 0xFFFFFFFF);
+        drawString(fontRenderer, trimToWidth("分组: " + normalizeWarehouseCategory(item.category), width - 12),
+                x + 6, y + 20, 0xFFB8C7D9);
 
-        String status = item.isActive ? "§a✔" : "§c✘";
-        drawString(fontRenderer, trimToWidth(status + " " + safe(item.name), width - 12),
-                x + 6, y + 5, 0xFFFFFFFF);
-        drawString(fontRenderer, trimToWidth("分类: " + normalizeCategory(item.category), width - 12),
-                x + 6, y + 18, 0xFFDDDDDD);
-        drawString(fontRenderer,
-                trimToWidth("区域: (" + formatDouble(item.x1) + ", " + formatDouble(item.z1) + ") ~ ("
-                                + formatDouble(item.x2) + ", " + formatDouble(item.z2) + ")",
-                        width - 12),
-                x + 6, y + 31, 0xFFBDBDBD);
-        int chestCount = item.chests == null ? 0 : item.chests.size();
-        drawString(fontRenderer, trimToWidth("箱子记录: " + chestCount, width - 12),
-                x + 6, y + 44, 0xFFB8C7D9);
+        String stateText = (item.isActive ? "§a启用" : "§7停用")
+                + "  箱子 " + (item.chests == null ? 0 : item.chests.size());
+        drawString(fontRenderer, trimToWidth(stateText, width - 12), x + 6, y + 34, 0xFF9FB0C4);
+
+        String areaText = String.format("范围: %.1f, %.1f -> %.1f, %.1f", item.x1, item.z1, item.x2, item.z2);
+        drawString(fontRenderer, trimToWidth(areaText, width - 12), x + 6, y + 48, 0xFF8FA1B5);
     }
 
     @Override
@@ -374,75 +360,86 @@ public class GuiWarehouseManager extends AbstractThreePaneRuleManager<Warehouse>
     }
 
     @Override
+    protected void onSelectionChanged(Warehouse item) {
+        updateEditorButtonStates();
+    }
+
+    @Override
     protected void updateEditorButtonStates() {
-        if (btnToggleActive != null) {
-            btnToggleActive.displayString = editorActive
-                    ? I18n.format("gui.warehouse.manager.deactivate")
-                    : I18n.format("gui.warehouse.manager.activate");
-            btnToggleActive.enabled = btnToggleActive.visible;
-        }
-        if (btnGetPoint1 != null) {
-            btnGetPoint1.enabled = btnGetPoint1.visible;
-        }
-        if (btnGetPoint2 != null) {
-            btnGetPoint2.enabled = btnGetPoint2.visible;
-        }
-        if (btnScanChests != null) {
-            btnScanChests.enabled = btnScanChests.visible && !creatingNew;
-        }
-        if (btnInfo != null) {
-            btnInfo.enabled = btnInfo.visible && getSelectedItemOrNull() != null && !creatingNew;
-        }
-        if (btnDepositMode != null) {
-            btnDepositMode.displayString = I18n.format("gui.warehouse.manager.deposit_mode",
-                    WarehouseEventHandler.oneClickDepositMode
-                            ? I18n.format("gui.common.enabled")
-                            : I18n.format("gui.common.disabled"));
-            btnDepositMode.enabled = btnDepositMode.visible;
-        }
-        if (btnAutoDeposit != null) {
-            btnAutoDeposit.enabled = btnAutoDeposit.visible;
-        }
+        boolean hasEditor = workingWarehouse != null;
+        btnGetPoint1.visible = true;
+        btnGetPoint2.visible = true;
+        btnToggleActive.visible = true;
+        btnScanChests.visible = true;
+        btnInfo.visible = true;
+        btnDepositMode.visible = true;
+        btnAutoDeposit.visible = true;
+
+        btnGetPoint1.enabled = hasEditor;
+        btnGetPoint2.enabled = hasEditor;
+        btnToggleActive.enabled = hasEditor;
+        btnScanChests.enabled = hasEditor && !creatingNew && getSelectedItemOrNull() != null;
+        btnInfo.enabled = !creatingNew && getSelectedItemOrNull() != null;
+        btnDepositMode.enabled = true;
+        btnAutoDeposit.enabled = WarehouseManager.currentWarehouse != null;
+
+        btnToggleActive.displayString = editorActive
+                ? I18n.format("gui.warehouse.manager.deactivate")
+                : I18n.format("gui.warehouse.manager.activate");
+        btnDepositMode.displayString = I18n.format("gui.warehouse.manager.deposit_mode",
+                WarehouseEventHandler.oneClickDepositMode
+                        ? I18n.format("gui.common.enabled")
+                        : I18n.format("gui.common.disabled"));
     }
 
     @Override
     protected boolean handleAdditionalAction(GuiButton button) throws IOException {
+        if (button == null) {
+            return false;
+        }
+
         if (button.id == BTN_GET_POINT1) {
             if (mc.player != null) {
-                setText(x1Field, formatDouble(mc.player.posX));
-                setText(z1Field, formatDouble(mc.player.posZ));
+                setText(x1Field, formatDouble(mc.player.getX()));
+                setText(z1Field, formatDouble(mc.player.getZ()));
             }
             return true;
         }
+
         if (button.id == BTN_GET_POINT2) {
             if (mc.player != null) {
-                setText(x2Field, formatDouble(mc.player.posX));
-                setText(z2Field, formatDouble(mc.player.posZ));
+                setText(x2Field, formatDouble(mc.player.getX()));
+                setText(z2Field, formatDouble(mc.player.getZ()));
             }
             return true;
         }
+
         if (button.id == BTN_TOGGLE_ACTIVE) {
             editorActive = !editorActive;
             updateEditorButtonStates();
             return true;
         }
+
         if (button.id == BTN_INFO) {
             Warehouse selected = getSelectedItemOrNull();
             if (selected != null && !creatingNew) {
-                mc.displayGuiScreen(new GuiWarehouseInfo(this, selected));
+                mc.setScreen(new GuiWarehouseInfo(this, selected));
             }
             return true;
         }
+
         if (button.id == BTN_SCAN_CHESTS) {
             if (creatingNew) {
                 setStatus("§c请先保存仓库后再扫描箱子", 0xFFFF8E8E);
                 return true;
             }
+
             Warehouse selected = getSelectedItemOrNull();
             if (selected == null) {
                 setStatus("§c请先选择一个仓库", 0xFFFF8E8E);
                 return true;
             }
+
             syncFieldsToWorkingWarehouse();
             applyItemValues(selected, workingWarehouse);
             WarehouseManager.scanForChestsInWarehouse(selected);
@@ -452,16 +449,19 @@ public class GuiWarehouseManager extends AbstractThreePaneRuleManager<Warehouse>
             setStatus("§a已扫描仓库内箱子", 0xFF8CFF9E);
             return true;
         }
+
         if (button.id == BTN_DEPOSIT_MODE) {
             WarehouseEventHandler.oneClickDepositMode = !WarehouseEventHandler.oneClickDepositMode;
             updateEditorButtonStates();
             return true;
         }
+
         if (button.id == BTN_AUTO_DEPOSIT) {
             WarehouseEventHandler.startAutoDepositByHighlights();
             setStatus("§a已触发自动存入", 0xFF8CFF9E);
             return true;
         }
+
         return false;
     }
 
@@ -475,14 +475,16 @@ public class GuiWarehouseManager extends AbstractThreePaneRuleManager<Warehouse>
             }
         }
         persistChanges();
+        WarehouseManager.updateCurrentWarehouse();
     }
 
     private void syncFieldsToWorkingWarehouse() {
         if (workingWarehouse == null) {
             workingWarehouse = createNewItem();
         }
+
         workingWarehouse.name = safe(nameField.getText()).trim();
-        workingWarehouse.category = normalizeCategory(categoryField.getText());
+        workingWarehouse.category = normalizeWarehouseCategory(categoryField.getText());
         workingWarehouse.isActive = editorActive;
         workingWarehouse.x1 = parseDouble(x1Field.getText(), workingWarehouse.x1);
         workingWarehouse.z1 = parseDouble(z1Field.getText(), workingWarehouse.z1);
@@ -495,30 +497,29 @@ public class GuiWarehouseManager extends AbstractThreePaneRuleManager<Warehouse>
     }
 
     private void drawWarehouseSummary() {
-        int row = 10;
-        int y = getEditorRowY(row);
+        int y = getEditorRowY(10);
         if (y < 0 || workingWarehouse == null) {
             return;
         }
 
         syncFieldsToWorkingWarehouse();
         int chestCount = workingWarehouse.chests == null ? 0 : workingWarehouse.chests.size();
+        String currentName = WarehouseManager.currentWarehouse == null
+                ? "无"
+                : safe(WarehouseManager.currentWarehouse.name);
         String summary = "箱子记录: " + chestCount
+                + "  当前仓库: " + currentName
                 + "  边界: (" + formatDouble(workingWarehouse.x1) + ", " + formatDouble(workingWarehouse.z1)
                 + ") ~ (" + formatDouble(workingWarehouse.x2) + ", " + formatDouble(workingWarehouse.z2) + ")";
         drawString(fontRenderer, trimToWidth(summary, editorWidth - getEditorLabelWidth() - 24),
                 editorFieldX, y + 4, 0xFFB8C7D9);
     }
 
-    private GuiTextField createField(int id) {
+    private GuiTextField createWarehouseField(int id) {
         GuiTextField field = new GuiTextField(id, this.fontRenderer, 0, 0, 100, 16);
         field.setMaxStringLength(Integer.MAX_VALUE);
         field.setEnableBackgroundDrawing(false);
         return field;
-    }
-
-    private String formatDouble(double value) {
-        return COORD_FORMAT.format(value);
     }
 
     private double parseDouble(String text, double fallback) {
@@ -527,5 +528,14 @@ public class GuiWarehouseManager extends AbstractThreePaneRuleManager<Warehouse>
         } catch (Exception ignored) {
             return fallback;
         }
+    }
+
+    protected String normalizeWarehouseCategory(String category) {
+        String normalized = category == null ? "" : category.trim();
+        return normalized.isEmpty() ? CATEGORY_DEFAULT : normalized;
+    }
+
+    private String formatDouble(double value) {
+        return COORD_FORMAT.format(value);
     }
 }

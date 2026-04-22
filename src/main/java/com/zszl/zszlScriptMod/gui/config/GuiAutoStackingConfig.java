@@ -2,12 +2,12 @@
 package com.zszl.zszlScriptMod.gui.config;
 
 import com.zszl.zszlScriptMod.handlers.ShulkerBoxStackingHandler;
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
 import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
-import net.minecraft.client.gui.GuiTextField;
-import net.minecraft.client.resources.I18n;
-import org.lwjgl.input.Keyboard;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiTextField;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Keyboard;
 
 import java.io.IOException;
 import java.util.Arrays;
@@ -53,9 +53,9 @@ public class GuiAutoStackingConfig extends ThemedGuiScreen {
                     .filter(s -> !s.isEmpty())
                     .collect(Collectors.toList());
             ShulkerBoxStackingHandler.saveConfig();
-            mc.displayGuiScreen(parentScreen);
+            mc.setScreen(parentScreen);
         } else if (button.id == 101) { // 取消
-            mc.displayGuiScreen(parentScreen);
+            mc.setScreen(parentScreen);
         }
     }
 
@@ -98,3 +98,9 @@ public class GuiAutoStackingConfig extends ThemedGuiScreen {
         Keyboard.enableRepeatEvents(false);
     }
 }
+
+
+
+
+
+

@@ -1,10 +1,8 @@
 package com.zszl.zszlScriptMod.gui.components;
 
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.renderer.GlStateManager;
-import net.minecraft.util.text.TextFormatting;
-import org.lwjgl.input.Mouse;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Mouse;
 import com.zszl.zszlScriptMod.gui.components.GuiTheme.UiState;
 
 public class ThemedButton extends GuiButton {
@@ -40,23 +38,12 @@ public class ThemedButton extends GuiButton {
             textColor = GuiTheme.LABEL_TEXT;
         }
         textColor = GuiTheme.resolveTextColor(this.displayString, textColor);
-        String text = this.displayString == null ? "" : this.displayString;
-        String plainText = TextFormatting.getTextWithoutFormattingCodes(text);
-        int textWidth = mc.fontRenderer.getStringWidth(plainText == null ? text : plainText);
-        float widthScale = textWidth <= 0 ? 1.0F : Math.min(1.0F, (this.width - 8.0F) / textWidth);
-        float heightScale = Math.min(1.0F, (this.height - 4.0F) / Math.max(1.0F, mc.fontRenderer.FONT_HEIGHT));
-        float scale = Math.max(0.55F, Math.min(widthScale, heightScale));
-
-        if (scale >= 0.995F) {
-            drawCenteredString(mc.fontRenderer, text, this.x + this.width / 2,
-                    this.y + (this.height - mc.fontRenderer.FONT_HEIGHT) / 2, textColor);
-            return;
-        }
-
-        GlStateManager.pushMatrix();
-        GlStateManager.translate(this.x + this.width / 2.0F, this.y + this.height / 2.0F, 0.0F);
-        GlStateManager.scale(scale, scale, 1.0F);
-        drawCenteredString(mc.fontRenderer, text, 0, -mc.fontRenderer.FONT_HEIGHT / 2, textColor);
-        GlStateManager.popMatrix();
+        drawCenteredString(new com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.FontRenderer(mc.font), this.displayString, this.x + this.width / 2,
+                this.y + (this.height - 8) / 2, textColor);
     }
 }
+
+
+
+
+

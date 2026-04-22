@@ -37,3 +37,4 @@ public class CommandInvalidTypeException extends CommandInvalidArgumentException
         super(arg, String.format("Expected %s, but got %s instead", expected, got), cause);
     }
 }
+

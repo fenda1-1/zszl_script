@@ -51,11 +51,11 @@ public final class PinyinSearchHelper {
         return builder.toString();
     }
 
-    public static boolean matchesNormalized(String source, String normalizedQuery) {
+    public static boolean matchesNormalized(String text, String normalizedQuery) {
         if (normalizedQuery == null || normalizedQuery.isEmpty()) {
             return true;
         }
-        SearchIndex index = CACHE.computeIfAbsent(source == null ? "" : source, PinyinSearchHelper::buildIndex);
+        SearchIndex index = CACHE.computeIfAbsent(text == null ? "" : text, PinyinSearchHelper::buildIndex);
         return index.compactText.contains(normalizedQuery)
                 || index.compactPinyin.contains(normalizedQuery)
                 || index.initials.contains(normalizedQuery);

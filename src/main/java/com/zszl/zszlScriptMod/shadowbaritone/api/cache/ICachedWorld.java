@@ -17,10 +17,9 @@
 
 package com.zszl.zszlScriptMod.shadowbaritone.api.cache;
 
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.world.chunk.Chunk;
-
 import java.util.ArrayList;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.chunk.LevelChunk;
 
 /**
  * @author Brady
@@ -44,7 +43,7 @@ public interface ICachedWorld {
      *
      * @param chunk The chunk to pack and store
      */
-    void queueForPacking(Chunk chunk);
+    void queueForPacking(LevelChunk chunk);
 
     /**
      * Returns whether or not the block at the specified X and Z coordinates
@@ -59,8 +58,7 @@ public interface ICachedWorld {
     /**
      * Scans the cached chunks for location of the specified special block. The
      * information that is returned by this method may not be up to date, because
-     * older cached chunks can contain data that is much more likely to have
-     * changed.
+     * older cached chunks can contain data that is much more likely to have changed.
      *
      * @param block               The special block to search for
      * @param maximum             The maximum number of position results to receive
@@ -72,16 +70,15 @@ public interface ICachedWorld {
     ArrayList<BlockPos> getLocationsOf(String block, int maximum, int centerX, int centerZ, int maxRegionDistanceSq);
 
     /**
-     * Reloads all of the cached regions in this world from disk. Anything that is
-     * not saved
+     * Reloads all of the cached regions in this world from disk. Anything that is not saved
      * will be lost. This operation does not execute in a new thread by default.
      */
     void reloadAllFromDisk();
 
     /**
-     * Saves all of the cached regions in this world to disk. This operation does
-     * not execute
+     * Saves all of the cached regions in this world to disk. This operation does not execute
      * in a new thread by default.
      */
     void save();
 }
+

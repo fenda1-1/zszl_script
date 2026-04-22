@@ -4,11 +4,11 @@ import com.zszl.zszlScriptMod.gui.components.ThemedButton;
 import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
 import com.zszl.zszlScriptMod.gui.components.GuiTheme;
 import com.zszl.zszlScriptMod.handlers.DeathAutoRejoinHandler;
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiScreen;
-import net.minecraft.client.gui.GuiTextField;
-import net.minecraft.client.resources.I18n;
-import org.lwjgl.input.Keyboard;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiTextField;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Keyboard;
 
 import java.io.IOException;
 import java.util.Arrays;
@@ -139,13 +139,13 @@ public class GuiDeathAutoRejoinConfig extends ThemedGuiScreen {
             collapseLineModeDropdown();
             applyAllFields();
             DeathAutoRejoinHandler.saveConfig();
-            this.mc.displayGuiScreen(this.parentScreen);
+            this.mc.setScreen(this.parentScreen);
         } else if (button.id == 3) {
             collapseLineModeDropdown();
             resetDeathRespawnDefaultsToFields();
         } else if (button.id == 4) {
             collapseLineModeDropdown();
-            this.mc.displayGuiScreen(this.parentScreen);
+            this.mc.setScreen(this.parentScreen);
         }
     }
 
@@ -345,3 +345,8 @@ public class GuiDeathAutoRejoinConfig extends ThemedGuiScreen {
         return false;
     }
 }
+
+
+
+
+

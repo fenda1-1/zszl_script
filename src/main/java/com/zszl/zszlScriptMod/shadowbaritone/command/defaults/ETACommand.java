@@ -25,7 +25,6 @@ import com.zszl.zszlScriptMod.shadowbaritone.api.command.exception.CommandExcept
 import com.zszl.zszlScriptMod.shadowbaritone.api.command.exception.CommandInvalidStateException;
 import com.zszl.zszlScriptMod.shadowbaritone.api.pathing.calc.IPathingControlManager;
 import com.zszl.zszlScriptMod.shadowbaritone.api.process.IBaritoneProcess;
-import com.zszl.zszlScriptMod.shadowbaritone.api.utils.ShadowBaritoneI18n;
 
 import java.util.Arrays;
 import java.util.List;
@@ -43,21 +42,21 @@ public class ETACommand extends Command {
         IPathingControlManager pathingControlManager = baritone.getPathingControlManager();
         IBaritoneProcess process = pathingControlManager.mostRecentInControl().orElse(null);
         if (process == null) {
-            throw new CommandInvalidStateException(ShadowBaritoneI18n.trKey(
-                    "shadowbaritone.command.eta.error.no_process"));
+            throw new CommandInvalidStateException("No process in control");
         }
         IPathingBehavior pathingBehavior = baritone.getPathingBehavior();
 
         double ticksRemainingInSegment = pathingBehavior.ticksRemainingInSegment().orElse(Double.NaN);
         double ticksRemainingInGoal = pathingBehavior.estimatedTicksToGoal().orElse(Double.NaN);
 
-        logDirect(ShadowBaritoneI18n.trKey(
-                "shadowbaritone.command.eta.status.current",
-                ticksRemainingInSegment / 20, // we just assume tps is 20, it isn't worth the effort that is needed to
-                                              // calculate it exactly
+        logDirect(String.format(
+                "Next segment: %.1fs (%.0f ticks)\n" +
+                        "Goal: %.1fs (%.0f ticks)",
+                ticksRemainingInSegment / 20, // we just assume tps is 20, it isn't worth the effort that is needed to calculate it exactly
                 ticksRemainingInSegment,
                 ticksRemainingInGoal / 20,
-                ticksRemainingInGoal));
+                ticksRemainingInGoal
+        ));
     }
 
     @Override
@@ -67,24 +66,20 @@ public class ETACommand extends Command {
 
     @Override
     public String getShortDesc() {
-        return ShadowBaritoneI18n.trKey(
-                "shadowbaritone.command.eta.short_desc");
+        return "View the current ETA";
     }
 
     @Override
     public List<String> getLongDesc() {
         return Arrays.asList(
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.eta.long_desc.1"),
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.eta.long_desc.2"),
+                "The ETA command provides information about the estimated time until the next segment.",
+                "and the goal",
                 "",
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.eta.long_desc.3"),
+                "Be aware that the ETA to your goal is really unprecise",
                 "",
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.eta.long_desc.usage"),
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.eta.long_desc.example.default"));
+                "Usage:",
+                "> eta - View ETA, if present"
+        );
     }
 }
+

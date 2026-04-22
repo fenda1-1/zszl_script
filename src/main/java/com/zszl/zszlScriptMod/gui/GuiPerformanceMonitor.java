@@ -5,11 +5,11 @@ import com.zszl.zszlScriptMod.gui.components.GuiTheme;
 import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
 import com.zszl.zszlScriptMod.utils.PacketCaptureHandler;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiTextField;
-import net.minecraft.client.gui.ScaledResolution;
-import net.minecraft.client.resources.I18n;
-import org.lwjgl.input.Mouse;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiTextField;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.ScaledResolution;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Mouse;
 import org.lwjgl.opengl.GL11;
 
 import java.io.IOException;
@@ -53,7 +53,7 @@ public class GuiPerformanceMonitor extends ThemedGuiScreen {
             "packet_send_fml",
             "packet_send_standard");
 
-    private final Minecraft mc = Minecraft.getMinecraft();
+    private final Minecraft mc = Minecraft.getInstance();
     private int scrollOffset = 0;
     private int maxScrollOffset = 0;
     private boolean isDraggingScrollbar = false;
@@ -218,7 +218,7 @@ public class GuiPerformanceMonitor extends ThemedGuiScreen {
                 PerformanceMonitor.resetPerformanceStats(feature);
             }
         } else if (button.id == BTN_BACK) {
-            mc.displayGuiScreen(null);
+            mc.setScreen(null);
         } else if (button.id == BTN_SPIKE_GUARD) {
             PerformanceMonitor.setSpikeGuardEnabled(!PerformanceMonitor.isSpikeGuardEnabled());
             initGui();
@@ -297,7 +297,7 @@ public class GuiPerformanceMonitor extends ThemedGuiScreen {
     @Override
     protected void keyTyped(char typedChar, int keyCode) throws IOException {
         if (keyCode == 1) {
-            mc.displayGuiScreen(null);
+            mc.setScreen(null);
             return;
         }
         if (thresholdField != null && thresholdField.textboxKeyTyped(typedChar, keyCode)) {
@@ -517,3 +517,9 @@ public class GuiPerformanceMonitor extends ThemedGuiScreen {
         }
     }
 }
+
+
+
+
+
+

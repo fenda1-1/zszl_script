@@ -1,16 +1,14 @@
 package com.zszl.zszlScriptMod.utils.guiinspect;
 
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
+import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiScreen;
-import net.minecraft.client.gui.inventory.GuiContainer;
-import net.minecraft.client.gui.GuiMerchant;
-import net.minecraft.client.gui.inventory.GuiChest;
-import net.minecraft.inventory.Container;
-import net.minecraft.inventory.ContainerChest;
-import net.minecraft.inventory.IInventory;
-import net.minecraft.inventory.Slot;
-import net.minecraft.util.text.TextFormatting;
+import net.minecraft.client.gui.components.AbstractWidget;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.inventory.Slot;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -22,8 +20,6 @@ import java.util.Locale;
 import java.util.Map;
 
 public final class GuiElementInspector {
-
-    private static Field guiButtonListField;
 
     private GuiElementInspector() {
     }
@@ -107,7 +103,7 @@ public final class GuiElementInspector {
             this.screenClassName = screenClassName == null ? "" : screenClassName;
             this.screenSimpleName = screenSimpleName == null ? "" : screenSimpleName;
             this.title = title == null ? "" : title;
-            this.elements = elements == null ? Collections.<GuiElementInfo>emptyList() : elements;
+            this.elements = elements == null ? Collections.emptyList() : elements;
         }
 
         public String getScreenClassName() {
@@ -151,14 +147,14 @@ public final class GuiElementInspector {
     }
 
     public static GuiSnapshot captureCurrentSnapshot() {
-        Minecraft mc = Minecraft.getMinecraft();
-        GuiScreen screen = mc == null ? null : mc.currentScreen;
-        if (screen == null) {
-            return new GuiSnapshot("", "", "", Collections.<GuiElementInfo>emptyList());
+        Minecraft mc = Minecraft.getInstance();
+        Screen rawScreen = mc == null ? null : mc.screen;
+        if (rawScreen == null) {
+            return new GuiSnapshot("", "", "", Collections.emptyList());
         }
 
-        String className = screen.getClass().getName();
-        String simpleName = screen.getClass().getSimpleName();
+        String className = rawScreen.getClass().getName();
+        String simpleName = rawScreen.getClass().getSimpleName();
         String title = getCurrentGuiTitle(mc);
         List<GuiElementInfo> elements = new ArrayList<>();
 
@@ -172,50 +168,9 @@ public final class GuiElementInspector {
                 Integer.MIN_VALUE,
                 -1));
 
-        List<GuiButton> buttons = getButtonList(screen);
-        for (int i = 0; i < buttons.size(); i++) {
-            GuiButton button = buttons.get(i);
-            if (button == null) {
-                continue;
-            }
-            String text = stripFormatting(button.displayString);
-            String path = "screen/" + simpleName + "/button[" + i + "]";
-            if (button.id >= 0) {
-                path += "/button#" + button.id;
-            }
-            elements.add(new GuiElementInfo(ElementType.BUTTON, path, text, button.x, button.y, button.width,
-                    button.height, button.id, -1));
-        }
-
-        if (screen instanceof GuiContainer) {
-            GuiContainer gui = (GuiContainer) screen;
-            int xSize = readIntField(gui, 176, "xSize", "field_146999_f");
-            int ySize = readIntField(gui, 166, "ySize", "field_147000_g");
-            int guiLeft = readIntField(gui, (screen.width - xSize) / 2, "guiLeft", "field_147003_i");
-            int guiTop = readIntField(gui, (screen.height - ySize) / 2, "guiTop", "field_147009_r");
-            int chestSize = resolvePrimaryContainerSize(gui.inventorySlots);
-
-            for (int i = 0; i < gui.inventorySlots.inventorySlots.size(); i++) {
-                Object slotObj = gui.inventorySlots.inventorySlots.get(i);
-                if (!(slotObj instanceof Slot)) {
-                    continue;
-                }
-                Slot slot = (Slot) slotObj;
-                String pathPrefix = i < chestSize ? "chest_slot" : "player_slot";
-                String path = "screen/" + simpleName + "/" + pathPrefix + "[" + i + "]"
-                        + "/slot[" + i + "]";
-                String text = slot.getHasStack() ? stripFormatting(slot.getStack().getDisplayName()) : "";
-                elements.add(new GuiElementInfo(ElementType.SLOT, path, text,
-                        guiLeft + slot.xPos,
-                        guiTop + slot.yPos,
-                        16,
-                        16,
-                        Integer.MIN_VALUE,
-                        i));
-            }
-        }
-
-        collectCustomElements(screen, simpleName, elements);
+        collectButtonElements(rawScreen, simpleName, elements);
+        collectContainerSlotElements(rawScreen, simpleName, elements);
+        collectCustomElements(rawScreen, simpleName, elements);
 
         return new GuiSnapshot(className, simpleName, title, elements);
     }
@@ -226,15 +181,11 @@ public final class GuiElementInspector {
             return null;
         }
         GuiSnapshot snapshot = captureCurrentSnapshot();
-        if (snapshot.getElements().isEmpty()) {
-            return null;
-        }
         for (GuiElementInfo element : snapshot.getElements()) {
             if (element == null || !isAllowed(element.getType(), allowedTypes)) {
                 continue;
             }
-            String normalizedPath = normalize(element.getPath());
-            if (matches(normalizedPath, normalizedQuery, matchMode)) {
+            if (matches(normalize(element.getPath()), normalizedQuery, matchMode)) {
                 return element;
             }
         }
@@ -242,58 +193,149 @@ public final class GuiElementInspector {
     }
 
     public static String getCurrentGuiTitle(Minecraft mc) {
-        if (mc == null || mc.currentScreen == null) {
+        if (mc == null || mc.screen == null || mc.screen.getTitle() == null) {
             return "";
         }
+        return stripFormatting(mc.screen.getTitle().getString());
+    }
 
-        GuiScreen screen = mc.currentScreen;
-        if (screen instanceof GuiChest && mc.player != null && mc.player.openContainer instanceof ContainerChest) {
-            try {
-                IInventory inv = ((ContainerChest) mc.player.openContainer).getLowerChestInventory();
-                if (inv != null && inv.getDisplayName() != null) {
-                    return inv.getDisplayName().getUnformattedText();
+    private static void collectButtonElements(Screen rawScreen, String simpleName, List<GuiElementInfo> elements) {
+        if (rawScreen instanceof GuiScreen) {
+            GuiScreen screen = (GuiScreen) rawScreen;
+            List<GuiButton> buttons = screen.buttonList == null ? Collections.emptyList() : screen.buttonList;
+            for (int i = 0; i < buttons.size(); i++) {
+                GuiButton button = buttons.get(i);
+                if (button == null) {
+                    continue;
                 }
-            } catch (Exception ignored) {
+                String path = "screen/" + simpleName + "/button[" + i + "]";
+                elements.add(new GuiElementInfo(ElementType.BUTTON, path, stripFormatting(button.displayString),
+                        button.x, button.y, button.width, button.height, button.id, -1));
             }
+            return;
         }
-        if (screen instanceof GuiMerchant) {
-            return "Merchant";
+
+        int index = 0;
+        for (Object child : rawScreen.children()) {
+            if (!(child instanceof AbstractWidget)) {
+                continue;
+            }
+            AbstractWidget widget = (AbstractWidget) child;
+            String path = "screen/" + simpleName + "/button[" + index + "]";
+            elements.add(new GuiElementInfo(ElementType.BUTTON, path,
+                    stripFormatting(widget.getMessage().getString()),
+                    widget.getX(), widget.getY(), widget.getWidth(), widget.getHeight(), index, -1));
+            index++;
         }
-        return screen.getClass().getSimpleName();
     }
 
-    @SuppressWarnings("unchecked")
-    private static List<GuiButton> getButtonList(GuiScreen screen) {
-        if (screen == null) {
-            return Collections.emptyList();
+    private static void collectContainerSlotElements(Screen rawScreen, String simpleName, List<GuiElementInfo> elements) {
+        if (!(rawScreen instanceof AbstractContainerScreen<?>)) {
+            return;
         }
-        try {
-            if (guiButtonListField == null) {
-                guiButtonListField = resolveField(GuiScreen.class, "buttonList", "field_146292_n");
+        AbstractContainerScreen<?> screen = (AbstractContainerScreen<?>) rawScreen;
+        AbstractContainerMenu menu = screen.getMenu();
+        int leftPos = readInt(screen, "leftPos", safeInvokeInt(screen, "getGuiLeft", 0));
+        int topPos = readInt(screen, "topPos", safeInvokeInt(screen, "getGuiTop", 0));
+        int containerSlots = resolvePrimaryContainerSize(menu);
+
+        for (int i = 0; i < menu.slots.size(); i++) {
+            Slot slot = menu.slots.get(i);
+            if (slot == null) {
+                continue;
             }
-            Object value = guiButtonListField == null ? null : guiButtonListField.get(screen);
-            if (value instanceof List) {
-                return (List<GuiButton>) value;
-            }
-        } catch (Exception ignored) {
+            String pathPrefix = i < containerSlots ? "container_slot" : "player_slot";
+            String path = "screen/" + simpleName + "/" + pathPrefix + "[" + i + "]";
+            String text = slot.hasItem() ? stripFormatting(slot.getItem().getHoverName().getString()) : "";
+            elements.add(new GuiElementInfo(ElementType.SLOT, path, text,
+                    leftPos + slot.x,
+                    topPos + slot.y,
+                    16,
+                    16,
+                    Integer.MIN_VALUE,
+                    i));
         }
-        return Collections.emptyList();
     }
 
-    private static int resolvePrimaryContainerSize(Container container) {
-        if (container instanceof ContainerChest) {
-            try {
-                return ((ContainerChest) container).getLowerChestInventory().getSizeInventory();
-            } catch (Exception ignored) {
+    private static void collectCustomElements(Screen rawScreen, String simpleName, List<GuiElementInfo> elements) {
+        Map<Object, Boolean> visited = new IdentityHashMap<>();
+        Class<?> current = rawScreen.getClass();
+        while (current != null && current != Object.class) {
+            for (Field field : current.getDeclaredFields()) {
+                if (field == null || field.isSynthetic()) {
+                    continue;
+                }
+                try {
+                    field.setAccessible(true);
+                    Object value = field.get(rawScreen);
+                    collectCustomValue(simpleName, elements, visited, field.getName(), value);
+                } catch (Exception ignored) {
+                }
             }
+            current = current.getSuperclass();
         }
-        return container == null || container.inventorySlots == null ? 0 : container.inventorySlots.size();
+    }
+
+    private static void collectCustomValue(String simpleName, List<GuiElementInfo> elements,
+            Map<Object, Boolean> visited, String fieldName, Object value) {
+        if (value == null || visited.put(value, Boolean.TRUE) != null) {
+            return;
+        }
+        if (value instanceof Iterable<?>) {
+            for (Object entry : (Iterable<?>) value) {
+                collectCustomValue(simpleName, elements, visited, fieldName, entry);
+            }
+            return;
+        }
+
+        CustomElementCandidate candidate = toCustomCandidate(fieldName, value);
+        if (candidate == null || candidate.width <= 0 || candidate.height <= 0) {
+            return;
+        }
+        String path = "screen/" + simpleName + "/custom/" + candidate.sourceField;
+        elements.add(new GuiElementInfo(ElementType.CUSTOM, path, candidate.text, candidate.x, candidate.y,
+                candidate.width, candidate.height, candidate.id, -1));
+    }
+
+    private static CustomElementCandidate toCustomCandidate(String sourceField, Object value) {
+        if (value instanceof GuiButton) {
+            GuiButton button = (GuiButton) value;
+            return new CustomElementCandidate(button.x, button.y, button.width, button.height, button.id,
+                    stripFormatting(button.displayString), sourceField, value.getClass().getSimpleName());
+        }
+
+        int x = readInt(value, "x", Integer.MIN_VALUE);
+        int y = readInt(value, "y", Integer.MIN_VALUE);
+        int width = readInt(value, "width", safeInvokeInt(value, "getWidth", 0));
+        int height = readInt(value, "height", safeInvokeInt(value, "getHeight", 0));
+        if (x == Integer.MIN_VALUE || y == Integer.MIN_VALUE || width <= 0 || height <= 0) {
+            return null;
+        }
+
+        int id = readInt(value, "id", Integer.MIN_VALUE);
+        String text = stripFormatting(readString(value, "displayString", "message", "text", "value"));
+        return new CustomElementCandidate(x, y, width, height, id, text, sourceField,
+                value.getClass().getSimpleName());
+    }
+
+    private static int resolvePrimaryContainerSize(AbstractContainerMenu menu) {
+        if (menu == null || menu.slots == null) {
+            return 0;
+        }
+        Minecraft mc = Minecraft.getInstance();
+        if (mc != null && mc.player != null) {
+            int count = 0;
+            for (Slot slot : menu.slots) {
+                if (slot != null && slot.container != mc.player.getInventory()) {
+                    count++;
+                }
+            }
+            return count;
+        }
+        return menu.slots.size();
     }
 
     private static boolean isAllowed(ElementType type, ElementType... allowedTypes) {
-        if (type == null) {
-            return false;
-        }
         if (allowedTypes == null || allowedTypes.length == 0) {
             return true;
         }
@@ -305,205 +347,111 @@ public final class GuiElementInspector {
         return false;
     }
 
-    private static void collectCustomElements(GuiScreen screen, String simpleName, List<GuiElementInfo> elements) {
-        if (screen == null || elements == null) {
-            return;
+    private static boolean matches(String source, String query, String matchMode) {
+        if (query == null || query.isEmpty()) {
+            return true;
         }
-        Map<Object, Boolean> visited = new IdentityHashMap<>();
-        Class<?> current = screen.getClass();
-        while (current != null && current != Object.class) {
-            for (Field field : current.getDeclaredFields()) {
-                if (field == null || field.isSynthetic()) {
-                    continue;
-                }
-                try {
-                    field.setAccessible(true);
-                    Object value = field.get(screen);
-                    if (!(value instanceof List)) {
-                        continue;
-                    }
-                    List<?> list = (List<?>) value;
-                    for (int i = 0; i < list.size(); i++) {
-                        Object item = list.get(i);
-                        if (item == null || item instanceof GuiButton || item instanceof Slot || visited.containsKey(item)) {
-                            continue;
-                        }
-                        CustomElementCandidate candidate = readCustomElementCandidate(item, field.getName());
-                        if (candidate == null) {
-                            continue;
-                        }
-                        StringBuilder path = new StringBuilder("screen/")
-                                .append(simpleName)
-                                .append("/custom/")
-                                .append(candidate.sourceField)
-                                .append("[")
-                                .append(i)
-                                .append("]/")
-                                .append(candidate.className);
-                        if (candidate.id != Integer.MIN_VALUE) {
-                            path.append("/id#").append(candidate.id);
-                        }
-                        elements.add(new GuiElementInfo(ElementType.CUSTOM, path.toString(), candidate.text,
-                                candidate.x, candidate.y, candidate.width, candidate.height, candidate.id, -1));
-                        visited.put(item, Boolean.TRUE);
-                    }
-                } catch (Exception ignored) {
-                }
-            }
-            current = current.getSuperclass();
+        if ("EXACT".equalsIgnoreCase(matchMode)) {
+            return source.equals(query);
         }
+        return source.contains(query);
     }
 
-    private static CustomElementCandidate readCustomElementCandidate(Object item, String sourceField) {
-        if (item == null) {
-            return null;
-        }
-
-        Integer x = readNullableInt(item, "x", "posX", "xPos", "left", "xPosition");
-        Integer y = readNullableInt(item, "y", "posY", "yPos", "top", "yPosition");
-        Integer width = readNullableInt(item, "width", "w", "sizeX", "buttonWidth");
-        Integer height = readNullableInt(item, "height", "h", "sizeY", "buttonHeight");
-        Integer id = readNullableInt(item, "id", "buttonId", "componentId", "widgetId");
-        String text = readNullableString(item, "displayString", "text", "label", "name", "title", "message");
-
-        if (x == null || y == null) {
-            return null;
-        }
-        int resolvedWidth = width == null || width <= 0 ? 16 : width;
-        int resolvedHeight = height == null || height <= 0 ? 16 : height;
-        boolean meaningful = resolvedWidth > 0 || resolvedHeight > 0 || (text != null && !text.trim().isEmpty());
-        if (!meaningful) {
-            return null;
-        }
-
-        return new CustomElementCandidate(x, y, resolvedWidth, resolvedHeight,
-                id == null ? Integer.MIN_VALUE : id,
-                stripFormatting(text),
-                sourceField,
-                item.getClass().getSimpleName());
+    private static String normalize(String value) {
+        return stripFormatting(value).trim().toLowerCase(Locale.ROOT);
     }
 
-    private static boolean matches(String sourceText, String queryText, String matchMode) {
-        if (sourceText.isEmpty() || queryText.isEmpty()) {
-            return false;
-        }
-        if ("EXACT".equalsIgnoreCase(safe(matchMode))) {
-            return sourceText.equals(queryText);
-        }
-        return sourceText.contains(queryText);
+    private static String stripFormatting(String value) {
+        String stripped = ChatFormatting.stripFormatting(value);
+        return stripped == null ? (value == null ? "" : value) : stripped;
     }
 
-    private static int readIntField(Object target, int fallback, String... names) {
-        if (target == null) {
+    private static int safeInvokeInt(Object target, String methodName, int fallback) {
+        if (target == null || methodName == null || methodName.isEmpty()) {
             return fallback;
         }
         try {
-            Field field = resolveField(target.getClass(), names);
-            Object value = field == null ? null : field.get(target);
-            if (value instanceof Integer) {
-                return (Integer) value;
-            }
+            Method method = target.getClass().getMethod(methodName);
+            Object result = method.invoke(target);
+            return result instanceof Number ? ((Number) result).intValue() : fallback;
         } catch (Exception ignored) {
+            return fallback;
         }
-        return fallback;
     }
 
-    private static Integer readNullableInt(Object target, String... names) {
-        Object value = readFieldOrGetter(target, true, names);
-        return value instanceof Number ? ((Number) value).intValue() : null;
-    }
-
-    private static String readNullableString(Object target, String... names) {
-        Object value = readFieldOrGetter(target, false, names);
-        return value == null ? "" : String.valueOf(value);
-    }
-
-    private static Object readFieldOrGetter(Object target, boolean numericPreferred, String... names) {
-        if (target == null || names == null) {
-            return null;
+    private static int readInt(Object target, String fieldName, int fallback) {
+        if (target == null || fieldName == null || fieldName.isEmpty()) {
+            return fallback;
         }
-        for (String name : names) {
-            Object value = readNamedField(target, name);
-            if (isAcceptableValue(value, numericPreferred)) {
-                return value;
-            }
-            value = readNamedGetter(target, name);
-            if (isAcceptableValue(value, numericPreferred)) {
-                return value;
-            }
-        }
-        return null;
-    }
-
-    private static Object readNamedField(Object target, String name) {
-        Class<?> current = target.getClass();
+        Class<?> current = target instanceof Class<?> ? (Class<?>) target : target.getClass();
+        Object instance = target instanceof Class<?> ? null : target;
         while (current != null && current != Object.class) {
             try {
-                Field field = current.getDeclaredField(name);
+                Field field = current.getDeclaredField(fieldName);
                 field.setAccessible(true);
-                return field.get(target);
+                Object value = field.get(instance);
+                return value instanceof Number ? ((Number) value).intValue() : fallback;
             } catch (Exception ignored) {
             }
             current = current.getSuperclass();
         }
-        return null;
+        return fallback;
     }
 
-    private static Object readNamedGetter(Object target, String name) {
-        if (target == null || name == null || name.isEmpty()) {
-            return null;
+    private static String readString(Object target, String... fieldOrMethodNames) {
+        if (target == null || fieldOrMethodNames == null) {
+            return "";
         }
-        String suffix = Character.toUpperCase(name.charAt(0)) + name.substring(1);
-        String[] methodNames = new String[] { "get" + suffix, "is" + suffix };
-        for (String methodName : methodNames) {
-            Class<?> current = target.getClass();
-            while (current != null && current != Object.class) {
-                try {
-                    Method method = current.getDeclaredMethod(methodName);
-                    method.setAccessible(true);
-                    return method.invoke(target);
-                } catch (Exception ignored) {
-                }
-                current = current.getSuperclass();
+        for (String name : fieldOrMethodNames) {
+            if (name == null || name.isEmpty()) {
+                continue;
+            }
+            String fieldValue = readStringField(target, name);
+            if (!fieldValue.isEmpty()) {
+                return fieldValue;
+            }
+            String methodValue = invokeStringMethod(target, name);
+            if (!methodValue.isEmpty()) {
+                return methodValue;
             }
         }
-        return null;
+        return "";
     }
 
-    private static boolean isAcceptableValue(Object value, boolean numericPreferred) {
-        if (value == null) {
-            return false;
-        }
-        return !numericPreferred || value instanceof Number;
-    }
-
-    private static Field resolveField(Class<?> type, String... names) {
-        Class<?> current = type;
-        while (current != null) {
-            for (String name : names) {
-                try {
-                    Field field = current.getDeclaredField(name);
-                    field.setAccessible(true);
-                    return field;
-                } catch (NoSuchFieldException ignored) {
+    private static String readStringField(Object target, String fieldName) {
+        Class<?> current = target.getClass();
+        while (current != null && current != Object.class) {
+            try {
+                Field field = current.getDeclaredField(fieldName);
+                field.setAccessible(true);
+                Object value = field.get(target);
+                if (value == null) {
+                    return "";
                 }
+                if (value instanceof net.minecraft.network.chat.Component) {
+                    return ((net.minecraft.network.chat.Component) value).getString();
+                }
+                return String.valueOf(value);
+            } catch (Exception ignored) {
             }
             current = current.getSuperclass();
         }
-        return null;
+        return "";
     }
 
-    private static String normalize(String text) {
-        return stripFormatting(safe(text)).trim().toLowerCase(Locale.ROOT).replace('\u3000', ' ')
-                .replaceAll("\\s+", " ");
-    }
-
-    private static String stripFormatting(String text) {
-        String cleaned = TextFormatting.getTextWithoutFormattingCodes(safe(text));
-        return cleaned == null ? safe(text) : cleaned;
-    }
-
-    private static String safe(String text) {
-        return text == null ? "" : text;
+    private static String invokeStringMethod(Object target, String methodName) {
+        try {
+            Method method = target.getClass().getMethod(methodName);
+            Object value = method.invoke(target);
+            if (value == null) {
+                return "";
+            }
+            if (value instanceof net.minecraft.network.chat.Component) {
+                return ((net.minecraft.network.chat.Component) value).getString();
+            }
+            return String.valueOf(value);
+        } catch (Exception ignored) {
+            return "";
+        }
     }
 }

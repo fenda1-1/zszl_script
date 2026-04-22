@@ -17,9 +17,10 @@
 
 package com.zszl.zszlScriptMod.shadowbaritone.api.utils.interfaces;
 
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.core.BlockPos;
 
 public interface IGoalRenderPos {
 
     BlockPos getGoalPos();
 }
+

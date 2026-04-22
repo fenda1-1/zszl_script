@@ -4,14 +4,14 @@ package com.zszl.zszlScriptMod.gui.mail;
 import com.zszl.zszlScriptMod.handlers.MailConfig;
 import com.zszl.zszlScriptMod.handlers.MailHelper;
 import com.zszl.zszlScriptMod.gui.components.ToggleGuiButton;
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
 import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
-import net.minecraft.client.gui.GuiTextField;
-import net.minecraft.client.resources.I18n;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiTextField;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
 import java.io.IOException;
 import java.util.Collections;
-import org.lwjgl.input.Keyboard;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Keyboard;
 
 public class GuiMailSettings extends ThemedGuiScreen {
 
@@ -102,7 +102,7 @@ public class GuiMailSettings extends ThemedGuiScreen {
             applyTimeoutTicksFromField();
             MailConfig.save();
             // --- 修复结束 ---
-            this.mc.displayGuiScreen(this.parentScreen);
+            this.mc.setScreen(this.parentScreen);
         }
     }
 
@@ -217,3 +217,9 @@ public class GuiMailSettings extends ThemedGuiScreen {
         return false;
     }
 }
+
+
+
+
+
+

@@ -27,14 +27,15 @@ import java.util.Set;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.Inflater;
 import java.util.zip.InflaterInputStream;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemStack;
-import net.minecraft.nbt.CompressedStreamTools;
-import net.minecraft.nbt.NBTTagCompound;
-import net.minecraft.nbt.NBTTagList;
-import net.minecraft.network.PacketBuffer;
-import net.minecraft.util.ResourceLocation;
-import net.minecraft.util.text.ITextComponent;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.nbt.NbtIo;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.network.chat.Component;
 
 public final class PacketPayloadDecoder {
     private static final Gson PRETTY_GSON = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
@@ -223,12 +224,12 @@ public final class PacketPayloadDecoder {
 
     private static void collectLeadingMinecraftStrings(CandidateCollector collector, byte[] data, String sourceLabel,
             int depth, Set<String> visitedBinary) {
-        PacketBuffer buffer = new PacketBuffer(Unpooled.wrappedBuffer(data));
+        FriendlyByteBuf buffer = new FriendlyByteBuf(Unpooled.wrappedBuffer(data));
         List<String> parts = new ArrayList<>();
         while (buffer.readableBytes() > 0 && parts.size() < MAX_SEGMENTS) {
             try {
                 buffer.markReaderIndex();
-                String part = buffer.readString(MAX_EMBEDDED_STRING_BYTES);
+                String part = buffer.readUtf(MAX_EMBEDDED_STRING_BYTES);
                 String normalized = normalizeDisplayText(part);
                 if (!isLikelyHumanText(normalized, 2)) {
                     buffer.resetReaderIndex();
@@ -1247,20 +1248,20 @@ public final class PacketPayloadDecoder {
             return ItemStack.EMPTY;
         }
         try {
-            PacketBuffer buffer = new PacketBuffer(Unpooled.wrappedBuffer(data));
-            ItemStack stack = buffer.readItemStack();
+            FriendlyByteBuf buffer = new FriendlyByteBuf(Unpooled.wrappedBuffer(data));
+            ItemStack stack = buffer.readItem();
             return stack == null ? ItemStack.EMPTY : stack;
         } catch (Exception ignored) {
             return ItemStack.EMPTY;
         }
     }
 
-    private static NBTTagCompound tryReadCompressedNbt(byte[] data) {
+    private static CompoundTag tryReadCompressedNbt(byte[] data) {
         if (data == null || data.length <= 2) {
             return null;
         }
         try {
-            return CompressedStreamTools.readCompressed(new ByteArrayInputStream(data));
+            return NbtIo.readCompressed(new ByteArrayInputStream(data));
         } catch (Exception ignored) {
             return null;
         }
@@ -1273,7 +1274,7 @@ public final class PacketPayloadDecoder {
         }
 
         Item item = stack.getItem();
-        ResourceLocation registryName = item == null ? null : item.getRegistryName();
+        ResourceLocation registryName = item == null ? null : BuiltInRegistries.ITEM.getKey(item);
         String registryText = registryName == null ? "" : registryName.toString();
         if (!registryText.isEmpty()) {
             addAnnotatedChunk(chunks, seen, startOffset, endOffset, appendLabel(labelPrefix, "物品ID"), registryText);
@@ -1282,25 +1283,25 @@ public final class PacketPayloadDecoder {
         addAnnotatedChunk(chunks, seen, startOffset, endOffset, appendLabel(labelPrefix, "物品数量"),
                 String.valueOf(stack.getCount()));
 
-        String displayName = normalizeDisplayText(sanitizeMinecraftText(stack.getDisplayName()));
+        String displayName = normalizeDisplayText(sanitizeMinecraftText(stack.getDisplayName().getString()));
         if (!displayName.isEmpty()) {
             addAnnotatedChunk(chunks, seen, startOffset, endOffset, appendLabel(labelPrefix, "显示名称"), displayName);
         }
 
-        NBTTagCompound tag = stack.getTagCompound();
-        if (tag != null && !tag.hasNoTags()) {
+        CompoundTag tag = stack.getTag();
+        if (tag != null && !tag.isEmpty()) {
             addNbtChunks(chunks, seen, startOffset, endOffset, appendLabel(labelPrefix, "NBT"), tag);
         }
     }
 
     private static void addNbtChunks(List<DecodedChunk> chunks, Set<String> seen, int startOffset, int endOffset,
-            String labelPrefix, NBTTagCompound tag) {
-        if (chunks == null || seen == null || tag == null || tag.hasNoTags()) {
+            String labelPrefix, CompoundTag tag) {
+        if (chunks == null || seen == null || tag == null || tag.isEmpty()) {
             return;
         }
 
-        NBTTagCompound display = tag.hasKey("display", 10) ? tag.getCompoundTag("display") : null;
-        if (display != null && !display.hasNoTags()) {
+        CompoundTag display = tag.contains("display", 10) ? tag.getCompound("display") : null;
+        if (display != null && !display.isEmpty()) {
             String name = extractDisplayName(display);
             if (!name.isEmpty()) {
                 addAnnotatedChunk(chunks, seen, startOffset, endOffset, appendLabel(labelPrefix, "显示名称"), name);
@@ -1319,22 +1320,22 @@ public final class PacketPayloadDecoder {
         }
     }
 
-    private static String extractDisplayName(NBTTagCompound display) {
-        if (display == null || display.hasNoTags()) {
+    private static String extractDisplayName(CompoundTag display) {
+        if (display == null || display.isEmpty()) {
             return "";
         }
         String raw = display.getString("Name");
         return sanitizeMinecraftText(raw);
     }
 
-    private static List<String> extractLore(NBTTagCompound display) {
+    private static List<String> extractLore(CompoundTag display) {
         List<String> lore = new ArrayList<>();
-        if (display == null || !display.hasKey("Lore", 9)) {
+        if (display == null || !display.contains("Lore", 9)) {
             return lore;
         }
-        NBTTagList list = display.getTagList("Lore", 8);
-        for (int i = 0; i < list.tagCount(); i++) {
-            String line = sanitizeMinecraftText(list.getStringTagAt(i));
+        ListTag list = display.getList("Lore", 8);
+        for (int i = 0; i < list.size(); i++) {
+            String line = sanitizeMinecraftText(list.getString(i));
             if (!line.isEmpty()) {
                 lore.add(line);
             }
@@ -1349,13 +1350,13 @@ public final class PacketPayloadDecoder {
         String trimmed = raw.trim();
         if ((trimmed.startsWith("{") && trimmed.endsWith("}")) || (trimmed.startsWith("[") && trimmed.endsWith("]"))) {
             try {
-                ITextComponent component = ITextComponent.Serializer.jsonToComponent(trimmed);
+                Component component = Component.Serializer.fromJson(trimmed);
                 if (component != null) {
-                    String formatted = normalizeDisplayText(component.getFormattedText());
+                    String formatted = normalizeDisplayText(component.getString());
                     if (!formatted.isEmpty()) {
                         return formatted;
                     }
-                    return normalizeDisplayText(component.getUnformattedText());
+                    return normalizeDisplayText(component.getString());
                 }
             } catch (Exception ignored) {
             }
@@ -1797,8 +1798,8 @@ public final class PacketPayloadDecoder {
             return;
         }
 
-        NBTTagCompound compressedNbt = tryReadCompressedNbt(nestedBytes);
-        if (compressedNbt != null && !compressedNbt.hasNoTags()) {
+        CompoundTag compressedNbt = tryReadCompressedNbt(nestedBytes);
+        if (compressedNbt != null && !compressedNbt.isEmpty()) {
             addNbtChunks(chunks, seen, startOffset, endOffset, appendLabel(labelPrefix, "NBT"), compressedNbt);
         }
     }
@@ -2091,4 +2092,7 @@ public final class PacketPayloadDecoder {
         return cjk >= 2 || (cjk >= 1 && asciiWord >= 1);
     }
 }
+
+
+
 

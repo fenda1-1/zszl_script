@@ -31,7 +31,7 @@ public enum PathingBlockType {
     private final boolean[] bits;
 
     PathingBlockType(int bits) {
-        this.bits = new boolean[] {
+        this.bits = new boolean[]{
                 (bits & 0b10) != 0,
                 (bits & 0b01) != 0
         };
@@ -45,3 +45,4 @@ public enum PathingBlockType {
         return b1 ? b2 ? SOLID : AVOID : b2 ? WATER : AIR;
     }
 }
+

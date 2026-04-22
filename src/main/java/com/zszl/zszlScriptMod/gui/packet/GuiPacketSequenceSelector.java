@@ -1,12 +1,11 @@
 // 文件路径: src/main/java/com/zszl/zszlScriptMod/gui/packet/GuiPacketSequenceSelector.java
 package com.zszl.zszlScriptMod.gui.packet;
 
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
 import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
-import net.minecraft.client.resources.I18n;
-import org.lwjgl.input.Mouse;
-import com.zszl.zszlScriptMod.shadowbaritone.utils.GuiPathingPolicy;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Mouse;
 
 import java.io.IOException;
 import java.util.List;
@@ -38,7 +37,7 @@ public class GuiPacketSequenceSelector extends ThemedGuiScreen {
     @Override
     protected void actionPerformed(GuiButton button) throws IOException {
         if (button.id == 0) {
-            mc.displayGuiScreen(parentScreen);
+            mc.setScreen(parentScreen);
         }
     }
 
@@ -92,7 +91,7 @@ public class GuiPacketSequenceSelector extends ThemedGuiScreen {
             if (clickedIndex >= 0 && clickedIndex < sequenceFiles.size()) {
                 // --- 核心修改：调用回调函数并返回父界面 ---
                 onSelect.accept(sequenceFiles.get(clickedIndex));
-                mc.displayGuiScreen(parentScreen);
+                mc.setScreen(parentScreen);
                 // --- 修改结束 ---
             }
         }
@@ -112,7 +111,7 @@ public class GuiPacketSequenceSelector extends ThemedGuiScreen {
 
     @Override
     public boolean doesGuiPauseGame() {
-        return !GuiPathingPolicy.shouldKeepPathingDuringGui(this.mc);
+        return true;
     }
 
     private void drawSelectorTooltip(int mouseX, int mouseY, int panelX, int panelY, int panelWidth, int listY,
@@ -132,3 +131,10 @@ public class GuiPacketSequenceSelector extends ThemedGuiScreen {
         drawSimpleTooltip(tooltip, mouseX, mouseY);
     }
 }
+
+
+
+
+
+
+

@@ -6,9 +6,9 @@ import com.zszl.zszlScriptMod.gui.components.ThemedButton;
 import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
 import com.zszl.zszlScriptMod.gui.components.ToggleGuiButton;
 import com.zszl.zszlScriptMod.handlers.FlyHandler;
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiScreen;
-import org.lwjgl.input.Mouse;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Mouse;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -293,8 +293,8 @@ public class GuiFlyConfig extends ThemedGuiScreen {
             return;
         }
 
-        int mouseX = Mouse.getEventX() * this.width / this.mc.displayWidth;
-        int mouseY = this.height - Mouse.getEventY() * this.height / this.mc.displayHeight - 1;
+        int mouseX = Mouse.getEventX() * this.width / this.mc.getWindow().getWidth();
+        int mouseY = this.height - Mouse.getEventY() * this.height / this.mc.getWindow().getHeight() - 1;
 
         if (this.contentMaxScroll <= 0 || !isInScrollableContent(mouseX, mouseY)) {
             return;
@@ -371,14 +371,14 @@ public class GuiFlyConfig extends ThemedGuiScreen {
             return;
         case BTN_SAVE:
             FlyHandler.saveConfig();
-            mc.displayGuiScreen(parentScreen);
+            mc.setScreen(parentScreen);
             return;
         case BTN_DEFAULT:
             applyDefaultValues();
             break;
         case BTN_CANCEL:
             FlyHandler.loadConfig();
-            mc.displayGuiScreen(parentScreen);
+            mc.setScreen(parentScreen);
             return;
         default:
             break;
@@ -492,7 +492,7 @@ public class GuiFlyConfig extends ThemedGuiScreen {
     }
 
     private void openFloatInput(String title, float currentValue, float min, float max, FloatConsumer consumer) {
-        mc.displayGuiScreen(new GuiTextInput(this, title, formatFloat(currentValue), value -> {
+        mc.setScreen(new GuiTextInput(this, title, formatFloat(currentValue), value -> {
             float parsed = currentValue;
             try {
                 parsed = Float.parseFloat(value.trim());
@@ -501,12 +501,12 @@ public class GuiFlyConfig extends ThemedGuiScreen {
             consumer.accept(clampFloat(parsed, min, max));
             refreshButtonTexts();
             relayoutButtons();
-            mc.displayGuiScreen(this);
+            mc.setScreen(this);
         }));
     }
 
     private void openIntInput(String title, int currentValue, int min, int max, IntConsumer consumer) {
-        mc.displayGuiScreen(new GuiTextInput(this, title, String.valueOf(currentValue), value -> {
+        mc.setScreen(new GuiTextInput(this, title, String.valueOf(currentValue), value -> {
             int parsed = currentValue;
             try {
                 parsed = Integer.parseInt(value.trim());
@@ -515,7 +515,7 @@ public class GuiFlyConfig extends ThemedGuiScreen {
             consumer.accept(clampInt(parsed, min, max));
             refreshButtonTexts();
             relayoutButtons();
-            mc.displayGuiScreen(this);
+            mc.setScreen(this);
         }));
     }
 
@@ -564,7 +564,7 @@ public class GuiFlyConfig extends ThemedGuiScreen {
     }
 
     private void fillRect(int left, int top, int right, int bottom, int color) {
-        net.minecraft.client.gui.Gui.drawRect(left, top, right, bottom, color);
+        com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.Gui.drawRect(left, top, right, bottom, color);
     }
 
     private void drawLineH(int startX, int endX, int y, int color) {
@@ -609,3 +609,8 @@ public class GuiFlyConfig extends ThemedGuiScreen {
         void accept(int value);
     }
 }
+
+
+
+
+

@@ -5,12 +5,12 @@ import com.zszl.zszlScriptMod.gui.path.GuiSequenceSelector;
 import com.zszl.zszlScriptMod.gui.components.GuiTheme;
 import com.zszl.zszlScriptMod.gui.components.ThemedButton;
 import com.zszl.zszlScriptMod.system.AutoPickupRule;
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
 import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
-import net.minecraft.client.gui.GuiTextField;
-import net.minecraft.client.resources.I18n;
-import org.lwjgl.input.Keyboard;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiTextField;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Keyboard;
 
 import java.io.IOException;
 import java.text.DecimalFormat;
@@ -113,16 +113,16 @@ public class GuiEditAutoPickupRule extends ThemedGuiScreen {
                 btnEnabled.displayString = I18n.format("gui.autopickup.btn.enabled", stateOnOff(rule.enabled));
                 break;
             case 2:
-                mc.displayGuiScreen(new GuiSequenceSelector(this, seq -> {
+                mc.setScreen(new GuiSequenceSelector(this, seq -> {
                     rule.postPickupSequence = seq;
-                    mc.displayGuiScreen(this);
+                    mc.setScreen(this);
                 }));
                 break;
             case 7:
                 if (mc.player != null) {
-                    xField.setText(COORD_FORMAT.format(mc.player.posX));
-                    yField.setText(COORD_FORMAT.format(mc.player.posY));
-                    zField.setText(COORD_FORMAT.format(mc.player.posZ));
+                    xField.setText(COORD_FORMAT.format(mc.player.getX()));
+                    yField.setText(COORD_FORMAT.format(mc.player.getY()));
+                    zField.setText(COORD_FORMAT.format(mc.player.getZ()));
                 }
                 break;
             case 9:
@@ -141,10 +141,10 @@ public class GuiEditAutoPickupRule extends ThemedGuiScreen {
                 } catch (NumberFormatException e) {
                     // 可以在这里加一个错误提示
                 }
-                mc.displayGuiScreen(parentScreen);
+                mc.setScreen(parentScreen);
                 break;
             case 11: // 取消
-                mc.displayGuiScreen(parentScreen);
+                mc.setScreen(parentScreen);
                 break;
         }
     }
@@ -179,7 +179,7 @@ public class GuiEditAutoPickupRule extends ThemedGuiScreen {
     @Override
     protected void keyTyped(char typedChar, int keyCode) throws IOException {
         if (keyCode == Keyboard.KEY_ESCAPE) {
-            mc.displayGuiScreen(parentScreen);
+            mc.setScreen(parentScreen);
             return;
         }
         for (GuiTextField field : allTextFields) {
@@ -216,3 +216,10 @@ public class GuiEditAutoPickupRule extends ThemedGuiScreen {
         return I18n.format(yes ? "gui.common.yes" : "gui.common.no");
     }
 }
+
+
+
+
+
+
+

@@ -1,12 +1,11 @@
 package com.zszl.zszlScriptMod.gui.components;
 
-import com.zszl.zszlScriptMod.handlers.MailHelper;
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiScreen;
-import net.minecraftforge.client.event.GuiScreenEvent;
-import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
-import net.minecraftforge.fml.relauncher.Side;
-import net.minecraftforge.fml.relauncher.SideOnly;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraftforge.client.event.GuiScreenEvent;
+import net.minecraftforge.eventbus.api.SubscribeEvent;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraftforge.fml.relauncher.Side;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraftforge.fml.relauncher.SideOnly;
 
 import java.lang.reflect.Field;
 import java.util.IdentityHashMap;
@@ -109,9 +108,6 @@ public class GlobalThemedButtonHandler {
         }
 
         int id = button.id;
-        if (id >= MailHelper.BTN_RECEIVE_ALL_ID && id <= MailHelper.BTN_SETTINGS_ID) {
-            return true;
-        }
         return id >= PASSWORD_BTN_MIN && id <= PASSWORD_BTN_MAX;
     }
 
@@ -131,3 +127,7 @@ public class GlobalThemedButtonHandler {
         }
     }
 }
+
+
+
+

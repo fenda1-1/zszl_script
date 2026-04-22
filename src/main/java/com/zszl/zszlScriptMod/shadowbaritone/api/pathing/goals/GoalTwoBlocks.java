@@ -20,11 +20,10 @@ package com.zszl.zszlScriptMod.shadowbaritone.api.pathing.goals;
 import com.zszl.zszlScriptMod.shadowbaritone.api.utils.BetterBlockPos;
 import com.zszl.zszlScriptMod.shadowbaritone.api.utils.SettingsUtil;
 import com.zszl.zszlScriptMod.shadowbaritone.api.utils.interfaces.IGoalRenderPos;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.core.BlockPos;
 
 /**
- * Useful if the goal is just to mine a block. This goal will be satisfied if
- * the specified
+ * Useful if the goal is just to mine a block. This goal will be satisfied if the specified
  * {@link BlockPos} is at to or above the specified position for this goal.
  *
  * @author leijurv
@@ -100,6 +99,8 @@ public class GoalTwoBlocks implements Goal, IGoalRenderPos {
                 "GoalTwoBlocks{x=%s,y=%s,z=%s}",
                 SettingsUtil.maybeCensor(x),
                 SettingsUtil.maybeCensor(y),
-                SettingsUtil.maybeCensor(z));
+                SettingsUtil.maybeCensor(z)
+        );
     }
 }
+

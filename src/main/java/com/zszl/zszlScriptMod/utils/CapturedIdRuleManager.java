@@ -11,6 +11,7 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.io.Reader;
 import java.math.BigInteger;
 import java.nio.ByteBuffer;
@@ -54,6 +55,11 @@ public class CapturedIdRuleManager {
     private static final Map<String, Long> capturedRecaptureVersions = new ConcurrentHashMap<>();
     private static final List<String> customCategories = new CopyOnWriteArrayList<>();
     private static volatile boolean initialized = false;
+    private static volatile int enabledRuleCount = 0;
+    private static volatile int inboundEnabledRuleCount = 0;
+    private static volatile int outboundEnabledRuleCount = 0;
+    private static volatile int inboundDecodedRuleCount = 0;
+    private static volatile int outboundDecodedRuleCount = 0;
 
     public static class DisplayEntry {
         public final String key;
@@ -148,18 +154,21 @@ public class CapturedIdRuleManager {
         if (initialized) {
             return;
         }
-        syncBuiltinConfigFromResource();
-        ensureCustomConfigExists();
         reloadRules();
-        initialized = true;
     }
 
     public static synchronized void reloadRules() {
         syncBuiltinConfigFromResource();
         ensureCustomConfigExists();
+        initialized = true;
 
         rules.clear();
         customCategories.clear();
+        enabledRuleCount = 0;
+        inboundEnabledRuleCount = 0;
+        outboundEnabledRuleCount = 0;
+        inboundDecodedRuleCount = 0;
+        outboundDecodedRuleCount = 0;
 
         loadRulesFromFile(BUILTIN_CONFIG_PATH, true);
 
@@ -176,6 +185,19 @@ public class CapturedIdRuleManager {
         applySequenceOverrides(customRoot.overrides);
         resetUpdateSequenceRuntimeState();
         clearStaleCapturedValues();
+    }
+
+    public static boolean hasEnabledRulesForDirection(boolean outbound) {
+        initialize();
+        if (enabledRuleCount <= 0) {
+            return false;
+        }
+        return outbound ? outboundEnabledRuleCount > 0 : inboundEnabledRuleCount > 0;
+    }
+
+    public static boolean hasDecodedRulesForDirection(boolean outbound) {
+        initialize();
+        return outbound ? outboundDecodedRuleCount > 0 : inboundDecodedRuleCount > 0;
     }
 
     public static void processPacket(String channel, boolean outbound, byte[] rawData, String decodedText) {
@@ -235,24 +257,6 @@ public class CapturedIdRuleManager {
         }
     }
 
-    public static boolean hasEnabledRulesForChannel(String channel, boolean outbound) {
-        initialize();
-        if (rules.isEmpty()) {
-            return false;
-        }
-        String direction = outbound ? "outbound" : "inbound";
-        for (CaptureRule rule : rules) {
-            if (rule == null || !rule.enabled || rule.compiledPattern == null) {
-                continue;
-            }
-            if (!matchesChannel(rule.channel, channel) || !matchesDirection(rule.direction, direction)) {
-                continue;
-            }
-            return true;
-        }
-        return false;
-    }
-
     public static void setCapturedId(String key, byte[] value) {
         initialize();
         if (isBlank(key)) {
@@ -298,8 +302,6 @@ public class CapturedIdRuleManager {
     public static List<String> getAllCategories() {
         initialize();
         List<String> result = new ArrayList<>();
-        addCategoryIfMissing(result, CATEGORY_RSL);
-        addCategoryIfMissing(result, CATEGORY_MOTA);
 
         for (String category : customCategories) {
             addCategoryIfMissing(result, category);
@@ -310,8 +312,8 @@ public class CapturedIdRuleManager {
             if (rule == null) {
                 continue;
             }
-            String category = normalizeCategory(rule.category);
-            if (isBlank(category)) {
+            String category = normalizeRuleCategory(rule.category);
+            if (isBlank(category) || CATEGORY_UNGROUPED.equals(category)) {
                 hasUngrouped = true;
             } else {
                 addCategoryIfMissing(result, category);
@@ -550,7 +552,7 @@ public class CapturedIdRuleManager {
         if (rule == null) {
             return false;
         }
-        rule.category = normalizeCategory(category);
+        rule.category = normalizeRuleCategory(category);
         addCategoryToRootIfNeeded(root, rule.category);
         return writeCustomConfigRoot(root);
     }
@@ -643,7 +645,7 @@ public class CapturedIdRuleManager {
         copy.pattern = nullToEmpty(model.pattern);
         copy.offset = nullToEmpty(model.offset);
         copy.group = model.group;
-        copy.category = normalizeCategory(model.category);
+        copy.category = normalizeRuleCategory(model.category);
         copy.valueType = nullToEmpty(model.valueType);
         copy.byteLength = model.byteLength;
         copy.updateSequenceName = nullToEmpty(model.updateSequenceName);
@@ -737,7 +739,7 @@ public class CapturedIdRuleManager {
         model.pattern = rule.pattern;
         model.offset = nullToEmpty(rule.offset);
         model.group = rule.group <= 0 ? 1 : rule.group;
-        model.category = normalizeCategory(rule.category);
+        model.category = normalizeRuleCategory(rule.category);
         model.valueType = isBlank(rule.valueType) ? "hex" : rule.valueType;
         model.byteLength = rule.byteLength <= 0 ? 4 : rule.byteLength;
         model.updateSequenceName = nullToEmpty(rule.updateSequenceName);
@@ -759,7 +761,7 @@ public class CapturedIdRuleManager {
         rule.pattern = nullToEmpty(model.pattern).trim();
         rule.offset = nullToEmpty(model.offset).trim();
         rule.group = Math.max(1, model.group);
-        rule.category = normalizeCategory(model.category);
+        rule.category = normalizeRuleCategory(model.category);
         rule.valueType = normalizeValueType(model.valueType);
         rule.byteLength = Math.max(1, model.byteLength);
         rule.updateSequenceName = nullToEmpty(model.updateSequenceName).trim();
@@ -818,7 +820,7 @@ public class CapturedIdRuleManager {
                 }
                 rule.nextUpdateSequenceAllowedAt = now + Math.max(1, rule.updateSequenceCooldownMs);
             }
-            Minecraft.getMinecraft().addScheduledTask(() -> {
+            Minecraft.getInstance().execute(() -> {
                 try {
                     PathSequenceManager.runPathSequence(rule.updateSequenceName);
                 } catch (Exception e) {
@@ -880,7 +882,7 @@ public class CapturedIdRuleManager {
     }
 
     private static void addCategoryToRootIfNeeded(ConfigRoot root, String category) {
-        String normalized = normalizeCategory(category);
+        String normalized = normalizeRuleCategory(category);
         if (isBlank(normalized) || CATEGORY_RSL.equals(normalized) || CATEGORY_MOTA.equals(normalized)
                 || CATEGORY_UNGROUPED.equals(normalized)) {
             return;
@@ -989,6 +991,15 @@ public class CapturedIdRuleManager {
         return category == null ? "" : category.trim();
     }
 
+    private static String normalizeRuleCategory(String category) {
+        String normalized = normalizeCategory(category);
+        return isRemovedBuiltinServerCategory(normalized) ? CATEGORY_UNGROUPED : normalized;
+    }
+
+    private static boolean isRemovedBuiltinServerCategory(String category) {
+        return CATEGORY_RSL.equals(normalizeCategory(category)) || CATEGORY_MOTA.equals(normalizeCategory(category));
+    }
+
     private static String resolveRuleName(String key) {
         String normalized = canonicalKey(key);
         for (CaptureRule rule : rules) {
@@ -1046,10 +1057,29 @@ public class CapturedIdRuleManager {
                 if (builtin && isBlank(rule.category)) {
                     rule.category = getBuiltinDefaultCategory(rule.name);
                 }
+                rule.category = normalizeRuleCategory(rule.category);
                 if (!builtin) {
                     customOrder++;
                 }
                 rules.add(rule);
+                if (rule.enabled) {
+                    enabledRuleCount++;
+                    boolean inbound = matchesDirection(rule.direction, "inbound");
+                    boolean outbound = matchesDirection(rule.direction, "outbound");
+                    boolean decoded = "decoded".equalsIgnoreCase(rule.target);
+                    if (inbound) {
+                        inboundEnabledRuleCount++;
+                        if (decoded) {
+                            inboundDecodedRuleCount++;
+                        }
+                    }
+                    if (outbound) {
+                        outboundEnabledRuleCount++;
+                        if (decoded) {
+                            outboundDecodedRuleCount++;
+                        }
+                    }
+                }
             } catch (Exception e) {
                 zszlScriptMod.LOGGER.error("[CapturedId] 编译规则失败: {}", rule.name, e);
             }
@@ -1057,11 +1087,7 @@ public class CapturedIdRuleManager {
     }
 
     private static String getBuiltinDefaultCategory(String ruleName) {
-        String key = canonicalKey(ruleName);
-        if ("dragoncore_check_no_out".equals(key) || "confirm_exit_dungeon_text".equals(key)) {
-            return CATEGORY_MOTA;
-        }
-        return CATEGORY_RSL;
+        return CATEGORY_UNGROUPED;
     }
 
     private static void applySequenceOverrides(List<SequenceTriggerOverride> overrides) {
@@ -1095,7 +1121,17 @@ public class CapturedIdRuleManager {
 
             try (InputStream in = CapturedIdRuleManager.class.getClassLoader().getResourceAsStream(RESOURCE_NAME)) {
                 if (in != null) {
-                    Files.copy(in, BUILTIN_CONFIG_PATH, StandardCopyOption.REPLACE_EXISTING);
+                    byte[] resourceBytes = in.readAllBytes();
+                    if (Files.exists(BUILTIN_CONFIG_PATH)) {
+                        try {
+                            byte[] existingBytes = Files.readAllBytes(BUILTIN_CONFIG_PATH);
+                            if (Arrays.equals(existingBytes, resourceBytes)) {
+                                return;
+                            }
+                        } catch (IOException ignored) {
+                        }
+                    }
+                    Files.write(BUILTIN_CONFIG_PATH, resourceBytes);
                     return;
                 }
             }

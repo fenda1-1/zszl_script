@@ -49,10 +49,8 @@ public interface IPath {
     List<BetterBlockPos> positions();
 
     /**
-     * This path is actually going to be executed in the world. Do whatever
-     * additional processing is required.
-     * (as opposed to Path objects that are just constructed every frame for
-     * rendering)
+     * This path is actually going to be executed in the world. Do whatever additional processing is required.
+     * (as opposed to Path objects that are just constructed every frame for rendering)
      *
      * @return The result of path post processing
      */
@@ -61,8 +59,7 @@ public interface IPath {
     }
 
     /**
-     * Returns the number of positions in this path. Equivalent to
-     * {@code positions().size()}.
+     * Returns the number of positions in this path. Equivalent to {@code positions().size()}.
      *
      * @return Number of positions in this path
      */
@@ -105,15 +102,14 @@ public interface IPath {
     }
 
     /**
-     * Returns the estimated number of ticks to complete the path from the given
-     * node index.
+     * Returns the estimated number of ticks to complete the path from the given node index.
      *
      * @param pathPosition The index of the node we're calculating from
      * @return The estimated number of ticks remaining frm the given position
      */
     default double ticksRemainingFrom(int pathPosition) {
         double sum = 0;
-        // this is fast because we aren't requesting recalculation, it's just cached
+        //this is fast because we aren't requesting recalculation, it's just cached
         List<IMovement> movements = movements();
         for (int i = pathPosition; i < movements.size(); i++) {
             sum += movements.get(i).getCost();
@@ -122,8 +118,7 @@ public interface IPath {
     }
 
     /**
-     * Cuts off this path at the loaded chunk border, and returns the resulting
-     * path. Default
+     * Cuts off this path at the loaded chunk border, and returns the resulting path. Default
      * implementation just returns this path, without the intended functionality.
      * <p>
      * The argument is supposed to be a BlockStateInterface LOL LOL LOL LOL LOL
@@ -136,10 +131,8 @@ public interface IPath {
     }
 
     /**
-     * Cuts off this path using the min length and cutoff factor settings, and
-     * returns the resulting path.
-     * Default implementation just returns this path, without the intended
-     * functionality.
+     * Cuts off this path using the min length and cutoff factor settings, and returns the resulting path.
+     * Default implementation just returns this path, without the intended functionality.
      *
      * @param destination The end goal of this path
      * @return The result of this cut-off operation
@@ -150,9 +143,9 @@ public interface IPath {
         throw new UnsupportedOperationException();
     }
 
+
     /**
-     * Performs a series of checks to ensure that the assembly of the path went as
-     * expected.
+     * Performs a series of checks to ensure that the assembly of the path went as expected.
      */
     default void sanityCheck() {
         List<BetterBlockPos> path = positions();
@@ -184,3 +177,4 @@ public interface IPath {
         }
     }
 }
+

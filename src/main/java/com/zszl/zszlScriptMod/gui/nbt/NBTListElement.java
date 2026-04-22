@@ -1,43 +1,52 @@
-// 文件路径: src/main/java/com/keycommand2/zszlScriptMod/gui/nbt/NBTListElement.java
 package com.zszl.zszlScriptMod.gui.nbt;
 
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.FontRenderer;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.Gui;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiCompatContext;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.renderer.RenderItem;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
+import com.zszl.zszlScriptMod.gui.components.GuiTextInput;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.Gui;
-import net.minecraft.client.gui.GuiScreen;
-import net.minecraft.client.renderer.RenderItem;
-import net.minecraft.client.resources.I18n;
-import net.minecraft.item.ItemStack;
-import net.minecraft.nbt.NBTBase;
-import net.minecraft.nbt.JsonToNBT; // !! 核心修复：添加导入 !!
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.Tag;
+import net.minecraft.world.item.ItemStack;
 
 import java.util.ArrayList;
 import java.util.List;
 
-import com.zszl.zszlScriptMod.gui.components.GuiTextInput;
-
 public class NBTListElement extends Gui {
+
     protected String key;
-    protected NBTBase tag;
+    protected Tag tag;
     protected ItemStack icon;
-    protected NBTListCompound parent = null;
+    protected NBTListCompound parent;
+    protected int x;
+    protected int y;
 
-    // !! 核心修复：将访问权限从默认改为 protected !!
-    protected int x, y;
-
-    public NBTListElement(String key, NBTBase tag, ItemStack iconStack, int x, int y) {
-        this.key = key;
+    public NBTListElement(String key, Tag tag, ItemStack iconStack, int x, int y) {
+        this.key = key == null ? "" : key;
         this.tag = tag;
-        this.icon = iconStack;
+        this.icon = iconStack == null ? ItemStack.EMPTY : iconStack;
         this.x = x;
         this.y = y;
     }
 
     public String getKey() {
-        return key;
+        return this.key;
+    }
+
+    public Tag getTag() {
+        return this.tag;
+    }
+
+    public ItemStack getIconStack() {
+        return this.icon;
     }
 
     public String getText() {
-        String valueStr = tag.toString();
+        String valueStr = GuiNBTAdvanced.tagToString(this.tag);
         if (valueStr.length() > 40) {
             valueStr = valueStr.substring(0, 37) + "...";
         }
@@ -45,84 +54,99 @@ public class NBTListElement extends Gui {
     }
 
     public String getTypeName() {
-        switch (tag.getId()) {
-            case 1:
-                return "Byte";
-            case 2:
-                return "Short";
-            case 3:
-                return "Int";
-            case 4:
-                return "Long";
-            case 5:
-                return "Float";
-            case 6:
-                return "Double";
-            case 7:
-                return "Byte Array";
-            case 8:
-                return "String";
-            case 9:
-                return "List";
-            case 10:
-                return "Compound";
-            case 11:
-                return "Int Array";
-            default:
-                return "Unknown";
+        if (this.tag == null) {
+            return "Unknown";
+        }
+        switch (this.tag.getId()) {
+        case Tag.TAG_BYTE:
+            return "Byte";
+        case Tag.TAG_SHORT:
+            return "Short";
+        case Tag.TAG_INT:
+            return "Int";
+        case Tag.TAG_LONG:
+            return "Long";
+        case Tag.TAG_FLOAT:
+            return "Float";
+        case Tag.TAG_DOUBLE:
+            return "Double";
+        case Tag.TAG_BYTE_ARRAY:
+            return "Byte Array";
+        case Tag.TAG_STRING:
+            return "String";
+        case Tag.TAG_LIST:
+            return "List";
+        case Tag.TAG_COMPOUND:
+            return "Compound";
+        case Tag.TAG_INT_ARRAY:
+            return "Int Array";
+        case Tag.TAG_LONG_ARRAY:
+            return "Long Array";
+        default:
+            return "Unknown";
         }
     }
 
-    public NBTBase getTag() {
-        return tag;
-    }
-
-    public ItemStack getIconStack() {
-        return icon;
-    }
-
     public void drawIcon(RenderItem itemRender) {
-        itemRender.renderItemAndEffectIntoGUI(getIconStack(), x - 8, y - 9);
+        if (this.icon.isEmpty()) {
+            return;
+        }
+        GuiGraphics graphics = GuiCompatContext.current();
+        Minecraft mc = Minecraft.getInstance();
+        if (graphics == null || mc == null) {
+            return;
+        }
+        graphics.renderItem(this.icon, this.x - 8, this.y - 9);
+        graphics.renderItemDecorations(mc.font, this.icon, this.x - 8, this.y - 9);
     }
 
     public void draw(Minecraft mc, int mouseX, int mouseY) {
+        FontRenderer fontRenderer = new FontRenderer(mc.font);
         boolean over = isMouseOver(mouseX, mouseY);
-        drawString(mc.fontRenderer, mc.fontRenderer.trimStringToWidth(getText(), 300), x + 15, y - 5,
-                over ? 0xFFe67e22 : 0xffffff);
+        String displayText = fontRenderer.trimStringToWidth(getText(), 300);
+        fontRenderer.drawString(displayText, this.x + 15, this.y - 5, over ? 0xFFE67E22 : 0xFFFFFFFF);
     }
 
     protected static void drawVerticalStructureLine(int x, int y, int length) {
-        drawRect(x - 1, y - 1, x + 1, y + length + 1, 0xFF2c3e50);
+        drawRect(x - 1, y - 1, x + 1, y + length + 1, 0xFF2C3E50);
     }
 
     protected static void drawHorizontalStructureLine(int x, int y, int length) {
-        drawRect(x - 1, y - 1, x + length + 1, y + 1, 0xFF34495e);
+        drawRect(x - 1, y - 1, x + length + 1, y + 1, 0xFF34495E);
     }
 
     public boolean isMouseOver(int mouseX, int mouseY) {
-        if (getRootAsRoot().getSelected() != null)
+        NBTListRoot root = getRootAsRoot();
+        if (root != null && root.getSelected() != null) {
             return false;
-        int left = x - 9;
-        int textWidth = Minecraft.getMinecraft().fontRenderer.getStringWidth(getText());
+        }
+        FontRenderer fontRenderer = new FontRenderer(Minecraft.getInstance().font);
+        int left = this.x - 9;
+        int textWidth = Math.min(300, fontRenderer.getStringWidth(getText()));
         int right = left + 25 + textWidth;
-        int top = y - 8;
-        int bottom = y + 7;
+        int top = this.y - 8;
+        int bottom = this.y + 7;
         return mouseX > left && mouseX < right && mouseY > top && mouseY < bottom;
     }
 
-    public void mouseClicked(int x, int y, int mouseButton) {
-        if (isMouseOver(x, y)) {
-            if (mouseButton == 1) { // Right click
-                NBTListRoot root = getRootAsRoot();
-                root.setSelected(this, x, y);
-            } else {
-                getRootAsRoot().setFocus(this);
-            }
+    public void mouseClicked(int mouseX, int mouseY, int mouseButton) {
+        if (!isMouseOver(mouseX, mouseY)) {
+            return;
+        }
+
+        NBTListRoot root = getRootAsRoot();
+        if (root == null) {
+            return;
+        }
+        if (mouseButton == 1) {
+            root.setSelected(this, mouseX, mouseY);
+        } else {
+            root.setFocus(this);
         }
     }
 
     public int getX() {
-        return x;
+        return this.x;
     }
 
     public void setX(int x) {
@@ -130,7 +154,7 @@ public class NBTListElement extends Gui {
     }
 
     public int getY() {
-        return y;
+        return this.y;
     }
 
     public void setY(int y) {
@@ -138,7 +162,7 @@ public class NBTListElement extends Gui {
     }
 
     public NBTListElement getRoot() {
-        return parent != null ? parent.getRoot() : this;
+        return this.parent != null ? this.parent.getRoot() : this;
     }
 
     public NBTListRoot getRootAsRoot() {
@@ -157,18 +181,19 @@ public class NBTListElement extends Gui {
 
             @Override
             public void action(GuiScreen currentScreen) {
-                Minecraft.getMinecraft().displayGuiScreen(new GuiTextInput(currentScreen,
-                        I18n.format("gui.nbt.edit_value", getKey()), GuiNBTAdvanced.tagToString(tag), (newValue) -> {
-                            try {
-                                NBTBase newTag = JsonToNBT.getTagFromJson(newValue);
-                                if (newTag.getId() == tag.getId()) {
-                                    parent.getTagCompound().setTag(getKey(), newTag);
-                                }
-                            } catch (Exception e) {
-                                parent.getTagCompound().setString(getKey(), newValue);
+                Minecraft.getInstance().setScreen(new GuiTextInput(currentScreen,
+                        I18n.format("gui.nbt.edit_value", getKey()),
+                        GuiNBTAdvanced.tagToString(tag),
+                        (newValue) -> {
+                            if (parent != null) {
+                                CompoundTag compound = parent.getTagCompound();
+                                compound.put(getKey(), GuiNBTAdvanced.coerceTagToOriginalType(newValue, tag));
                             }
-                            Minecraft.getMinecraft().displayGuiScreen(currentScreen);
-                            getRootAsRoot().refresh();
+                            Minecraft.getInstance().setScreen(currentScreen);
+                            NBTListRoot root = getRootAsRoot();
+                            if (root != null) {
+                                root.refresh();
+                            }
                         }));
             }
         });
@@ -181,17 +206,17 @@ public class NBTListElement extends Gui {
 
             @Override
             public void action(GuiScreen currentScreen) {
-                if (parent != null && parent.children != null) {
-                    parent.children.remove(NBTListElement.this);
-                    parent.getTagCompound().removeTag(getKey());
+                if (parent != null) {
+                    parent.getTagCompound().remove(getKey());
                 }
                 NBTListRoot root = getRootAsRoot();
-                root.clearSelected();
-                root.redoPositions();
+                if (root != null) {
+                    root.clearSelected();
+                    root.refresh();
+                }
             }
         });
 
         return options.toArray(new NBTOption[0]);
     }
 }
-

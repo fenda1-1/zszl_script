@@ -20,11 +20,10 @@ package com.zszl.zszlScriptMod.shadowbaritone.pathing.movement;
 import com.zszl.zszlScriptMod.shadowbaritone.api.utils.BetterBlockPos;
 import com.zszl.zszlScriptMod.shadowbaritone.pathing.movement.movements.*;
 import com.zszl.zszlScriptMod.shadowbaritone.utils.pathing.MutableMoveResult;
-import net.minecraft.util.EnumFacing;
+import net.minecraft.core.Direction;
 
 /**
- * An enum of all possible movements attached to all possible directions they
- * could be taken in
+ * An enum of all possible movements attached to all possible directions they could be taken in
  *
  * @author leijurv
  */
@@ -32,7 +31,7 @@ public enum Moves {
     DOWNWARD(0, -1, 0) {
         @Override
         public Movement apply0(CalculationContext context, BetterBlockPos src) {
-            return new MovementDownward(context.getBaritone(), src, src.down());
+            return new MovementDownward(context.getBaritone(), src, src.below());
         }
 
         @Override
@@ -44,7 +43,7 @@ public enum Moves {
     PILLAR(0, +1, 0) {
         @Override
         public Movement apply0(CalculationContext context, BetterBlockPos src) {
-            return new MovementPillar(context.getBaritone(), src, src.up());
+            return new MovementPillar(context.getBaritone(), src, src.above());
         }
 
         @Override
@@ -226,7 +225,7 @@ public enum Moves {
         public Movement apply0(CalculationContext context, BetterBlockPos src) {
             MutableMoveResult res = new MutableMoveResult();
             apply(context, src.x, src.y, src.z, res);
-            return new MovementDiagonal(context.getBaritone(), src, EnumFacing.NORTH, EnumFacing.EAST, res.y - src.y);
+            return new MovementDiagonal(context.getBaritone(), src, Direction.NORTH, Direction.EAST, res.y - src.y);
         }
 
         @Override
@@ -240,7 +239,7 @@ public enum Moves {
         public Movement apply0(CalculationContext context, BetterBlockPos src) {
             MutableMoveResult res = new MutableMoveResult();
             apply(context, src.x, src.y, src.z, res);
-            return new MovementDiagonal(context.getBaritone(), src, EnumFacing.NORTH, EnumFacing.WEST, res.y - src.y);
+            return new MovementDiagonal(context.getBaritone(), src, Direction.NORTH, Direction.WEST, res.y - src.y);
         }
 
         @Override
@@ -254,7 +253,7 @@ public enum Moves {
         public Movement apply0(CalculationContext context, BetterBlockPos src) {
             MutableMoveResult res = new MutableMoveResult();
             apply(context, src.x, src.y, src.z, res);
-            return new MovementDiagonal(context.getBaritone(), src, EnumFacing.SOUTH, EnumFacing.EAST, res.y - src.y);
+            return new MovementDiagonal(context.getBaritone(), src, Direction.SOUTH, Direction.EAST, res.y - src.y);
         }
 
         @Override
@@ -268,7 +267,7 @@ public enum Moves {
         public Movement apply0(CalculationContext context, BetterBlockPos src) {
             MutableMoveResult res = new MutableMoveResult();
             apply(context, src.x, src.y, src.z, res);
-            return new MovementDiagonal(context.getBaritone(), src, EnumFacing.SOUTH, EnumFacing.WEST, res.y - src.y);
+            return new MovementDiagonal(context.getBaritone(), src, Direction.SOUTH, Direction.WEST, res.y - src.y);
         }
 
         @Override
@@ -277,355 +276,51 @@ public enum Moves {
         }
     },
 
-    NARROW_GAP_NORTH_EAST(+1, 0, -2, false, true) {
-        @Override
-        public Movement apply0(CalculationContext context, BetterBlockPos src) {
-            return narrowGapMovement(context, src, src.x + 1, src.z - 2);
-        }
-
-        @Override
-        public void apply(CalculationContext context, int x, int y, int z, MutableMoveResult result) {
-            applyNarrowGap(context, x, y, z, x + 1, z - 2, result);
-        }
-    },
-
-    NARROW_GAP_NORTH_WEST(-1, 0, -2, false, true) {
-        @Override
-        public Movement apply0(CalculationContext context, BetterBlockPos src) {
-            return narrowGapMovement(context, src, src.x - 1, src.z - 2);
-        }
-
-        @Override
-        public void apply(CalculationContext context, int x, int y, int z, MutableMoveResult result) {
-            applyNarrowGap(context, x, y, z, x - 1, z - 2, result);
-        }
-    },
-
-    NARROW_GAP_SOUTH_EAST(+1, 0, +2, false, true) {
-        @Override
-        public Movement apply0(CalculationContext context, BetterBlockPos src) {
-            return narrowGapMovement(context, src, src.x + 1, src.z + 2);
-        }
-
-        @Override
-        public void apply(CalculationContext context, int x, int y, int z, MutableMoveResult result) {
-            applyNarrowGap(context, x, y, z, x + 1, z + 2, result);
-        }
-    },
-
-    NARROW_GAP_SOUTH_WEST(-1, 0, +2, false, true) {
-        @Override
-        public Movement apply0(CalculationContext context, BetterBlockPos src) {
-            return narrowGapMovement(context, src, src.x - 1, src.z + 2);
-        }
-
-        @Override
-        public void apply(CalculationContext context, int x, int y, int z, MutableMoveResult result) {
-            applyNarrowGap(context, x, y, z, x - 1, z + 2, result);
-        }
-    },
-
-    NARROW_GAP_EAST_NORTH(+2, 0, -1, false, true) {
-        @Override
-        public Movement apply0(CalculationContext context, BetterBlockPos src) {
-            return narrowGapMovement(context, src, src.x + 2, src.z - 1);
-        }
-
-        @Override
-        public void apply(CalculationContext context, int x, int y, int z, MutableMoveResult result) {
-            applyNarrowGap(context, x, y, z, x + 2, z - 1, result);
-        }
-    },
-
-    NARROW_GAP_EAST_SOUTH(+2, 0, +1, false, true) {
-        @Override
-        public Movement apply0(CalculationContext context, BetterBlockPos src) {
-            return narrowGapMovement(context, src, src.x + 2, src.z + 1);
-        }
-
-        @Override
-        public void apply(CalculationContext context, int x, int y, int z, MutableMoveResult result) {
-            applyNarrowGap(context, x, y, z, x + 2, z + 1, result);
-        }
-    },
-
-    NARROW_GAP_WEST_NORTH(-2, 0, -1, false, true) {
-        @Override
-        public Movement apply0(CalculationContext context, BetterBlockPos src) {
-            return narrowGapMovement(context, src, src.x - 2, src.z - 1);
-        }
-
-        @Override
-        public void apply(CalculationContext context, int x, int y, int z, MutableMoveResult result) {
-            applyNarrowGap(context, x, y, z, x - 2, z - 1, result);
-        }
-    },
-
-    NARROW_GAP_WEST_SOUTH(-2, 0, +1, false, true) {
-        @Override
-        public Movement apply0(CalculationContext context, BetterBlockPos src) {
-            return narrowGapMovement(context, src, src.x - 2, src.z + 1);
-        }
-
-        @Override
-        public void apply(CalculationContext context, int x, int y, int z, MutableMoveResult result) {
-            applyNarrowGap(context, x, y, z, x - 2, z + 1, result);
-        }
-    },
-
-    NARROW_GAP_STRAIGHT_NORTH_EAST_SIDE(0, 0, -2, false, true) {
-        @Override
-        public Movement apply0(CalculationContext context, BetterBlockPos src) {
-            BetterBlockPos mid = src.north();
-            return narrowGapMovement(context, src, src.x, src.z - 2, mid, mid.east());
-        }
-
-        @Override
-        public void apply(CalculationContext context, int x, int y, int z, MutableMoveResult result) {
-            BetterBlockPos mid = new BetterBlockPos(x, y, z - 1);
-            applyNarrowGap(context, x, y, z, x, z - 2, mid, mid.east(), result);
-        }
-    },
-
-    NARROW_GAP_STRAIGHT_NORTH_WEST_SIDE(0, 0, -2, false, true) {
-        @Override
-        public Movement apply0(CalculationContext context, BetterBlockPos src) {
-            BetterBlockPos mid = src.north();
-            return narrowGapMovement(context, src, src.x, src.z - 2, mid, mid.west());
-        }
-
-        @Override
-        public void apply(CalculationContext context, int x, int y, int z, MutableMoveResult result) {
-            BetterBlockPos mid = new BetterBlockPos(x, y, z - 1);
-            applyNarrowGap(context, x, y, z, x, z - 2, mid, mid.west(), result);
-        }
-    },
-
-    NARROW_GAP_STRAIGHT_SOUTH_EAST_SIDE(0, 0, +2, false, true) {
-        @Override
-        public Movement apply0(CalculationContext context, BetterBlockPos src) {
-            BetterBlockPos mid = src.south();
-            return narrowGapMovement(context, src, src.x, src.z + 2, mid, mid.east());
-        }
-
-        @Override
-        public void apply(CalculationContext context, int x, int y, int z, MutableMoveResult result) {
-            BetterBlockPos mid = new BetterBlockPos(x, y, z + 1);
-            applyNarrowGap(context, x, y, z, x, z + 2, mid, mid.east(), result);
-        }
-    },
-
-    NARROW_GAP_STRAIGHT_SOUTH_WEST_SIDE(0, 0, +2, false, true) {
-        @Override
-        public Movement apply0(CalculationContext context, BetterBlockPos src) {
-            BetterBlockPos mid = src.south();
-            return narrowGapMovement(context, src, src.x, src.z + 2, mid, mid.west());
-        }
-
-        @Override
-        public void apply(CalculationContext context, int x, int y, int z, MutableMoveResult result) {
-            BetterBlockPos mid = new BetterBlockPos(x, y, z + 1);
-            applyNarrowGap(context, x, y, z, x, z + 2, mid, mid.west(), result);
-        }
-    },
-
-    NARROW_GAP_STRAIGHT_EAST_NORTH_SIDE(+2, 0, 0, false, true) {
-        @Override
-        public Movement apply0(CalculationContext context, BetterBlockPos src) {
-            BetterBlockPos mid = src.east();
-            return narrowGapMovement(context, src, src.x + 2, src.z, mid, mid.north());
-        }
-
-        @Override
-        public void apply(CalculationContext context, int x, int y, int z, MutableMoveResult result) {
-            BetterBlockPos mid = new BetterBlockPos(x + 1, y, z);
-            applyNarrowGap(context, x, y, z, x + 2, z, mid, mid.north(), result);
-        }
-    },
-
-    NARROW_GAP_STRAIGHT_EAST_SOUTH_SIDE(+2, 0, 0, false, true) {
-        @Override
-        public Movement apply0(CalculationContext context, BetterBlockPos src) {
-            BetterBlockPos mid = src.east();
-            return narrowGapMovement(context, src, src.x + 2, src.z, mid, mid.south());
-        }
-
-        @Override
-        public void apply(CalculationContext context, int x, int y, int z, MutableMoveResult result) {
-            BetterBlockPos mid = new BetterBlockPos(x + 1, y, z);
-            applyNarrowGap(context, x, y, z, x + 2, z, mid, mid.south(), result);
-        }
-    },
-
-    NARROW_GAP_STRAIGHT_WEST_NORTH_SIDE(-2, 0, 0, false, true) {
-        @Override
-        public Movement apply0(CalculationContext context, BetterBlockPos src) {
-            BetterBlockPos mid = src.west();
-            return narrowGapMovement(context, src, src.x - 2, src.z, mid, mid.north());
-        }
-
-        @Override
-        public void apply(CalculationContext context, int x, int y, int z, MutableMoveResult result) {
-            BetterBlockPos mid = new BetterBlockPos(x - 1, y, z);
-            applyNarrowGap(context, x, y, z, x - 2, z, mid, mid.north(), result);
-        }
-    },
-
-    NARROW_GAP_STRAIGHT_WEST_SOUTH_SIDE(-2, 0, 0, false, true) {
-        @Override
-        public Movement apply0(CalculationContext context, BetterBlockPos src) {
-            BetterBlockPos mid = src.west();
-            return narrowGapMovement(context, src, src.x - 2, src.z, mid, mid.south());
-        }
-
-        @Override
-        public void apply(CalculationContext context, int x, int y, int z, MutableMoveResult result) {
-            BetterBlockPos mid = new BetterBlockPos(x - 1, y, z);
-            applyNarrowGap(context, x, y, z, x - 2, z, mid, mid.south(), result);
-        }
-    },
-
     PARKOUR_NORTH(0, 0, -4, true, true) {
         @Override
         public Movement apply0(CalculationContext context, BetterBlockPos src) {
-            return MovementParkour.cost(context, src, EnumFacing.NORTH);
+            return MovementParkour.cost(context, src, Direction.NORTH);
         }
 
         @Override
         public void apply(CalculationContext context, int x, int y, int z, MutableMoveResult result) {
-            MovementParkour.cost(context, x, y, z, EnumFacing.NORTH, result);
+            MovementParkour.cost(context, x, y, z, Direction.NORTH, result);
         }
     },
 
     PARKOUR_SOUTH(0, 0, +4, true, true) {
         @Override
         public Movement apply0(CalculationContext context, BetterBlockPos src) {
-            return MovementParkour.cost(context, src, EnumFacing.SOUTH);
+            return MovementParkour.cost(context, src, Direction.SOUTH);
         }
 
         @Override
         public void apply(CalculationContext context, int x, int y, int z, MutableMoveResult result) {
-            MovementParkour.cost(context, x, y, z, EnumFacing.SOUTH, result);
+            MovementParkour.cost(context, x, y, z, Direction.SOUTH, result);
         }
     },
 
     PARKOUR_EAST(+4, 0, 0, true, true) {
         @Override
         public Movement apply0(CalculationContext context, BetterBlockPos src) {
-            return MovementParkour.cost(context, src, EnumFacing.EAST);
+            return MovementParkour.cost(context, src, Direction.EAST);
         }
 
         @Override
         public void apply(CalculationContext context, int x, int y, int z, MutableMoveResult result) {
-            MovementParkour.cost(context, x, y, z, EnumFacing.EAST, result);
+            MovementParkour.cost(context, x, y, z, Direction.EAST, result);
         }
     },
 
     PARKOUR_WEST(-4, 0, 0, true, true) {
         @Override
         public Movement apply0(CalculationContext context, BetterBlockPos src) {
-            return MovementParkour.cost(context, src, EnumFacing.WEST);
+            return MovementParkour.cost(context, src, Direction.WEST);
         }
 
         @Override
         public void apply(CalculationContext context, int x, int y, int z, MutableMoveResult result) {
-            MovementParkour.cost(context, x, y, z, EnumFacing.WEST, result);
-        }
-    },
-
-    PARKOUR_NORTH_EAST(+1, 0, -3, true, true) {
-        @Override
-        public Movement apply0(CalculationContext context, BetterBlockPos src) {
-            return MovementParkour.cost(context, src, EnumFacing.NORTH, EnumFacing.EAST);
-        }
-
-        @Override
-        public void apply(CalculationContext context, int x, int y, int z, MutableMoveResult result) {
-            MovementParkour.cost(context, x, y, z, EnumFacing.NORTH, EnumFacing.EAST, result);
-        }
-    },
-
-    PARKOUR_NORTH_WEST(-1, 0, -3, true, true) {
-        @Override
-        public Movement apply0(CalculationContext context, BetterBlockPos src) {
-            return MovementParkour.cost(context, src, EnumFacing.NORTH, EnumFacing.WEST);
-        }
-
-        @Override
-        public void apply(CalculationContext context, int x, int y, int z, MutableMoveResult result) {
-            MovementParkour.cost(context, x, y, z, EnumFacing.NORTH, EnumFacing.WEST, result);
-        }
-    },
-
-    PARKOUR_SOUTH_EAST(+1, 0, +3, true, true) {
-        @Override
-        public Movement apply0(CalculationContext context, BetterBlockPos src) {
-            return MovementParkour.cost(context, src, EnumFacing.SOUTH, EnumFacing.EAST);
-        }
-
-        @Override
-        public void apply(CalculationContext context, int x, int y, int z, MutableMoveResult result) {
-            MovementParkour.cost(context, x, y, z, EnumFacing.SOUTH, EnumFacing.EAST, result);
-        }
-    },
-
-    PARKOUR_SOUTH_WEST(-1, 0, +3, true, true) {
-        @Override
-        public Movement apply0(CalculationContext context, BetterBlockPos src) {
-            return MovementParkour.cost(context, src, EnumFacing.SOUTH, EnumFacing.WEST);
-        }
-
-        @Override
-        public void apply(CalculationContext context, int x, int y, int z, MutableMoveResult result) {
-            MovementParkour.cost(context, x, y, z, EnumFacing.SOUTH, EnumFacing.WEST, result);
-        }
-    },
-
-    PARKOUR_EAST_NORTH(+3, 0, -1, true, true) {
-        @Override
-        public Movement apply0(CalculationContext context, BetterBlockPos src) {
-            return MovementParkour.cost(context, src, EnumFacing.EAST, EnumFacing.NORTH);
-        }
-
-        @Override
-        public void apply(CalculationContext context, int x, int y, int z, MutableMoveResult result) {
-            MovementParkour.cost(context, x, y, z, EnumFacing.EAST, EnumFacing.NORTH, result);
-        }
-    },
-
-    PARKOUR_EAST_SOUTH(+3, 0, +1, true, true) {
-        @Override
-        public Movement apply0(CalculationContext context, BetterBlockPos src) {
-            return MovementParkour.cost(context, src, EnumFacing.EAST, EnumFacing.SOUTH);
-        }
-
-        @Override
-        public void apply(CalculationContext context, int x, int y, int z, MutableMoveResult result) {
-            MovementParkour.cost(context, x, y, z, EnumFacing.EAST, EnumFacing.SOUTH, result);
-        }
-    },
-
-    PARKOUR_WEST_NORTH(-3, 0, -1, true, true) {
-        @Override
-        public Movement apply0(CalculationContext context, BetterBlockPos src) {
-            return MovementParkour.cost(context, src, EnumFacing.WEST, EnumFacing.NORTH);
-        }
-
-        @Override
-        public void apply(CalculationContext context, int x, int y, int z, MutableMoveResult result) {
-            MovementParkour.cost(context, x, y, z, EnumFacing.WEST, EnumFacing.NORTH, result);
-        }
-    },
-
-    PARKOUR_WEST_SOUTH(-3, 0, +1, true, true) {
-        @Override
-        public Movement apply0(CalculationContext context, BetterBlockPos src) {
-            return MovementParkour.cost(context, src, EnumFacing.WEST, EnumFacing.SOUTH);
-        }
-
-        @Override
-        public void apply(CalculationContext context, int x, int y, int z, MutableMoveResult result) {
-            MovementParkour.cost(context, x, y, z, EnumFacing.WEST, EnumFacing.SOUTH, result);
+            MovementParkour.cost(context, x, y, z, Direction.WEST, result);
         }
     };
 
@@ -648,35 +343,11 @@ public enum Moves {
         this(x, y, z, false, false);
     }
 
-    private static Movement narrowGapMovement(CalculationContext context, BetterBlockPos src, int destX, int destZ) {
-        MutableMoveResult res = new MutableMoveResult();
-        MovementNarrowGapTraverse.cost(context, src.x, src.y, src.z, destX, destZ, res);
-        return new MovementNarrowGapTraverse(context.getBaritone(), src, new BetterBlockPos(res.x, res.y, res.z));
-    }
-
-    private static Movement narrowGapMovement(CalculationContext context, BetterBlockPos src, int destX, int destZ,
-            BetterBlockPos barrierA, BetterBlockPos barrierB) {
-        MutableMoveResult res = new MutableMoveResult();
-        MovementNarrowGapTraverse.cost(context, src.x, src.y, src.z, destX, destZ, barrierA, barrierB, res);
-        return new MovementNarrowGapTraverse(context.getBaritone(), src, new BetterBlockPos(res.x, res.y, res.z),
-                barrierA, barrierB);
-    }
-
-    private static void applyNarrowGap(CalculationContext context, int x, int y, int z, int destX, int destZ,
-            MutableMoveResult result) {
-        MovementNarrowGapTraverse.cost(context, x, y, z, destX, destZ, result);
-    }
-
-    private static void applyNarrowGap(CalculationContext context, int x, int y, int z, int destX, int destZ,
-            BetterBlockPos barrierA, BetterBlockPos barrierB, MutableMoveResult result) {
-        MovementNarrowGapTraverse.cost(context, x, y, z, destX, destZ, barrierA, barrierB, result);
-    }
-
     public abstract Movement apply0(CalculationContext context, BetterBlockPos src);
 
     public void apply(CalculationContext context, int x, int y, int z, MutableMoveResult result) {
         if (dynamicXZ || dynamicY) {
-            throw new UnsupportedOperationException();
+            throw new UnsupportedOperationException("Movements with dynamic offset must override `apply`");
         }
         result.x = x + xOffset;
         result.y = y + yOffset;
@@ -685,6 +356,7 @@ public enum Moves {
     }
 
     public double cost(CalculationContext context, int x, int y, int z) {
-        throw new UnsupportedOperationException();
+        throw new UnsupportedOperationException("Movements must override `cost` or `apply`");
     }
 }
+

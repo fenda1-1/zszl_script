@@ -20,7 +20,7 @@ package com.zszl.zszlScriptMod.shadowbaritone.api.pathing.goals;
 import com.zszl.zszlScriptMod.shadowbaritone.api.utils.BetterBlockPos;
 import com.zszl.zszlScriptMod.shadowbaritone.api.utils.SettingsUtil;
 import com.zszl.zszlScriptMod.shadowbaritone.api.utils.interfaces.IGoalRenderPos;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.core.BlockPos;
 
 /**
  * A specific BlockPos goal
@@ -93,7 +93,8 @@ public class GoalBlock implements Goal, IGoalRenderPos {
                 "GoalBlock{x=%s,y=%s,z=%s}",
                 SettingsUtil.maybeCensor(x),
                 SettingsUtil.maybeCensor(y),
-                SettingsUtil.maybeCensor(z));
+                SettingsUtil.maybeCensor(z)
+        );
     }
 
     /**
@@ -107,13 +108,13 @@ public class GoalBlock implements Goal, IGoalRenderPos {
     public static double calculate(double xDiff, int yDiff, double zDiff) {
         double heuristic = 0;
 
-        // if yDiff is 1 that means that currentY-goalY==1 which means that we're 1
-        // block above where we should be
+        // if yDiff is 1 that means that currentY-goalY==1 which means that we're 1 block above where we should be
         // therefore going from 0,yDiff,0 to a GoalYLevel of 0 is accurate
         heuristic += GoalYLevel.calculate(0, yDiff);
 
-        // use the pythagorean and manhattan mixture from GoalXZ
+        //use the pythagorean and manhattan mixture from GoalXZ
         heuristic += GoalXZ.calculate(xDiff, zDiff);
         return heuristic;
     }
 }
+

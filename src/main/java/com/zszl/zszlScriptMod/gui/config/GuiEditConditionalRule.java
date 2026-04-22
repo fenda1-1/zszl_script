@@ -1,16 +1,15 @@
 package com.zszl.zszlScriptMod.gui.config;
 
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
 import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
-import net.minecraft.client.gui.GuiTextField;
-import net.minecraft.client.resources.I18n;
-import org.lwjgl.input.Keyboard;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiTextField;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Keyboard;
 
 import com.zszl.zszlScriptMod.gui.components.GuiTheme;
 import com.zszl.zszlScriptMod.gui.components.ThemedButton;
 import com.zszl.zszlScriptMod.gui.path.GuiSequenceSelector;
-import com.zszl.zszlScriptMod.handlers.ConditionalExecutionHandler;
 import com.zszl.zszlScriptMod.system.ConditionalRule;
 
 import java.io.IOException;
@@ -28,7 +27,6 @@ public class GuiEditConditionalRule extends ThemedGuiScreen {
     private GuiTextField nameField, xField, yField, zField, rangeField, loopCountField, cooldownField;
     private GuiButton btnEnabled, btnStopOnExit, btnRunOnce, btnSelectSequence, btnGetCoords;
     private List<GuiTextField> allTextFields = new ArrayList<>();
-    private boolean readOnlyBuiltin = false;
 
     private static final DecimalFormat COORD_FORMAT = new DecimalFormat("#.##");
 
@@ -43,7 +41,6 @@ public class GuiEditConditionalRule extends ThemedGuiScreen {
         Keyboard.enableRepeatEvents(true);
         this.buttonList.clear();
         this.allTextFields.clear();
-        this.readOnlyBuiltin = ConditionalExecutionHandler.isBuiltinRule(rule);
 
         int panelWidth = 240;
         int panelX = (this.width - panelWidth) / 2;
@@ -114,47 +111,26 @@ public class GuiEditConditionalRule extends ThemedGuiScreen {
         rangeField.setText(COORD_FORMAT.format(rule.range));
         loopCountField.setText(String.valueOf(rule.loopCount));
         cooldownField.setText(String.valueOf(rule.cooldownSeconds));
-
-        if (readOnlyBuiltin) {
-            for (GuiTextField field : allTextFields) {
-                field.setEnabled(false);
-            }
-            btnEnabled.enabled = false;
-            btnStopOnExit.enabled = false;
-            btnRunOnce.enabled = false;
-            btnSelectSequence.enabled = false;
-            btnGetCoords.enabled = false;
-
-            for (GuiButton b : this.buttonList) {
-                if (b.id == 12) {
-                    b.enabled = false;
-                    b.displayString = I18n.format("gui.conditional.btn.readonly");
-                }
-            }
-        }
     }
 
     @Override
     protected void actionPerformed(GuiButton button) throws IOException {
-        if (readOnlyBuiltin && button.id != 13) {
-            return;
-        }
         switch (button.id) {
             case 1:
                 rule.enabled = !rule.enabled;
                 btnEnabled.displayString = I18n.format("gui.conditional.btn.enabled", stateOnOff(rule.enabled));
                 break;
             case 2:
-                mc.displayGuiScreen(new GuiSequenceSelector(this, seq -> {
+                mc.setScreen(new GuiSequenceSelector(this, seq -> {
                     rule.sequenceName = seq;
-                    mc.displayGuiScreen(this);
+                    mc.setScreen(this);
                 }));
                 break;
             case 7:
                 if (mc.player != null) {
-                    xField.setText(COORD_FORMAT.format(mc.player.posX));
-                    yField.setText(COORD_FORMAT.format(mc.player.posY));
-                    zField.setText(COORD_FORMAT.format(mc.player.posZ));
+                    xField.setText(COORD_FORMAT.format(mc.player.getX()));
+                    yField.setText(COORD_FORMAT.format(mc.player.getY()));
+                    zField.setText(COORD_FORMAT.format(mc.player.getZ()));
                 }
                 break;
             case 10:
@@ -180,7 +156,7 @@ public class GuiEditConditionalRule extends ThemedGuiScreen {
                 }
                 break;
             case 13: // 取消
-                mc.displayGuiScreen(parentScreen);
+                mc.setScreen(parentScreen);
                 break;
         }
     }
@@ -194,10 +170,6 @@ public class GuiEditConditionalRule extends ThemedGuiScreen {
         int panelY = this.height / 2 - 142;
         GuiTheme.drawPanel(panelX, panelY, panelWidth, panelHeight);
         GuiTheme.drawTitleBar(panelX, panelY, panelWidth, I18n.format("gui.conditional.edit.title"), this.fontRenderer);
-        if (readOnlyBuiltin) {
-            drawCenteredString(fontRenderer, I18n.format("gui.conditional.edit.readonly"), this.width / 2,
-                    this.height / 2 - 122, 0xFFFFFF);
-        }
 
         drawString(fontRenderer, I18n.format("gui.conditional.rule_name"), nameField.x, nameField.y - 12,
                 GuiTheme.SUB_TEXT);
@@ -222,7 +194,7 @@ public class GuiEditConditionalRule extends ThemedGuiScreen {
     @Override
     protected void keyTyped(char typedChar, int keyCode) throws IOException {
         if (keyCode == Keyboard.KEY_ESCAPE) {
-            mc.displayGuiScreen(parentScreen);
+            mc.setScreen(parentScreen);
             return;
         }
         for (GuiTextField field : allTextFields) {
@@ -259,3 +231,10 @@ public class GuiEditConditionalRule extends ThemedGuiScreen {
         return I18n.format(yes ? "gui.common.yes" : "gui.common.no");
     }
 }
+
+
+
+
+
+
+

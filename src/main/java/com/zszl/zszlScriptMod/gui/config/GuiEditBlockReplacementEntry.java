@@ -5,11 +5,11 @@ import com.zszl.zszlScriptMod.gui.components.ThemedButton;
 import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
 import com.zszl.zszlScriptMod.handlers.BlockReplacementHandler;
 import com.zszl.zszlScriptMod.system.BlockReplacementRule;
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiScreen;
-import net.minecraft.client.gui.GuiTextField;
-import net.minecraft.client.resources.I18n;
-import org.lwjgl.input.Keyboard;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiTextField;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Keyboard;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -86,10 +86,10 @@ public class GuiEditBlockReplacementEntry extends ThemedGuiScreen {
             case 10:
                 syncFields();
                 onSave.accept(entry);
-                mc.displayGuiScreen(parentScreen);
+                mc.setScreen(parentScreen);
                 break;
             case 11:
-                mc.displayGuiScreen(parentScreen);
+                mc.setScreen(parentScreen);
                 break;
             default:
                 break;
@@ -136,7 +136,7 @@ public class GuiEditBlockReplacementEntry extends ThemedGuiScreen {
     @Override
     protected void keyTyped(char typedChar, int keyCode) throws IOException {
         if (keyCode == Keyboard.KEY_ESCAPE) {
-            mc.displayGuiScreen(parentScreen);
+            mc.setScreen(parentScreen);
             return;
         }
         for (GuiTextField field : fields) {
@@ -161,3 +161,9 @@ public class GuiEditBlockReplacementEntry extends ThemedGuiScreen {
         return I18n.format(enabled ? "gui.autoeat.state.on" : "gui.autoeat.state.off");
     }
 }
+
+
+
+
+
+

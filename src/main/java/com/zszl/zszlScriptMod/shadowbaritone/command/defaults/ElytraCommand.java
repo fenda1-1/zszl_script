@@ -27,13 +27,13 @@ import com.zszl.zszlScriptMod.shadowbaritone.api.command.helpers.TabCompleteHelp
 import com.zszl.zszlScriptMod.shadowbaritone.api.pathing.goals.Goal;
 import com.zszl.zszlScriptMod.shadowbaritone.api.process.ICustomGoalProcess;
 import com.zszl.zszlScriptMod.shadowbaritone.api.process.IElytraProcess;
-import com.zszl.zszlScriptMod.shadowbaritone.api.utils.ShadowBaritoneI18n;
+import net.minecraft.ChatFormatting;
 import net.minecraft.client.multiplayer.ServerData;
-import net.minecraft.util.text.ITextComponent;
-import net.minecraft.util.text.TextComponentString;
-import net.minecraft.util.text.TextFormatting;
-import net.minecraft.util.text.event.ClickEvent;
-import net.minecraft.util.text.event.HoverEvent;
+import net.minecraft.network.chat.ClickEvent;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.HoverEvent;
+import net.minecraft.network.chat.MutableComponent;
+import net.minecraft.world.level.Level;
 
 import java.util.Arrays;
 import java.util.List;
@@ -52,10 +52,7 @@ public class ElytraCommand extends Command {
         final ICustomGoalProcess customGoalProcess = baritone.getCustomGoalProcess();
         final IElytraProcess elytra = baritone.getElytraProcess();
         if (args.hasExactlyOne() && args.peekString().equals("supported")) {
-            logDirect(elytra.isLoaded()
-                    ? ShadowBaritoneI18n.trKey(
-                            "shadowbaritone.command.elytra.value.supported_yes")
-                    : unsupportedSystemMessage());
+            logDirect(elytra.isLoaded() ? "yes" : unsupportedSystemMessage());
             return;
         }
         if (!elytra.isLoaded()) {
@@ -72,12 +69,10 @@ public class ElytraCommand extends Command {
             }
             Goal iGoal = customGoalProcess.mostRecentGoal();
             if (iGoal == null) {
-                throw new CommandInvalidStateException(ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.elytra.error.no_goal"));
+                throw new CommandInvalidStateException("No goal has been set");
             }
-            if (ctx.player().dimension != -1) {
-                throw new CommandInvalidStateException(ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.elytra.error.only_nether"));
+            if (ctx.world().dimension() != Level.NETHER) {
+                throw new CommandInvalidStateException("Only works in the nether");
             }
             try {
                 elytra.pathTo(iGoal);
@@ -91,19 +86,16 @@ public class ElytraCommand extends Command {
         switch (action) {
             case "reset": {
                 elytra.resetState();
-                logDirect(ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.elytra.status.reset_same_goal"));
+                logDirect("Reset state but still flying to same goal");
                 break;
             }
             case "repack": {
                 elytra.repackChunks();
-                logDirect(ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.elytra.status.repack_queued"));
+                logDirect("Queued all loaded chunks for repacking");
                 break;
             }
             default: {
-                throw new CommandInvalidStateException(ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.elytra.error.invalid_action"));
+                throw new CommandInvalidStateException("Invalid action");
             }
         }
     }
@@ -112,117 +104,73 @@ public class ElytraCommand extends Command {
         if (Baritone.settings().elytraPredictTerrain.value) {
             long seed = Baritone.settings().elytraNetherSeed.value;
             if (seed != NEW_2B2T_SEED && seed != OLD_2B2T_SEED) {
-                logDirect(new TextComponentString(ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.elytra.warning.2b2t.seed_incorrect")));
+                logDirect(Component.literal("It looks like you're on 2b2t, but elytraNetherSeed is incorrect.")); // match color
                 logDirect(suggest2b2tSeeds());
             }
         }
     }
 
-    private ITextComponent suggest2b2tSeeds() {
-        TextComponentString clippy = new TextComponentString("");
-        clippy.appendText(ShadowBaritoneI18n.trKey(
-                "shadowbaritone.command.elytra.warning.2b2t.terrain_intro"));
-        clippy.appendText(ShadowBaritoneI18n.trKey(
-                "shadowbaritone.command.elytra.warning.2b2t.try_older_seed"));
-        TextComponentString olderSeed = new TextComponentString(ShadowBaritoneI18n.trKey(
-                "shadowbaritone.command.elytra.action.older_seed"));
-        olderSeed.getStyle().setUnderlined(true).setBold(true)
-                .setHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT,
-                        new TextComponentString(
-                                Baritone.settings().prefix.value + "set elytraNetherSeed " + OLD_2B2T_SEED)))
-                .setClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND,
-                        FORCE_COMMAND_PREFIX + "set elytraNetherSeed " + OLD_2B2T_SEED));
-        clippy.appendSibling(olderSeed);
-        clippy.appendText(ShadowBaritoneI18n.trKey(
-                "shadowbaritone.command.elytra.warning.2b2t.try_newer_seed"));
-        TextComponentString newerSeed = new TextComponentString(ShadowBaritoneI18n.trKey(
-                "shadowbaritone.command.elytra.action.newer_seed"));
-        newerSeed.getStyle().setUnderlined(true).setBold(true)
-                .setHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT,
-                        new TextComponentString(
-                                Baritone.settings().prefix.value + "set elytraNetherSeed " + NEW_2B2T_SEED)))
-                .setClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND,
-                        FORCE_COMMAND_PREFIX + "set elytraNetherSeed " + NEW_2B2T_SEED));
-        clippy.appendSibling(newerSeed);
-        clippy.appendText(ShadowBaritoneI18n.trKey(
-                "shadowbaritone.command.elytra.warning.2b2t.terrain_outro"));
+    private Component suggest2b2tSeeds() {
+        MutableComponent clippy = Component.literal("");
+        clippy.append("Within a few hundred blocks of spawn/axis/highways/etc, the terrain is too fragmented to be predictable. Baritone Elytra will still work, just with backtracking. ");
+        clippy.append("However, once you get more than a few thousand blocks out, you should try ");
+        MutableComponent olderSeed = Component.literal("the older seed (click here)");
+        olderSeed.setStyle(olderSeed.getStyle().withUnderlined(true).withBold(true).withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, Component.literal(Baritone.settings().prefix.value + "set elytraNetherSeed " + OLD_2B2T_SEED))).withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, FORCE_COMMAND_PREFIX + "set elytraNetherSeed " + OLD_2B2T_SEED)));
+        clippy.append(olderSeed);
+        clippy.append(". Once you're further out into newer terrain generation (this includes everything up through 1.12), you should try ");
+        MutableComponent newerSeed = Component.literal("the newer seed (click here)");
+        newerSeed.setStyle(newerSeed.getStyle().withUnderlined(true).withBold(true).withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, Component.literal(Baritone.settings().prefix.value + "set elytraNetherSeed " + NEW_2B2T_SEED))).withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, FORCE_COMMAND_PREFIX + "set elytraNetherSeed " + NEW_2B2T_SEED)));
+        clippy.append(newerSeed);
+        clippy.append(". Once you get into 1.19 terrain, the terrain becomes unpredictable again, due to custom non-vanilla generation, and you should set #elytraPredictTerrain to false. ");
         return clippy;
     }
 
     private void gatekeep() {
-        TextComponentString gatekeep = new TextComponentString("");
-        gatekeep.appendText(ShadowBaritoneI18n.trKey(
-                "shadowbaritone.command.elytra.gatekeep.disable_message"));
-        gatekeep.appendText(ShadowBaritoneI18n.trKey(
-                "shadowbaritone.command.elytra.gatekeep.experimental"));
-        TextComponentString gatekeep2 = new TextComponentString(ShadowBaritoneI18n.trKey(
-                "shadowbaritone.command.elytra.gatekeep.autojump"));
-        gatekeep2.getStyle().setHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT,
-                new TextComponentString(Baritone.settings().prefix.value + "set elytraAutoJump true")));
-        gatekeep.appendSibling(gatekeep2);
-        TextComponentString gatekeep3 = new TextComponentString(ShadowBaritoneI18n.trKey(
-                "shadowbaritone.command.elytra.gatekeep.conserve_fireworks"));
-        gatekeep3.getStyle().setHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT,
-                new TextComponentString(Baritone.settings().prefix.value + "set elytraConserveFireworks true\n"
-                        + Baritone.settings().prefix.value
-                        + "set elytraFireworkSpeed 0.6\n(the 0.6 number is just an example, tweak to your liking)")));
-        gatekeep.appendSibling(gatekeep3);
-        TextComponentString gatekeep4 = new TextComponentString(ShadowBaritoneI18n.trKey(
-                "shadowbaritone.command.elytra.gatekeep.seed_title_prefix"));
-        TextComponentString red = new TextComponentString(ShadowBaritoneI18n.trKey(
-                "shadowbaritone.command.elytra.gatekeep.seed_title_highlight"));
-        red.getStyle().setColor(TextFormatting.RED).setUnderlined(true).setBold(true);
-        gatekeep4.appendSibling(red);
-        gatekeep4.appendText(ShadowBaritoneI18n.trKey(
-                "shadowbaritone.command.elytra.gatekeep.seed_title_suffix"));
-        gatekeep.appendSibling(gatekeep4);
-        gatekeep.appendText("\n");
+        MutableComponent gatekeep = Component.literal("");
+        gatekeep.append("To disable this message, enable the setting elytraTermsAccepted\n");
+        gatekeep.append("Baritone Elytra is an experimental feature. It is only intended for long distance travel in the Nether using fireworks for vanilla boost. It will not work with any other mods (\"hacks\") for non-vanilla boost. ");
+        MutableComponent gatekeep2 = Component.literal("If you want Baritone to attempt to take off from the ground for you, you can enable the elytraAutoJump setting (not advisable on laggy servers!). ");
+        gatekeep2.setStyle(gatekeep2.getStyle().withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, Component.literal(Baritone.settings().prefix.value + "set elytraAutoJump true"))));
+        gatekeep.append(gatekeep2);
+        MutableComponent gatekeep3 = Component.literal("If you want Baritone to go slower, enable the elytraConserveFireworks setting and/or decrease the elytraFireworkSpeed setting. ");
+        gatekeep3.setStyle(gatekeep3.getStyle().withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, Component.literal(Baritone.settings().prefix.value + "set elytraConserveFireworks true\n" + Baritone.settings().prefix.value + "set elytraFireworkSpeed 0.6\n(the 0.6 number is just an example, tweak to your liking)"))));
+        gatekeep.append(gatekeep3);
+        MutableComponent gatekeep4 = Component.literal("Baritone Elytra ");
+        MutableComponent red = Component.literal("wants to know the seed");
+        red.setStyle(red.getStyle().withColor(ChatFormatting.RED).withUnderlined(true).withBold(true));
+        gatekeep4.append(red);
+        gatekeep4.append(" of the world you are in. If it doesn't have the correct seed, it will frequently backtrack. It uses the seed to generate terrain far beyond what you can see, since terrain obstacles in the Nether can be much larger than your render distance. ");
+        gatekeep.append(gatekeep4);
+        gatekeep.append("\n");
         if (detectOn2b2t()) {
-            TextComponentString gatekeep5 = new TextComponentString(ShadowBaritoneI18n.trKey(
-                    "shadowbaritone.command.elytra.gatekeep.server_detected_2b2t"));
-            gatekeep5.appendSibling(suggest2b2tSeeds());
+            MutableComponent gatekeep5 = Component.literal("It looks like you're on 2b2t. ");
+            gatekeep5.append(suggest2b2tSeeds());
             if (!Baritone.settings().elytraPredictTerrain.value) {
-                gatekeep5.appendText(ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.elytra.gatekeep.predict_disabled",
-                        Baritone.settings().prefix.value));
+                gatekeep5.append(Baritone.settings().prefix.value + "elytraPredictTerrain is currently disabled. ");
             } else {
                 if (Baritone.settings().elytraNetherSeed.value == NEW_2B2T_SEED) {
-                    gatekeep5.appendText(ShadowBaritoneI18n.trKey(
-                            "shadowbaritone.command.elytra.gatekeep.using_new_seed"));
+                    gatekeep5.append("You are using the newer seed. ");
                 } else if (Baritone.settings().elytraNetherSeed.value == OLD_2B2T_SEED) {
-                    gatekeep5.appendText(ShadowBaritoneI18n.trKey(
-                            "shadowbaritone.command.elytra.gatekeep.using_old_seed"));
+                    gatekeep5.append("You are using the older seed. ");
                 } else {
-                    gatekeep5.appendText(ShadowBaritoneI18n.trKey(
-                            "shadowbaritone.command.elytra.gatekeep.default_new_seed"));
+                    gatekeep5.append("Defaulting to the newer seed. ");
                     Baritone.settings().elytraNetherSeed.value = NEW_2B2T_SEED;
                 }
             }
-            gatekeep.appendSibling(gatekeep5);
+            gatekeep.append(gatekeep5);
         } else {
             if (Baritone.settings().elytraNetherSeed.value == NEW_2B2T_SEED) {
-                TextComponentString gatekeep5 = new TextComponentString(ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.elytra.gatekeep.seed_unknown",
-                        Baritone.settings().prefix.value));
-                gatekeep5.appendText(ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.elytra.gatekeep.seed_unknown_default"));
-                gatekeep.appendSibling(gatekeep5);
+                MutableComponent gatekeep5 = Component.literal("Baritone doesn't know the seed of your world. Set it with: " + Baritone.settings().prefix.value + "set elytraNetherSeed seedgoeshere\n");
+                gatekeep5.append("For the time being, elytraPredictTerrain is defaulting to false since the seed is unknown.");
+                gatekeep.append(gatekeep5);
                 Baritone.settings().elytraPredictTerrain.value = false;
             } else {
                 if (Baritone.settings().elytraPredictTerrain.value) {
-                    TextComponentString gatekeep5 = new TextComponentString(ShadowBaritoneI18n.trKey(
-                            "shadowbaritone.command.elytra.gatekeep.predicting_with_seed",
-                            Baritone.settings().elytraNetherSeed.value,
-                            Baritone.settings().prefix.value,
-                            Baritone.settings().prefix.value));
-                    gatekeep.appendSibling(gatekeep5);
+                    MutableComponent gatekeep5 = Component.literal("Baritone Elytra is predicting terrain assuming that " + Baritone.settings().elytraNetherSeed.value + " is the correct seed. Change that with " + Baritone.settings().prefix.value + "set elytraNetherSeed seedgoeshere, or disable it with " + Baritone.settings().prefix.value + "set elytraPredictTerrain false");
+                    gatekeep.append(gatekeep5);
                 } else {
-                    TextComponentString gatekeep5 = new TextComponentString(ShadowBaritoneI18n.trKey(
-                            "shadowbaritone.command.elytra.gatekeep.not_predicting",
-                            Baritone.settings().prefix.value,
-                            Baritone.settings().prefix.value));
-                    gatekeep.appendSibling(gatekeep5);
+                    MutableComponent gatekeep5 = Component.literal("Baritone Elytra is not predicting terrain. If you don't know the seed, this is the correct thing to do. If you do know the seed, input it with " + Baritone.settings().prefix.value + "set elytraNetherSeed seedgoeshere, and then enable it with " + Baritone.settings().prefix.value + "set elytraPredictTerrain true");
+                    gatekeep.append(gatekeep5);
                 }
             }
         }
@@ -230,8 +178,8 @@ public class ElytraCommand extends Command {
     }
 
     private boolean detectOn2b2t() {
-        ServerData data = ctx.minecraft().getCurrentServerData();
-        return data != null && data.serverIP.toLowerCase().contains("2b2t.org");
+        ServerData data = ctx.minecraft().getCurrentServer();
+        return data != null && data.ip.toLowerCase().contains("2b2t.org");
     }
 
     private static final long OLD_2B2T_SEED = -4100785268875389365L;
@@ -248,33 +196,31 @@ public class ElytraCommand extends Command {
 
     @Override
     public String getShortDesc() {
-        return ShadowBaritoneI18n.trKey(
-                "shadowbaritone.command.elytra.short_desc");
+        return "elytra time";
     }
 
     @Override
     public List<String> getLongDesc() {
         return Arrays.asList(
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.elytra.long_desc.1"),
+                "The elytra command tells baritone to, in the nether, automatically fly to the current goal.",
                 "",
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.elytra.long_desc.usage"),
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.elytra.long_desc.example.default"),
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.elytra.long_desc.example.reset"),
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.elytra.long_desc.example.repack"),
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.elytra.long_desc.example.supported"));
+                "Usage:",
+                "> elytra - fly to the current goal",
+                "> elytra reset - Resets the state of the process, but will try to keep flying to the same goal.",
+                "> elytra repack - Queues all of the chunks in render distance to be given to the native library.",
+                "> elytra supported - Tells you if baritone ships a native library that is compatible with your PC."
+        );
     }
 
     private static String unsupportedSystemMessage() {
         final String osArch = System.getProperty("os.arch");
         final String osName = System.getProperty("os.name");
-        return ShadowBaritoneI18n.trKey(
-                "shadowbaritone.command.elytra.error.unsupported_system",
-                osArch, osName);
+        return String.format(
+                "Failed loading native library. Your CPU is %s and your operating system is %s. " +
+                        "Supported architectures are 64 bit x86, and 64 bit ARM. Supported operating systems are Windows, " +
+                        "Linux, and Mac",
+                osArch, osName
+        );
     }
 }
+

@@ -5,22 +5,24 @@ import com.zszl.zszlScriptMod.gui.components.GuiTextInput;
 import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
 import com.zszl.zszlScriptMod.gui.components.GuiTheme;
 import com.zszl.zszlScriptMod.utils.PacketCaptureHandler;
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiScreen;
-import net.minecraft.client.gui.GuiTextField;
-import net.minecraft.client.gui.GuiYesNo;
-import net.minecraft.client.resources.I18n;
-import net.minecraft.util.text.TextComponentString;
-import net.minecraft.util.text.TextFormatting;
-import org.lwjgl.input.Keyboard;
-import org.lwjgl.input.Mouse;
+import com.zszl.zszlScriptMod.utils.PinyinSearchHelper;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiTextField;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiYesNo;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiYesNoCallback;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.util.text.TextComponentString;
+import net.minecraft.ChatFormatting;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Keyboard;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Mouse;
 
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
-public class GuiPacketSnapshotManager extends ThemedGuiScreen {
+public class GuiPacketSnapshotManager extends ThemedGuiScreen implements GuiYesNoCallback {
 
     private final GuiScreen parentScreen;
     private List<PacketSnapshotManager.SnapshotMeta> snapshots = new ArrayList<>();
@@ -90,16 +92,16 @@ public class GuiPacketSnapshotManager extends ThemedGuiScreen {
     }
 
     private void applyFilter() {
-        String keyword = filterField == null ? "" : filterField.getText().trim().toLowerCase();
+        String keyword = PinyinSearchHelper.normalizeQuery(filterField == null ? "" : filterField.getText());
         if (keyword.isEmpty()) {
             filteredSnapshots = new ArrayList<>(snapshots);
         } else {
             filteredSnapshots = new ArrayList<>();
             for (PacketSnapshotManager.SnapshotMeta meta : snapshots) {
-                String name = meta.name == null ? "" : meta.name.toLowerCase();
-                String mode = meta.captureMode == null ? "" : meta.captureMode.toLowerCase();
-                String time = meta.getDisplayTime().toLowerCase();
-                if (name.contains(keyword) || mode.contains(keyword) || time.contains(keyword)) {
+                String searchText = (meta.name == null ? "" : meta.name) + " "
+                        + (meta.captureMode == null ? "" : meta.captureMode) + " "
+                        + (meta.getDisplayTime() == null ? "" : meta.getDisplayTime());
+                if (PinyinSearchHelper.matchesNormalized(searchText, keyword)) {
                     filteredSnapshots.add(meta);
                 }
             }
@@ -136,7 +138,7 @@ public class GuiPacketSnapshotManager extends ThemedGuiScreen {
                     .collect(Collectors.toList());
             String title = I18n.format("gui.packet.snapshot.viewer_title", snapshot.name,
                     packets.size(), snapshot.captureMode);
-            mc.displayGuiScreen(new GuiPacketViewer(this, packets, title, true));
+            mc.setScreen(new GuiPacketViewer(this, packets, title, true));
         }
     }
 
@@ -150,31 +152,31 @@ public class GuiPacketSnapshotManager extends ThemedGuiScreen {
                 initGui();
                 break;
             case 2:
-                mc.displayGuiScreen(parentScreen);
+                mc.setScreen(parentScreen);
                 break;
             case 3:
                 if (selectedIndex >= 0 && selectedIndex < filteredSnapshots.size()) {
                     String oldName = filteredSnapshots.get(selectedIndex).name;
-                    mc.displayGuiScreen(new GuiTextInput(this, I18n.format("gui.path.manager.input_new_name"), oldName,
+                    mc.setScreen(new GuiTextInput(this, I18n.format("gui.path.manager.input_new_name"), oldName,
                             newName -> {
                                 if (newName != null && !newName.trim().isEmpty()) {
                                     boolean ok = PacketSnapshotManager.renameSnapshot(oldName, newName.trim());
                                     if (mc.player != null) {
-                                        mc.player.sendMessage(new TextComponentString(
-                                                (ok ? TextFormatting.GREEN : TextFormatting.RED)
+                                        mc.player.sendSystemMessage(new TextComponentString(
+                                                (ok ? ChatFormatting.GREEN : ChatFormatting.RED)
                                                         + (ok ? I18n.format("msg.packet.snapshot.rename_success")
                                                                 : I18n.format("msg.packet.snapshot.rename_failed"))));
                                     }
                                 }
                                 this.initGui();
-                                mc.displayGuiScreen(this);
+                                mc.setScreen(this);
                             }));
                 }
                 break;
             case 4:
                 if (selectedIndex >= 0 && selectedIndex < filteredSnapshots.size()) {
                     String name = filteredSnapshots.get(selectedIndex).name;
-                    mc.displayGuiScreen(new GuiYesNo(this,
+                    mc.setScreen(new GuiYesNo((GuiYesNoCallback) this,
                             I18n.format("gui.common.confirm_delete"),
                             I18n.format("gui.packet.snapshot.delete_confirm", name), 99));
                 }
@@ -199,8 +201,8 @@ public class GuiPacketSnapshotManager extends ThemedGuiScreen {
             String name = filteredSnapshots.get(selectedIndex).name;
             boolean ok = PacketSnapshotManager.deleteSnapshot(name);
             if (mc.player != null) {
-                mc.player.sendMessage(new TextComponentString(
-                        (ok ? TextFormatting.GREEN : TextFormatting.RED)
+                mc.player.sendSystemMessage(new TextComponentString(
+                        (ok ? ChatFormatting.GREEN : ChatFormatting.RED)
                                 + (ok ? I18n.format("msg.packet.snapshot.delete_success")
                                         : I18n.format("msg.packet.snapshot.delete_failed"))));
             }
@@ -210,7 +212,7 @@ public class GuiPacketSnapshotManager extends ThemedGuiScreen {
                 initGui();
             }
         }
-        mc.displayGuiScreen(this);
+        mc.setScreen(this);
     }
 
     @Override
@@ -362,3 +364,5 @@ public class GuiPacketSnapshotManager extends ThemedGuiScreen {
         drawSimpleTooltip(tooltip, mouseX, mouseY);
     }
 }
+
+

@@ -27,16 +27,16 @@ import com.zszl.zszlScriptMod.shadowbaritone.api.command.datatypes.NearbyPlayer;
 import com.zszl.zszlScriptMod.shadowbaritone.api.command.exception.CommandErrorMessageException;
 import com.zszl.zszlScriptMod.shadowbaritone.api.command.exception.CommandException;
 import com.zszl.zszlScriptMod.shadowbaritone.api.command.helpers.TabCompleteHelper;
-import com.zszl.zszlScriptMod.shadowbaritone.api.utils.ShadowBaritoneI18n;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.EntityList;
-import net.minecraft.entity.EntityLiving;
-import net.minecraft.entity.player.EntityPlayer;
-import net.minecraft.util.ResourceLocation;
-
 import java.util.*;
 import java.util.function.Predicate;
 import java.util.stream.Stream;
+import net.minecraft.core.Registry;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.player.Player;
 
 public class FollowCommand extends Command {
 
@@ -50,7 +50,7 @@ public class FollowCommand extends Command {
         FollowGroup group;
         FollowList list;
         List<Entity> entities = new ArrayList<>();
-        List<Class<? extends Entity>> classes = new ArrayList<>();
+        List<EntityType> classes = new ArrayList<>();
         if (args.hasExactlyOne()) {
             baritone.getFollowProcess().follow((group = args.getEnum(FollowGroup.class)).filter);
         } else {
@@ -59,36 +59,33 @@ public class FollowCommand extends Command {
             list = args.getEnum(FollowList.class);
             while (args.hasAny()) {
                 Object gotten = args.getDatatypeFor(list.datatype);
-                if (gotten instanceof Class) {
-                    // noinspection unchecked
-                    classes.add((Class<? extends Entity>) gotten);
+                if (gotten instanceof EntityType) {
+                    //noinspection unchecked
+                    classes.add((EntityType) gotten);
                 } else if (gotten != null) {
                     entities.add((Entity) gotten);
                 }
             }
+
             baritone.getFollowProcess().follow(
                     classes.isEmpty()
                             ? entities::contains
-                            : e -> classes.stream().anyMatch(c -> c.isInstance(e)));
+                            : e -> classes.stream().anyMatch(c -> e.getType().equals(c))
+            );
         }
         if (group != null) {
-            logDirect(ShadowBaritoneI18n.trKey(
-                    "shadowbaritone.command.follow.status.following_all",
-                    getFollowGroupDisplayName(group)));
+            logDirect(String.format("Following all %s", group.name().toLowerCase(Locale.US)));
         } else {
             if (classes.isEmpty()) {
-                if (entities.isEmpty())
-                    throw new NoEntitiesException();
-                logDirect(ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.follow.status.following_entities"));
+                if (entities.isEmpty()) throw new NoEntitiesException();
+                logDirect("Following these entities:");
                 entities.stream()
                         .map(Entity::toString)
                         .forEach(this::logDirect);
             } else {
-                logDirect(ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.follow.status.following_entity_types"));
+                logDirect("Following these types of entities:");
                 classes.stream()
-                        .map(EntityList::getKey)
+                        .map(BuiltInRegistries.ENTITY_TYPE::getKey)
                         .map(Objects::requireNonNull)
                         .map(ResourceLocation::toString)
                         .forEach(this::logDirect);
@@ -121,52 +118,30 @@ public class FollowCommand extends Command {
         }
     }
 
-    private String getFollowGroupDisplayName(FollowGroup group) {
-        switch (group) {
-            case ENTITIES:
-                return ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.follow.value.group.entities");
-            case PLAYERS:
-                return ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.follow.value.group.players");
-            default:
-                return group.name().toLowerCase(Locale.US);
-        }
-    }
-
     @Override
     public String getShortDesc() {
-        return ShadowBaritoneI18n.trKey(
-                "shadowbaritone.command.follow.short_desc");
+        return "Follow entity things";
     }
 
     @Override
     public List<String> getLongDesc() {
         return Arrays.asList(
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.follow.long_desc.1"),
+                "The follow command tells Baritone to follow certain kinds of entities.",
                 "",
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.follow.long_desc.usage"),
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.follow.long_desc.example.entities"),
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.follow.long_desc.example.entity"),
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.follow.long_desc.example.players"),
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.follow.long_desc.example.player"));
+                "Usage:",
+                "> follow entities - Follows all entities.",
+                "> follow entity <entity1> <entity2> <...> - Follow certain entities (for example 'skeleton', 'horse' etc.)",
+                "> follow players - Follow players",
+                "> follow player <username1> <username2> <...> - Follow certain players"
+        );
     }
 
     @KeepName
     private enum FollowGroup {
-        ENTITIES(EntityLiving.class::isInstance),
-        PLAYERS(EntityPlayer.class::isInstance); /*
-                                                  * ,
-                                                  * FRIENDLY(entity -> entity.getAttackTarget() != HELPER.mc.player),
-                                                  * HOSTILE(FRIENDLY.filter.negate());
-                                                  */
-
+        ENTITIES(LivingEntity.class::isInstance),
+        PLAYERS(Player.class::isInstance); /* ,
+        FRIENDLY(entity -> entity.getAttackTarget() != HELPER.mc.player),
+        HOSTILE(FRIENDLY.filter.negate()); */
         final Predicate<Entity> filter;
 
         FollowGroup(Predicate<Entity> filter) {
@@ -189,9 +164,9 @@ public class FollowCommand extends Command {
     public static class NoEntitiesException extends CommandErrorMessageException {
 
         protected NoEntitiesException() {
-            super(ShadowBaritoneI18n.trKey(
-                    "shadowbaritone.command.follow.error.no_valid_entities"));
+            super("No valid entities in range!");
         }
 
     }
 }
+

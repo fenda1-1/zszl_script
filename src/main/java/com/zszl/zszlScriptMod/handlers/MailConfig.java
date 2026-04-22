@@ -4,7 +4,7 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.zszl.zszlScriptMod.zszlScriptMod;
 import com.zszl.zszlScriptMod.system.ProfileManager;
-import net.minecraft.client.resources.I18n;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
@@ -59,3 +59,6 @@ public class MailConfig {
         }
     }
 }
+
+
+

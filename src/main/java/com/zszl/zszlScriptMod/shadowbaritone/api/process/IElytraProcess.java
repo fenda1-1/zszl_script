@@ -18,7 +18,7 @@
 package com.zszl.zszlScriptMod.shadowbaritone.api.process;
 
 import com.zszl.zszlScriptMod.shadowbaritone.api.pathing.goals.Goal;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.core.BlockPos;
 
 public interface IElytraProcess extends IBaritoneProcess {
 
@@ -34,14 +34,12 @@ public interface IElytraProcess extends IBaritoneProcess {
     void pathTo(Goal destination);
 
     /**
-     * Resets the state of the process but will maintain the same destination and
-     * will try to keep flying
+     * Resets the state of the process but will maintain the same destination and will try to keep flying
      */
     void resetState();
 
     /**
-     * @return {@code true} if the native library loaded and elytra is actually
-     *         usable
+     * @return {@code true} if the native library loaded and elytra is actually usable
      */
     boolean isLoaded();
 
@@ -50,3 +48,4 @@ public interface IElytraProcess extends IBaritoneProcess {
      */
     boolean isSafeToCancel();
 }
+

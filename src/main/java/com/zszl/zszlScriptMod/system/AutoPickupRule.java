@@ -2,13 +2,14 @@
 package com.zszl.zszlScriptMod.system;
 
 import com.zszl.zszlScriptMod.zszlScriptMod;
-import net.minecraft.client.resources.I18n;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
 
 import java.util.ArrayList;
 import java.util.List;
 
 public class AutoPickupRule {
     public static final double DEFAULT_TARGET_REACH_DISTANCE = 0.5D;
+    public static final int DEFAULT_MAX_PICKUP_ATTEMPTS = 3;
 
     public static class ItemMatchEntry {
         public String keyword;
@@ -63,6 +64,7 @@ public class AutoPickupRule {
     public boolean enabled; // 此规则是否激活
     public double centerX, centerY, centerZ, radius;
     public double targetReachDistance;
+    public int maxPickupAttempts;
     public boolean visualizeRange;
     public boolean enableItemWhitelist;
     public boolean enableItemBlacklist;
@@ -88,6 +90,7 @@ public class AutoPickupRule {
         this.centerZ = 0;
         this.radius = 20.0;
         this.targetReachDistance = DEFAULT_TARGET_REACH_DISTANCE;
+        this.maxPickupAttempts = DEFAULT_MAX_PICKUP_ATTEMPTS;
         this.visualizeRange = false;
         this.enableItemWhitelist = false;
         this.enableItemBlacklist = false;
@@ -105,7 +108,13 @@ public class AutoPickupRule {
     }
 
     public boolean isPlayerInside(double playerX, double playerY, double playerZ) {
-        // 使用 zszlScriptMod 中的通用方法进行距离检查
-        return zszlScriptMod.ArriveAt(centerX, centerY, centerZ, radius);
+        double dx = playerX - centerX;
+        double dy = playerY - centerY;
+        double dz = playerZ - centerZ;
+        double limit = Math.max(0.0, radius);
+        return dx * dx + dy * dy + dz * dz <= limit * limit;
     }
 }
+
+
+

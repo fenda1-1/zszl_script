@@ -1,8 +1,8 @@
 package com.zszl.zszlScriptMod.gui.path.GuiActionEditor;
 
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.Gui;
-import net.minecraft.client.gui.FontRenderer;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.Gui;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.FontRenderer;
 
 class EnumDropdown extends Gui {
     private static final int MAX_VISIBLE_OPTIONS = 8;
@@ -33,7 +33,7 @@ class EnumDropdown extends Gui {
     }
 
     void drawMain(int mouseX, int mouseY) {
-        FontRenderer fontRenderer = Minecraft.getMinecraft().fontRenderer;
+        FontRenderer fontRenderer = new FontRenderer(Minecraft.getInstance().font);
         boolean hoverMain = enabled && isMouseInside(mouseX, mouseY, x, y, width, height);
         int bg = !enabled ? 0xAA111920 : (hoverMain ? 0xCC203146 : 0xCC152433);
         int border = !enabled ? 0xFF465566 : (expanded ? 0xFF76D1FF : (hoverMain ? 0xFF4FA6D9 : 0xFF3F6A8C));
@@ -52,7 +52,7 @@ class EnumDropdown extends Gui {
     }
 
     void drawExpanded(int mouseX, int mouseY) {
-        FontRenderer fontRenderer = Minecraft.getMinecraft().fontRenderer;
+        FontRenderer fontRenderer = new FontRenderer(Minecraft.getInstance().font);
         if (!enabled || !expanded || options == null || options.length == 0) {
             return;
         }
@@ -261,3 +261,4 @@ class EnumDropdown extends Gui {
         return mx >= rx && mx <= rx + rw && my >= ry && my <= ry + rh;
     }
 }
+

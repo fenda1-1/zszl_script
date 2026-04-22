@@ -2,11 +2,11 @@
 package com.zszl.zszlScriptMod.gui.debug;
 
 import com.zszl.zszlScriptMod.system.MemoryManager;
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
 import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
-import net.minecraft.client.resources.I18n;
-import org.lwjgl.input.Mouse;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Mouse;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -134,12 +134,12 @@ public class GuiMemoryComparison extends ThemedGuiScreen {
     @Override
     protected void actionPerformed(GuiButton button) throws IOException {
         if (button.id == 0) {
-            mc.displayGuiScreen(parentScreen);
+            mc.setScreen(parentScreen);
         } else if (button.id == 1) {
             setClipboardString(generateReportString());
             if (mc.player != null) {
-                mc.player.sendMessage(new net.minecraft.util.text.TextComponentString(
-                        net.minecraft.util.text.TextFormatting.GREEN
+                mc.player.sendSystemMessage(new com.zszl.zszlScriptMod.compat.legacy.net.minecraft.util.text.TextComponentString(
+                        net.minecraft.ChatFormatting.GREEN
                                 + I18n.format("msg.memory.compare.report_copied")));
             }
         }
@@ -268,3 +268,10 @@ public class GuiMemoryComparison extends ThemedGuiScreen {
         return String.format("%s%.2f %sB", sign, bytes / Math.pow(1024, exp), pre);
     }
 }
+
+
+
+
+
+
+

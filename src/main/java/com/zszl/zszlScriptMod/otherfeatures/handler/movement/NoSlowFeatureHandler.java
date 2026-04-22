@@ -1,15 +1,15 @@
 package com.zszl.zszlScriptMod.otherfeatures.handler.movement;
 
-import net.minecraft.client.entity.EntityPlayerSP;
+import net.minecraft.client.player.LocalPlayer;
 
 final class NoSlowFeatureHandler {
 
     private NoSlowFeatureHandler() {
     }
 
-    static void apply(EntityPlayerSP player) {
+    static void apply(LocalPlayer player) {
         if (!MovementFeatureManager.isEnabled("no_slow")
-                || !player.isHandActive()
+                || !player.isUsingItem()
                 || !MovementFeatureSupport.isMoving(player)) {
             return;
         }
@@ -18,3 +18,5 @@ final class NoSlowFeatureHandler {
         MovementFeatureSupport.ensureHorizontalSpeed(player, minSpeed);
     }
 }
+
+

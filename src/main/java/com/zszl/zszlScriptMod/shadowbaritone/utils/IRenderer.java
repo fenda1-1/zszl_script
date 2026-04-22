@@ -19,29 +19,29 @@ package com.zszl.zszlScriptMod.shadowbaritone.utils;
 
 import com.zszl.zszlScriptMod.shadowbaritone.api.BaritoneAPI;
 import com.zszl.zszlScriptMod.shadowbaritone.api.Settings;
+import com.zszl.zszlScriptMod.shadowbaritone.utils.accessor.IEntityRenderManager;
+import com.mojang.blaze3d.platform.GlStateManager;
+import com.mojang.blaze3d.systems.RenderSystem;
+import com.mojang.blaze3d.vertex.*;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.renderer.BufferBuilder;
-import net.minecraft.client.renderer.GlStateManager;
-import net.minecraft.client.renderer.Tessellator;
-import net.minecraft.client.renderer.entity.RenderManager;
+import net.minecraft.client.renderer.GameRenderer;
 import net.minecraft.client.renderer.texture.TextureManager;
-import net.minecraft.client.renderer.vertex.DefaultVertexFormats;
-import net.minecraft.util.math.AxisAlignedBB;
-import net.minecraft.util.math.Vec3d;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
+import org.joml.Matrix3f;
+import org.joml.Matrix4f;
 
 import java.awt.*;
 
-import static org.lwjgl.opengl.GL11.*;
-
 public interface IRenderer {
 
-    Tessellator tessellator = Tessellator.getInstance();
-    BufferBuilder buffer = tessellator.getBuffer();
-    RenderManager renderManager = Minecraft.getMinecraft().getRenderManager();
-    TextureManager textureManager = Minecraft.getMinecraft().getTextureManager();
+    Tesselator tessellator = Tesselator.getInstance();
+    BufferBuilder buffer = tessellator.getBuilder();
+    IEntityRenderManager renderManager = (IEntityRenderManager) Minecraft.getInstance().getEntityRenderDispatcher();
+    TextureManager textureManager = Minecraft.getInstance().getTextureManager();
     Settings settings = BaritoneAPI.getSettings();
 
-    float[] color = new float[] { 1.0F, 1.0F, 1.0F, 255.0F };
+    float[] color = new float[]{1.0F, 1.0F, 1.0F, 255.0F};
 
     static void glColor(Color color, float alpha) {
         float[] colorComponents = color.getColorComponents(null);
@@ -52,18 +52,24 @@ public interface IRenderer {
     }
 
     static void startLines(Color color, float alpha, float lineWidth, boolean ignoreDepth) {
-        GlStateManager.enableBlend();
-        GlStateManager.tryBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ZERO);
+        RenderSystem.enableBlend();
+        RenderSystem.setShader(GameRenderer::getPositionColorShader);
+        RenderSystem.blendFuncSeparate(
+                GlStateManager.SourceFactor.SRC_ALPHA,
+                GlStateManager.DestFactor.ONE_MINUS_SRC_ALPHA,
+                GlStateManager.SourceFactor.ONE,
+                GlStateManager.DestFactor.ZERO
+        );
         glColor(color, alpha);
-        GlStateManager.glLineWidth(lineWidth);
-        GlStateManager.disableTexture2D();
-        GlStateManager.depthMask(false);
-        GlStateManager.disableLighting();
+        RenderSystem.lineWidth(lineWidth);
+        RenderSystem.depthMask(false);
+        RenderSystem.disableCull();
 
         if (ignoreDepth) {
-            GlStateManager.disableDepth();
+            RenderSystem.disableDepthTest();
         }
-        buffer.begin(GL_LINES, DefaultVertexFormats.POSITION_COLOR);
+        RenderSystem.setShader(GameRenderer::getRendertypeLinesShader);
+        buffer.begin(VertexFormat.Mode.LINES, DefaultVertexFormat.POSITION_COLOR_NORMAL);
     }
 
     static void startLines(Color color, float lineWidth, boolean ignoreDepth) {
@@ -71,69 +77,81 @@ public interface IRenderer {
     }
 
     static void endLines(boolean ignoredDepth) {
-        tessellator.draw();
+        tessellator.end();
         if (ignoredDepth) {
-            GlStateManager.enableDepth();
+            RenderSystem.enableDepthTest();
         }
 
-        GlStateManager.depthMask(true);
-        GlStateManager.enableTexture2D();
-        GlStateManager.disableBlend();
-        GlStateManager.enableLighting();
+        RenderSystem.enableCull();
+        RenderSystem.depthMask(true);
+        RenderSystem.disableBlend();
     }
 
-    static void emitAABB(AxisAlignedBB aabb) {
-        AxisAlignedBB toDraw = aabb.offset(-renderManager.viewerPosX, -renderManager.viewerPosY,
-                -renderManager.viewerPosZ);
+    static void emitLine(PoseStack stack, double x1, double y1, double z1, double x2, double y2, double z2) {
+        final double dx = x2 - x1;
+        final double dy = y2 - y1;
+        final double dz = z2 - z1;
+
+        final double invMag = 1.0 / Math.sqrt(dx * dx + dy * dy + dz * dz);
+        final float nx = (float) (dx * invMag);
+        final float ny = (float) (dy * invMag);
+        final float nz = (float) (dz * invMag);
+
+        emitLine(stack, x1, y1, z1, x2, y2, z2, nx, ny, nz);
+    }
+
+    static void emitLine(PoseStack stack,
+                         double x1, double y1, double z1,
+                         double x2, double y2, double z2,
+                         double nx, double ny, double nz) {
+        emitLine(stack,
+                (float) x1, (float) y1, (float) z1,
+                (float) x2, (float) y2, (float) z2,
+                (float) nx, (float) ny, (float) nz
+        );
+    }
+
+    static void emitLine(PoseStack stack,
+                         float x1, float y1, float z1,
+                         float x2, float y2, float z2,
+                         float nx, float ny, float nz) {
+        final Matrix4f matrix4f = stack.last().pose();
+        final Matrix3f normal = stack.last().normal();
+
+        buffer.vertex(matrix4f, x1, y1, z1).color(color[0], color[1], color[2], color[3]).normal(normal, nx, ny, nz).endVertex();
+        buffer.vertex(matrix4f, x2, y2, z2).color(color[0], color[1], color[2], color[3]).normal(normal, nx, ny, nz).endVertex();
+    }
+
+    static void emitAABB(PoseStack stack, AABB aabb) {
+        AABB toDraw = aabb.move(-renderManager.renderPosX(), -renderManager.renderPosY(), -renderManager.renderPosZ());
 
         // bottom
-        buffer.pos(toDraw.minX, toDraw.minY, toDraw.minZ).color(color[0], color[1], color[2], color[3]).endVertex();
-        buffer.pos(toDraw.maxX, toDraw.minY, toDraw.minZ).color(color[0], color[1], color[2], color[3]).endVertex();
-        buffer.pos(toDraw.maxX, toDraw.minY, toDraw.minZ).color(color[0], color[1], color[2], color[3]).endVertex();
-        buffer.pos(toDraw.maxX, toDraw.minY, toDraw.maxZ).color(color[0], color[1], color[2], color[3]).endVertex();
-        buffer.pos(toDraw.maxX, toDraw.minY, toDraw.maxZ).color(color[0], color[1], color[2], color[3]).endVertex();
-        buffer.pos(toDraw.minX, toDraw.minY, toDraw.maxZ).color(color[0], color[1], color[2], color[3]).endVertex();
-        buffer.pos(toDraw.minX, toDraw.minY, toDraw.maxZ).color(color[0], color[1], color[2], color[3]).endVertex();
-        buffer.pos(toDraw.minX, toDraw.minY, toDraw.minZ).color(color[0], color[1], color[2], color[3]).endVertex();
+        emitLine(stack, toDraw.minX, toDraw.minY, toDraw.minZ, toDraw.maxX, toDraw.minY, toDraw.minZ, 1.0, 0.0, 0.0);
+        emitLine(stack, toDraw.maxX, toDraw.minY, toDraw.minZ, toDraw.maxX, toDraw.minY, toDraw.maxZ, 0.0, 0.0, 1.0);
+        emitLine(stack, toDraw.maxX, toDraw.minY, toDraw.maxZ, toDraw.minX, toDraw.minY, toDraw.maxZ, -1.0, 0.0, 0.0);
+        emitLine(stack, toDraw.minX, toDraw.minY, toDraw.maxZ, toDraw.minX, toDraw.minY, toDraw.minZ, 0.0, 0.0, -1.0);
         // top
-        buffer.pos(toDraw.minX, toDraw.maxY, toDraw.minZ).color(color[0], color[1], color[2], color[3]).endVertex();
-        buffer.pos(toDraw.maxX, toDraw.maxY, toDraw.minZ).color(color[0], color[1], color[2], color[3]).endVertex();
-        buffer.pos(toDraw.maxX, toDraw.maxY, toDraw.minZ).color(color[0], color[1], color[2], color[3]).endVertex();
-        buffer.pos(toDraw.maxX, toDraw.maxY, toDraw.maxZ).color(color[0], color[1], color[2], color[3]).endVertex();
-        buffer.pos(toDraw.maxX, toDraw.maxY, toDraw.maxZ).color(color[0], color[1], color[2], color[3]).endVertex();
-        buffer.pos(toDraw.minX, toDraw.maxY, toDraw.maxZ).color(color[0], color[1], color[2], color[3]).endVertex();
-        buffer.pos(toDraw.minX, toDraw.maxY, toDraw.maxZ).color(color[0], color[1], color[2], color[3]).endVertex();
-        buffer.pos(toDraw.minX, toDraw.maxY, toDraw.minZ).color(color[0], color[1], color[2], color[3]).endVertex();
+        emitLine(stack, toDraw.minX, toDraw.maxY, toDraw.minZ, toDraw.maxX, toDraw.maxY, toDraw.minZ, 1.0, 0.0, 0.0);
+        emitLine(stack, toDraw.maxX, toDraw.maxY, toDraw.minZ, toDraw.maxX, toDraw.maxY, toDraw.maxZ, 0.0, 0.0, 1.0);
+        emitLine(stack, toDraw.maxX, toDraw.maxY, toDraw.maxZ, toDraw.minX, toDraw.maxY, toDraw.maxZ, -1.0, 0.0, 0.0);
+        emitLine(stack, toDraw.minX, toDraw.maxY, toDraw.maxZ, toDraw.minX, toDraw.maxY, toDraw.minZ, 0.0, 0.0, -1.0);
         // corners
-        buffer.pos(toDraw.minX, toDraw.minY, toDraw.minZ).color(color[0], color[1], color[2], color[3]).endVertex();
-        buffer.pos(toDraw.minX, toDraw.maxY, toDraw.minZ).color(color[0], color[1], color[2], color[3]).endVertex();
-        buffer.pos(toDraw.maxX, toDraw.minY, toDraw.minZ).color(color[0], color[1], color[2], color[3]).endVertex();
-        buffer.pos(toDraw.maxX, toDraw.maxY, toDraw.minZ).color(color[0], color[1], color[2], color[3]).endVertex();
-        buffer.pos(toDraw.maxX, toDraw.minY, toDraw.maxZ).color(color[0], color[1], color[2], color[3]).endVertex();
-        buffer.pos(toDraw.maxX, toDraw.maxY, toDraw.maxZ).color(color[0], color[1], color[2], color[3]).endVertex();
-        buffer.pos(toDraw.minX, toDraw.minY, toDraw.maxZ).color(color[0], color[1], color[2], color[3]).endVertex();
-        buffer.pos(toDraw.minX, toDraw.maxY, toDraw.maxZ).color(color[0], color[1], color[2], color[3]).endVertex();
+        emitLine(stack, toDraw.minX, toDraw.minY, toDraw.minZ, toDraw.minX, toDraw.maxY, toDraw.minZ, 0.0, 1.0, 0.0);
+        emitLine(stack, toDraw.maxX, toDraw.minY, toDraw.minZ, toDraw.maxX, toDraw.maxY, toDraw.minZ, 0.0, 1.0, 0.0);
+        emitLine(stack, toDraw.maxX, toDraw.minY, toDraw.maxZ, toDraw.maxX, toDraw.maxY, toDraw.maxZ, 0.0, 1.0, 0.0);
+        emitLine(stack, toDraw.minX, toDraw.minY, toDraw.maxZ, toDraw.minX, toDraw.maxY, toDraw.maxZ, 0.0, 1.0, 0.0);
     }
 
-    static void emitAABB(AxisAlignedBB aabb, double expand) {
-        emitAABB(aabb.grow(expand, expand, expand));
+    static void emitAABB(PoseStack stack, AABB aabb, double expand) {
+        emitAABB(stack, aabb.inflate(expand, expand, expand));
     }
 
-    static void drawAABB(AxisAlignedBB aabb) {
-        buffer.begin(GL_LINES, DefaultVertexFormats.POSITION_COLOR);
-        emitAABB(aabb);
-        tessellator.draw();
+    static void emitLine(PoseStack stack, Vec3 start, Vec3 end) {
+        double vpX = renderManager.renderPosX();
+        double vpY = renderManager.renderPosY();
+        double vpZ = renderManager.renderPosZ();
+        emitLine(stack, start.x - vpX, start.y - vpY, start.z - vpZ, end.x - vpX, end.y - vpY, end.z - vpZ);
     }
 
-    static void emitLine(Vec3d start, Vec3d end) {
-        emitLine(start.x, start.y, start.z, end.x, end.y, end.z);
-    }
-
-    static void emitLine(double x1, double y1, double z1, double x2, double y2, double z2) {
-        double vpX = renderManager.viewerPosX;
-        double vpY = renderManager.viewerPosY;
-        double vpZ = renderManager.viewerPosZ;
-        buffer.pos(x1 - vpX, y1 - vpY, z1 - vpZ).color(color[0], color[1], color[2], color[3]).endVertex();
-        buffer.pos(x2 - vpX, y2 - vpY, z2 - vpZ).color(color[0], color[1], color[2], color[3]).endVertex();
-    }
 }
+

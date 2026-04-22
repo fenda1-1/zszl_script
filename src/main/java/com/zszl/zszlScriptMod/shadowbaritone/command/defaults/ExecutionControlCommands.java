@@ -25,7 +25,6 @@ import com.zszl.zszlScriptMod.shadowbaritone.api.command.exception.CommandInvali
 import com.zszl.zszlScriptMod.shadowbaritone.api.process.IBaritoneProcess;
 import com.zszl.zszlScriptMod.shadowbaritone.api.process.PathingCommand;
 import com.zszl.zszlScriptMod.shadowbaritone.api.process.PathingCommandType;
-import com.zszl.zszlScriptMod.shadowbaritone.api.utils.ShadowBaritoneI18n;
 
 import java.util.Arrays;
 import java.util.List;
@@ -34,10 +33,8 @@ import java.util.stream.Stream;
 /**
  * Contains the pause, resume, and paused commands.
  * <p>
- * This thing is scoped to hell, private so far you can't even access it using
- * reflection, because you AREN'T SUPPOSED
- * TO USE THIS to pause and resume Baritone. Make your own process that returns
- * {@link PathingCommandType#REQUEST_PAUSE
+ * This thing is scoped to hell, private so far you can't even access it using reflection, because you AREN'T SUPPOSED
+ * TO USE THIS to pause and resume Baritone. Make your own process that returns {@link PathingCommandType#REQUEST_PAUSE
  * REQUEST_PAUSE} as needed.
  */
 public class ExecutionControlCommands {
@@ -49,7 +46,7 @@ public class ExecutionControlCommands {
 
     public ExecutionControlCommands(IBaritone baritone) {
         // array for mutability, non-field so reflection can't touch it
-        final boolean[] paused = { false };
+        final boolean[] paused = {false};
         baritone.getPathingControlManager().registerProcess(
                 new IBaritoneProcess() {
                     @Override
@@ -81,18 +78,17 @@ public class ExecutionControlCommands {
                     public String displayName0() {
                         return "Pause/Resume Commands";
                     }
-                });
+                }
+        );
         pauseCommand = new Command(baritone, "pause", "p", "paws") {
             @Override
             public void execute(String label, IArgConsumer args) throws CommandException {
                 args.requireMax(0);
                 if (paused[0]) {
-                    throw new CommandInvalidStateException(ShadowBaritoneI18n.trKey(
-                            "shadowbaritone.command.pause.error.already_paused"));
+                    throw new CommandInvalidStateException("Already paused");
                 }
                 paused[0] = true;
-                logDirect(ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.pause.status.paused"));
+                logDirect("Paused");
             }
 
             @Override
@@ -102,23 +98,19 @@ public class ExecutionControlCommands {
 
             @Override
             public String getShortDesc() {
-                return ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.pause.short_desc");
+                return "Pauses Baritone until you use resume";
             }
 
             @Override
             public List<String> getLongDesc() {
                 return Arrays.asList(
-                        ShadowBaritoneI18n.trKey(
-                                "shadowbaritone.command.pause.long_desc.1"),
+                        "The pause command tells Baritone to temporarily stop whatever it's doing.",
                         "",
-                        ShadowBaritoneI18n.trKey(
-                                "shadowbaritone.command.pause.long_desc.2"),
+                        "This can be used to pause pathing, building, following, whatever. A single use of the resume command will start it right back up again!",
                         "",
-                        ShadowBaritoneI18n.trKey(
-                                "shadowbaritone.command.pause.long_desc.usage"),
-                        ShadowBaritoneI18n.trKey(
-                                "shadowbaritone.command.pause.long_desc.example.default"));
+                        "Usage:",
+                        "> pause"
+                );
             }
         };
         resumeCommand = new Command(baritone, "resume", "r", "unpause", "unpaws") {
@@ -127,12 +119,10 @@ public class ExecutionControlCommands {
                 args.requireMax(0);
                 baritone.getBuilderProcess().resume();
                 if (!paused[0]) {
-                    throw new CommandInvalidStateException(ShadowBaritoneI18n.trKey(
-                            "shadowbaritone.command.resume.error.not_paused"));
+                    throw new CommandInvalidStateException("Not paused");
                 }
                 paused[0] = false;
-                logDirect(ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.resume.status.resumed"));
+                logDirect("Resumed");
             }
 
             @Override
@@ -142,30 +132,24 @@ public class ExecutionControlCommands {
 
             @Override
             public String getShortDesc() {
-                return ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.resume.short_desc");
+                return "Resumes Baritone after a pause";
             }
 
             @Override
             public List<String> getLongDesc() {
                 return Arrays.asList(
-                        ShadowBaritoneI18n.trKey(
-                                "shadowbaritone.command.resume.long_desc.1"),
+                        "The resume command tells Baritone to resume whatever it was doing when you last used pause.",
                         "",
-                        ShadowBaritoneI18n.trKey(
-                                "shadowbaritone.command.resume.long_desc.usage"),
-                        ShadowBaritoneI18n.trKey(
-                                "shadowbaritone.command.resume.long_desc.example.default"));
+                        "Usage:",
+                        "> resume"
+                );
             }
         };
         pausedCommand = new Command(baritone, "paused") {
             @Override
             public void execute(String label, IArgConsumer args) throws CommandException {
                 args.requireMax(0);
-                logDirect(ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.paused.status.current_state",
-                        paused[0] ? "" : ShadowBaritoneI18n.trKey(
-                                "shadowbaritone.command.paused.value.not_paused_prefix")));
+                logDirect(String.format("Baritone is %spaused", paused[0] ? "" : "not "));
             }
 
             @Override
@@ -175,20 +159,17 @@ public class ExecutionControlCommands {
 
             @Override
             public String getShortDesc() {
-                return ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.paused.short_desc");
+                return "Tells you if Baritone is paused";
             }
 
             @Override
             public List<String> getLongDesc() {
                 return Arrays.asList(
-                        ShadowBaritoneI18n.trKey(
-                                "shadowbaritone.command.paused.long_desc.1"),
+                        "The paused command tells you if Baritone is currently paused by use of the pause command.",
                         "",
-                        ShadowBaritoneI18n.trKey(
-                                "shadowbaritone.command.paused.long_desc.usage"),
-                        ShadowBaritoneI18n.trKey(
-                                "shadowbaritone.command.paused.long_desc.example.default"));
+                        "Usage:",
+                        "> paused"
+                );
             }
         };
         cancelCommand = new Command(baritone, "cancel", "c", "stop") {
@@ -199,8 +180,7 @@ public class ExecutionControlCommands {
                     paused[0] = false;
                 }
                 baritone.getPathingBehavior().cancelEverything();
-                logDirect(ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.cancel.status.canceled"));
+                logDirect("ok canceled");
             }
 
             @Override
@@ -210,21 +190,19 @@ public class ExecutionControlCommands {
 
             @Override
             public String getShortDesc() {
-                return ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.cancel.short_desc");
+                return "Cancel what Baritone is currently doing";
             }
 
             @Override
             public List<String> getLongDesc() {
                 return Arrays.asList(
-                        ShadowBaritoneI18n.trKey(
-                                "shadowbaritone.command.cancel.long_desc.1"),
+                        "The cancel command tells Baritone to stop whatever it's currently doing.",
                         "",
-                        ShadowBaritoneI18n.trKey(
-                                "shadowbaritone.command.cancel.long_desc.usage"),
-                        ShadowBaritoneI18n.trKey(
-                                "shadowbaritone.command.cancel.long_desc.example.default"));
+                        "Usage:",
+                        "> cancel"
+                );
             }
         };
     }
 }
+

@@ -24,8 +24,7 @@ public enum PathingCommandType {
     /**
      * Set the goal and path.
      * <p>
-     * If you use this alongside a {@code null} goal, it will continue along its
-     * current path and current goal.
+     * If you use this alongside a {@code null} goal, it will continue along its current path and current goal.
      */
     SET_GOAL_AND_PATH,
 
@@ -35,8 +34,7 @@ public enum PathingCommandType {
     REQUEST_PAUSE,
 
     /**
-     * Set the goal (regardless of {@code null}), and request a cancel of the
-     * current path (when safe)
+     * Set the goal (regardless of {@code null}), and request a cancel of the current path (when safe)
      */
     CANCEL_AND_SET_GOAL,
 
@@ -44,8 +42,7 @@ public enum PathingCommandType {
      * Set the goal and path.
      * <p>
      * If {@link Settings#cancelOnGoalInvalidation} is {@code true}, revalidate the
-     * current goal, and cancel if it's no longer valid, or if the new goal is
-     * {@code null}.
+     * current goal, and cancel if it's no longer valid, or if the new goal is {@code null}.
      */
     REVALIDATE_GOAL_AND_PATH,
 
@@ -62,8 +59,8 @@ public enum PathingCommandType {
     DEFER,
 
     /**
-     * Sets the goal and calculates a path, but pauses instead of immediately
-     * starting the path.
+     * Sets the goal and calculates a path, but pauses instead of immediately starting the path.
      */
     SET_GOAL_AND_PAUSE
 }
+

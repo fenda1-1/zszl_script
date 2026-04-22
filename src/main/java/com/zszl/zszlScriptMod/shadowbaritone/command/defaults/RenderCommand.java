@@ -22,7 +22,6 @@ import com.zszl.zszlScriptMod.shadowbaritone.api.command.Command;
 import com.zszl.zszlScriptMod.shadowbaritone.api.command.argument.IArgConsumer;
 import com.zszl.zszlScriptMod.shadowbaritone.api.command.exception.CommandException;
 import com.zszl.zszlScriptMod.shadowbaritone.api.utils.BetterBlockPos;
-import com.zszl.zszlScriptMod.shadowbaritone.api.utils.ShadowBaritoneI18n;
 
 import java.util.Arrays;
 import java.util.List;
@@ -38,16 +37,16 @@ public class RenderCommand extends Command {
     public void execute(String label, IArgConsumer args) throws CommandException {
         args.requireMax(0);
         BetterBlockPos origin = ctx.playerFeet();
-        int renderDistance = (ctx.minecraft().gameSettings.renderDistanceChunks + 1) * 16;
-        ctx.minecraft().renderGlobal.markBlockRangeForRenderUpdate(
+        int renderDistance = (ctx.minecraft().options.renderDistance().get() + 1) * 16;
+        ctx.minecraft().levelRenderer.setBlocksDirty(
                 origin.x - renderDistance,
-                0,
+                ctx.world().getMinBuildHeight(),
                 origin.z - renderDistance,
                 origin.x + renderDistance,
-                255,
-                origin.z + renderDistance);
-        logDirect(ShadowBaritoneI18n.trKey(
-                "shadowbaritone.command.render.status.done"));
+                ctx.world().getMaxBuildHeight(),
+                origin.z + renderDistance
+        );
+        logDirect("Done");
     }
 
     @Override
@@ -57,19 +56,17 @@ public class RenderCommand extends Command {
 
     @Override
     public String getShortDesc() {
-        return ShadowBaritoneI18n.trKey(
-                "shadowbaritone.command.render.short_desc");
+        return "Fix glitched chunks";
     }
 
     @Override
     public List<String> getLongDesc() {
         return Arrays.asList(
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.render.long_desc.1"),
+                "The render command fixes glitched chunk rendering without having to reload all of them.",
                 "",
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.render.long_desc.usage"),
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.render.long_desc.example.default"));
+                "Usage:",
+                "> render"
+        );
     }
 }
+

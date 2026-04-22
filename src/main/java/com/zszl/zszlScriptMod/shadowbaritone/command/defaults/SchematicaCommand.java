@@ -54,6 +54,8 @@ public class SchematicaCommand extends Command {
                 "Builds the schematic currently open in Schematica.",
                 "",
                 "Usage:",
-                "> schematica");
+                "> schematica"
+        );
     }
 }
+

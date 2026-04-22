@@ -18,6 +18,8 @@ import java.util.Map;
 public class BaritoneSettingsConfig {
 
     public static final String KEY_USE_BUILTIN_BARITONE = "useBuiltinBaritone";
+    private static final String LEGACY_COMMAND_PREFIX = "#";
+    private static final String DEFAULT_COMMAND_PREFIX = "!";
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final Type MAP_TYPE = new TypeToken<Map<String, String>>() {
@@ -30,8 +32,8 @@ public class BaritoneSettingsConfig {
     public static void load() {
         migrateLegacyConfigIfNeeded();
         forceBuiltinBaritone();
+        migrateLegacyCommandPrefixIfNeeded();
         applyRuntimeNavigationMode();
-        BaritoneParkourSettingsHelper.syncRuntimeOverrides();
     }
 
     public static void save() {
@@ -99,9 +101,24 @@ public class BaritoneSettingsConfig {
 
     private static void forceBuiltinBaritone() {
         try {
-            BaritoneAPI.getSettings().useBuiltinBaritone.value = true;
+            BaritoneAPI.getProvider().getPrimaryBaritone();
         } catch (Throwable t) {
             zszlScriptMod.LOGGER.error("固定使用内置 Baritone 失败", t);
+        }
+    }
+
+    private static void migrateLegacyCommandPrefixIfNeeded() {
+        try {
+            String currentPrefix = BaritoneAPI.getSettings().prefix.value;
+            if (!LEGACY_COMMAND_PREFIX.equals(currentPrefix)) {
+                return;
+            }
+            BaritoneAPI.getSettings().prefix.value = DEFAULT_COMMAND_PREFIX;
+            SettingsUtil.save(BaritoneAPI.getSettings());
+            zszlScriptMod.LOGGER.info("已将 Baritone 旧命令前缀从 {} 迁移为 {}", LEGACY_COMMAND_PREFIX,
+                    DEFAULT_COMMAND_PREFIX);
+        } catch (Throwable t) {
+            zszlScriptMod.LOGGER.error("迁移 Baritone 旧命令前缀失败", t);
         }
     }
 
@@ -120,3 +137,4 @@ public class BaritoneSettingsConfig {
         }
     }
 }
+

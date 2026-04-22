@@ -1,13 +1,13 @@
 package com.zszl.zszlScriptMod.otherfeatures.handler.movement;
 
-import net.minecraft.client.entity.EntityPlayerSP;
+import net.minecraft.client.player.LocalPlayer;
 
 final class IceBoostFeatureHandler {
 
     private IceBoostFeatureHandler() {
     }
 
-    static void apply(EntityPlayerSP player) {
+    static void apply(LocalPlayer player) {
         if (!MovementFeatureManager.isEnabled("ice_boost")
                 || !MovementFeatureSupport.isMoving(player)
                 || !MovementFeatureSupport.isStandingOnIce(player)) {
@@ -18,3 +18,5 @@ final class IceBoostFeatureHandler {
         MovementFeatureSupport.ensureHorizontalSpeed(player, boosted);
     }
 }
+
+

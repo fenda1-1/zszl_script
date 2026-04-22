@@ -2,12 +2,11 @@
 // (这是一个全新的文件)
 package com.zszl.zszlScriptMod.gui.path;
 
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
 import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
-import net.minecraft.client.resources.I18n;
-import org.lwjgl.input.Keyboard;
-import com.zszl.zszlScriptMod.shadowbaritone.utils.GuiPathingPolicy;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Keyboard;
 
 import com.zszl.zszlScriptMod.system.KeybindManager;
 
@@ -56,14 +55,14 @@ public class GuiKeybindRecorder extends ThemedGuiScreen {
         switch (button.id) {
             case 0: // 确认
                 onRecordComplete.accept(this.currentKeybind);
-                mc.displayGuiScreen(parentScreen);
+                mc.setScreen(parentScreen);
                 break;
             case 1: // 重置
                 this.currentKeybind = new KeybindManager.Keybind();
                 this.isRecording = true; // 重置后回到录制状态
                 break;
             case 2: // 取消
-                mc.displayGuiScreen(parentScreen);
+                mc.setScreen(parentScreen);
                 break;
         }
     }
@@ -72,7 +71,7 @@ public class GuiKeybindRecorder extends ThemedGuiScreen {
     protected void keyTyped(char typedChar, int keyCode) throws IOException {
         // 按下 ESC 总是可以取消
         if (keyCode == Keyboard.KEY_ESCAPE) {
-            mc.displayGuiScreen(parentScreen);
+            mc.setScreen(parentScreen);
             return;
         }
 
@@ -156,6 +155,11 @@ public class GuiKeybindRecorder extends ThemedGuiScreen {
 
     @Override
     public boolean doesGuiPauseGame() {
-        return !GuiPathingPolicy.shouldKeepPathingDuringGui(this.mc);
+        return true;
     }
 }
+
+
+
+
+

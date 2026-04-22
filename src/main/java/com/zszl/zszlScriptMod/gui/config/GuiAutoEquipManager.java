@@ -4,13 +4,13 @@ import com.zszl.zszlScriptMod.gui.components.GuiTextInput;
 import com.zszl.zszlScriptMod.gui.components.GuiTheme;
 import com.zszl.zszlScriptMod.gui.components.ThemedButton;
 import com.zszl.zszlScriptMod.handlers.AutoEquipHandler;
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
 import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
-import net.minecraft.client.gui.GuiTextField;
-import net.minecraft.client.resources.I18n;
-import org.lwjgl.input.Keyboard;
-import org.lwjgl.input.Mouse;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiTextField;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Keyboard;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Mouse;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -97,7 +97,7 @@ public class GuiAutoEquipManager extends ThemedGuiScreen {
 
         switch (button.id) {
             case 1: // Add New
-                mc.displayGuiScreen(new GuiTextInput(this, I18n.format("gui.auto_equip.input_new_set"), "", name -> {
+                mc.setScreen(new GuiTextInput(this, I18n.format("gui.auto_equip.input_new_set"), "", name -> {
                     if (name != null && !name.trim().isEmpty() && !setNames.contains(name)) {
                         AutoEquipHandler.addSet(name);
                         this.setNames = new ArrayList<>(AutoEquipHandler.getAllSetNames());
@@ -108,7 +108,7 @@ public class GuiAutoEquipManager extends ThemedGuiScreen {
                 break;
             case 2: // Edit
                 if (selectedName != null)
-                    mc.displayGuiScreen(new GuiAutoEquipConfig(this, selectedName));
+                    mc.setScreen(new GuiAutoEquipConfig(this, selectedName));
                 break;
             case 3: // Delete
                 if (selectedName != null) {
@@ -127,7 +127,7 @@ public class GuiAutoEquipManager extends ThemedGuiScreen {
                     AutoEquipHandler.setActiveSet(selectedName, true);
                 break;
             case 100: // Done
-                mc.displayGuiScreen(parentScreen);
+                mc.setScreen(parentScreen);
                 break;
         }
     }
@@ -264,35 +264,23 @@ public class GuiAutoEquipManager extends ThemedGuiScreen {
     }
 
     @Override
-    protected void mouseReleased(int mouseX, int mouseY, int state) {
-        super.mouseReleased(mouseX, mouseY, state);
-        if (state == 0)
+    public boolean mouseReleased(double mouseX, double mouseY, int state) {
+        if (state == 0) {
             isScrolling = false;
+        }
+        return super.mouseReleased(mouseX, mouseY, state);
     }
 
     @Override
-    protected void mouseClickMove(int mouseX, int mouseY, int clickedMouseButton, long timeSinceLastClick) {
-        super.mouseClickMove(mouseX, mouseY, clickedMouseButton, timeSinceLastClick);
-        if (isScrolling) {
-            int listHeight = listBottom - listTop;
-            int scrollBarHeight = getScrollBarHeight();
-            float newScroll = (float) (mouseY - listTop - scrollBarHeight / 2) / (float) (listHeight - scrollBarHeight);
-            scrollAmount = Math.max(0, Math.min(1, newScroll));
+    public boolean mouseScrolled(double mouseX, double mouseY, double delta) {
+        int contentHeight = setNames.size() * slotHeight;
+        int maxScroll = Math.max(0, contentHeight - (listBottom - listTop));
+        if (delta != 0.0D && maxScroll > 0) {
+            scrollAmount -= (float) delta * slotHeight / (float) maxScroll;
+            scrollAmount = Math.max(0.0F, Math.min(1.0F, scrollAmount));
+            return true;
         }
-    }
-
-    @Override
-    public void handleMouseInput() throws IOException {
-        super.handleMouseInput();
-        int dWheel = Mouse.getDWheel();
-        if (dWheel != 0) {
-            int contentHeight = setNames.size() * slotHeight;
-            int maxScroll = Math.max(0, contentHeight - (listBottom - listTop));
-            if (maxScroll > 0) {
-                scrollAmount -= (float) dWheel / (float) maxScroll / 2.0f;
-                scrollAmount = Math.max(0, Math.min(1, scrollAmount));
-            }
-        }
+        return super.mouseScrolled(mouseX, mouseY, delta);
     }
 
     private int getScrollBarHeight() {
@@ -301,3 +289,9 @@ public class GuiAutoEquipManager extends ThemedGuiScreen {
         return contentHeight > listHeight ? Math.max(20, listHeight * listHeight / contentHeight) : 0;
     }
 }
+
+
+
+
+
+

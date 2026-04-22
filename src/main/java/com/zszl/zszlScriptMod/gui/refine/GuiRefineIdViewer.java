@@ -3,9 +3,9 @@ package com.zszl.zszlScriptMod.gui.refine;
 import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
 import com.zszl.zszlScriptMod.handlers.RefineHelper;
 import com.zszl.zszlScriptMod.utils.CapturedIdRuleManager;
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiScreen;
-import net.minecraft.client.resources.I18n;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -58,7 +58,7 @@ public class GuiRefineIdViewer extends ThemedGuiScreen {
     @Override
     protected void actionPerformed(GuiButton button) throws IOException {
         if (button.id == 0) {
-            this.mc.displayGuiScreen(parentScreen);
+            this.mc.setScreen(parentScreen);
         }
     }
 
@@ -97,7 +97,7 @@ public class GuiRefineIdViewer extends ThemedGuiScreen {
     @Override
     public void handleMouseInput() throws IOException {
         super.handleMouseInput();
-        int dWheel = org.lwjgl.input.Mouse.getEventDWheel();
+        int dWheel = com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Mouse.getEventDWheel();
         if (dWheel == 0 || maxScroll <= 0) {
             return;
         }
@@ -113,3 +113,9 @@ public class GuiRefineIdViewer extends ThemedGuiScreen {
         return false;
     }
 }
+
+
+
+
+
+

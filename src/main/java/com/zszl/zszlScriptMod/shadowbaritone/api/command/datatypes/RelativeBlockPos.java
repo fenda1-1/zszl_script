@@ -36,7 +36,8 @@ public enum RelativeBlockPos implements IDatatypePost<BetterBlockPos, BetterBloc
         return new BetterBlockPos(
                 consumer.getDatatypePost(RelativeCoordinate.INSTANCE, (double) origin.x),
                 consumer.getDatatypePost(RelativeCoordinate.INSTANCE, (double) origin.y),
-                consumer.getDatatypePost(RelativeCoordinate.INSTANCE, (double) origin.z));
+                consumer.getDatatypePost(RelativeCoordinate.INSTANCE, (double) origin.z)
+        );
     }
 
     @Override
@@ -54,3 +55,4 @@ public enum RelativeBlockPos implements IDatatypePost<BetterBlockPos, BetterBloc
         return Stream.empty();
     }
 }
+

@@ -2,7 +2,7 @@
 // (这是一个新文件)
 package com.zszl.zszlScriptMod.system;
 
-import net.minecraft.client.resources.I18n;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
 
 /**
  * 定义所有可以被快捷键绑定的【调试】动作。
@@ -28,3 +28,6 @@ public enum BindableDebugAction {
         return I18n.format(descriptionKey);
     }
 }
+
+
+

@@ -26,16 +26,17 @@ import com.zszl.zszlScriptMod.shadowbaritone.api.command.exception.CommandNotFou
 import com.zszl.zszlScriptMod.shadowbaritone.api.command.helpers.Paginator;
 import com.zszl.zszlScriptMod.shadowbaritone.api.command.helpers.TabCompleteHelper;
 import com.zszl.zszlScriptMod.shadowbaritone.api.utils.ShadowBaritoneI18n;
-import net.minecraft.util.text.ITextComponent;
-import net.minecraft.util.text.TextComponentString;
-import net.minecraft.util.text.TextFormatting;
-import net.minecraft.util.text.event.ClickEvent;
-import net.minecraft.util.text.event.HoverEvent;
 
 import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+
+import net.minecraft.ChatFormatting;
+import net.minecraft.network.chat.ClickEvent;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.HoverEvent;
+import net.minecraft.network.chat.MutableComponent;
 
 import static com.zszl.zszlScriptMod.shadowbaritone.api.command.IBaritoneChatControl.FORCE_COMMAND_PREFIX;
 
@@ -53,34 +54,34 @@ public class HelpCommand extends Command {
                     args, new Paginator<>(
                             this.baritone.getCommandManager().getRegistry().descendingStream()
                                     .filter(command -> !command.hiddenFromHelp())
-                                    .collect(Collectors.toList())),
-                    () -> logDirect(ShadowBaritoneI18n.trKey(
-                            "shadowbaritone.command.help.header.all_commands")),
+                                    .collect(Collectors.toList())
+                    ),
+                    () -> logDirect(ShadowBaritoneI18n.trKey("shadowbaritone.command.help.header.all_commands")),
                     command -> {
-                        String translatedShortDesc = ShadowBaritoneI18n.tr(command.getShortDesc());
+                        String translatedShortDesc = ShadowBaritoneI18n.trCommandShortDesc(command);
                         String names = String.join("/", command.getNames());
                         String name = command.getNames().get(0);
-                        ITextComponent shortDescComponent = new TextComponentString(" - " + translatedShortDesc);
-                        shortDescComponent.getStyle().setColor(TextFormatting.DARK_GRAY);
-                        ITextComponent namesComponent = new TextComponentString(names);
-                        namesComponent.getStyle().setColor(TextFormatting.WHITE);
-                        ITextComponent hoverComponent = new TextComponentString("");
-                        hoverComponent.getStyle().setColor(TextFormatting.GRAY);
-                        hoverComponent.appendSibling(namesComponent);
-                        hoverComponent.appendText("\n" + translatedShortDesc);
-                        hoverComponent.appendText("\n\n" + ShadowBaritoneI18n.trKey(
-                                "shadowbaritone.command.help.hover.click_full_help"));
-                        String clickCommand = FORCE_COMMAND_PREFIX
-                                + String.format("%s %s", label, command.getNames().get(0));
-                        ITextComponent component = new TextComponentString(name);
-                        component.getStyle().setColor(TextFormatting.GRAY);
-                        component.appendSibling(shortDescComponent);
-                        component.getStyle()
-                                .setHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, hoverComponent))
-                                .setClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, clickCommand));
+                        MutableComponent shortDescComponent = Component.literal(" - " + translatedShortDesc);
+                        shortDescComponent.setStyle(shortDescComponent.getStyle().withColor(ChatFormatting.DARK_GRAY));
+                        MutableComponent namesComponent = Component.literal(names);
+                        namesComponent.setStyle(namesComponent.getStyle().withColor(ChatFormatting.WHITE));
+                        MutableComponent hoverComponent = Component.literal("");
+                        hoverComponent.setStyle(hoverComponent.getStyle().withColor(ChatFormatting.GRAY));
+                        hoverComponent.append(namesComponent);
+                        hoverComponent.append("\n" + translatedShortDesc);
+                        hoverComponent.append("\n\n");
+                        hoverComponent.append(ShadowBaritoneI18n.trKey("shadowbaritone.command.help.hover.click_full_help"));
+                        String clickCommand = FORCE_COMMAND_PREFIX + String.format("%s %s", label, command.getNames().get(0));
+                        MutableComponent component = Component.literal(name);
+                        component.setStyle(component.getStyle().withColor(ChatFormatting.GRAY));
+                        component.append(shortDescComponent);
+                        component.setStyle(component.getStyle()
+                                .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, hoverComponent))
+                                .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, clickCommand)));
                         return component;
                     },
-                    FORCE_COMMAND_PREFIX + label);
+                    FORCE_COMMAND_PREFIX + label
+            );
         } else {
             String commandName = args.getString().toLowerCase();
             ICommand command = this.baritone.getCommandManager().getCommand(commandName);
@@ -88,15 +89,16 @@ public class HelpCommand extends Command {
                 throw new CommandNotFoundException(commandName);
             }
             logDirect(String.format("%s - %s", String.join(" / ", command.getNames()),
-                    ShadowBaritoneI18n.tr(command.getShortDesc())));
+                    ShadowBaritoneI18n.trCommandShortDesc(command)));
             logDirect("");
-            command.getLongDesc().stream().map(ShadowBaritoneI18n::tr).forEach(this::logDirect);
+            ShadowBaritoneI18n.trCommandLongDesc(command).forEach(this::logDirect);
             logDirect("");
-            ITextComponent returnComponent = new TextComponentString(ShadowBaritoneI18n.trKey(
-                    "shadowbaritone.command.help.action.return_to_menu"));
-            returnComponent.getStyle().setClickEvent(new ClickEvent(
+            MutableComponent returnComponent = Component.literal(
+                    ShadowBaritoneI18n.trKey("shadowbaritone.command.help.action.return_to_menu"));
+            returnComponent.setStyle(returnComponent.getStyle().withClickEvent(new ClickEvent(
                     ClickEvent.Action.RUN_COMMAND,
-                    FORCE_COMMAND_PREFIX + label));
+                    FORCE_COMMAND_PREFIX + label
+            )));
             logDirect(returnComponent);
         }
     }
@@ -114,21 +116,18 @@ public class HelpCommand extends Command {
 
     @Override
     public String getShortDesc() {
-        return ShadowBaritoneI18n.trKey(
-                "shadowbaritone.command.help.short_desc");
+        return ShadowBaritoneI18n.trKey("shadowbaritone.command.help.short_desc");
     }
 
     @Override
     public List<String> getLongDesc() {
         return Arrays.asList(
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.help.long_desc.1"),
+                ShadowBaritoneI18n.trKey("shadowbaritone.command.help.long_desc.1"),
                 "",
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.help.long_desc.usage"),
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.help.long_desc.example.list"),
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.help.long_desc.example.command"));
+                ShadowBaritoneI18n.trKey("shadowbaritone.command.help.long_desc.usage"),
+                ShadowBaritoneI18n.trKey("shadowbaritone.command.help.long_desc.example.list"),
+                ShadowBaritoneI18n.trKey("shadowbaritone.command.help.long_desc.example.command")
+        );
     }
 }
+

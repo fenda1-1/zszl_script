@@ -18,14 +18,13 @@
 package com.zszl.zszlScriptMod.shadowbaritone.api.event.listener;
 
 import com.zszl.zszlScriptMod.shadowbaritone.api.event.events.*;
-import io.netty.util.concurrent.GenericFutureListener;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.entity.EntityPlayerSP;
-import net.minecraft.client.gui.GuiGameOver;
-import net.minecraft.client.multiplayer.WorldClient;
-import net.minecraft.client.settings.GameSettings;
-import net.minecraft.entity.Entity;
-import net.minecraft.network.Packet;
+import net.minecraft.client.gui.screens.DeathScreen;
+import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.network.protocol.Packet;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.phys.Vec3;
 
 /**
  * @author Brady
@@ -37,7 +36,7 @@ public interface IGameEventListener {
      * Run once per game tick before screen input is handled.
      *
      * @param event The event
-     * @see Minecraft#runTick()
+     * @see Minecraft#tick()
      */
     void onTick(TickEvent event);
 
@@ -50,11 +49,10 @@ public interface IGameEventListener {
     void onPostTick(TickEvent event);
 
     /**
-     * Run once per game tick from before and after the player rotation is sent to
-     * the server.
+     * Run once per game tick from before and after the player rotation is sent to the server.
      *
      * @param event The event
-     * @see EntityPlayerSP#onUpdate()
+     * @see LocalPlayer#tick()
      */
     void onPlayerUpdate(PlayerUpdateEvent event);
 
@@ -62,7 +60,7 @@ public interface IGameEventListener {
      * Runs whenever the client player sends a message to the server.
      *
      * @param event The event
-     * @see EntityPlayerSP#sendChatMessage(String)
+     * @see LocalPlayer#chat(String)
      */
     void onSendChatMessage(ChatEvent event);
 
@@ -74,11 +72,9 @@ public interface IGameEventListener {
     void onPreTabComplete(TabCompleteEvent event);
 
     /**
-     * Runs before and after whenever a chunk is either loaded, unloaded, or
-     * populated.
+     * Runs before and after whenever a chunk is either loaded, unloaded, or populated.
      *
      * @param event The event
-     * @see WorldClient#doPreChunk(int, int, boolean)
      */
     void onChunkEvent(ChunkEvent event);
 
@@ -90,10 +86,7 @@ public interface IGameEventListener {
     void onBlockChange(BlockChangeEvent event);
 
     /**
-     * Runs once per world render pass. Two passes are made when
-     * {@link GameSettings#anaglyph} is on.
-     * <p>
-     * <b>Note:</b> {@link GameSettings#anaglyph} has been removed in Minecraft 1.13
+     * Runs once per world render pass.
      *
      * @param event The event
      */
@@ -103,7 +96,7 @@ public interface IGameEventListener {
      * Runs before and after whenever a new world is loaded
      *
      * @param event The event
-     * @see Minecraft#loadWorld(WorldClient, String)
+     * @see Minecraft#setLevel(ClientLevel)
      */
     void onWorldEvent(WorldEvent event);
 
@@ -112,7 +105,6 @@ public interface IGameEventListener {
      *
      * @param event The event
      * @see Packet
-     * @see GenericFutureListener
      */
     void onSendPacket(PacketEvent event);
 
@@ -121,42 +113,37 @@ public interface IGameEventListener {
      *
      * @param event The event
      * @see Packet
-     * @see GenericFutureListener
      */
     void onReceivePacket(PacketEvent event);
 
     /**
-     * Run once per game tick from before and after the player's moveRelative method
-     * is called
+     * Run once per game tick from before and after the player's moveRelative method is called
      * and before and after the player jumps.
      *
      * @param event The event
-     * @see Entity#moveRelative(float, float, float, float)
+     * @see Entity#moveRelative(float, Vec3)
      */
     void onPlayerRotationMove(RotationMoveEvent event);
 
     /**
-     * Called whenever the sprint keybind state is checked in
-     * {@link EntityPlayerSP#onLivingUpdate}
+     * Called whenever the sprint keybind state is checked in {@link LocalPlayer#aiStep}
      *
      * @param event The event
-     * @see EntityPlayerSP#onLivingUpdate()
+     * @see LocalPlayer#aiStep()
      */
     void onPlayerSprintState(SprintStateEvent event);
 
     /**
-     * Called when the local player interacts with a block, whether it is breaking
-     * or opening/placing.
+     * Called when the local player interacts with a block, whether it is breaking or opening/placing.
      *
      * @param event The event
      */
     void onBlockInteract(BlockInteractEvent event);
 
     /**
-     * Called when the local player dies, as indicated by the creation of the
-     * {@link GuiGameOver} screen.
+     * Called when the local player dies, as indicated by the creation of the {@link DeathScreen} screen.
      *
-     * @see GuiGameOver
+     * @see DeathScreen
      */
     void onPlayerDeath();
 
@@ -167,3 +154,4 @@ public interface IGameEventListener {
      */
     void onPathEvent(PathEvent event);
 }
+

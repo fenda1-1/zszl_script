@@ -27,10 +27,9 @@ import com.zszl.zszlScriptMod.shadowbaritone.api.pathing.goals.Goal;
 import com.zszl.zszlScriptMod.shadowbaritone.api.process.IBaritoneProcess;
 import com.zszl.zszlScriptMod.shadowbaritone.api.process.PathingCommand;
 import com.zszl.zszlScriptMod.shadowbaritone.api.process.PathingCommandType;
-import com.zszl.zszlScriptMod.shadowbaritone.api.utils.Helper;
 import com.zszl.zszlScriptMod.shadowbaritone.behavior.PathingBehavior;
 import com.zszl.zszlScriptMod.shadowbaritone.pathing.path.PathExecutor;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.core.BlockPos;
 
 import java.util.*;
 
@@ -49,8 +48,7 @@ public class PathingControlManager implements IPathingControlManager {
         this.baritone = baritone;
         this.processes = new HashSet<>();
         this.active = new ArrayList<>();
-        baritone.getGameEventHandler().registerEventListener(new AbstractGameEventListener() { // needs to be after all
-                                                                                               // behavior ticks
+        baritone.getGameEventHandler().registerEventListener(new AbstractGameEventListener() { // needs to be after all behavior ticks
             @Override
             public void onTick(TickEvent event) {
                 if (event.getType() == TickEvent.Type.IN) {
@@ -70,12 +68,13 @@ public class PathingControlManager implements IPathingControlManager {
         inControlLastTick = null;
         inControlThisTick = null;
         command = null;
+        lastPreTickDebugKey = null;
+        lastPostTickDebugKey = null;
         active.clear();
         for (IBaritoneProcess proc : processes) {
             proc.onLostControl();
-            if (proc.isActive() && !proc.isTemporary()) { // it's okay only for a temporary thing (like combat pause) to
-                                                          // maintain control even if you say to cancel
-                throw new IllegalStateException(proc.displayName());
+            if (proc.isActive() && !proc.isTemporary()) { // it's okay only for a temporary thing (like combat pause) to maintain control even if you say to cancel
+                throw new IllegalStateException(proc.displayName() + " stayed active after being cancelled");
             }
         }
     }
@@ -90,20 +89,15 @@ public class PathingControlManager implements IPathingControlManager {
         return Optional.ofNullable(command);
     }
 
-    private void logBaritoneDebug(String message) {
-        if (ModConfig.isDebugFlagEnabled(DebugModule.BARITONE)) {
-            Helper.HELPER.logDirect(message);
-        }
-    }
-
     public void preTick() {
         inControlLastTick = inControlThisTick;
         inControlThisTick = null;
         PathingBehavior p = baritone.getPathingBehavior();
         command = executeProcesses();
         if (command != null) {
-            String procName = inControlThisTick == null ? "<none>" : inControlThisTick.displayName();
-            String preTickKey = procName + "|" + command.commandType + "|" + command.goal;
+            String procName = describeProcess(inControlThisTick);
+            String preTickKey = procName + "|" + command.commandType + "|" + command.goal + "|" + p.isPathing() + "|"
+                    + (p.getCurrent() != null) + "|" + p.getInProgress().isPresent();
             if (!preTickKey.equals(lastPreTickDebugKey)) {
                 lastPreTickDebugKey = preTickKey;
                 logBaritoneDebug(String.format(
@@ -123,11 +117,8 @@ public class PathingControlManager implements IPathingControlManager {
             p.secretInternalSetGoal(null);
             return;
         }
-        if (!Objects.equals(inControlThisTick, inControlLastTick)
-                && command.commandType != PathingCommandType.REQUEST_PAUSE && inControlLastTick != null
-                && !inControlLastTick.isTemporary()) {
-            // if control has changed from a real process to another real process, and the
-            // new process wants to do something
+        if (!Objects.equals(inControlThisTick, inControlLastTick) && command.commandType != PathingCommandType.REQUEST_PAUSE && inControlLastTick != null && !inControlLastTick.isTemporary()) {
+            // if control has changed from a real process to another real process, and the new process wants to do something
             p.cancelSegmentIfSafe();
             // get rid of the in progress stuff from the last process
         }
@@ -154,21 +145,21 @@ public class PathingControlManager implements IPathingControlManager {
                 }
                 break;
             default:
-                throw new IllegalStateException();
+                throw new IllegalStateException("Unexpected command type " + command.commandType);
         }
     }
 
     private void postTick() {
         // if we did this in pretick, it would suck
         // we use the time between ticks as calculation time
-        // therefore, we only cancel and recalculate after the tick for the current path
-        // has executed
+        // therefore, we only cancel and recalculate after the tick for the current path has executed
         // "it would suck" means it would actually execute a path every other tick
         if (command == null) {
             return;
         }
         PathingBehavior p = baritone.getPathingBehavior();
-        String postTickKey = command.commandType + "|" + command.goal;
+        String postTickKey = command.commandType + "|" + command.goal + "|" + p.isPathing() + "|"
+                + (p.getCurrent() != null) + "|" + p.getInProgress().isPresent();
         if (!postTickKey.equals(lastPostTickDebugKey)) {
             lastPostTickDebugKey = postTickKey;
             logBaritoneDebug(String.format(
@@ -188,8 +179,7 @@ public class PathingControlManager implements IPathingControlManager {
                 p.secretInternalSetGoalAndPath(command);
                 break;
             case REVALIDATE_GOAL_AND_PATH:
-                if (Baritone.settings().cancelOnGoalInvalidation.value
-                        && (command.goal == null || revalidateGoal(command.goal))) {
+                if (Baritone.settings().cancelOnGoalInvalidation.value && (command.goal == null || revalidateGoal(command.goal))) {
                     p.softCancelIfSafe();
                 }
                 p.secretInternalSetGoalAndPath(command);
@@ -223,6 +213,7 @@ public class PathingControlManager implements IPathingControlManager {
         return false;
     }
 
+
     public PathingCommand executeProcesses() {
         for (IBaritoneProcess process : processes) {
             if (process.isActive()) {
@@ -241,9 +232,7 @@ public class PathingControlManager implements IPathingControlManager {
         while (iterator.hasNext()) {
             IBaritoneProcess proc = iterator.next();
 
-            PathingCommand exec = proc.onTick(
-                    Objects.equals(proc, inControlLastTick) && baritone.getPathingBehavior().calcFailedLastTick(),
-                    baritone.getPathingBehavior().isSafeToCancel());
+            PathingCommand exec = proc.onTick(Objects.equals(proc, inControlLastTick) && baritone.getPathingBehavior().calcFailedLastTick(), baritone.getPathingBehavior().isSafeToCancel());
             if (exec == null) {
                 if (proc.isActive()) {
                     throw new IllegalStateException(proc.displayName() + " actively returned null PathingCommand");
@@ -269,15 +258,30 @@ public class PathingControlManager implements IPathingControlManager {
         if (normalizedGoal == command.goal) {
             return command;
         }
+        logBaritoneDebug(String.format("[DBG][PCM] normalized command goal from %s to %s for %s",
+                command.goal,
+                normalizedGoal,
+                command.commandType));
         if (command instanceof PathingCommandContext) {
             PathingCommandContext contextCommand = (PathingCommandContext) command;
             return new PathingCommandContext(normalizedGoal, command.commandType, contextCommand.desiredCalcContext);
         }
-        if (command instanceof PathingCommandPath) {
-            PathingCommandPath pathCommand = (PathingCommandPath) command;
-            return new PathingCommandPath(normalizedGoal, command.commandType, pathCommand.desiredPath);
-        }
         return new PathingCommand(normalizedGoal, command.commandType);
+    }
+
+    private void logBaritoneDebug(String message) {
+        ModConfig.debugLog(DebugModule.BARITONE, message);
+    }
+
+    private String describeProcess(IBaritoneProcess process) {
+        if (process == null) {
+            return "<none>";
+        }
+        try {
+            return process.displayName();
+        } catch (Throwable ignored) {
+            return process.getClass().getSimpleName();
+        }
     }
 }
 

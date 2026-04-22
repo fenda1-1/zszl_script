@@ -23,7 +23,6 @@ import com.zszl.zszlScriptMod.shadowbaritone.api.command.argument.IArgConsumer;
 import com.zszl.zszlScriptMod.shadowbaritone.api.command.exception.CommandException;
 import com.zszl.zszlScriptMod.shadowbaritone.api.command.exception.CommandInvalidStateException;
 import com.zszl.zszlScriptMod.shadowbaritone.api.process.IGetToBlockProcess;
-import com.zszl.zszlScriptMod.shadowbaritone.api.utils.ShadowBaritoneI18n;
 
 import java.util.Arrays;
 import java.util.List;
@@ -40,15 +39,12 @@ public class BlacklistCommand extends Command {
         args.requireMax(0);
         IGetToBlockProcess proc = baritone.getGetToBlockProcess();
         if (!proc.isActive()) {
-            throw new CommandInvalidStateException(ShadowBaritoneI18n.trKey(
-                    "shadowbaritone.command.blacklist.error.not_active"));
+            throw new CommandInvalidStateException("GetToBlockProcess is not currently active");
         }
         if (proc.blacklistClosest()) {
-            logDirect(ShadowBaritoneI18n.trKey(
-                    "shadowbaritone.command.blacklist.status.blacklisted_closest"));
+            logDirect("Blacklisted closest instances");
         } else {
-            throw new CommandInvalidStateException(ShadowBaritoneI18n.trKey(
-                    "shadowbaritone.command.blacklist.error.no_known_locations"));
+            throw new CommandInvalidStateException("No known locations, unable to blacklist");
         }
     }
 
@@ -59,19 +55,17 @@ public class BlacklistCommand extends Command {
 
     @Override
     public String getShortDesc() {
-        return ShadowBaritoneI18n.trKey(
-                "shadowbaritone.command.blacklist.short_desc");
+        return "Blacklist closest block";
     }
 
     @Override
     public List<String> getLongDesc() {
         return Arrays.asList(
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.blacklist.long_desc.1"),
+                "While going to a block this command blacklists the closest block so that Baritone won't attempt to get to it.",
                 "",
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.blacklist.long_desc.usage"),
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.blacklist.long_desc.example.default"));
+                "Usage:",
+                "> blacklist"
+        );
     }
 }
+

@@ -24,12 +24,10 @@ import com.zszl.zszlScriptMod.shadowbaritone.api.command.exception.CommandExcept
 import com.zszl.zszlScriptMod.shadowbaritone.api.pathing.goals.Goal;
 import com.zszl.zszlScriptMod.shadowbaritone.api.pathing.goals.GoalBlock;
 import com.zszl.zszlScriptMod.shadowbaritone.api.utils.BetterBlockPos;
-import com.zszl.zszlScriptMod.shadowbaritone.api.utils.ShadowBaritoneI18n;
-import net.minecraft.block.BlockAir;
-
 import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Stream;
+import net.minecraft.world.level.block.AirBlock;
 
 public class SurfaceCommand extends Command {
 
@@ -41,15 +39,12 @@ public class SurfaceCommand extends Command {
     public void execute(String label, IArgConsumer args) throws CommandException {
         final BetterBlockPos playerPos = ctx.playerFeet();
         final int surfaceLevel = ctx.world().getSeaLevel();
-        final int worldHeight = ctx.world().getActualHeight();
+        final int worldHeight = ctx.world().getHeight();
 
-        // Ensure this command will not run if you are above the surface level and the
-        // block above you is air
+        // Ensure this command will not run if you are above the surface level and the block above you is air
         // As this would imply that your are already on the open surface
-        if (playerPos.getY() > surfaceLevel
-                && ctx.world().getBlockState(playerPos.up()).getBlock() instanceof BlockAir) {
-            logDirect(ShadowBaritoneI18n.trKey(
-                    "shadowbaritone.command.surface.status.already_at_surface"));
+        if (playerPos.getY() > surfaceLevel && ctx.world().getBlockState(playerPos.above()).getBlock() instanceof AirBlock) {
+            logDirect("Already at surface");
             return;
         }
 
@@ -58,18 +53,14 @@ public class SurfaceCommand extends Command {
         for (int currentIteratedY = startingYPos; currentIteratedY < worldHeight; currentIteratedY++) {
             final BetterBlockPos newPos = new BetterBlockPos(playerPos.getX(), currentIteratedY, playerPos.getZ());
 
-            if (!(ctx.world().getBlockState(newPos).getBlock() instanceof BlockAir)
-                    && newPos.getY() > playerPos.getY()) {
-                Goal goal = new GoalBlock(newPos.up());
-                logDirect(ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.surface.status.going_to",
-                        goal.toString()));
+            if (!(ctx.world().getBlockState(newPos).getBlock() instanceof AirBlock) && newPos.getY() > playerPos.getY()) {
+                Goal goal = new GoalBlock(newPos.above());
+                logDirect(String.format("Going to: %s", goal.toString()));
                 baritone.getCustomGoalProcess().setGoalAndPath(goal);
                 return;
             }
         }
-        logDirect(ShadowBaritoneI18n.trKey(
-                "shadowbaritone.command.surface.status.no_higher_location"));
+        logDirect("No higher location found");
     }
 
     @Override
@@ -79,24 +70,20 @@ public class SurfaceCommand extends Command {
 
     @Override
     public String getShortDesc() {
-        return ShadowBaritoneI18n.trKey(
-                "shadowbaritone.command.surface.short_desc");
+        return "Used to get out of caves, mines, ...";
     }
 
     @Override
     public List<String> getLongDesc() {
         return Arrays.asList(
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.surface.long_desc.1"),
+                "The surface/top command tells Baritone to head towards the closest surface-like area.",
                 "",
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.surface.long_desc.2"),
+                "This can be the surface or the highest available air space, depending on circumstances.",
                 "",
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.surface.long_desc.usage"),
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.surface.long_desc.example.surface"),
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.surface.long_desc.example.top"));
+                "Usage:",
+                "> surface - Used to get out of caves, mines, ...",
+                "> top - Used to get out of caves, mines, ..."
+        );
     }
 }
+

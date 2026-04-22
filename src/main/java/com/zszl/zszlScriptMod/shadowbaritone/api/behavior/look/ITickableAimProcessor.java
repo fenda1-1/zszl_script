@@ -37,8 +37,7 @@ public interface ITickableAimProcessor extends IAimProcessor {
     void advance(int ticks);
 
     /**
-     * Returns the actual rotation as provided by {@link #peekRotation(Rotation)},
-     * and then automatically advances the
+     * Returns the actual rotation as provided by {@link #peekRotation(Rotation)}, and then automatically advances the
      * internal state by one {@link #tick() tick}.
      *
      * @param rotation The desired rotation to set
@@ -46,3 +45,4 @@ public interface ITickableAimProcessor extends IAimProcessor {
      */
     Rotation nextRotation(Rotation rotation);
 }
+

@@ -21,7 +21,6 @@ import com.zszl.zszlScriptMod.shadowbaritone.api.IBaritone;
 import com.zszl.zszlScriptMod.shadowbaritone.api.command.Command;
 import com.zszl.zszlScriptMod.shadowbaritone.api.command.argument.IArgConsumer;
 import com.zszl.zszlScriptMod.shadowbaritone.api.command.exception.CommandException;
-import com.zszl.zszlScriptMod.shadowbaritone.api.utils.ShadowBaritoneI18n;
 
 import java.util.Arrays;
 import java.util.List;
@@ -37,8 +36,7 @@ public class GcCommand extends Command {
     public void execute(String label, IArgConsumer args) throws CommandException {
         args.requireMax(0);
         System.gc();
-        logDirect(ShadowBaritoneI18n.trKey(
-                "shadowbaritone.command.gc.status.called"));
+        logDirect("ok called System.gc()");
     }
 
     @Override
@@ -48,19 +46,17 @@ public class GcCommand extends Command {
 
     @Override
     public String getShortDesc() {
-        return ShadowBaritoneI18n.trKey(
-                "shadowbaritone.command.gc.short_desc");
+        return "Call System.gc()";
     }
 
     @Override
     public List<String> getLongDesc() {
         return Arrays.asList(
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.gc.long_desc.1"),
+                "Calls System.gc().",
                 "",
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.gc.long_desc.usage"),
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.gc.long_desc.example.default"));
+                "Usage:",
+                "> gc"
+        );
     }
 }
+

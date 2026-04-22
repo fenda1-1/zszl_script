@@ -1,36 +1,32 @@
-// 文件路径: src/main/java/com/zszl/zszlScriptMod/handlers/AutoPickupHandler.java
 package com.zszl.zszlScriptMod.handlers;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import com.google.gson.reflect.TypeToken;
-import com.zszl.zszlScriptMod.zszlScriptMod;
-import com.zszl.zszlScriptMod.config.DebugModule;
-import com.zszl.zszlScriptMod.config.ModConfig;
-import com.zszl.zszlScriptMod.path.PathSequenceEventListener;
+import com.mojang.blaze3d.platform.GlStateManager;
+import com.mojang.blaze3d.systems.RenderSystem;
+import com.mojang.blaze3d.vertex.BufferBuilder;
+import com.mojang.blaze3d.vertex.DefaultVertexFormat;
+import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.blaze3d.vertex.Tesselator;
+import com.mojang.blaze3d.vertex.VertexFormat;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraftforge.client.event.RenderWorldLastEvent;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraftforge.fml.common.gameevent.TickEvent;
 import com.zszl.zszlScriptMod.path.PathSequenceManager;
 import com.zszl.zszlScriptMod.system.AutoPickupRule;
 import com.zszl.zszlScriptMod.system.ProfileManager;
-
-import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
-
+import com.zszl.zszlScriptMod.zszlScriptMod;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.entity.EntityPlayerSP;
-import net.minecraft.client.renderer.BufferBuilder;
-import net.minecraft.client.renderer.GlStateManager;
-import net.minecraft.client.renderer.Tessellator;
-import net.minecraft.client.renderer.vertex.DefaultVertexFormats;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.item.EntityItem;
-import net.minecraft.item.ItemStack;
-import net.minecraft.util.text.TextComponentString;
-import net.minecraft.util.text.TextFormatting;
-import net.minecraftforge.client.event.RenderWorldLastEvent;
-import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
-import net.minecraftforge.fml.common.gameevent.TickEvent;
-import net.minecraftforge.fml.relauncher.Side;
-import org.lwjgl.opengl.GL11;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.client.renderer.GameRenderer;
+import net.minecraft.util.Mth;
+import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
+import net.minecraftforge.eventbus.api.SubscribeEvent;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
@@ -47,49 +43,27 @@ import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 public class AutoPickupHandler {
+
     public static final AutoPickupHandler INSTANCE = new AutoPickupHandler();
-    private static final Minecraft mc = Minecraft.getMinecraft();
+
+    private static final Minecraft MC = Minecraft.getInstance();
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
-    private static final int PICKUP_GOTO_INTERVAL_TICKS = 5;
-    private static final int MAX_SCANNED_ITEM_ENTITIES = 512;
-    private static final int ITEM_SEARCH_SCAN_INTERVAL_TICKS = 3;
-    private static final int ITEM_MATCH_CACHE_PRUNE_INTERVAL_TICKS = 40;
-    private static final int MAX_ITEM_MATCH_CACHE_SIZE = 1024;
+    private static final String CATEGORY_DEFAULT = "默认";
+
+    private static final int SEARCH_INTERVAL_TICKS = 3;
+    private static final int GOTO_INTERVAL_TICKS = 5;
+    private static final int TARGET_LOST_GRACE_TICKS = 8;
+    private static final double NAVIGATION_MOVEMENT_THRESHOLD_SQ = 0.16D;
 
     public static boolean globalEnabled = false;
     public static final List<AutoPickupRule> rules = new CopyOnWriteArrayList<>();
     private static final List<String> categories = new CopyOnWriteArrayList<>();
-    private static final String CATEGORY_DEFAULT = "默认";
 
     private enum State {
-        IDLE, SEARCHING, MOVING_TO_ITEM, WAITING_POST_PICKUP, SEQUENCE_RUNNING
-    }
-
-    private State currentState = State.IDLE;
-    private AutoPickupRule activeRule = null;
-    private EntityItem currentTargetItem = null;
-    private int postPickupDelayTicks = 0;
-    private int lastEnterMessageTick = -99999;
-    private int lastGotoTick = -99999;
-    private int lastGotoTargetEntityId = Integer.MIN_VALUE;
-    private ItemStack currentTargetStackSnapshot = ItemStack.EMPTY;
-
-    // --- 核心修改 1: 添加新的状态标志 ---
-    private boolean hasPickedUpAtLeastOneItem = false;
-    // --- 修改结束 ---
-    private final List<PendingPickupSequenceAction> pendingPickupActions = new ArrayList<>();
-    private int antiStuckStationaryTicks = 0;
-    private double antiStuckLastPosX = Double.NaN;
-    private double antiStuckLastPosY = Double.NaN;
-    private double antiStuckLastPosZ = Double.NaN;
-    private int lastItemSearchTick = -99999;
-    private int lastItemSearchRuleKey = 0;
-    private int lastNearestItemEntityId = Integer.MIN_VALUE;
-    private boolean lastItemSearchFoundMatch = false;
-    private int lastItemMatchCachePruneTick = -99999;
-    private final Map<Integer, ItemMatchCacheEntry> itemMatchCache = new HashMap<>();
-
-    private AutoPickupHandler() {
+        IDLE,
+        SEARCHING,
+        MOVING_TO_ITEM,
+        WAITING_POST_PICKUP
     }
 
     private static final class PendingPickupSequenceAction {
@@ -102,16 +76,60 @@ public class AutoPickupHandler {
         }
     }
 
-    private static final class ItemMatchCacheEntry {
-        private final String fingerprint;
-        private final String itemName;
-        private final String searchableText;
+    private static final class ItemLocationKey {
+        private final int x;
+        private final int y;
+        private final int z;
 
-        private ItemMatchCacheEntry(String fingerprint, String itemName, String searchableText) {
-            this.fingerprint = fingerprint;
-            this.itemName = itemName;
-            this.searchableText = searchableText;
+        private ItemLocationKey(int x, int y, int z) {
+            this.x = x;
+            this.y = y;
+            this.z = z;
         }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (this == obj) {
+                return true;
+            }
+            if (!(obj instanceof ItemLocationKey other)) {
+                return false;
+            }
+            return x == other.x && y == other.y && z == other.z;
+        }
+
+        @Override
+        public int hashCode() {
+            int result = 17;
+            result = 31 * result + x;
+            result = 31 * result + y;
+            result = 31 * result + z;
+            return result;
+        }
+    }
+
+    private State currentState = State.IDLE;
+    private AutoPickupRule activeRule;
+    private ItemEntity currentTargetItem;
+    private ItemStack currentTargetSnapshot = ItemStack.EMPTY;
+    private int postPickupDelayTicks = 0;
+    private int lastGotoTick = -99999;
+    private int lastTargetSearchTick = -99999;
+    private int lastTargetSeenTick = -99999;
+    private boolean hasPickedUpAtLeastOneItem = false;
+    private double lastIssuedTargetX = Double.NaN;
+    private double lastIssuedTargetY = Double.NaN;
+    private double lastIssuedTargetZ = Double.NaN;
+    private boolean navigationIssuedByAutoPickup = false;
+    private int antiStuckStationaryTicks = 0;
+    private double antiStuckLastPosX = Double.NaN;
+    private double antiStuckLastPosY = Double.NaN;
+    private double antiStuckLastPosZ = Double.NaN;
+
+    private final List<PendingPickupSequenceAction> pendingPickupActions = new ArrayList<>();
+    private final Map<String, Map<ItemLocationKey, Integer>> failedPickupAttemptsByRule = new HashMap<>();
+
+    private AutoPickupHandler() {
     }
 
     private static Path getConfigFile() {
@@ -119,15 +137,15 @@ public class AutoPickupHandler {
     }
 
     public static synchronized void saveConfig() {
+        ensureCategoriesSynced();
+        Path configFile = getConfigFile();
         try {
-            ensureCategoriesSynced();
-            Path configFile = getConfigFile();
             Files.createDirectories(configFile.getParent());
             try (BufferedWriter writer = Files.newBufferedWriter(configFile, StandardCharsets.UTF_8)) {
                 JsonObject root = new JsonObject();
                 root.addProperty("globalEnabled", globalEnabled);
                 root.add("categories", GSON.toJsonTree(new ArrayList<>(categories)));
-                root.add("rules", GSON.toJsonTree(rules));
+                root.add("rules", GSON.toJsonTree(new ArrayList<>(rules)));
                 GSON.toJson(root, writer);
             }
         } catch (Exception e) {
@@ -136,30 +154,29 @@ public class AutoPickupHandler {
     }
 
     public static synchronized void loadConfig() {
-        Path configFile = getConfigFile();
+        globalEnabled = false;
+        rules.clear();
         categories.clear();
+
+        Path configFile = getConfigFile();
         if (!Files.exists(configFile)) {
-            rules.clear();
             ensureCategoriesSynced();
             return;
         }
+
         try (BufferedReader reader = Files.newBufferedReader(configFile, StandardCharsets.UTF_8)) {
             JsonObject root = new JsonParser().parse(reader).getAsJsonObject();
             if (root.has("globalEnabled")) {
                 globalEnabled = root.get("globalEnabled").getAsBoolean();
             }
             if (root.has("categories") && root.get("categories").isJsonArray()) {
-                for (com.google.gson.JsonElement element : root.getAsJsonArray("categories")) {
-                    if (element != null && element.isJsonPrimitive()) {
-                        categories.add(element.getAsString());
-                    }
-                }
+                root.getAsJsonArray("categories")
+                        .forEach(element -> categories.add(normalizeCategory(element.getAsString())));
             }
             if (root.has("rules")) {
                 Type listType = new TypeToken<ArrayList<AutoPickupRule>>() {
                 }.getType();
                 List<AutoPickupRule> loaded = GSON.fromJson(root.get("rules"), listType);
-                rules.clear();
                 if (loaded != null) {
                     for (AutoPickupRule rule : loaded) {
                         if (rule == null) {
@@ -174,50 +191,8 @@ public class AutoPickupHandler {
             zszlScriptMod.LOGGER.error("无法加载自动拾取规则", e);
             rules.clear();
         }
+
         ensureCategoriesSynced();
-    }
-
-    private static String normalizeCategory(String category) {
-        String normalized = category == null ? "" : category.trim();
-        return normalized.isEmpty() ? CATEGORY_DEFAULT : normalized;
-    }
-
-    private static void ensureCategoriesSynced() {
-        LinkedHashSet<String> normalized = new LinkedHashSet<>();
-        for (String category : categories) {
-            normalized.add(normalizeCategory(category));
-        }
-        for (AutoPickupRule rule : rules) {
-            if (rule == null) {
-                continue;
-            }
-            normalizeRule(rule);
-            normalized.add(rule.category);
-        }
-        if (normalized.isEmpty()) {
-            normalized.add(CATEGORY_DEFAULT);
-        }
-        categories.clear();
-        categories.addAll(normalized);
-    }
-
-    private static boolean containsCategoryIgnoreCase(String category) {
-        for (String existing : categories) {
-            if (normalizeCategory(existing).equalsIgnoreCase(normalizeCategory(category))) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private static boolean removeCategoryIgnoreCase(String category) {
-        for (int i = 0; i < categories.size(); i++) {
-            if (normalizeCategory(categories.get(i)).equalsIgnoreCase(normalizeCategory(category))) {
-                categories.remove(i);
-                return true;
-            }
-        }
-        return false;
     }
 
     public static synchronized List<String> getCategoriesSnapshot() {
@@ -272,7 +247,6 @@ public class AutoPickupHandler {
                 break;
             }
         }
-
         for (AutoPickupRule rule : rules) {
             if (rule != null && normalizeCategory(rule.category).equalsIgnoreCase(normalizedOld)) {
                 rule.category = normalizedNew;
@@ -312,898 +286,631 @@ public class AutoPickupHandler {
 
     @SubscribeEvent
     public void onPlayerTick(TickEvent.PlayerTickEvent event) {
-        if (event.phase != TickEvent.Phase.END
-                || event.side != Side.CLIENT
-                || event.player != mc.player
-                || mc.player == null
-                || mc.world == null
-                || !globalEnabled) {
+        if (event.phase != TickEvent.Phase.END || !(event.player instanceof LocalPlayer player)) {
             return;
         }
-        final int nowTick = mc.player.ticksExisted;
-        pruneItemMatchCacheIfNeeded(nowTick);
 
-        if (currentState == State.SEQUENCE_RUNNING) {
-            if (!PathSequenceEventListener.instance.isTracking()) {
-                currentState = activeRule != null ? State.SEARCHING : State.IDLE;
-            }
-            if (activeRule != null && !activeRule.isPlayerInside(mc.player.posX, mc.player.posY, mc.player.posZ)) {
-                if (activeRule.stopOnExit && PathSequenceEventListener.instance.isTracking()) {
-                    PathSequenceEventListener.instance.stopTracking();
-                    mc.player.sendMessage(new TextComponentString(TextFormatting.YELLOW + "[自动拾取] 已离开区域，后续序列已停止。"));
+        if (player.level() == null || !globalEnabled) {
+            clearFailedAttemptsForRule(activeRule);
+            resetStateIfNeeded(true);
+            return;
+        }
+
+        AutoPickupRule rule = resolveRuleForPlayer(player);
+        if (rule == null || !rule.enabled) {
+            clearFailedAttemptsForRule(activeRule);
+            resetStateIfNeeded(true);
+            return;
+        }
+
+        if (activeRule != rule) {
+            clearFailedAttemptsForRule(activeRule);
+            resetState(false);
+            activeRule = rule;
+        } else {
+            activeRule = rule;
+        }
+
+        processPendingPickupActions();
+
+        int nowTick = player.tickCount;
+        updateAntiStuckState(player, rule);
+
+        if (currentState == State.WAITING_POST_PICKUP) {
+            handlePostPickupDelay(player, rule);
+            return;
+        }
+
+        if (currentTargetItem != null) {
+            boolean targetValid = isTargetStillValid(currentTargetItem, rule);
+            if (targetValid) {
+                currentState = State.MOVING_TO_ITEM;
+                lastTargetSeenTick = nowTick;
+                if (hasReachedTarget(player, rule, currentTargetItem)) {
+                    currentTargetSnapshot = currentTargetItem.getItem().copy();
+                } else {
+                    ensureNavigationToCurrentTarget(player, rule, nowTick);
+                    return;
                 }
-                resetState();
             }
-            if (currentState == State.SEQUENCE_RUNNING) {
+
+            if (!targetValid || !currentTargetItem.isAlive()) {
+                handlePickupFinished(player, rule, currentTargetSnapshot);
                 return;
             }
         }
 
-        AutoPickupRule rulePlayerIsIn = resolveRuleForPlayer(mc.player, rules);
-
-        if (rulePlayerIsIn == null) {
-            if (activeRule != null) {
-                if (activeRule.stopOnExit && PathSequenceEventListener.instance.isTracking()) {
-                    PathSequenceEventListener.instance.stopTracking();
-                    mc.player.sendMessage(new TextComponentString(TextFormatting.YELLOW + "[自动拾取] 已离开区域，后续序列已停止。"));
-                }
-                resetState();
-            }
+        if (currentTargetItem != null && (nowTick - lastTargetSeenTick) <= TARGET_LOST_GRACE_TICKS) {
             return;
         }
 
-        if (activeRule != rulePlayerIsIn) {
-            resetState();
-            activeRule = rulePlayerIsIn;
-            // --- 核心修改 2: 进入新区域时，重置拾取标志 ---
-            hasPickedUpAtLeastOneItem = false;
-            // --- 修改结束 ---
-            if (nowTick - lastEnterMessageTick > 60) {
-                mc.player.sendMessage(new TextComponentString(
-                        TextFormatting.AQUA + "[自动拾取] " + TextFormatting.GREEN + "进入区域: " + activeRule.name));
-                lastEnterMessageTick = nowTick;
+        currentTargetItem = null;
+        currentTargetSnapshot = ItemStack.EMPTY;
+        currentState = State.SEARCHING;
+
+        if (nowTick - lastTargetSearchTick < SEARCH_INTERVAL_TICKS) {
+            return;
+        }
+        lastTargetSearchTick = nowTick;
+
+        ItemEntity nextTarget = findNearestItemInRule(rule, player);
+        if (nextTarget == null) {
+            if (hasPickedUpAtLeastOneItem && !isBlank(rule.postPickupSequence)) {
+                postPickupDelayTicks = Math.max(0, rule.postPickupDelaySeconds) * 20;
+                currentState = State.WAITING_POST_PICKUP;
+            } else {
+                currentState = State.IDLE;
             }
-            currentState = State.SEARCHING;
+            stopNavigation("当前规则范围内未找到可拾取物品");
+            return;
         }
 
-        processPendingPickupActions();
-        updateAntiStuckState();
-
-        switch (currentState) {
-        case SEARCHING:
-            findAndSetNextTarget(nowTick);
-            break;
-        case MOVING_TO_ITEM:
-            checkIfTargetIsReachedOrGone(nowTick);
-            break;
-        case WAITING_POST_PICKUP:
-            handlePostPickupDelay(nowTick);
-            break;
-        case IDLE:
-            if (activeRule != null) {
-                currentState = State.SEARCHING;
-            }
-            break;
-        }
+        currentTargetItem = nextTarget;
+        currentTargetSnapshot = nextTarget.getItem().copy();
+        lastTargetSeenTick = nowTick;
+        currentState = State.MOVING_TO_ITEM;
+        ensureNavigationToCurrentTarget(player, rule, nowTick);
     }
 
-    public boolean shouldPrioritizeNavigation(EntityPlayerSP player) {
-        if (player == null || mc.world == null || !globalEnabled || currentState == State.SEQUENCE_RUNNING) {
+    public boolean shouldPrioritizeNavigation(LocalPlayer player) {
+        if (player == null || !globalEnabled || activeRule == null || !activeRule.enabled) {
             return false;
         }
-
-        AutoPickupRule rule = resolveRuleForPlayer(player, rules);
-        if (rule == null) {
-            return false;
-        }
-
-        if (isItemEligibleForRule(currentTargetItem, rule)) {
-            return true;
-        }
-
-        int nowTick = player.ticksExisted;
-        return findNearestItemInRule(rule, player, nowTick, true) != null;
+        return currentState == State.MOVING_TO_ITEM && currentTargetItem != null && currentTargetItem.isAlive();
     }
 
-    public boolean isPlayerInsideEnabledRule(EntityPlayerSP player) {
-        if (player == null || !globalEnabled) {
-            return false;
-        }
-        return resolveRuleForPlayer(player, rules) != null;
+    public boolean isPlayerInsideEnabledRule(LocalPlayer player) {
+        return player != null && resolveRuleForPlayer(player) != null;
     }
 
     @SubscribeEvent
     public void onRenderWorldLast(RenderWorldLastEvent event) {
-        if (mc == null || mc.world == null) {
+        RenderWorldLastEvent.WorldRenderContext renderContext = event.getWorldRenderContext();
+        if (MC.player == null || renderContext == null || rules.isEmpty()) {
             return;
         }
-
-        if (rules.isEmpty()) {
+        PoseStack poseStack = event.createWorldPoseStack();
+        if (poseStack == null) {
             return;
         }
-
-        Entity viewer = mc.getRenderViewEntity();
-        if (viewer == null) {
-            return;
-        }
-
-        float partialTicks = event.getPartialTicks();
-        double viewerX = viewer.lastTickPosX + (viewer.posX - viewer.lastTickPosX) * partialTicks;
-        double viewerY = viewer.lastTickPosY + (viewer.posY - viewer.lastTickPosY) * partialTicks;
-        double viewerZ = viewer.lastTickPosZ + (viewer.posZ - viewer.lastTickPosZ) * partialTicks;
-
         for (AutoPickupRule rule : rules) {
             if (rule == null || !rule.enabled || !rule.visualizeRange || rule.radius <= 0.05D) {
                 continue;
             }
-            drawPickupRadiusAura(rule.centerX, rule.centerY, rule.centerZ, viewerX, viewerY, viewerZ, rule.radius);
+            drawPickupRadiusAura(rule.centerX, rule.centerY, rule.centerZ, rule.radius, poseStack, renderContext);
         }
     }
 
-    private void findAndSetNextTarget(int nowTick) {
-        if (activeRule == null || mc.player == null) {
-            resetState();
+    private void handlePostPickupDelay(LocalPlayer player, AutoPickupRule rule) {
+        if (rule == null) {
+            resetState(false);
+            return;
+        }
+        if (rule.stopOnExit && !rule.isPlayerInside(player.getX(), player.getY(), player.getZ())) {
+            resetState(false);
+            return;
+        }
+        if (postPickupDelayTicks > 0) {
+            postPickupDelayTicks--;
+            return;
+        }
+        if (!isBlank(rule.postPickupSequence)) {
+            startSequence(rule.postPickupSequence);
+        }
+        hasPickedUpAtLeastOneItem = false;
+        currentState = State.IDLE;
+    }
+
+    private void handlePickupFinished(LocalPlayer player, AutoPickupRule rule, ItemStack pickedStack) {
+        stopNavigation("当前物品已完成拾取或目标失效");
+        if (pickedStack != null && !pickedStack.isEmpty()) {
+            hasPickedUpAtLeastOneItem = true;
+            queuePickupActions(rule, pickedStack);
+            clearFailedAttemptsForTarget(rule, currentTargetItem);
+        }
+        currentTargetItem = null;
+        currentTargetSnapshot = ItemStack.EMPTY;
+        currentState = State.SEARCHING;
+        antiStuckStationaryTicks = 0;
+        captureAntiStuckPosition(player);
+    }
+
+    private AutoPickupRule resolveRuleForPlayer(LocalPlayer player) {
+        AutoPickupRule firstEnabled = null;
+        for (AutoPickupRule rule : rules) {
+            if (rule == null || !rule.enabled) {
+                continue;
+            }
+            normalizeRule(rule);
+            if (firstEnabled == null) {
+                firstEnabled = rule;
+            }
+            if (rule.isPlayerInside(player.getX(), player.getY(), player.getZ())) {
+                return rule;
+            }
+        }
+        return firstEnabled != null && !firstEnabled.stopOnExit ? firstEnabled : null;
+    }
+
+    private ItemEntity findNearestItemInRule(AutoPickupRule rule, LocalPlayer player) {
+        double radius = Math.max(0.5D, rule.radius);
+        AABB searchBox = player.getBoundingBox().inflate(radius, radius, radius);
+        ItemEntity best = null;
+        double bestDistanceSq = Double.MAX_VALUE;
+        for (ItemEntity item : player.level().getEntitiesOfClass(ItemEntity.class, searchBox)) {
+            if (!isTargetStillValid(item, rule)) {
+                continue;
+            }
+            if (hasReachedMaxPickupAttempts(item, rule)) {
+                continue;
+            }
+            double distanceSq = player.distanceToSqr(item);
+            if (distanceSq < bestDistanceSq) {
+                bestDistanceSq = distanceSq;
+                best = item;
+            }
+        }
+        return best;
+    }
+
+    private boolean isTargetStillValid(ItemEntity item, AutoPickupRule rule) {
+        if (item == null || !item.isAlive() || item.getItem().isEmpty() || rule == null) {
+            return false;
+        }
+        Vec3 center = new Vec3(rule.centerX, rule.centerY, rule.centerZ);
+        if (item.position().distanceTo(center) > Math.max(0.0D, rule.radius) + 1.0D) {
+            return false;
+        }
+        return isItemEligibleForRule(item, rule);
+    }
+
+    private boolean isItemEligibleForRule(ItemEntity item, AutoPickupRule rule) {
+        ItemStack stack = item.getItem();
+        String itemName = safeLower(getFilterableItemName(stack));
+        String searchableText = safeLower(ItemFilterHandler.buildItemSearchableText(stack));
+
+        if (rule.enableItemWhitelist) {
+            if (hasEntryRules(rule.itemWhitelistEntries)) {
+                if (!matchesRuleEntryList(itemName, searchableText, stack, rule.itemWhitelistEntries)) {
+                    return false;
+                }
+            } else if (!matchesLegacyKeywordList(itemName, rule.itemWhitelist)) {
+                return false;
+            }
+        }
+
+        if (rule.enableItemBlacklist) {
+            if (hasEntryRules(rule.itemBlacklistEntries)) {
+                if (matchesRuleEntryList(itemName, searchableText, stack, rule.itemBlacklistEntries)) {
+                    return false;
+                }
+            } else if (matchesLegacyKeywordList(itemName, rule.itemBlacklist)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private boolean hasReachedTarget(LocalPlayer player, AutoPickupRule rule, ItemEntity item) {
+        double distance = Math.max(0.25D, rule.targetReachDistance);
+        return player.distanceToSqr(item) <= distance * distance;
+    }
+
+    private void ensureNavigationToCurrentTarget(LocalPlayer player, AutoPickupRule rule, int nowTick) {
+        if (currentTargetItem == null) {
+            return;
+        }
+        double targetX = currentTargetItem.getX();
+        double targetY = currentTargetItem.getY();
+        double targetZ = currentTargetItem.getZ();
+
+        boolean targetMoved = Double.isNaN(lastIssuedTargetX)
+                || square(targetX - lastIssuedTargetX) + square(targetY - lastIssuedTargetY)
+                        + square(targetZ - lastIssuedTargetZ) >= NAVIGATION_MOVEMENT_THRESHOLD_SQ;
+
+        if (!targetMoved && (nowTick - lastGotoTick) < GOTO_INTERVAL_TICKS) {
             return;
         }
 
-        EntityItem nearest = findNearestItemInRule(activeRule, mc.player, nowTick, true);
-
-        if (nearest != null) {
-            boolean targetChanged = currentTargetItem == null
-                    || currentTargetItem.isDead
-                    || currentTargetItem.getEntityId() != nearest.getEntityId();
-            currentTargetItem = nearest;
-            currentTargetStackSnapshot = nearest.getItem().copy();
-            currentState = State.MOVING_TO_ITEM;
-            ensureNavigationToCurrentTarget(nowTick);
-            if (targetChanged && ModConfig.isDebugFlagEnabled(DebugModule.AUTO_PICKUP)) {
-                mc.player.sendMessage(new TextComponentString(String.format("§d[调试] §7找到目标掉落物: %s @ (%.1f, %.1f, %.1f)",
-                currentTargetItem.getItem().getDisplayName(), currentTargetItem.posX, currentTargetItem.posY,
-                        currentTargetItem.posZ)));
-            }
-        } else {
-            currentTargetItem = null;
-            currentTargetStackSnapshot = ItemStack.EMPTY;
-            lastGotoTargetEntityId = Integer.MIN_VALUE;
-            lastGotoTick = -99999;
-            if (hasPickedUpAtLeastOneItem) {
-                mc.player.sendMessage(new TextComponentString(
-                        TextFormatting.AQUA + "[自动拾取] " + TextFormatting.GREEN + "区域内所有物品拾取完毕。"));
-                currentState = State.WAITING_POST_PICKUP;
-                postPickupDelayTicks = activeRule.postPickupDelaySeconds * 20;
-                EmbeddedNavigationHandler.INSTANCE.stop();
-            } else {
-                currentState = State.SEARCHING;
-                if (ModConfig.isDebugFlagEnabled(DebugModule.AUTO_PICKUP)) {
-                    zszlScriptMod.LOGGER.info("[自动拾取] 区域内未发现掉落物，将持续搜索...");
-                }
-            }
-        }
+        lastGotoTick = nowTick;
+        lastIssuedTargetX = targetX;
+        lastIssuedTargetY = targetY;
+        lastIssuedTargetZ = targetZ;
+        EmbeddedNavigationHandler.INSTANCE.startGoto(EmbeddedNavigationHandler.NavigationOwner.AUTO_PICKUP,
+                targetX, targetY, targetZ, true, "锁定物品目标并刷新自动拾取导航");
+        navigationIssuedByAutoPickup = true;
     }
 
-    private void checkIfTargetIsReachedOrGone(int nowTick) {
-        boolean targetGone = (currentTargetItem == null || currentTargetItem.isDead);
-        boolean targetReached = !targetGone
-                && (mc.player.getDistanceSq(currentTargetItem) < getPickupReachedDistanceSq(activeRule));
-
-        if (targetGone) {
-            ItemStack pickedStack = currentTargetStackSnapshot == null ? ItemStack.EMPTY : currentTargetStackSnapshot.copy();
-            if (ModConfig.isDebugFlagEnabled(DebugModule.AUTO_PICKUP)) {
-                mc.player.sendMessage(new TextComponentString("§d[调试] §7目标已拾取/消失，重新搜索..."));
-            }
-            hasPickedUpAtLeastOneItem = true;
-            currentTargetItem = null;
-            currentTargetStackSnapshot = ItemStack.EMPTY;
-            lastGotoTargetEntityId = Integer.MIN_VALUE;
-            lastGotoTick = -99999;
-            if (tryTriggerPickupActionSequence(pickedStack)) {
-                return;
-            }
-            currentState = State.SEARCHING;
-        } else if (targetReached) {
-            if (lastGotoTargetEntityId == currentTargetItem.getEntityId()) {
-                EmbeddedNavigationHandler.INSTANCE.stop();
-                lastGotoTargetEntityId = Integer.MIN_VALUE;
-                lastGotoTick = -99999;
-            }
-        } else {
-            ensureNavigationToCurrentTarget(nowTick);
+    private void updateAntiStuckState(LocalPlayer player, AutoPickupRule rule) {
+        if (!rule.antiStuckEnabled || currentState != State.MOVING_TO_ITEM || currentTargetItem == null) {
+            antiStuckStationaryTicks = 0;
+            captureAntiStuckPosition(player);
+            return;
         }
+
+        if (Double.isNaN(antiStuckLastPosX)) {
+            captureAntiStuckPosition(player);
+            return;
+        }
+
+        double movedSq = square(player.getX() - antiStuckLastPosX)
+                + square(player.getY() - antiStuckLastPosY)
+                + square(player.getZ() - antiStuckLastPosZ);
+        if (movedSq > 0.04D) {
+            antiStuckStationaryTicks = 0;
+            captureAntiStuckPosition(player);
+            return;
+        }
+
+        antiStuckStationaryTicks++;
+        int limit = Math.max(20, rule.antiStuckTimeoutSeconds * 20);
+        if (antiStuckStationaryTicks < limit) {
+            return;
+        }
+
+        incrementFailedAttempts(rule, buildItemLocationKey(currentTargetItem));
+        if (!isBlank(rule.antiStuckRestartSequence)) {
+            startSequence(rule.antiStuckRestartSequence);
+        }
+        resetState(false);
     }
 
-    private void handlePostPickupDelay(int nowTick) {
-        if (activeRule != null && mc.player != null) {
-            EntityItem nextItem = findNearestItemInRule(activeRule, mc.player, nowTick, true);
-            if (nextItem != null) {
-                currentTargetItem = nextItem;
-                currentState = State.MOVING_TO_ITEM;
-                postPickupDelayTicks = 0;
-                ensureNavigationToCurrentTarget(nowTick);
-                return;
-            }
+    private void queuePickupActions(AutoPickupRule rule, ItemStack stack) {
+        AutoPickupRule.PickupActionEntry matched = findMatchingPickupActionEntry(rule, stack);
+        if (matched == null || isBlank(matched.sequenceName)) {
+            return;
         }
-
-        if (postPickupDelayTicks > 0) {
-            postPickupDelayTicks--;
-            if (postPickupDelayTicks == 0) {
-                if (activeRule != null && activeRule.postPickupSequence != null
-                        && !activeRule.postPickupSequence.isEmpty()) {
-                    mc.player.sendMessage(new TextComponentString(TextFormatting.AQUA + "[自动拾取] "
-                            + TextFormatting.YELLOW + "延迟结束，开始执行后续序列: " + activeRule.postPickupSequence));
-                    PathSequenceManager.runPathSequence(activeRule.postPickupSequence);
-                    currentState = State.SEQUENCE_RUNNING;
-                } else {
-                    resetState();
-                }
-            }
-        }
+        pendingPickupActions.add(new PendingPickupSequenceAction(matched.sequenceName,
+                Math.max(0, matched.executeDelaySeconds) * 20));
     }
 
-    private void resetState() {
-        if (currentState == State.MOVING_TO_ITEM || currentState == State.WAITING_POST_PICKUP) {
-            EmbeddedNavigationHandler.INSTANCE.stop();
-        }
-        currentState = State.IDLE;
-        activeRule = null;
-        currentTargetItem = null;
-        currentTargetStackSnapshot = ItemStack.EMPTY;
-        postPickupDelayTicks = 0;
-        lastGotoTargetEntityId = Integer.MIN_VALUE;
-        lastGotoTick = -99999;
-        hasPickedUpAtLeastOneItem = false;
-        pendingPickupActions.clear();
-        antiStuckStationaryTicks = 0;
-        antiStuckLastPosX = Double.NaN;
-        antiStuckLastPosY = Double.NaN;
-        antiStuckLastPosZ = Double.NaN;
-        lastItemSearchTick = -99999;
-        lastItemSearchRuleKey = 0;
-        lastNearestItemEntityId = Integer.MIN_VALUE;
-        lastItemSearchFoundMatch = false;
-        itemMatchCache.clear();
-    }
-
-    private AutoPickupRule resolveRuleForPlayer(EntityPlayerSP player, List<AutoPickupRule> rulesSnapshot) {
-        if (player == null) {
+    private AutoPickupRule.PickupActionEntry findMatchingPickupActionEntry(AutoPickupRule rule, ItemStack stack) {
+        if (rule == null || stack == null || stack.isEmpty() || rule.pickupActionEntries == null) {
             return null;
         }
-
-        if (activeRule != null && activeRule.enabled
-                && activeRule.isPlayerInside(player.posX, player.posY, player.posZ)) {
-            return activeRule;
-        }
-
-        for (AutoPickupRule rule : rulesSnapshot) {
-            if (rule != null && rule.enabled && rule.isPlayerInside(player.posX, player.posY, player.posZ)) {
-                return rule;
+        String itemName = safeLower(getFilterableItemName(stack));
+        String searchableText = safeLower(ItemFilterHandler.buildItemSearchableText(stack));
+        for (AutoPickupRule.PickupActionEntry entry : rule.pickupActionEntries) {
+            if (entry == null || isBlank(entry.keyword)) {
+                continue;
             }
+            String keyword = safeLower(entry.keyword);
+            if (!itemName.contains(keyword) && !searchableText.contains(keyword)) {
+                continue;
+            }
+            if (!ItemFilterHandler.matchesRequiredNbtTags(stack, entry.requiredNbtTags,
+                    ItemFilterHandler.NBT_TAG_MATCH_MODE_CONTAINS)) {
+                continue;
+            }
+            return entry;
         }
         return null;
     }
 
-    private EntityItem findNearestItemInRule(AutoPickupRule rule, EntityPlayerSP player, int nowTick,
-            boolean allowCachedResult) {
-        if (rule == null || player == null || mc.world == null) {
-            return null;
-        }
-
-        int ruleKey = buildRuleSearchKey(rule);
-        if (allowCachedResult && ruleKey == lastItemSearchRuleKey
-                && nowTick - lastItemSearchTick < ITEM_SEARCH_SCAN_INTERVAL_TICKS) {
-            EntityItem cached = resolveCachedNearestItem(rule);
-            if (cached != null) {
-                return cached;
-            }
-            if (!lastItemSearchFoundMatch) {
-                return null;
-            }
-        }
-
-        EntityItem nearest = null;
-        double bestDistSq = Double.MAX_VALUE;
-        int scanned = 0;
-
-        for (Entity entity : mc.world.loadedEntityList) {
-            if (!(entity instanceof EntityItem)) {
+    private void processPendingPickupActions() {
+        for (int i = pendingPickupActions.size() - 1; i >= 0; i--) {
+            PendingPickupSequenceAction action = pendingPickupActions.get(i);
+            if (action == null) {
+                pendingPickupActions.remove(i);
                 continue;
             }
-
-            EntityItem item = (EntityItem) entity;
-            if (!isItemEligibleForRule(item, rule)) {
+            if (action.remainingTicks > 0) {
+                action.remainingTicks--;
                 continue;
             }
-
-            double toPlayerSq = player.getDistanceSq(item);
-            if (toPlayerSq < bestDistSq) {
-                bestDistSq = toPlayerSq;
-                nearest = item;
+            if (!isBlank(action.sequenceName)) {
+                startSequence(action.sequenceName);
             }
-
-            scanned++;
-            if (scanned >= MAX_SCANNED_ITEM_ENTITIES) {
-                break;
-            }
+            pendingPickupActions.remove(i);
         }
-
-        lastItemSearchTick = nowTick;
-        lastItemSearchRuleKey = ruleKey;
-        lastNearestItemEntityId = nearest == null ? Integer.MIN_VALUE : nearest.getEntityId();
-        lastItemSearchFoundMatch = nearest != null;
-        return nearest;
     }
 
-    private EntityItem resolveCachedNearestItem(AutoPickupRule rule) {
-        if (mc.world == null || lastNearestItemEntityId == Integer.MIN_VALUE) {
-            return null;
+    private void startSequence(String sequenceName) {
+        if (isBlank(sequenceName) || MC.player == null) {
+            return;
         }
-        Entity entity = mc.world.getEntityByID(lastNearestItemEntityId);
-        if (!(entity instanceof EntityItem)) {
-            return null;
-        }
-        EntityItem item = (EntityItem) entity;
-        return isItemEligibleForRule(item, rule) ? item : null;
+        PathSequenceManager.executeSequenceByConfiguredMode(sequenceName.trim(), MC.player, "", null);
     }
 
-    private int buildRuleSearchKey(AutoPickupRule rule) {
+    private void resetStateIfNeeded(boolean clearPendingActions) {
+        if (!hasRuntimeState(clearPendingActions)) {
+            return;
+        }
+        resetState(clearPendingActions);
+    }
+
+    private void resetState(boolean clearPendingActions) {
+        stopNavigation("重置自动拾取运行状态");
+        activeRule = null;
+        currentTargetItem = null;
+        currentTargetSnapshot = ItemStack.EMPTY;
+        currentState = State.IDLE;
+        postPickupDelayTicks = 0;
+        lastGotoTick = -99999;
+        lastTargetSearchTick = -99999;
+        lastTargetSeenTick = -99999;
+        lastIssuedTargetX = Double.NaN;
+        lastIssuedTargetY = Double.NaN;
+        lastIssuedTargetZ = Double.NaN;
+        navigationIssuedByAutoPickup = false;
+        antiStuckStationaryTicks = 0;
+        antiStuckLastPosX = Double.NaN;
+        antiStuckLastPosY = Double.NaN;
+        antiStuckLastPosZ = Double.NaN;
+        hasPickedUpAtLeastOneItem = false;
+        if (clearPendingActions) {
+            pendingPickupActions.clear();
+        }
+    }
+
+    private boolean hasRuntimeState(boolean clearPendingActions) {
+        if (activeRule != null
+                || currentTargetItem != null
+                || currentState != State.IDLE
+                || postPickupDelayTicks > 0
+                || navigationIssuedByAutoPickup
+                || hasPickedUpAtLeastOneItem
+                || !Double.isNaN(lastIssuedTargetX)
+                || !Double.isNaN(lastIssuedTargetY)
+                || !Double.isNaN(lastIssuedTargetZ)
+                || antiStuckStationaryTicks > 0) {
+            return true;
+        }
+        return clearPendingActions && !pendingPickupActions.isEmpty();
+    }
+
+    private void stopNavigation(String reason) {
+        if (!navigationIssuedByAutoPickup) {
+            return;
+        }
+        EmbeddedNavigationHandler.INSTANCE.stopOwned(EmbeddedNavigationHandler.NavigationOwner.AUTO_PICKUP, reason);
+        navigationIssuedByAutoPickup = false;
+    }
+
+    private int getMaxPickupAttempts(AutoPickupRule rule) {
+        return rule == null ? AutoPickupRule.DEFAULT_MAX_PICKUP_ATTEMPTS
+                : Math.max(1, rule.maxPickupAttempts);
+    }
+
+    private boolean hasReachedMaxPickupAttempts(ItemEntity item, AutoPickupRule rule) {
+        if (item == null || rule == null) {
+            return false;
+        }
+        Map<ItemLocationKey, Integer> attempts = failedPickupAttemptsByRule.get(buildRuleAttemptKey(rule));
+        if (attempts == null) {
+            return false;
+        }
+        return attempts.getOrDefault(buildItemLocationKey(item), 0) >= getMaxPickupAttempts(rule);
+    }
+
+    private void clearFailedAttemptsForTarget(AutoPickupRule rule, ItemEntity item) {
+        if (rule == null || item == null) {
+            return;
+        }
+        Map<ItemLocationKey, Integer> attempts = failedPickupAttemptsByRule.get(buildRuleAttemptKey(rule));
+        if (attempts != null) {
+            attempts.remove(buildItemLocationKey(item));
+        }
+    }
+
+    private void clearFailedAttemptsForRule(AutoPickupRule rule) {
         if (rule == null) {
+            return;
+        }
+        failedPickupAttemptsByRule.remove(buildRuleAttemptKey(rule));
+    }
+
+    private int incrementFailedAttempts(AutoPickupRule rule, ItemLocationKey key) {
+        if (rule == null || key == null) {
             return 0;
         }
-        int result = 17;
-        result = 31 * result + Double.valueOf(rule.centerX).hashCode();
-        result = 31 * result + Double.valueOf(rule.centerY).hashCode();
-        result = 31 * result + Double.valueOf(rule.centerZ).hashCode();
-        result = 31 * result + Double.valueOf(rule.radius).hashCode();
-        result = 31 * result + Boolean.valueOf(rule.enableItemWhitelist).hashCode();
-        result = 31 * result + Boolean.valueOf(rule.enableItemBlacklist).hashCode();
-        result = 31 * result + (rule.itemWhitelistEntries == null ? 0 : rule.itemWhitelistEntries.hashCode());
-        result = 31 * result + (rule.itemBlacklistEntries == null ? 0 : rule.itemBlacklistEntries.hashCode());
-        return result;
+        Map<ItemLocationKey, Integer> attempts = failedPickupAttemptsByRule.computeIfAbsent(
+                buildRuleAttemptKey(rule), unused -> new HashMap<>());
+        int next = attempts.getOrDefault(key, 0) + 1;
+        attempts.put(key, next);
+        return next;
     }
 
-    private boolean isItemEligibleForRule(EntityItem item, AutoPickupRule rule) {
-        if (item == null || rule == null || item.isDead || !item.onGround) {
+    private ItemLocationKey buildItemLocationKey(ItemEntity item) {
+        return new ItemLocationKey(Mth.floor(item.getX() * 4.0D), Mth.floor(item.getY() * 4.0D),
+                Mth.floor(item.getZ() * 4.0D));
+    }
+
+    private String buildRuleAttemptKey(AutoPickupRule rule) {
+        return safeLower(rule == null ? "" : rule.name);
+    }
+
+    private static boolean hasEntryRules(List<AutoPickupRule.ItemMatchEntry> entries) {
+        return entries != null && !entries.isEmpty();
+    }
+
+    private static boolean matchesRuleEntryList(String itemName, String searchableText, ItemStack stack,
+            List<AutoPickupRule.ItemMatchEntry> entries) {
+        if (entries == null || entries.isEmpty()) {
             return false;
         }
-
-        double dx = item.posX - rule.centerX;
-        double dy = item.posY - rule.centerY;
-        double dz = item.posZ - rule.centerZ;
-        if (dx * dx + dy * dy + dz * dz > rule.radius * rule.radius) {
-            return false;
-        }
-
-        ItemMatchCacheEntry cacheEntry = getItemMatchCacheEntry(item);
-        String itemName = cacheEntry.itemName;
-        String searchableText = cacheEntry.searchableText;
-        if (rule.enableItemBlacklist && matchesRuleEntryList(itemName, searchableText, rule.itemBlacklistEntries)) {
-            return false;
-        }
-        if (rule.enableItemWhitelist) {
-            return matchesRuleEntryList(itemName, searchableText, rule.itemWhitelistEntries);
-        }
-        return true;
-    }
-
-    private ItemMatchCacheEntry getItemMatchCacheEntry(EntityItem item) {
-        if (item == null || item.getItem() == null || item.getItem().isEmpty()) {
-            return new ItemMatchCacheEntry("", "", "");
-        }
-
-        int entityId = item.getEntityId();
-        ItemStack stack = item.getItem();
-        String fingerprint = buildItemFingerprint(stack);
-        ItemMatchCacheEntry cached = itemMatchCache.get(entityId);
-        if (cached != null && cached.fingerprint.equals(fingerprint)) {
-            return cached;
-        }
-
-        ItemMatchCacheEntry rebuilt = new ItemMatchCacheEntry(fingerprint, getFilterableItemName(item),
-                ItemFilterHandler.buildItemSearchableText(stack));
-        itemMatchCache.put(entityId, rebuilt);
-        return rebuilt;
-    }
-
-    private String buildItemFingerprint(ItemStack stack) {
-        if (stack == null || stack.isEmpty()) {
-            return "";
-        }
-        String tagText = stack.getTagCompound() == null ? "" : stack.getTagCompound().toString();
-        return stack.getItem().getRegistryName() + "|"
-                + stack.getMetadata() + "|"
-                + stack.getDisplayName() + "|"
-                + tagText;
-    }
-
-    private void pruneItemMatchCacheIfNeeded(int nowTick) {
-        if (nowTick - lastItemMatchCachePruneTick < ITEM_MATCH_CACHE_PRUNE_INTERVAL_TICKS
-                && itemMatchCache.size() < MAX_ITEM_MATCH_CACHE_SIZE) {
-            return;
-        }
-        lastItemMatchCachePruneTick = nowTick;
-        if (mc.world == null) {
-            itemMatchCache.clear();
-            return;
-        }
-
-        List<Integer> toRemove = new ArrayList<>();
-        for (Integer entityId : itemMatchCache.keySet()) {
-            Entity entity = mc.world.getEntityByID(entityId);
-            if (!(entity instanceof EntityItem) || entity.isDead) {
-                toRemove.add(entityId);
+        for (AutoPickupRule.ItemMatchEntry entry : entries) {
+            if (entry == null) {
+                continue;
+            }
+            String keyword = safeLower(entry.keyword);
+            if (keyword.isEmpty()) {
+                continue;
+            }
+            if (!itemName.contains(keyword) && !searchableText.contains(keyword)) {
+                continue;
+            }
+            if (ItemFilterHandler.matchesRequiredNbtTags(stack, entry.requiredNbtTags,
+                    ItemFilterHandler.NBT_TAG_MATCH_MODE_CONTAINS)) {
+                return true;
             }
         }
-        for (Integer entityId : toRemove) {
-            itemMatchCache.remove(entityId);
-        }
-        if (itemMatchCache.size() <= MAX_ITEM_MATCH_CACHE_SIZE) {
-            return;
-        }
-
-        itemMatchCache.clear();
+        return false;
     }
 
-    private void ensureNavigationToCurrentTarget(int nowTick) {
-        if (mc.player == null || currentTargetItem == null || currentTargetItem.isDead) {
-            return;
+    private static boolean matchesLegacyKeywordList(String itemName, List<String> filters) {
+        if (filters == null || filters.isEmpty()) {
+            return false;
         }
-        if (mc.player.getDistanceSq(currentTargetItem) <= getPickupReachedDistanceSq(activeRule)) {
-            return;
+        for (String filter : filters) {
+            String keyword = safeLower(filter);
+            if (!keyword.isEmpty() && itemName.contains(keyword)) {
+                return true;
+            }
         }
+        return false;
+    }
 
-        int targetId = currentTargetItem.getEntityId();
-        boolean needSendGoto = targetId != lastGotoTargetEntityId
-                || (nowTick - lastGotoTick) >= PICKUP_GOTO_INTERVAL_TICKS;
-        if (!needSendGoto) {
+    private static String getFilterableItemName(ItemStack stack) {
+        return stack == null || stack.isEmpty() ? "" : stack.getHoverName().getString();
+    }
+
+    private void drawPickupRadiusAura(double centerX, double centerY, double centerZ, double radius,
+            PoseStack poseStack, RenderWorldLastEvent.WorldRenderContext renderContext) {
+        Vec3 center = renderContext.toCameraSpace(new Vec3(centerX, centerY, centerZ));
+        if (center == null) {
             return;
         }
+        double drawRadius = Math.max(0.5D, radius);
 
-        EmbeddedNavigationHandler.INSTANCE.startGoto(currentTargetItem.posX, currentTargetItem.posY,
-                currentTargetItem.posZ);
-        lastGotoTick = nowTick;
-        lastGotoTargetEntityId = targetId;
+        RenderSystem.enableBlend();
+        RenderSystem.disableCull();
+        RenderSystem.disableDepthTest();
+        RenderSystem.setShader(GameRenderer::getPositionColorShader);
+        RenderSystem.blendFuncSeparate(GlStateManager.SourceFactor.SRC_ALPHA,
+                GlStateManager.DestFactor.ONE_MINUS_SRC_ALPHA,
+                GlStateManager.SourceFactor.ONE,
+                GlStateManager.DestFactor.ZERO);
+
+        BufferBuilder buffer = Tesselator.getInstance().getBuilder();
+        buffer.begin(VertexFormat.Mode.LINE_STRIP, DefaultVertexFormat.POSITION_COLOR);
+        for (int i = 0; i <= 72; i++) {
+            double angle = (Math.PI * 2.0D * i) / 72.0D;
+            double x = center.x + Math.cos(angle) * drawRadius;
+            double z = center.z + Math.sin(angle) * drawRadius;
+            buffer.vertex(poseStack.last().pose(), (float) x, (float) center.y, (float) z)
+                    .color(0.25F, 0.95F, 0.45F, 0.95F).endVertex();
+        }
+        Tesselator.getInstance().end();
+
+        RenderSystem.enableDepthTest();
+        RenderSystem.enableCull();
+        RenderSystem.disableBlend();
     }
 
     private static void normalizeRule(AutoPickupRule rule) {
         if (rule == null) {
             return;
         }
-        rule.category = normalizeCategory(rule.category);
-        if (rule.targetReachDistance <= 0.0D) {
-            rule.targetReachDistance = AutoPickupRule.DEFAULT_TARGET_REACH_DISTANCE;
+        if (rule.name == null || rule.name.trim().isEmpty()) {
+            rule.name = "规则";
         }
-        rule.itemWhitelist = normalizeRuleNameList(rule.itemWhitelist);
-        rule.itemBlacklist = normalizeRuleNameList(rule.itemBlacklist);
-        rule.itemWhitelistEntries = normalizeRuleEntryList(rule.itemWhitelistEntries, rule.itemWhitelist);
-        rule.itemBlacklistEntries = normalizeRuleEntryList(rule.itemBlacklistEntries, rule.itemBlacklist);
-        rule.pickupActionEntries = normalizePickupActionEntryList(rule.pickupActionEntries);
-        rule.itemWhitelist = flattenEntryKeywords(rule.itemWhitelistEntries);
-        rule.itemBlacklist = flattenEntryKeywords(rule.itemBlacklistEntries);
-        if (rule.postPickupSequence == null) {
-            rule.postPickupSequence = "";
+        rule.category = normalizeCategory(rule.category);
+        rule.targetReachDistance = Math.max(0.25D, rule.targetReachDistance <= 0.0D
+                ? AutoPickupRule.DEFAULT_TARGET_REACH_DISTANCE
+                : rule.targetReachDistance);
+        rule.maxPickupAttempts = Math.max(1, rule.maxPickupAttempts <= 0
+                ? AutoPickupRule.DEFAULT_MAX_PICKUP_ATTEMPTS
+                : rule.maxPickupAttempts);
+        if (rule.itemWhitelist == null) {
+            rule.itemWhitelist = new ArrayList<>();
+        }
+        if (rule.itemBlacklist == null) {
+            rule.itemBlacklist = new ArrayList<>();
+        }
+        if (rule.itemWhitelistEntries == null) {
+            rule.itemWhitelistEntries = new ArrayList<>();
+        }
+        if (rule.itemBlacklistEntries == null) {
+            rule.itemBlacklistEntries = new ArrayList<>();
+        }
+        if (rule.pickupActionEntries == null) {
+            rule.pickupActionEntries = new ArrayList<>();
         }
         if (rule.antiStuckRestartSequence == null) {
             rule.antiStuckRestartSequence = "";
         }
-        rule.postPickupDelaySeconds = Math.max(0, rule.postPickupDelaySeconds);
-        rule.antiStuckTimeoutSeconds = Math.max(1, rule.antiStuckTimeoutSeconds);
     }
 
-    private double getPickupReachedDistanceSq(AutoPickupRule rule) {
-        double distance = getPickupReachedDistance(rule);
-        return distance * distance;
+    private static String normalizeCategory(String category) {
+        String normalized = category == null ? "" : category.trim();
+        return normalized.isEmpty() ? CATEGORY_DEFAULT : normalized;
     }
 
-    private double getPickupReachedDistance(AutoPickupRule rule) {
-        if (rule == null || rule.targetReachDistance <= 0.0D) {
-            return AutoPickupRule.DEFAULT_TARGET_REACH_DISTANCE;
+    private static void ensureCategoriesSynced() {
+        LinkedHashSet<String> normalized = new LinkedHashSet<>();
+        for (String category : categories) {
+            normalized.add(normalizeCategory(category));
         }
-        return rule.targetReachDistance;
-    }
-
-    private static List<String> normalizeRuleNameList(List<String> source) {
-        LinkedHashSet<String> unique = new LinkedHashSet<>();
-        if (source != null) {
-            for (String entry : source) {
-                String normalized = KillAuraHandler.normalizeFilterName(entry);
-                if (!normalized.isEmpty()) {
-                    unique.add(normalized);
-                }
+        for (AutoPickupRule rule : rules) {
+            if (rule == null) {
+                continue;
             }
+            normalizeRule(rule);
+            normalized.add(rule.category);
         }
-        return new ArrayList<>(unique);
+        if (normalized.isEmpty()) {
+            normalized.add(CATEGORY_DEFAULT);
+        }
+        categories.clear();
+        categories.addAll(normalized);
     }
 
-    private static boolean matchesRuleNameList(String itemName, List<String> filters) {
-        return KillAuraHandler.getNameListMatchIndex(itemName, filters) != Integer.MAX_VALUE;
-    }
-
-    private static List<AutoPickupRule.ItemMatchEntry> normalizeRuleEntryList(List<AutoPickupRule.ItemMatchEntry> source,
-            List<String> legacyKeywords) {
-        List<AutoPickupRule.ItemMatchEntry> normalized = new ArrayList<>();
-        if (source != null) {
-            for (AutoPickupRule.ItemMatchEntry entry : source) {
-                AutoPickupRule.ItemMatchEntry normalizedEntry = normalizeRuleEntry(entry);
-                if (normalizedEntry != null) {
-                    normalized.add(normalizedEntry);
-                }
-            }
-        }
-        if (normalized.isEmpty() && legacyKeywords != null) {
-            for (String keyword : legacyKeywords) {
-                String normalizedKeyword = KillAuraHandler.normalizeFilterName(keyword);
-                if (normalizedKeyword.isEmpty()) {
-                    continue;
-                }
-                AutoPickupRule.ItemMatchEntry entry = new AutoPickupRule.ItemMatchEntry();
-                entry.keyword = normalizedKeyword;
-                normalized.add(entry);
-            }
-        }
-        return normalized;
-    }
-
-    private static AutoPickupRule.ItemMatchEntry normalizeRuleEntry(AutoPickupRule.ItemMatchEntry source) {
-        if (source == null) {
-            return null;
-        }
-        String normalizedKeyword = KillAuraHandler.normalizeFilterName(source.keyword);
-        List<String> normalizedTags = normalizeRuleNameList(source.requiredNbtTags);
-        if (normalizedKeyword.isEmpty() && normalizedTags.isEmpty()) {
-            return null;
-        }
-
-        AutoPickupRule.ItemMatchEntry entry = new AutoPickupRule.ItemMatchEntry();
-        entry.keyword = normalizedKeyword;
-        entry.requiredNbtTags = normalizedTags;
-        return entry;
-    }
-
-    private static List<String> flattenEntryKeywords(List<AutoPickupRule.ItemMatchEntry> entries) {
-        List<String> keywords = new ArrayList<>();
-        if (entries == null) {
-            return keywords;
-        }
-        for (AutoPickupRule.ItemMatchEntry entry : entries) {
-            String keyword = entry == null ? "" : KillAuraHandler.normalizeFilterName(entry.keyword);
-            if (!keyword.isEmpty()) {
-                keywords.add(keyword);
-            }
-        }
-        return normalizeRuleNameList(keywords);
-    }
-
-    private static List<AutoPickupRule.PickupActionEntry> normalizePickupActionEntryList(
-            List<AutoPickupRule.PickupActionEntry> source) {
-        List<AutoPickupRule.PickupActionEntry> normalized = new ArrayList<>();
-        if (source == null) {
-            return normalized;
-        }
-        for (AutoPickupRule.PickupActionEntry entry : source) {
-            AutoPickupRule.PickupActionEntry normalizedEntry = normalizePickupActionEntry(entry);
-            if (normalizedEntry != null) {
-                normalized.add(normalizedEntry);
-            }
-        }
-        return normalized;
-    }
-
-    private static AutoPickupRule.PickupActionEntry normalizePickupActionEntry(AutoPickupRule.PickupActionEntry source) {
-        if (source == null) {
-            return null;
-        }
-        String normalizedKeyword = KillAuraHandler.normalizeFilterName(source.keyword);
-        List<String> normalizedTags = normalizeRuleNameList(source.requiredNbtTags);
-        String sequenceName = source.sequenceName == null ? "" : source.sequenceName.trim();
-        if (sequenceName.isEmpty()) {
-            return null;
-        }
-
-        AutoPickupRule.PickupActionEntry entry = new AutoPickupRule.PickupActionEntry();
-        entry.keyword = normalizedKeyword;
-        entry.requiredNbtTags = normalizedTags;
-        entry.sequenceName = sequenceName;
-        entry.executeDelaySeconds = Math.max(0, source.executeDelaySeconds);
-        return entry;
-    }
-
-    private static boolean matchesRuleEntryList(String itemName, String searchableText,
-            List<AutoPickupRule.ItemMatchEntry> entries) {
-        if (entries == null || entries.isEmpty()) {
-            return false;
-        }
-        String safeItemName = itemName == null ? "" : itemName;
-        String safeSearchableText = searchableText == null ? "" : searchableText;
-        for (AutoPickupRule.ItemMatchEntry entry : entries) {
-            if (matchesRuleEntry(safeItemName, safeSearchableText, entry)) {
+    private static boolean containsCategoryIgnoreCase(String category) {
+        for (String existing : categories) {
+            if (normalizeCategory(existing).equalsIgnoreCase(normalizeCategory(category))) {
                 return true;
             }
         }
         return false;
     }
 
-    private static boolean matchesRuleEntry(String itemName, String searchableText, AutoPickupRule.ItemMatchEntry entry) {
-        if (entry == null) {
-            return false;
-        }
-
-        String keyword = KillAuraHandler.normalizeFilterName(entry.keyword);
-        List<String> nbtTags = normalizeRuleNameList(entry.requiredNbtTags);
-        if (keyword.isEmpty() && nbtTags.isEmpty()) {
-            return false;
-        }
-
-        if (!keyword.isEmpty() && itemName.contains(keyword)) {
-            return true;
-        }
-
-        if (!nbtTags.isEmpty()) {
-            for (String tag : nbtTags) {
-                if (!tag.isEmpty() && safeContainsIgnoreCase(searchableText, tag)) {
-                    return true;
-                }
-            }
-        }
-        return false;
-    }
-
-    private boolean tryTriggerPickupActionSequence(ItemStack pickedStack) {
-        if (activeRule == null || pickedStack == null || pickedStack.isEmpty()) {
-            return false;
-        }
-        AutoPickupRule.PickupActionEntry matchedEntry = findMatchingPickupActionEntry(activeRule, pickedStack);
-        if (matchedEntry == null) {
-            return false;
-        }
-
-        String sequenceName = matchedEntry.sequenceName == null ? "" : matchedEntry.sequenceName.trim();
-        if (sequenceName.isEmpty() || !PathSequenceManager.hasSequence(sequenceName)) {
-            if (mc.player != null) {
-                mc.player.sendMessage(new TextComponentString(
-                        TextFormatting.RED + "[自动拾取] 拾取执行序列不存在: " + TextFormatting.WHITE + sequenceName));
-            }
-            currentState = State.SEARCHING;
-            return false;
-        }
-
-        queuePendingPickupAction(sequenceName, Math.max(0, matchedEntry.executeDelaySeconds) * 20);
-        if (mc.player != null) {
-            String delayText = matchedEntry.executeDelaySeconds > 0
-                    ? TextFormatting.GRAY + "，" + TextFormatting.YELLOW + matchedEntry.executeDelaySeconds
-                            + TextFormatting.GRAY + " 秒后执行"
-                    : "";
-            mc.player.sendMessage(new TextComponentString(
-                    TextFormatting.AQUA + "[自动拾取] "
-                            + TextFormatting.YELLOW + "拾取到匹配物品，已排入执行序列: "
-                            + TextFormatting.WHITE + sequenceName
-                            + delayText));
-        }
-        return true;
-    }
-
-    private void queuePendingPickupAction(String sequenceName, int delayTicks) {
-        String normalizedSequenceName = sequenceName == null ? "" : sequenceName.trim();
-        if (normalizedSequenceName.isEmpty()) {
-            return;
-        }
-        pendingPickupActions.add(new PendingPickupSequenceAction(normalizedSequenceName, delayTicks));
-    }
-
-    private void processPendingPickupActions() {
-        if (currentState == State.SEQUENCE_RUNNING || pendingPickupActions.isEmpty()) {
-            return;
-        }
-
-        for (int i = 0; i < pendingPickupActions.size(); i++) {
-            PendingPickupSequenceAction action = pendingPickupActions.get(i);
-            if (action == null) {
-                continue;
-            }
-            if (action.remainingTicks > 0) {
-                action.remainingTicks--;
-            }
-            if (action.remainingTicks > 0) {
-                continue;
-            }
-
-            EmbeddedNavigationHandler.INSTANCE.stop();
-            currentState = State.SEQUENCE_RUNNING;
-            PathSequenceManager.runPathSequenceOnce(action.sequenceName);
-            if (mc.player != null) {
-                mc.player.sendMessage(new TextComponentString(
-                        TextFormatting.AQUA + "[自动拾取] "
-                                + TextFormatting.YELLOW + "开始执行拾取序列: "
-                                + TextFormatting.WHITE + action.sequenceName));
-            }
-            pendingPickupActions.remove(i);
-            return;
-        }
-    }
-
-    private void updateAntiStuckState() {
-        if (mc.player == null || activeRule == null || currentState == State.SEQUENCE_RUNNING
-                || !activeRule.antiStuckEnabled) {
-            antiStuckStationaryTicks = 0;
-            antiStuckLastPosX = Double.NaN;
-            antiStuckLastPosY = Double.NaN;
-            antiStuckLastPosZ = Double.NaN;
-            return;
-        }
-
-        if (Double.isNaN(antiStuckLastPosX)) {
-            captureAntiStuckPosition();
-            antiStuckStationaryTicks = 0;
-            return;
-        }
-
-        if (hasPlayerMoved()) {
-            antiStuckStationaryTicks = 0;
-            captureAntiStuckPosition();
-            return;
-        }
-
-        antiStuckStationaryTicks++;
-        captureAntiStuckPosition();
-        int timeoutTicks = Math.max(20, activeRule.antiStuckTimeoutSeconds * 20);
-        if (antiStuckStationaryTicks < timeoutTicks) {
-            return;
-        }
-
-        if (mc.player != null) {
-            mc.player.sendMessage(new TextComponentString(
-                    TextFormatting.YELLOW + "[自动拾取] 检测到停留超过 "
-                            + TextFormatting.WHITE + activeRule.antiStuckTimeoutSeconds
-                            + TextFormatting.YELLOW + " 秒，正在重启当前规则。"));
-        }
-        EmbeddedNavigationHandler.INSTANCE.stop();
-        currentTargetItem = null;
-        currentTargetStackSnapshot = ItemStack.EMPTY;
-        lastGotoTargetEntityId = Integer.MIN_VALUE;
-        lastGotoTick = -99999;
-        antiStuckStationaryTicks = 0;
-        String restartSequence = activeRule == null ? "" : safeSequenceName(activeRule.antiStuckRestartSequence);
-        if (!restartSequence.isEmpty() && PathSequenceManager.hasSequence(restartSequence)) {
-            currentState = State.SEQUENCE_RUNNING;
-            PathSequenceManager.runPathSequenceOnce(restartSequence);
-            if (mc.player != null) {
-                mc.player.sendMessage(new TextComponentString(
-                        TextFormatting.AQUA + "[自动拾取] "
-                                + TextFormatting.YELLOW + "开始执行防卡重启序列: "
-                                + TextFormatting.WHITE + restartSequence));
-            }
-            return;
-        }
-        currentState = State.SEARCHING;
-    }
-
-    private boolean hasPlayerMoved() {
-        double dx = mc.player.posX - antiStuckLastPosX;
-        double dy = mc.player.posY - antiStuckLastPosY;
-        double dz = mc.player.posZ - antiStuckLastPosZ;
-        return dx * dx + dy * dy + dz * dz > 0.0025D;
-    }
-
-    private void captureAntiStuckPosition() {
-        antiStuckLastPosX = mc.player.posX;
-        antiStuckLastPosY = mc.player.posY;
-        antiStuckLastPosZ = mc.player.posZ;
-    }
-
-    private AutoPickupRule.PickupActionEntry findMatchingPickupActionEntry(AutoPickupRule rule, ItemStack stack) {
-        if (rule == null || stack == null || stack.isEmpty()) {
-            return null;
-        }
-        List<AutoPickupRule.PickupActionEntry> entries = normalizePickupActionEntryList(rule.pickupActionEntries);
-        if (entries.isEmpty()) {
-            return null;
-        }
-
-        String itemName = KillAuraHandler.normalizeFilterName(stack.getDisplayName());
-        String searchableText = ItemFilterHandler.buildItemSearchableText(stack);
-        for (AutoPickupRule.PickupActionEntry entry : entries) {
-            if (matchesPickupActionEntry(itemName, searchableText, entry)) {
-                return entry;
-            }
-        }
-        return null;
-    }
-
-    private static boolean matchesPickupActionEntry(String itemName, String searchableText,
-            AutoPickupRule.PickupActionEntry entry) {
-        if (entry == null) {
-            return false;
-        }
-
-        String keyword = KillAuraHandler.normalizeFilterName(entry.keyword);
-        List<String> nbtTags = normalizeRuleNameList(entry.requiredNbtTags);
-        boolean keywordMatched = keyword.isEmpty() || itemName.contains(keyword);
-        if (!keywordMatched) {
-            return false;
-        }
-        if (nbtTags.isEmpty()) {
-            return true;
-        }
-        for (String tag : nbtTags) {
-            if (!tag.isEmpty() && safeContainsIgnoreCase(searchableText, tag)) {
+    private static boolean removeCategoryIgnoreCase(String category) {
+        for (int i = 0; i < categories.size(); i++) {
+            if (normalizeCategory(categories.get(i)).equalsIgnoreCase(normalizeCategory(category))) {
+                categories.remove(i);
                 return true;
             }
         }
         return false;
     }
 
-    private static boolean safeContainsIgnoreCase(String source, String token) {
-        if (source == null || token == null) {
-            return false;
-        }
-        String normalizedToken = token.trim().toLowerCase(Locale.ROOT);
-        if (normalizedToken.isEmpty()) {
-            return false;
-        }
-        return source.toLowerCase(Locale.ROOT).contains(normalizedToken);
+    private void captureAntiStuckPosition(LocalPlayer player) {
+        antiStuckLastPosX = player.getX();
+        antiStuckLastPosY = player.getY();
+        antiStuckLastPosZ = player.getZ();
     }
 
-    private static String safeSequenceName(String value) {
-        return value == null ? "" : value.trim();
+    private static String safeLower(String value) {
+        return value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
     }
 
-    private static String getFilterableItemName(EntityItem item) {
-        if (item == null) {
-            return "";
-        }
-
-        String displayName = item.getItem() == null ? "" : item.getItem().getDisplayName();
-        String normalized = KillAuraHandler.normalizeFilterName(displayName);
-        if (!normalized.isEmpty()) {
-            return normalized;
-        }
-        return KillAuraHandler.normalizeFilterName(item.getName()).toLowerCase(Locale.ROOT);
+    private static boolean isBlank(String value) {
+        return value == null || value.trim().isEmpty();
     }
 
-    private void drawPickupRadiusAura(double centerX, double centerY, double centerZ, double viewerX, double viewerY,
-            double viewerZ, double radius) {
-        double safeRadius = Math.max(0.5D, radius);
-        int segments = Math.max(36, (int) Math.round(safeRadius * 10.0D));
-
-        GlStateManager.pushMatrix();
-        GlStateManager.enableBlend();
-        GlStateManager.tryBlendFuncSeparate(GlStateManager.SourceFactor.SRC_ALPHA,
-                GlStateManager.DestFactor.ONE_MINUS_SRC_ALPHA, GlStateManager.SourceFactor.ONE,
-                GlStateManager.DestFactor.ZERO);
-        GlStateManager.disableTexture2D();
-        GlStateManager.disableDepth();
-        GlStateManager.depthMask(false);
-        GlStateManager.glLineWidth(1.8F);
-
-        Tessellator tessellator = Tessellator.getInstance();
-        BufferBuilder buffer = tessellator.getBuffer();
-
-        buffer.begin(GL11.GL_TRIANGLE_FAN, DefaultVertexFormats.POSITION_COLOR);
-        buffer.pos(centerX - viewerX, centerY - viewerY, centerZ - viewerZ).color(0.30F, 1.0F, 0.55F, 0.08F)
-                .endVertex();
-        for (int i = 0; i <= segments; i++) {
-            double angle = (Math.PI * 2.0D * i) / segments;
-            double ringX = centerX + Math.cos(angle) * safeRadius;
-            double ringZ = centerZ + Math.sin(angle) * safeRadius;
-            buffer.pos(ringX - viewerX, centerY - viewerY, ringZ - viewerZ).color(0.20F, 0.95F, 0.50F, 0.03F)
-                    .endVertex();
-        }
-        tessellator.draw();
-
-        buffer.begin(GL11.GL_LINE_STRIP, DefaultVertexFormats.POSITION_COLOR);
-        for (int i = 0; i <= segments; i++) {
-            double angle = (Math.PI * 2.0D * i) / segments;
-            double ringX = centerX + Math.cos(angle) * safeRadius;
-            double ringZ = centerZ + Math.sin(angle) * safeRadius;
-            buffer.pos(ringX - viewerX, centerY - viewerY, ringZ - viewerZ).color(0.32F, 1.0F, 0.58F, 0.88F)
-                    .endVertex();
-        }
-        tessellator.draw();
-
-        GlStateManager.glLineWidth(1.0F);
-        GlStateManager.depthMask(true);
-        GlStateManager.enableDepth();
-        GlStateManager.enableTexture2D();
-        GlStateManager.disableBlend();
-        GlStateManager.popMatrix();
+    private static double square(double value) {
+        return value * value;
     }
 }
-

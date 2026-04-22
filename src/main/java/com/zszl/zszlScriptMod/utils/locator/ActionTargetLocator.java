@@ -1,66 +1,58 @@
 package com.zszl.zszlScriptMod.utils.locator;
 
 import com.zszl.zszlScriptMod.utils.guiinspect.GuiElementInspector;
-import net.minecraft.block.Block;
-import net.minecraft.block.BlockAnvil;
-import net.minecraft.block.BlockBrewingStand;
-import net.minecraft.block.BlockButton;
-import net.minecraft.block.BlockChest;
-import net.minecraft.block.BlockContainer;
-import net.minecraft.block.BlockDispenser;
-import net.minecraft.block.BlockDoor;
-import net.minecraft.block.BlockDropper;
-import net.minecraft.block.BlockEnderChest;
-import net.minecraft.block.BlockFenceGate;
-import net.minecraft.block.BlockFurnace;
-import net.minecraft.block.BlockHopper;
-import net.minecraft.block.BlockLever;
-import net.minecraft.block.BlockTrapDoor;
-import net.minecraft.block.BlockWorkbench;
-import net.minecraft.block.state.IBlockState;
+import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.entity.EntityPlayerSP;
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiScreen;
-import net.minecraft.client.gui.inventory.GuiContainer;
-import net.minecraft.entity.Entity;
-import net.minecraft.inventory.Container;
-import net.minecraft.inventory.ContainerChest;
-import net.minecraft.inventory.Slot;
-import net.minecraft.item.ItemStack;
-import net.minecraft.util.ResourceLocation;
-import net.minecraft.util.math.AxisAlignedBB;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.text.TextFormatting;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.inventory.Slot;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.phys.AABB;
 
-import java.lang.reflect.Field;
-import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 
 public final class ActionTargetLocator {
-
+    public static final String LEGACY_TARGET_MODE_POSITION_TYPO = "PISITION";
     public static final String CLICK_MODE_COORDINATE = "COORDINATE";
     public static final String CLICK_MODE_BUTTON_TEXT = "BUTTON_TEXT";
     public static final String CLICK_MODE_SLOT_TEXT = "SLOT_TEXT";
     public static final String CLICK_MODE_ELEMENT_PATH = "ELEMENT_PATH";
-
     public static final String SLOT_MODE_DIRECT = "DIRECT_SLOT";
     public static final String SLOT_MODE_ITEM_TEXT = "ITEM_TEXT";
     public static final String SLOT_MODE_EMPTY = "EMPTY_SLOT";
     public static final String SLOT_MODE_PATH = "SLOT_PATH";
-
     public static final String TARGET_MODE_POSITION = "POSITION";
     public static final String TARGET_MODE_NAME = "NAME";
-
     public static final String MATCH_MODE_CONTAINS = "CONTAINS";
     public static final String MATCH_MODE_EXACT = "EXACT";
 
-    private static Field guiButtonListField;
-
     private ActionTargetLocator() {
+    }
+
+    public static String normalizeClickLocatorMode(String locatorMode) {
+        String mode = safe(locatorMode).trim().toUpperCase(Locale.ROOT);
+        if (mode.isEmpty()
+                || TARGET_MODE_POSITION.equals(mode)
+                || LEGACY_TARGET_MODE_POSITION_TYPO.equalsIgnoreCase(mode)) {
+            return CLICK_MODE_COORDINATE;
+        }
+        return mode;
+    }
+
+    public static String normalizeWorldLocatorMode(String locatorMode) {
+        String mode = safe(locatorMode).trim().toUpperCase(Locale.ROOT);
+        if (mode.isEmpty() || LEGACY_TARGET_MODE_POSITION_TYPO.equalsIgnoreCase(mode)) {
+            return TARGET_MODE_POSITION;
+        }
+        return mode;
     }
 
     public static final class ClickPoint {
@@ -105,19 +97,45 @@ public final class ActionTargetLocator {
         }
     }
 
+    private static final class BlockMatch {
+        private final BlockPos pos;
+        private final double distSq;
+        private final String description;
+
+        private BlockMatch(BlockPos pos, double distSq, String description) {
+            this.pos = pos;
+            this.distSq = distSq;
+            this.description = description;
+        }
+    }
+
+    private static final class EntityMatch {
+        private final Entity entity;
+        private final double distSq;
+
+        private EntityMatch(Entity entity, double distSq) {
+            this.entity = entity;
+            this.distSq = distSq;
+        }
+    }
+
     public static ClickPoint resolveScreenClickPoint(String locatorMode, String locatorText, String matchMode) {
-        String mode = safe(locatorMode).trim().toUpperCase(Locale.ROOT);
+        String mode = normalizeClickLocatorMode(locatorMode);
         if (mode.isEmpty() || CLICK_MODE_COORDINATE.equals(mode)) {
             return null;
         }
         if (CLICK_MODE_BUTTON_TEXT.equals(mode)) {
-            return findButtonClickPoint(locatorText, matchMode);
+            return findClickPointByText(locatorText, matchMode, GuiElementInspector.ElementType.BUTTON,
+                    GuiElementInspector.ElementType.CUSTOM);
         }
         if (CLICK_MODE_SLOT_TEXT.equals(mode)) {
-            return findSlotClickPoint(locatorText, matchMode);
+            return findClickPointByText(locatorText, matchMode, GuiElementInspector.ElementType.SLOT);
         }
         if (CLICK_MODE_ELEMENT_PATH.equals(mode)) {
-            return findElementClickPointByPath(locatorText, matchMode);
+            GuiElementInspector.GuiElementInfo info = GuiElementInspector.findFirstByPath(locatorText, matchMode);
+            if (info != null) {
+                return toClickPoint(info);
+            }
         }
         return null;
     }
@@ -125,28 +143,18 @@ public final class ActionTargetLocator {
     public static boolean tryInvokeCurrentScreenClick(String locatorMode, String locatorText, String matchMode,
             boolean isLeftClick) {
         ClickPoint point = resolveScreenClickPoint(locatorMode, locatorText, matchMode);
-        if (point == null) {
-            return false;
-        }
-        return tryInvokeCurrentScreenClick(point.getX(), point.getY(), isLeftClick);
+        return point != null && tryInvokeCurrentScreenClick(point.getX(), point.getY(), isLeftClick);
     }
 
     public static boolean tryInvokeCurrentScreenClick(int x, int y, boolean isLeftClick) {
-        Minecraft mc = Minecraft.getMinecraft();
-        GuiScreen screen = mc == null ? null : mc.currentScreen;
+        Screen screen = Minecraft.getInstance().screen;
         if (screen == null) {
             return false;
         }
-        int mouseButton = isLeftClick ? 0 : 1;
-        try {
-            Method mouseClicked = resolveMethod(screen.getClass(), "mouseClicked", int.class, int.class, int.class);
-            mouseClicked.invoke(screen, x, y, mouseButton);
-            Method mouseReleased = resolveMethod(screen.getClass(), "mouseReleased", int.class, int.class, int.class);
-            mouseReleased.invoke(screen, x, y, mouseButton);
-            return true;
-        } catch (Exception ignored) {
-        }
-        return false;
+        int button = isLeftClick ? 0 : 1;
+        boolean handled = screen.mouseClicked(x, y, button);
+        screen.mouseReleased(x, y, button);
+        return handled;
     }
 
     public static SlotResult resolveContainerSlot(String locatorMode, String locatorText, String matchMode) {
@@ -161,15 +169,19 @@ public final class ActionTargetLocator {
             return findContainerEmptySlot();
         }
         if (SLOT_MODE_PATH.equals(mode)) {
-            return findContainerSlotByPath(locatorText, matchMode);
+            GuiElementInspector.GuiElementInfo info = GuiElementInspector.findFirstByPath(locatorText, matchMode,
+                    GuiElementInspector.ElementType.SLOT);
+            if (info != null && info.getSlotIndex() >= 0) {
+                return new SlotResult(info.getSlotIndex(), info.getPath());
+            }
         }
         return null;
     }
 
     public static BlockPos findNearbyInteractableBlock(String locatorText, String matchMode, double range) {
-        Minecraft mc = Minecraft.getMinecraft();
-        EntityPlayerSP player = mc == null ? null : mc.player;
-        if (player == null || player.world == null) {
+        Minecraft mc = Minecraft.getInstance();
+        LocalPlayer player = mc.player;
+        if (player == null || mc.level == null) {
             return null;
         }
 
@@ -179,8 +191,8 @@ public final class ActionTargetLocator {
         }
 
         int radius = Math.max(1, (int) Math.ceil(Math.max(1.0D, range)));
-        double maxDistSq = range <= 0.0D ? radius * radius : range * range;
-        BlockPos center = player.getPosition();
+        double maxDistSq = Math.max(1.0D, range) * Math.max(1.0D, range);
+        BlockPos center = player.blockPosition();
         List<BlockMatch> matches = new ArrayList<>();
 
         for (int y = -radius; y <= radius; y++) {
@@ -190,33 +202,24 @@ public final class ActionTargetLocator {
                     if (distSq > maxDistSq) {
                         continue;
                     }
-
-                    BlockPos current = center.add(x, y, z);
-                    IBlockState state = player.world.getBlockState(current);
-                    if (!isInteractableBlock(state)) {
-                        continue;
-                    }
-
-                    String searchText = buildBlockSearchText(state);
+                    BlockPos current = center.offset(x, y, z);
+                    String searchText = buildBlockSearchText(current);
                     if (!matches(searchText, query, matchMode)) {
                         continue;
                     }
-                    matches.add(new BlockMatch(current, distSq, state.getBlock().getLocalizedName()));
+                    matches.add(new BlockMatch(current, distSq, searchText));
                 }
             }
         }
 
-        if (matches.isEmpty()) {
-            return null;
-        }
-        matches.sort(Comparator.comparingDouble(a -> a.distSq));
-        return matches.get(0).pos;
+        matches.sort(Comparator.comparingDouble(match -> match.distSq));
+        return matches.isEmpty() ? null : matches.get(0).pos;
     }
 
     public static Entity findNearbyEntity(String locatorText, String matchMode, double range) {
-        Minecraft mc = Minecraft.getMinecraft();
-        EntityPlayerSP player = mc == null ? null : mc.player;
-        if (player == null || player.world == null) {
+        Minecraft mc = Minecraft.getInstance();
+        LocalPlayer player = mc.player;
+        if (player == null || mc.level == null) {
             return null;
         }
 
@@ -226,406 +229,169 @@ public final class ActionTargetLocator {
         }
 
         double radius = Math.max(1.0D, range);
-        AxisAlignedBB box = new AxisAlignedBB(player.getPosition()).grow(radius);
+        AABB bounds = player.getBoundingBox().inflate(radius);
         List<EntityMatch> matches = new ArrayList<>();
-        for (Entity entity : player.world.getEntitiesWithinAABB(Entity.class, box)) {
-            if (entity == null || entity == player || !entity.isEntityAlive()) {
+        for (Entity entity : mc.level.getEntities(player, bounds)) {
+            if (entity == null || entity == player) {
                 continue;
             }
             String searchText = buildEntitySearchText(entity);
             if (!matches(searchText, query, matchMode)) {
                 continue;
             }
-            matches.add(new EntityMatch(entity, entity.getDistanceSq(player)));
+            matches.add(new EntityMatch(entity, entity.distanceToSqr(player)));
         }
-        if (matches.isEmpty()) {
-            return null;
-        }
-        matches.sort(Comparator.comparingDouble(a -> a.distSq));
-        return matches.get(0).entity;
+        matches.sort(Comparator.comparingDouble(match -> match.distSq));
+        return matches.isEmpty() ? null : matches.get(0).entity;
     }
 
-    private static ClickPoint findButtonClickPoint(String locatorText, String matchMode) {
-        Minecraft mc = Minecraft.getMinecraft();
-        GuiScreen screen = mc == null ? null : mc.currentScreen;
-        if (screen == null) {
-            return null;
-        }
-
+    private static ClickPoint findClickPointByText(String locatorText, String matchMode,
+            GuiElementInspector.ElementType... allowedTypes) {
         String query = normalize(locatorText);
         if (query.isEmpty()) {
             return null;
         }
-
-        for (GuiButton button : getButtonList(screen)) {
-            if (button == null || !button.visible || !button.enabled) {
+        for (GuiElementInspector.GuiElementInfo info : GuiElementInspector.captureCurrentSnapshot().getElements()) {
+            if (info == null || !isAllowed(info.getType(), allowedTypes)) {
                 continue;
             }
-            String label = stripFormatting(button.displayString);
-            if (!matches(label, query, matchMode)) {
-                continue;
+            if (matches(normalize(info.getText()), query, matchMode)) {
+                return toClickPoint(info);
             }
-            return new ClickPoint(button.x + button.width / 2, button.y + button.height / 2,
-                    "button:" + label);
-        }
-
-        GuiElementInspector.GuiElementInfo custom = findCustomElementByText(locatorText, matchMode);
-        if (custom != null) {
-            return new ClickPoint(custom.getX() + Math.max(1, custom.getWidth()) / 2,
-                    custom.getY() + Math.max(1, custom.getHeight()) / 2,
-                    custom.getPath());
         }
         return null;
     }
 
-    private static ClickPoint findSlotClickPoint(String locatorText, String matchMode) {
-        Minecraft mc = Minecraft.getMinecraft();
-        GuiScreen screen = mc == null ? null : mc.currentScreen;
-        if (!(screen instanceof GuiContainer)) {
-            return null;
-        }
-
-        String query = normalize(locatorText);
-        if (query.isEmpty()) {
-            return null;
-        }
-
-        GuiContainer gui = (GuiContainer) screen;
-        int xSize = readIntField(gui, 176, "xSize", "field_146999_f");
-        int ySize = readIntField(gui, 166, "ySize", "field_147000_g");
-        int guiLeft = readIntField(gui, (screen.width - xSize) / 2, "guiLeft", "field_147003_i");
-        int guiTop = readIntField(gui, (screen.height - ySize) / 2, "guiTop", "field_147009_r");
-
-        for (Object slotObj : gui.inventorySlots.inventorySlots) {
-            if (!(slotObj instanceof Slot)) {
-                continue;
-            }
-            Slot slot = (Slot) slotObj;
-            if (slot == null || !slot.getHasStack()) {
-                continue;
-            }
-            String searchText = buildItemSearchText(slot.getStack());
-            if (!matches(searchText, query, matchMode)) {
-                continue;
-            }
-            return new ClickPoint(guiLeft + slot.xPos + 8, guiTop + slot.yPos + 8,
-                    "slot:" + stripFormatting(slot.getStack().getDisplayName()));
-        }
-        return null;
+    private static ClickPoint toClickPoint(GuiElementInspector.GuiElementInfo info) {
+        return new ClickPoint(info.getX() + Math.max(1, info.getWidth()) / 2,
+                info.getY() + Math.max(1, info.getHeight()) / 2,
+                info.getPath());
     }
 
     private static SlotResult findContainerSlotByItemText(String locatorText, String matchMode) {
-        Minecraft mc = Minecraft.getMinecraft();
-        EntityPlayerSP player = mc == null ? null : mc.player;
-        if (player == null || player.openContainer == null) {
+        Minecraft mc = Minecraft.getInstance();
+        LocalPlayer player = mc.player;
+        if (player == null) {
             return null;
         }
-
+        AbstractContainerMenu menu = player.containerMenu;
+        if (menu == null) {
+            return null;
+        }
         String query = normalize(locatorText);
         if (query.isEmpty()) {
             return null;
         }
-
-        Container container = player.openContainer;
-        for (int index : buildPreferredSlotOrder(container)) {
-            if (index < 0 || index >= container.inventorySlots.size()) {
+        for (int index : buildPreferredSlotOrder(menu, player)) {
+            if (index < 0 || index >= menu.slots.size()) {
                 continue;
             }
-            Slot slot = container.getSlot(index);
-            if (slot == null || !slot.getHasStack()) {
+            Slot slot = menu.slots.get(index);
+            if (slot == null || !slot.hasItem()) {
                 continue;
             }
-            String searchText = buildItemSearchText(slot.getStack());
-            if (!matches(searchText, query, matchMode)) {
-                continue;
+            String searchText = normalize(slot.getItem().getHoverName().getString());
+            if (matches(searchText, query, matchMode)) {
+                return new SlotResult(index, slot.getItem().getHoverName().getString());
             }
-            return new SlotResult(index, stripFormatting(slot.getStack().getDisplayName()));
         }
         return null;
     }
 
     private static SlotResult findContainerEmptySlot() {
-        Minecraft mc = Minecraft.getMinecraft();
-        EntityPlayerSP player = mc == null ? null : mc.player;
-        if (player == null || player.openContainer == null) {
+        Minecraft mc = Minecraft.getInstance();
+        LocalPlayer player = mc.player;
+        if (player == null) {
             return null;
         }
-
-        Container container = player.openContainer;
-        for (int index : buildPreferredSlotOrder(container)) {
-            if (index < 0 || index >= container.inventorySlots.size()) {
+        AbstractContainerMenu menu = player.containerMenu;
+        if (menu == null) {
+            return null;
+        }
+        for (int index : buildPreferredSlotOrder(menu, player)) {
+            if (index < 0 || index >= menu.slots.size()) {
                 continue;
             }
-            Slot slot = container.getSlot(index);
-            if (slot != null && !slot.getHasStack()) {
+            Slot slot = menu.slots.get(index);
+            if (slot != null && !slot.hasItem()) {
                 return new SlotResult(index, "empty");
             }
         }
         return null;
     }
 
-    private static ClickPoint findElementClickPointByPath(String locatorText, String matchMode) {
-        GuiElementInspector.GuiElementInfo element = GuiElementInspector.findFirstByPath(locatorText, matchMode,
-                GuiElementInspector.ElementType.BUTTON,
-                GuiElementInspector.ElementType.SLOT,
-                GuiElementInspector.ElementType.CUSTOM);
-        if (element == null) {
-            return null;
+    private static List<Integer> buildPreferredSlotOrder(AbstractContainerMenu menu, LocalPlayer player) {
+        List<Integer> order = new ArrayList<>();
+        if (menu == null || menu.slots == null) {
+            return order;
         }
-        int centerX = element.getX() + Math.max(1, element.getWidth()) / 2;
-        int centerY = element.getY() + Math.max(1, element.getHeight()) / 2;
-        return new ClickPoint(centerX, centerY, element.getPath());
-    }
-
-    private static GuiElementInspector.GuiElementInfo findCustomElementByText(String locatorText, String matchMode) {
-        GuiElementInspector.GuiSnapshot snapshot = GuiElementInspector.captureCurrentSnapshot();
-        String query = normalize(locatorText);
-        if (query.isEmpty() || snapshot.getElements().isEmpty()) {
-            return null;
-        }
-        for (GuiElementInspector.GuiElementInfo element : snapshot.getElements()) {
-            if (element == null || element.getType() != GuiElementInspector.ElementType.CUSTOM) {
-                continue;
-            }
-            if (matches(element.getText(), query, matchMode)) {
-                return element;
+        for (int i = 0; i < menu.slots.size(); i++) {
+            Slot slot = menu.slots.get(i);
+            if (slot != null && slot.container != player.getInventory()) {
+                order.add(i);
             }
         }
-        return null;
-    }
-
-    private static SlotResult findContainerSlotByPath(String locatorText, String matchMode) {
-        GuiElementInspector.GuiElementInfo element = GuiElementInspector.findFirstByPath(locatorText, matchMode,
-                GuiElementInspector.ElementType.SLOT);
-        if (element == null) {
-            Integer parsedSlotIndex = parseSlotIndexFromPath(locatorText);
-            return parsedSlotIndex == null ? null : new SlotResult(parsedSlotIndex.intValue(), "path:" + locatorText);
-        }
-        return new SlotResult(element.getSlotIndex(), element.getPath());
-    }
-
-    private static Integer parseSlotIndexFromPath(String locatorText) {
-        String text = safe(locatorText).trim();
-        if (text.isEmpty()) {
-            return null;
-        }
-        int slotTagIndex = text.lastIndexOf("/slot[");
-        if (slotTagIndex < 0) {
-            slotTagIndex = text.lastIndexOf("slot[");
-        }
-        if (slotTagIndex < 0) {
-            return null;
-        }
-        int leftBracket = text.indexOf('[', slotTagIndex);
-        int rightBracket = leftBracket < 0 ? -1 : text.indexOf(']', leftBracket + 1);
-        if (leftBracket < 0 || rightBracket <= leftBracket + 1) {
-            return null;
-        }
-        try {
-            return Integer.parseInt(text.substring(leftBracket + 1, rightBracket).trim());
-        } catch (NumberFormatException ignored) {
-            return null;
-        }
-    }
-
-    private static List<Integer> buildPreferredSlotOrder(Container container) {
-        List<Integer> indices = new ArrayList<>();
-        if (container == null || container.inventorySlots == null) {
-            return indices;
-        }
-
-        int primaryCount = container.inventorySlots.size();
-        if (container instanceof ContainerChest) {
-            try {
-                primaryCount = Math.min(primaryCount,
-                        ((ContainerChest) container).getLowerChestInventory().getSizeInventory());
-            } catch (Exception ignored) {
+        for (int i = 0; i < menu.slots.size(); i++) {
+            Slot slot = menu.slots.get(i);
+            if (slot != null && slot.container == player.getInventory()) {
+                order.add(i);
             }
         }
-
-        for (int i = 0; i < primaryCount; i++) {
-            indices.add(i);
-        }
-        for (int i = primaryCount; i < container.inventorySlots.size(); i++) {
-            indices.add(i);
-        }
-        return indices;
+        return order;
     }
 
-    @SuppressWarnings("unchecked")
-    private static List<GuiButton> getButtonList(GuiScreen screen) {
-        if (screen == null) {
-            return java.util.Collections.emptyList();
-        }
-        try {
-            if (guiButtonListField == null) {
-                guiButtonListField = resolveField(GuiScreen.class, "buttonList", "field_146292_n");
-            }
-            Object value = guiButtonListField == null ? null : guiButtonListField.get(screen);
-            if (value instanceof List) {
-                return (List<GuiButton>) value;
-            }
-        } catch (Exception ignored) {
-        }
-        return java.util.Collections.emptyList();
-    }
-
-    private static Field resolveField(Class<?> type, String... names) {
-        Class<?> current = type;
-        while (current != null) {
-            for (String name : names) {
-                try {
-                    Field field = current.getDeclaredField(name);
-                    field.setAccessible(true);
-                    return field;
-                } catch (NoSuchFieldException ignored) {
-                }
-            }
-            current = current.getSuperclass();
-        }
-        return null;
-    }
-
-    private static Method resolveMethod(Class<?> type, String name, Class<?>... parameterTypes)
-            throws NoSuchMethodException {
-        Class<?> current = type;
-        while (current != null) {
-            try {
-                Method method = current.getDeclaredMethod(name, parameterTypes);
-                method.setAccessible(true);
-                return method;
-            } catch (NoSuchMethodException ignored) {
-                current = current.getSuperclass();
-            }
-        }
-        throw new NoSuchMethodException(type.getName() + "#" + name);
-    }
-
-    private static int readIntField(Object target, int fallback, String... names) {
-        if (target == null) {
-            return fallback;
-        }
-        try {
-            Field field = resolveField(target.getClass(), names);
-            Object value = field == null ? null : field.get(target);
-            if (value instanceof Integer) {
-                return (Integer) value;
-            }
-        } catch (Exception ignored) {
-        }
-        return fallback;
-    }
-
-    private static boolean matches(String sourceText, String normalizedQuery, String matchMode) {
-        String normalizedSource = normalize(sourceText);
-        if (normalizedSource.isEmpty() || normalizedQuery == null || normalizedQuery.isEmpty()) {
-            return false;
-        }
-        if (MATCH_MODE_EXACT.equalsIgnoreCase(safe(matchMode))) {
-            return normalizedSource.equals(normalizedQuery);
-        }
-        return normalizedSource.contains(normalizedQuery);
-    }
-
-    private static String buildItemSearchText(ItemStack stack) {
-        if (stack == null || stack.isEmpty()) {
-            return "";
-        }
+    private static String buildBlockSearchText(BlockPos pos) {
+        Minecraft mc = Minecraft.getInstance();
+        Block block = mc.level.getBlockState(pos).getBlock();
+        BlockEntity blockEntity = mc.level.getBlockEntity(pos);
         StringBuilder builder = new StringBuilder();
-        builder.append(stripFormatting(stack.getDisplayName()));
-        ResourceLocation registryName = stack.getItem() == null ? null : stack.getItem().getRegistryName();
-        if (registryName != null) {
-            builder.append(' ').append(registryName.toString());
+        if (block != null) {
+            builder.append(block.getName().getString()).append(' ');
+            builder.append(String.valueOf(block)).append(' ');
         }
-        return builder.toString();
-    }
-
-    private static String buildBlockSearchText(IBlockState state) {
-        if (state == null || state.getBlock() == null) {
-            return "";
+        if (blockEntity != null) {
+            builder.append(blockEntity.getType()).append(' ');
         }
-        StringBuilder builder = new StringBuilder();
-        Block block = state.getBlock();
-        builder.append(block.getLocalizedName());
-        ResourceLocation registryName = block.getRegistryName();
-        if (registryName != null) {
-            builder.append(' ').append(registryName.toString());
-        }
-        return builder.toString();
+        return normalize(builder.toString());
     }
 
     private static String buildEntitySearchText(Entity entity) {
-        if (entity == null) {
-            return "";
-        }
         StringBuilder builder = new StringBuilder();
-        if (entity.getDisplayName() != null) {
-            builder.append(stripFormatting(entity.getDisplayName().getUnformattedText()));
+        builder.append(entity.getName().getString()).append(' ');
+        builder.append(entity.getType().toString()).append(' ');
+        builder.append(entity.getEncodeId() == null ? "" : entity.getEncodeId());
+        return normalize(builder.toString());
+    }
+
+    private static boolean isAllowed(GuiElementInspector.ElementType type,
+            GuiElementInspector.ElementType... allowedTypes) {
+        if (allowedTypes == null || allowedTypes.length == 0) {
+            return true;
         }
-        String entityName = safe(entity.getName()).trim();
-        if (!entityName.isEmpty()) {
-            builder.append(' ').append(stripFormatting(entityName));
+        for (GuiElementInspector.ElementType allowedType : allowedTypes) {
+            if (allowedType == type) {
+                return true;
+            }
         }
-        builder.append(' ').append(entity.getClass().getSimpleName());
-        return builder.toString();
+        return false;
     }
 
-    private static String normalize(String text) {
-        String stripped = stripFormatting(text).trim().toLowerCase(Locale.ROOT);
-        return stripped.replace('\u3000', ' ').replaceAll("\\s+", " ");
-    }
-
-    private static String stripFormatting(String text) {
-        String cleaned = TextFormatting.getTextWithoutFormattingCodes(safe(text));
-        return cleaned == null ? safe(text) : cleaned;
-    }
-
-    private static boolean isInteractableBlock(IBlockState state) {
-        if (state == null) {
-            return false;
+    private static boolean matches(String source, String query, String matchMode) {
+        if (query == null || query.isEmpty()) {
+            return true;
         }
-        Block block = state.getBlock();
-        return block instanceof BlockChest
-                || block instanceof BlockEnderChest
-                || block instanceof BlockWorkbench
-                || block instanceof BlockFurnace
-                || block instanceof BlockAnvil
-                || block instanceof BlockBrewingStand
-                || block instanceof BlockHopper
-                || block instanceof BlockDispenser
-                || block instanceof BlockDropper
-                || block instanceof BlockDoor
-                || block instanceof BlockTrapDoor
-                || block instanceof BlockFenceGate
-                || block instanceof BlockLever
-                || block instanceof BlockButton
-                || block instanceof BlockContainer;
-    }
-
-    private static String safe(String text) {
-        return text == null ? "" : text;
-    }
-
-    private static final class EntityMatch {
-        private final Entity entity;
-        private final double distSq;
-
-        private EntityMatch(Entity entity, double distSq) {
-            this.entity = entity;
-            this.distSq = distSq;
+        if ("EXACT".equalsIgnoreCase(matchMode)) {
+            return source.equals(query);
         }
+        return source.contains(query);
     }
 
-    private static final class BlockMatch {
-        private final BlockPos pos;
-        private final double distSq;
-        @SuppressWarnings("unused")
-        private final String label;
+    private static String normalize(String value) {
+        String stripped = ChatFormatting.stripFormatting(value);
+        return (stripped == null ? safe(value) : stripped).trim().toLowerCase(Locale.ROOT);
+    }
 
-        private BlockMatch(BlockPos pos, double distSq, String label) {
-            this.pos = pos;
-            this.distSq = distSq;
-            this.label = label;
-        }
+    private static String safe(String value) {
+        return value == null ? "" : value;
     }
 }

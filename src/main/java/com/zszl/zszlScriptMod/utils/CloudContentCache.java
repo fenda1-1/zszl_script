@@ -16,6 +16,10 @@ public final class CloudContentCache {
         return ProfileManager.getCurrentProfileDir().resolve("cloud_cache");
     }
 
+    public static Path getCachePath(String fileName) {
+        return getCacheDir().resolve(fileName);
+    }
+
     public static String readText(String fileName) {
         try {
             Path file = getCacheDir().resolve(fileName);
@@ -37,9 +41,12 @@ public final class CloudContentCache {
             Path dir = getCacheDir();
             Files.createDirectories(dir);
             Path file = dir.resolve(fileName);
-            Files.write(file, content.getBytes(StandardCharsets.UTF_8));
+            byte[] bytes = content.getBytes(StandardCharsets.UTF_8);
+            Files.write(file, bytes);
+            zszlScriptMod.LOGGER.info("写入云缓存成功: {} ({} bytes)", file.toAbsolutePath(), bytes.length);
         } catch (Exception e) {
             zszlScriptMod.LOGGER.warn("写入云缓存失败: {}", fileName, e);
         }
     }
 }
+

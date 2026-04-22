@@ -1,18 +1,21 @@
 package com.zszl.zszlScriptMod.gui.dungeon;
 
 import com.zszl.zszlScriptMod.handlers.GoToAndOpenHandler; // !! 修复：添加导入
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiCompatContext;
 import com.zszl.zszlScriptMod.system.dungeon.ChestData;
 import com.zszl.zszlScriptMod.system.dungeon.Warehouse;
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
 import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
-import net.minecraft.client.gui.GuiTextField;
-import net.minecraft.client.resources.I18n;
-import net.minecraft.item.ItemStack;
-import net.minecraft.util.NonNullList;
-import net.minecraft.util.math.BlockPos; // !! 修复：添加导入
-import org.lwjgl.input.Keyboard;
-import org.lwjgl.input.Mouse;
+import com.zszl.zszlScriptMod.utils.PinyinSearchHelper;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiTextField;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.core.BlockPos; // !! 修复：添加导入
+import net.minecraft.core.NonNullList;
+import net.minecraft.core.registries.BuiltInRegistries;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Keyboard;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Mouse;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -78,13 +81,13 @@ public class GuiWarehouseInfo extends ThemedGuiScreen {
     @Override
     protected void actionPerformed(GuiButton button) throws IOException {
         if (button.id == 0) {
-            mc.displayGuiScreen(parentScreen);
+            mc.setScreen(parentScreen);
         }
         // !! 新增代码 !!
         else if (button.id == 2) {
             if (selectedChestIndex != -1 && selectedChestIndex < filteredChests.size()) {
                 BlockPos targetPos = filteredChests.get(selectedChestIndex).pos;
-                mc.displayGuiScreen(null); // 关闭所有GUI
+                mc.setScreen(null); // 关闭所有GUI
                 GoToAndOpenHandler.start(targetPos);
             }
         }
@@ -92,7 +95,7 @@ public class GuiWarehouseInfo extends ThemedGuiScreen {
 
     // --- 新增：筛选逻辑 ---
     private void filterChests() {
-        String searchText = searchField.getText().toLowerCase().trim();
+        String searchText = PinyinSearchHelper.normalizeQuery(searchField == null ? "" : searchField.getText());
         if (searchText.isEmpty()) {
             filteredChests = new ArrayList<>(warehouse.chests);
         } else {
@@ -101,7 +104,8 @@ public class GuiWarehouseInfo extends ThemedGuiScreen {
                         if (!chest.hasBeenScanned)
                             return false;
                         for (ItemStack stack : chest.getSnapshotContents(54)) {
-                            if (!stack.isEmpty() && stack.getDisplayName().toLowerCase().contains(searchText)) {
+                            if (!stack.isEmpty()
+                                    && PinyinSearchHelper.matchesNormalized(stack.getHoverName().getString(), searchText)) {
                                 return true;
                             }
                         }
@@ -120,10 +124,10 @@ public class GuiWarehouseInfo extends ThemedGuiScreen {
             return "";
         }
         // 使用“物品注册名@元数据”作为基础键
-        String key = stack.getItem().getRegistryName().toString() + "@" + stack.getMetadata();
+        String key = String.valueOf(BuiltInRegistries.ITEM.getKey(stack.getItem())) + "@" + stack.getDamageValue();
         // 如果有NBT，附加NBT的字符串表示，以区分附魔、命名等不同的物品
-        if (stack.hasTagCompound()) {
-            key += ":" + stack.getTagCompound().toString();
+        if (stack.hasTag()) {
+            key += ":" + stack.getTag();
         }
         return key;
     }
@@ -223,7 +227,7 @@ public class GuiWarehouseInfo extends ThemedGuiScreen {
                     // 2. 将Map转换为可排序和绘制的列表
                     List<Map.Entry<String, Integer>> sortedItems = new ArrayList<>(itemCounts.entrySet());
                     // 按物品名称排序
-                    sortedItems.sort(Comparator.comparing(entry -> itemSamples.get(entry.getKey()).getDisplayName()));
+                    sortedItems.sort(Comparator.comparing(entry -> itemSamples.get(entry.getKey()).getHoverName().getString()));
 
                     // 3. 绘制列表
                     int contentListY = listY + 5;
@@ -241,7 +245,7 @@ public class GuiWarehouseInfo extends ThemedGuiScreen {
                         ItemStack sampleStack = itemSamples.get(entry.getKey());
                         int totalCount = entry.getValue();
 
-                        String line = String.format("  §f- %s §7* %d", sampleStack.getDisplayName(), totalCount);
+                        String line = String.format("  §f- %s §7* %d", sampleStack.getHoverName().getString(), totalCount);
                         int itemY = contentListY + i * itemHeight;
 
                         drawString(fontRenderer, line, contentX + 5, itemY + 4, 0xFFFFFF);
@@ -279,7 +283,9 @@ public class GuiWarehouseInfo extends ThemedGuiScreen {
         // 悬浮提示渲染 (保持不变)
         for (Map.Entry<java.awt.Rectangle, ItemStack> entry : itemTooltipAreas.entrySet()) {
             if (entry.getKey().contains(mouseX, mouseY)) {
-                renderToolTip(entry.getValue(), mouseX, mouseY);
+                if (GuiCompatContext.current() != null) {
+                    GuiCompatContext.current().renderTooltip(this.font, entry.getValue(), mouseX, mouseY);
+                }
                 break;
             }
         }
@@ -366,7 +372,7 @@ public class GuiWarehouseInfo extends ThemedGuiScreen {
         super.handleMouseInput();
         int dWheel = Mouse.getDWheel();
         if (dWheel != 0) {
-            int mouseX = Mouse.getX() * this.width / this.mc.displayWidth;
+            int mouseX = Mouse.getX() * this.width / this.mc.getWindow().getWidth();
             int panelX = (this.width - 450) / 2;
             int chestListX = panelX + 10;
             int chestListWidth = 180;
@@ -385,4 +391,10 @@ public class GuiWarehouseInfo extends ThemedGuiScreen {
         }
     }
 }
+
+
+
+
+
+
 

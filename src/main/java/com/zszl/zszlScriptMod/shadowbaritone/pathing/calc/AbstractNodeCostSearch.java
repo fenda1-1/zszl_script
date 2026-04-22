@@ -25,19 +25,18 @@ import com.zszl.zszlScriptMod.shadowbaritone.api.utils.BetterBlockPos;
 import com.zszl.zszlScriptMod.shadowbaritone.api.utils.Helper;
 import com.zszl.zszlScriptMod.shadowbaritone.api.utils.PathCalculationResult;
 import com.zszl.zszlScriptMod.shadowbaritone.pathing.movement.CalculationContext;
-import com.zszl.zszlScriptMod.shadowbaritone.pathing.portal.PortalNodeRef;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 
 import java.util.Optional;
 
 /**
- * Any pathfinding algorithm that keeps track of nodes recursively by their cost
- * (e.g. A*, dijkstra)
+ * Any pathfinding algorithm that keeps track of nodes recursively by their cost (e.g. A*, dijkstra)
  *
  * @author leijurv
  */
 public abstract class AbstractNodeCostSearch implements IPathFinder, Helper {
 
+    protected final BetterBlockPos realStart;
     protected final int startX;
     protected final int startY;
     protected final int startZ;
@@ -47,8 +46,7 @@ public abstract class AbstractNodeCostSearch implements IPathFinder, Helper {
     private final CalculationContext context;
 
     /**
-     * @see <a href="https://github.com/cabaletta/baritone/issues/107">Issue
-     *      #107</a>
+     * @see <a href="https://github.com/cabaletta/baritone/issues/107">Issue #107</a>
      */
     private final Long2ObjectOpenHashMap<PathNode> map;
 
@@ -63,41 +61,35 @@ public abstract class AbstractNodeCostSearch implements IPathFinder, Helper {
     protected boolean cancelRequested;
 
     /**
-     * This is really complicated and hard to explain. I wrote a comment in the old
-     * version of MineBot but it was so
+     * This is really complicated and hard to explain. I wrote a comment in the old version of MineBot but it was so
      * long it was easier as a Google Doc (because I could insert charts).
      *
-     * @see <a href=
-     *      "https://docs.google.com/document/d/1WVHHXKXFdCR1Oz__KtK8sFqyvSwJN_H4lftkHFgmzlc/edit">here</a>
+     * @see <a href="https://docs.google.com/document/d/1WVHHXKXFdCR1Oz__KtK8sFqyvSwJN_H4lftkHFgmzlc/edit">here</a>
      */
-    protected static final double[] COEFFICIENTS = { 1.5, 2, 2.5, 3, 4, 5, 10 };
+    protected static final double[] COEFFICIENTS = {1.5, 2, 2.5, 3, 4, 5, 10};
 
     /**
-     * If a path goes less than 5 blocks and doesn't make it to its goal, it's not
-     * worth considering.
+     * If a path goes less than 5 blocks and doesn't make it to its goal, it's not worth considering.
      */
     protected static final double MIN_DIST_PATH = 5;
 
     /**
-     * there are floating point errors caused by random combinations of traverse and
-     * diagonal over a flat area
+     * there are floating point errors caused by random combinations of traverse and diagonal over a flat area
      * that means that sometimes there's a cost improvement of like 10 ^ -16
-     * it's not worth the time to update the costs, decrease-key the heap,
-     * potentially repropagate, etc
+     * it's not worth the time to update the costs, decrease-key the heap, potentially repropagate, etc
      * <p>
-     * who cares about a hundredth of a tick? that's half a millisecond for crying
-     * out loud!
+     * who cares about a hundredth of a tick? that's half a millisecond for crying out loud!
      */
     protected static final double MIN_IMPROVEMENT = 0.01;
 
-    AbstractNodeCostSearch(int startX, int startY, int startZ, Goal goal, CalculationContext context) {
+    AbstractNodeCostSearch(BetterBlockPos realStart, int startX, int startY, int startZ, Goal goal, CalculationContext context) {
+        this.realStart = realStart;
         this.startX = startX;
         this.startY = startY;
         this.startZ = startZ;
         this.goal = goal;
         this.context = context;
-        this.map = new Long2ObjectOpenHashMap<>(Baritone.settings().pathingMapDefaultSize.value,
-                Baritone.settings().pathingMapLoadFactor.value);
+        this.map = new Long2ObjectOpenHashMap<>(Baritone.settings().pathingMapDefaultSize.value, Baritone.settings().pathingMapLoadFactor.value);
     }
 
     public void cancel() {
@@ -141,8 +133,7 @@ public abstract class AbstractNodeCostSearch implements IPathFinder, Helper {
             e.printStackTrace();
             return new PathCalculationResult(PathCalculationResult.Type.EXCEPTION);
         } finally {
-            // this is run regardless of what exception may or may not be raised by
-            // calculate0
+            // this is run regardless of what exception may or may not be raised by calculate0
             isFinished = true;
         }
     }
@@ -172,11 +163,9 @@ public abstract class AbstractNodeCostSearch implements IPathFinder, Helper {
      * @param x        The x position of the node
      * @param y        The y position of the node
      * @param z        The z position of the node
-     * @param hashCode The hash code of the node, provided by
-     *                 {@link BetterBlockPos#longHash(int, int, int)}
+     * @param hashCode The hash code of the node, provided by {@link BetterBlockPos#longHash(int, int, int)}
      * @return The associated node
-     * @see <a href="https://github.com/cabaletta/baritone/issues/107">Issue
-     *      #107</a>
+     * @see <a href="https://github.com/cabaletta/baritone/issues/107">Issue #107</a>
      */
 
     protected PathNode getNodeAtPosition(int x, int y, int z, long hashCode) {
@@ -188,19 +177,9 @@ public abstract class AbstractNodeCostSearch implements IPathFinder, Helper {
         return node;
     }
 
-    protected PathNode getPortalNodeAtPosition(int x, int y, int z, PortalNodeRef portalRef) {
-        long hashCode = BetterBlockPos.longHash(x, y, z) * 1099511628211L + portalRef.longHash();
-        PathNode node = map.get(hashCode);
-        if (node == null) {
-            node = new PathNode(x, y, z, portalRef, goal);
-            map.put(hashCode, node);
-        }
-        return node;
-    }
-
     @Override
     public Optional<IPath> pathToMostRecentNodeConsidered() {
-        return Optional.ofNullable(mostRecentConsidered).map(node -> new Path(startNode, node, 0, goal, context));
+        return Optional.ofNullable(mostRecentConsidered).map(node -> new Path(realStart, startNode, node, 0, goal, context));
     }
 
     @Override
@@ -225,22 +204,19 @@ public abstract class AbstractNodeCostSearch implements IPathFinder, Helper {
                 if (logInfo) {
                     if (COEFFICIENTS[i] >= 3) {
                         System.out.println("Warning: cost coefficient is greater than three! Probably means that");
-                        System.out.println(
-                                "the path I found is pretty terrible (like sneak-bridging for dozens of blocks)");
+                        System.out.println("the path I found is pretty terrible (like sneak-bridging for dozens of blocks)");
                         System.out.println("But I'm going to do it anyway, because yolo");
                     }
                     System.out.println("Path goes for " + Math.sqrt(dist) + " blocks");
                     logDebug("A* cost coefficient " + COEFFICIENTS[i]);
                 }
-                return Optional.of(new Path(startNode, bestSoFar[i], numNodes, goal, context));
+                return Optional.of(new Path(realStart, startNode, bestSoFar[i], numNodes, goal, context));
             }
         }
         // instead of returning bestSoFar[0], be less misleading
-        // if it actually won't find any path, don't make them think it will by
-        // rendering a dark blue that will never actually happen
+        // if it actually won't find any path, don't make them think it will by rendering a dark blue that will never actually happen
         if (logInfo) {
-            logDebug("Even with a cost coefficient of " + COEFFICIENTS[COEFFICIENTS.length - 1]
-                    + ", I couldn't get more than " + Math.sqrt(bestDist) + " blocks");
+            logDebug("Even with a cost coefficient of " + COEFFICIENTS[COEFFICIENTS.length - 1] + ", I couldn't get more than " + Math.sqrt(bestDist) + " blocks");
             logDebug("No path found =(");
             logNotification("No path found =(", true);
         }
@@ -265,3 +241,4 @@ public abstract class AbstractNodeCostSearch implements IPathFinder, Helper {
         return map.size();
     }
 }
+

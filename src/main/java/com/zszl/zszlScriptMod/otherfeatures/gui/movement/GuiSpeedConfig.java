@@ -7,10 +7,10 @@ import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
 import com.zszl.zszlScriptMod.gui.components.ToggleGuiButton;
 import com.zszl.zszlScriptMod.otherfeatures.handler.movement.MovementFeatureManager;
 import com.zszl.zszlScriptMod.otherfeatures.handler.movement.SpeedHandler;
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiScreen;
-import net.minecraft.client.gui.ScaledResolution;
-import org.lwjgl.input.Mouse;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.ScaledResolution;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Mouse;
 import org.lwjgl.opengl.GL11;
 
 import java.io.IOException;
@@ -27,6 +27,7 @@ public class GuiSpeedConfig extends ThemedGuiScreen {
 
     private static final int BTN_TIMER_TOGGLE = 10;
     private static final int BTN_STATUS_HUD = 13;
+    private static final int BTN_RANDOM_JUMP = 14;
 
     private static final int BTN_TIMER_SPEED = 20;
     private static final int BTN_JUMP_HEIGHT = 21;
@@ -41,6 +42,7 @@ public class GuiSpeedConfig extends ThemedGuiScreen {
 
     private ToggleGuiButton timerToggleButton;
     private ToggleGuiButton statusHudButton;
+    private ToggleGuiButton randomizeJumpButton;
     private GuiButton timerSpeedButton;
     private GuiButton jumpHeightButton;
     private GuiButton vanillaSpeedButton;
@@ -49,6 +51,7 @@ public class GuiSpeedConfig extends ThemedGuiScreen {
     private GuiButton cancelButton;
     private SimpleDropdown modeDropdown;
     private SimpleDropdown presetDropdown;
+    private SimpleDropdown bypassDropdown;
 
     private int panelX;
     private int panelY;
@@ -76,13 +79,20 @@ public class GuiSpeedConfig extends ThemedGuiScreen {
         }
 
         private void draw(int mouseX, int mouseY) {
+            drawBase(mouseX, mouseY);
+            drawExpandedMenu(mouseX, mouseY);
+        }
+
+        private void drawBase(int mouseX, int mouseY) {
             boolean hovered = isInside(mouseX, mouseY, x, y, width, height);
             GuiTheme.drawButtonFrameSafe(x, y, width, height,
                     hovered ? GuiTheme.UiState.HOVER : GuiTheme.UiState.NORMAL);
             drawString(fontRenderer, fontRenderer.trimStringToWidth(label + ": " + getSelectedText(), width - 14),
                     x + 6, y + 6, 0xFFFFFFFF);
             drawString(fontRenderer, expanded ? "▲" : "▼", x + width - 10, y + 6, 0xFF9FDFFF);
+        }
 
+        private void drawExpandedMenu(int mouseX, int mouseY) {
             if (!expanded) {
                 return;
             }
@@ -170,16 +180,13 @@ public class GuiSpeedConfig extends ThemedGuiScreen {
         this.panelWidth = Math.min(maxWidth, maxUsableWidth);
 
         this.instructionLines.clear();
-        String instruction = "左键其他功能页中的“加速”为总开关；这里可切换 Ground/Air/Bhop/LowHop/OnGround 模式、选择预设，并单独控制 Timer 与单项状态 HUD。单项 HUD 仍会受到顶部“总状态HUD”控制。";
+        String instruction = "左键其他功能页中的“加速”为总开关；这里可切换 Ground/Air/Bhop/LowHop/OnGround 模式、选择预设和绕过等级，并单独控制 Stealth Timer、跳高随机化与单项状态 HUD。单项 HUD 仍会受到顶部“总状态HUD”控制。";
         int instructionWidth = Math.max(80, this.panelWidth - 32);
         this.instructionLines.addAll(this.fontRenderer.listFormattedStringToWidth(instruction, instructionWidth));
 
         int instructionHeight = this.instructionLines.size() * (this.fontRenderer.FONT_HEIGHT + 2);
-        int requiredHeight = 24 + instructionHeight + 8 + 18 + 10
-                + 18 + CONTROL_HEIGHT + MAX_DROPDOWN_MENU_HEIGHT
-                + 12 + 18 + (CONTROL_HEIGHT + 6) + CONTROL_HEIGHT
-                + 12 + 18 + CONTROL_HEIGHT
-                + 8 + 28;
+        int requiredHeight = 24 + instructionHeight + 8 + 18 + 10 + 18 + CONTROL_HEIGHT + MAX_DROPDOWN_MENU_HEIGHT + 12
+                + 18 + (CONTROL_HEIGHT + 6) + CONTROL_HEIGHT + 12 + 18 + CONTROL_HEIGHT + 8 + 28;
         int maxHeight = Math.max(240, this.height - 8);
         this.panelHeight = Math.min(Math.max(360, requiredHeight), maxHeight);
         this.panelX = (this.width - this.panelWidth) / 2;
@@ -191,14 +198,16 @@ public class GuiSpeedConfig extends ThemedGuiScreen {
     }
 
     private void initControls() {
-        modeDropdown = new SimpleDropdown("模式",
-                new String[] { "Ground", "Air", "Bhop", "LowHop", "OnGround" },
+        modeDropdown = new SimpleDropdown("模式", new String[] { "Ground", "Air", "Bhop", "LowHop", "OnGround" },
                 getModeIndex(SpeedHandler.speedMode));
         presetDropdown = new SimpleDropdown("预设", new String[] { "稳妥", "平衡", "激进", "自定义" },
                 getPresetIndex(SpeedHandler.presetId));
+        bypassDropdown = new SimpleDropdown("绕过等级", new String[] { "Safe", "Normal", "Aggressive" },
+                getBypassIndex(SpeedHandler.bypassLevel));
 
         timerToggleButton = new ToggleGuiButton(BTN_TIMER_TOGGLE, 0, 0, 100, 20, "", SpeedHandler.useTimerBoost);
         statusHudButton = new ToggleGuiButton(BTN_STATUS_HUD, 0, 0, 100, 20, "", SpeedHandler.showStatusHud);
+        randomizeJumpButton = new ToggleGuiButton(BTN_RANDOM_JUMP, 0, 0, 100, 20, "", SpeedHandler.randomizeJump);
 
         timerSpeedButton = new ThemedButton(BTN_TIMER_SPEED, 0, 0, 100, 20, "");
         jumpHeightButton = new ThemedButton(BTN_JUMP_HEIGHT, 0, 0, 100, 20, "");
@@ -209,6 +218,7 @@ public class GuiSpeedConfig extends ThemedGuiScreen {
 
         this.buttonList.add(timerToggleButton);
         this.buttonList.add(statusHudButton);
+        this.buttonList.add(randomizeJumpButton);
         this.buttonList.add(timerSpeedButton);
         this.buttonList.add(jumpHeightButton);
         this.buttonList.add(vanillaSpeedButton);
@@ -229,15 +239,40 @@ public class GuiSpeedConfig extends ThemedGuiScreen {
         int rowGap = 6;
         int rowStep = CONTROL_HEIGHT + rowGap;
         int buttonW = Math.max(110, (this.panelWidth - innerPadding * 2 - columnGap) / 2);
+        int fullWidth = this.panelWidth - innerPadding * 2;
         int leftX = this.panelX + innerPadding;
         int rightX = this.panelX + this.panelWidth - innerPadding - buttonW;
         int layoutBaseY = getScrollableViewportTop();
         int visibleTop = layoutBaseY;
         int visibleBottom = this.contentBottom;
-        int baseY = layoutBaseY - this.contentScrollOffset;
+        int logicalModeSectionY = layoutBaseY;
+        int logicalModeBodyY = logicalModeSectionY + sectionHeaderHeight;
+        int logicalBypassY = logicalModeBodyY + rowStep;
+        int rowOneExpandedBottom = logicalModeBodyY + CONTROL_HEIGHT
+                + Math.max(modeDropdown.getVisibleMenuHeight(), presetDropdown.getVisibleMenuHeight());
+        int logicalModeSectionBottom = Math.max(rowOneExpandedBottom,
+                logicalBypassY + CONTROL_HEIGHT + bypassDropdown.getVisibleMenuHeight());
 
-        int modeSectionY = baseY;
-        int modeBodyY = modeSectionY + sectionHeaderHeight;
+        int logicalSpeedSectionY = logicalModeSectionBottom + sectionGap;
+        int logicalSpeedBodyY = logicalSpeedSectionY + sectionHeaderHeight;
+        int logicalSpeedSectionBottom = logicalSpeedBodyY + rowStep + CONTROL_HEIGHT;
+
+        int logicalExtraSectionY = logicalSpeedSectionBottom + sectionGap;
+        int logicalExtraBodyY = logicalExtraSectionY + sectionHeaderHeight;
+
+        int totalContentHeight = (logicalExtraBodyY + CONTROL_HEIGHT) - layoutBaseY;
+        int visibleContentHeight = Math.max(24, visibleBottom - visibleTop);
+        this.contentMaxScroll = Math.max(0, totalContentHeight - visibleContentHeight);
+        this.contentScrollOffset = clampInt(this.contentScrollOffset, 0, this.contentMaxScroll);
+
+        int modeSectionY = logicalModeSectionY - this.contentScrollOffset;
+        int modeBodyY = logicalModeBodyY - this.contentScrollOffset;
+        int bypassY = logicalBypassY - this.contentScrollOffset;
+        int speedSectionY = logicalSpeedSectionY - this.contentScrollOffset;
+        int speedBodyY = logicalSpeedBodyY - this.contentScrollOffset;
+        int extraSectionY = logicalExtraSectionY - this.contentScrollOffset;
+        int extraBodyY = logicalExtraBodyY - this.contentScrollOffset;
+
         modeDropdown.x = leftX;
         modeDropdown.y = modeBodyY;
         modeDropdown.width = buttonW;
@@ -248,11 +283,11 @@ public class GuiSpeedConfig extends ThemedGuiScreen {
         presetDropdown.width = buttonW;
         presetDropdown.height = CONTROL_HEIGHT;
 
-        int dropdownReserve = Math.max(modeDropdown.getVisibleMenuHeight(), presetDropdown.getVisibleMenuHeight());
-        int modeSectionBottom = modeBodyY + CONTROL_HEIGHT + dropdownReserve;
+        bypassDropdown.x = leftX;
+        bypassDropdown.y = bypassY;
+        bypassDropdown.width = fullWidth;
+        bypassDropdown.height = CONTROL_HEIGHT;
 
-        int speedSectionY = modeSectionBottom + sectionGap;
-        int speedBodyY = speedSectionY + sectionHeaderHeight;
         timerToggleButton.x = leftX;
         timerToggleButton.y = speedBodyY;
         timerToggleButton.width = buttonW;
@@ -273,38 +308,16 @@ public class GuiSpeedConfig extends ThemedGuiScreen {
         vanillaSpeedButton.width = buttonW;
         vanillaSpeedButton.height = CONTROL_HEIGHT;
 
-        int speedSectionBottom = speedBodyY + rowStep + CONTROL_HEIGHT;
-        int safetySectionY = speedSectionBottom + sectionGap;
-        int safetyBodyY = safetySectionY + sectionHeaderHeight;
+        randomizeJumpButton.x = leftX;
+        randomizeJumpButton.y = extraBodyY;
+        randomizeJumpButton.width = buttonW;
+        randomizeJumpButton.height = CONTROL_HEIGHT;
+
         statusHudButton.x = leftX;
-        statusHudButton.y = safetyBodyY;
+        statusHudButton.x = rightX;
+        statusHudButton.y = extraBodyY;
         statusHudButton.width = buttonW;
         statusHudButton.height = CONTROL_HEIGHT;
-
-        int totalContentHeight = (safetyBodyY + CONTROL_HEIGHT) - layoutBaseY;
-        int visibleContentHeight = Math.max(24, visibleBottom - visibleTop);
-        this.contentMaxScroll = Math.max(0, totalContentHeight - visibleContentHeight);
-        this.contentScrollOffset = clampInt(this.contentScrollOffset, 0, this.contentMaxScroll);
-
-        if (this.contentScrollOffset != 0) {
-            baseY = layoutBaseY - this.contentScrollOffset;
-            modeSectionY = baseY;
-            modeBodyY = modeSectionY + sectionHeaderHeight;
-            modeDropdown.y = modeBodyY;
-            presetDropdown.y = modeBodyY;
-            int adjustedModeSectionBottom = modeBodyY + CONTROL_HEIGHT
-                    + Math.max(modeDropdown.getVisibleMenuHeight(), presetDropdown.getVisibleMenuHeight());
-            speedSectionY = adjustedModeSectionBottom + sectionGap;
-            speedBodyY = speedSectionY + sectionHeaderHeight;
-            timerToggleButton.y = speedBodyY;
-            timerSpeedButton.y = speedBodyY;
-            jumpHeightButton.y = speedBodyY + rowStep;
-            vanillaSpeedButton.y = speedBodyY + rowStep;
-            int adjustedSpeedSectionBottom = speedBodyY + rowStep + CONTROL_HEIGHT;
-            safetySectionY = adjustedSpeedSectionBottom + sectionGap;
-            safetyBodyY = safetySectionY + sectionHeaderHeight;
-            statusHudButton.y = safetyBodyY;
-        }
 
         int footerGap = 6;
         int footerButtonW = Math.max(64, (this.panelWidth - innerPadding * 2 - footerGap * 2) / 3);
@@ -316,11 +329,17 @@ public class GuiSpeedConfig extends ThemedGuiScreen {
         layoutFooterButton(defaultButton, footerStartX + footerButtonW + footerGap, footerY, footerButtonW);
         layoutFooterButton(cancelButton, footerStartX + (footerButtonW + footerGap) * 2, footerY, footerButtonW);
 
-        timerToggleButton.visible = isWithinContent(timerToggleButton.y, timerToggleButton.height, visibleTop, visibleBottom);
+        timerToggleButton.visible = isWithinContent(timerToggleButton.y, timerToggleButton.height, visibleTop,
+                visibleBottom);
         statusHudButton.visible = isWithinContent(statusHudButton.y, statusHudButton.height, visibleTop, visibleBottom);
-        timerSpeedButton.visible = isWithinContent(timerSpeedButton.y, timerSpeedButton.height, visibleTop, visibleBottom);
-        jumpHeightButton.visible = isWithinContent(jumpHeightButton.y, jumpHeightButton.height, visibleTop, visibleBottom);
-        vanillaSpeedButton.visible = isWithinContent(vanillaSpeedButton.y, vanillaSpeedButton.height, visibleTop, visibleBottom);
+        timerSpeedButton.visible = isWithinContent(timerSpeedButton.y, timerSpeedButton.height, visibleTop,
+                visibleBottom);
+        jumpHeightButton.visible = isWithinContent(jumpHeightButton.y, jumpHeightButton.height, visibleTop,
+                visibleBottom);
+        vanillaSpeedButton.visible = isWithinContent(vanillaSpeedButton.y, vanillaSpeedButton.height, visibleTop,
+                visibleBottom);
+        randomizeJumpButton.visible = isWithinContent(randomizeJumpButton.y, randomizeJumpButton.height, visibleTop,
+                visibleBottom);
     }
 
     private void layoutFooterButton(GuiButton button, int x, int y, int width) {
@@ -334,18 +353,22 @@ public class GuiSpeedConfig extends ThemedGuiScreen {
     private void refreshControlTexts() {
         modeDropdown.selectedIndex = getModeIndex(SpeedHandler.speedMode);
         presetDropdown.selectedIndex = getPresetIndex(SpeedHandler.presetId);
+        bypassDropdown.selectedIndex = getBypassIndex(SpeedHandler.bypassLevel);
 
         timerToggleButton.setEnabledState(SpeedHandler.useTimerBoost);
-        timerToggleButton.displayString = "Timer加速: " + stateText(SpeedHandler.useTimerBoost);
+        timerToggleButton.displayString = "Stealth Timer: " + stateText(SpeedHandler.useTimerBoost);
 
         statusHudButton.setEnabledState(SpeedHandler.showStatusHud);
         statusHudButton.displayString = "单项状态HUD: " + stateText(SpeedHandler.showStatusHud);
+        randomizeJumpButton.setEnabledState(SpeedHandler.randomizeJump);
+        randomizeJumpButton.displayString = "跳高随机化: " + stateText(SpeedHandler.randomizeJump);
 
         timerSpeedButton.displayString = "Timer倍率: " + formatFloat(SpeedHandler.timerSpeed);
         jumpHeightButton.displayString = "跳跃高度: " + formatFloat(SpeedHandler.jumpHeight);
         vanillaSpeedButton.displayString = "水平速度: " + formatFloat(SpeedHandler.vanillaSpeed);
 
         jumpHeightButton.enabled = SpeedHandler.usesJumpHeight();
+        randomizeJumpButton.enabled = SpeedHandler.usesJumpHeight();
     }
 
     @Override
@@ -358,32 +381,35 @@ public class GuiSpeedConfig extends ThemedGuiScreen {
         case BTN_STATUS_HUD:
             SpeedHandler.showStatusHud = !SpeedHandler.showStatusHud;
             break;
+        case BTN_RANDOM_JUMP:
+            if (randomizeJumpButton.enabled) {
+                SpeedHandler.randomizeJump = !SpeedHandler.randomizeJump;
+                SpeedHandler.markCustomPreset();
+            }
+            break;
         case BTN_TIMER_SPEED:
-            openFloatInput("输入 Timer 倍率 (1.00 - 2.50)", SpeedHandler.timerSpeed, 1.00F, 2.50F,
-                    value -> {
-                        SpeedHandler.timerSpeed = value;
-                        SpeedHandler.markCustomPreset();
-                    });
+            openFloatInput("输入 Timer 倍率 (1.00 - 1.20)", SpeedHandler.timerSpeed, 1.00F, 1.20F, value -> {
+                SpeedHandler.timerSpeed = value;
+                SpeedHandler.markCustomPreset();
+            });
             return;
         case BTN_JUMP_HEIGHT:
             if (jumpHeightButton.enabled) {
-                openFloatInput("输入起跳高度 (0.00 - 1.00)", SpeedHandler.jumpHeight, 0.00F, 1.00F,
-                        value -> {
-                            SpeedHandler.jumpHeight = value;
-                            SpeedHandler.markCustomPreset();
-                        });
+                openFloatInput("输入起跳高度 (0.00 - 1.00)", SpeedHandler.jumpHeight, 0.00F, 1.00F, value -> {
+                    SpeedHandler.jumpHeight = value;
+                    SpeedHandler.markCustomPreset();
+                });
             }
             return;
         case BTN_VANILLA_SPEED:
-            openFloatInput("输入水平速度 (0.10 - 3.00)", SpeedHandler.vanillaSpeed, 0.10F, 3.00F,
-                    value -> {
-                        SpeedHandler.vanillaSpeed = value;
-                        SpeedHandler.markCustomPreset();
-                    });
+            openFloatInput("输入水平速度 (0.10 - 3.00)", SpeedHandler.vanillaSpeed, 0.10F, 3.00F, value -> {
+                SpeedHandler.vanillaSpeed = value;
+                SpeedHandler.markCustomPreset();
+            });
             return;
         case BTN_SAVE:
             SpeedHandler.saveConfig();
-            mc.displayGuiScreen(parentScreen);
+            mc.setScreen(parentScreen);
             return;
         case BTN_DEFAULT:
             SpeedHandler.applyPreset(SpeedHandler.PRESET_BALANCED);
@@ -391,7 +417,7 @@ public class GuiSpeedConfig extends ThemedGuiScreen {
             break;
         case BTN_CANCEL:
             SpeedHandler.loadConfig();
-            mc.displayGuiScreen(parentScreen);
+            mc.setScreen(parentScreen);
             return;
         default:
             break;
@@ -408,15 +434,14 @@ public class GuiSpeedConfig extends ThemedGuiScreen {
 
     @Override
     public void handleMouseInput() throws IOException {
-        int mouseX = Mouse.getEventX() * this.width / this.mc.displayWidth;
-        int mouseY = this.height - Mouse.getEventY() * this.height / this.mc.displayHeight - 1;
+        int mouseX = Mouse.getEventX() * this.width / this.mc.getWindow().getWidth();
+        int mouseY = this.height - Mouse.getEventY() * this.height / this.mc.getWindow().getHeight() - 1;
 
         int dWheel = Mouse.getEventDWheel();
         if (dWheel != 0) {
             if (isInside(mouseX, mouseY, this.panelX + 8, this.contentTop + 20, this.panelWidth - 16,
                     Math.max(20, this.contentBottom - this.contentTop - 12))) {
-                this.contentScrollOffset = dWheel > 0
-                        ? Math.max(0, this.contentScrollOffset - 14)
+                this.contentScrollOffset = dWheel > 0 ? Math.max(0, this.contentScrollOffset - 14)
                         : Math.min(this.contentMaxScroll, this.contentScrollOffset + 14);
                 relayoutControls();
             }
@@ -440,11 +465,19 @@ public class GuiSpeedConfig extends ThemedGuiScreen {
     private boolean handleMousePressed(int mouseX, int mouseY, int mouseButton) throws IOException {
         if (modeDropdown.handleClick(mouseX, mouseY, mouseButton)) {
             presetDropdown.collapse();
+            bypassDropdown.collapse();
             relayoutControls();
             return true;
         }
         if (presetDropdown.handleClick(mouseX, mouseY, mouseButton)) {
             modeDropdown.collapse();
+            bypassDropdown.collapse();
+            relayoutControls();
+            return true;
+        }
+        if (bypassDropdown.handleClick(mouseX, mouseY, mouseButton)) {
+            modeDropdown.collapse();
+            presetDropdown.collapse();
             relayoutControls();
             return true;
         }
@@ -457,6 +490,9 @@ public class GuiSpeedConfig extends ThemedGuiScreen {
         if (presetDropdown.expanded && !isMouseOverDropdown(presetDropdown, mouseX, mouseY)) {
             presetDropdown.collapse();
         }
+        if (bypassDropdown.expanded && !isMouseOverDropdown(bypassDropdown, mouseX, mouseY)) {
+            bypassDropdown.collapse();
+        }
         return false;
     }
 
@@ -468,7 +504,7 @@ public class GuiSpeedConfig extends ThemedGuiScreen {
             if (!isPointInsideButtonArea(button, mouseX, mouseY)) {
                 continue;
             }
-            button.playPressSound(this.mc.getSoundHandler());
+            button.playPressSound(this.mc.getSoundManager());
             actionPerformed(button);
             return true;
         }
@@ -496,31 +532,37 @@ public class GuiSpeedConfig extends ThemedGuiScreen {
 
         if (isMouseOverDropdown(modeDropdown, mouseX, mouseY)) {
             drawHoveringText(Arrays.asList("§e模式", "§7当前: " + SpeedHandler.getModeDisplayName(),
-                    "§7Ground：纯地面贴地加速，不主动起跳。",
-                    "§7Air：自动起跳后在空中持续加速。",
-                    "§7Bhop：自动连跳加速，节奏最明显。",
-                    "§7LowHop：低跳加速，弹跳更低更贴地。",
+                    "§7Ground：纯地面贴地加速，不主动起跳。", "§7Air：自动起跳后在空中持续加速。", "§7Bhop：自动连跳加速，节奏最明显。", "§7LowHop：低跳加速，弹跳更低更贴地。",
                     "§7OnGround：强制贴地加速，尽量维持地面判定。"), mouseX, mouseY);
         } else if (isMouseOverDropdown(presetDropdown, mouseX, mouseY)) {
-            drawHoveringText(Arrays.asList("§e预设", "§7当前: " + SpeedHandler.getPresetDisplayName(),
-                    "§7稳妥：更保守，优先稳定。", "§7平衡：默认通用。", "§7激进：更高节奏。", "§7自定义：手动参数。"), mouseX, mouseY);
+            drawHoveringText(Arrays.asList("§e预设", "§7当前: " + SpeedHandler.getPresetDisplayName(), "§7稳妥：更保守，优先稳定。",
+                    "§7平衡：默认通用。", "§7激进：更高节奏。", "§7自定义：手动参数。"), mouseX, mouseY);
+        } else if (isMouseOverDropdown(bypassDropdown, mouseX, mouseY)) {
+            drawHoveringText(Arrays.asList("§e绕过等级", "§7当前: " + SpeedHandler.getBypassDisplayName(),
+                    "§7Safe：更低倍率，更保守，推荐不开 Timer。", "§7Normal：常规倍率，带轻微 Stealth Timer。", "§7Aggressive：更高倍率，随机更强，风险也更高。"),
+                    mouseX, mouseY);
         } else if (isMouseOver(mouseX, mouseY, timerToggleButton)) {
-            drawHoveringText(Arrays.asList("§eTimer加速", "§7当前: " + stateText(SpeedHandler.useTimerBoost),
-                    "§7关闭后只保留移动速度逻辑，不修改客户端 tickLength。"), mouseX, mouseY);
+            drawHoveringText(Arrays.asList("§eStealth Timer", "§7当前: " + stateText(SpeedHandler.useTimerBoost),
+                    "§7开启后会做轻微随机 timer 微扰动和间歇喘息。", "§7关闭后只保留速度逻辑，不修改客户端 tickLength。"), mouseX, mouseY);
         } else if (isMouseOver(mouseX, mouseY, timerSpeedButton)) {
-            drawHoveringText(Arrays.asList("§eTimer倍率", "§7当前: " + formatFloat(SpeedHandler.timerSpeed),
-                    "§7仅在开启 Timer 加速时生效。"), mouseX, mouseY);
+            drawHoveringText(
+                    Arrays.asList("§eTimer倍率", "§7当前: " + formatFloat(SpeedHandler.timerSpeed),
+                            "§7仅在开启 Stealth Timer 时生效。", "§7实际运行时会在这个值附近做小幅高斯扰动。"),
+                    mouseX, mouseY);
         } else if (isMouseOver(mouseX, mouseY, jumpHeightButton)) {
             drawHoveringText(Arrays.asList("§e跳跃高度", "§7当前: " + formatFloat(SpeedHandler.jumpHeight),
-                    "§7Air / Bhop / LowHop 模式会使用这个值。",
-                    "§7Ground / OnGround 模式不会使用跳跃高度。"), mouseX, mouseY);
+                    "§7Air / Bhop / LowHop 模式会使用这个值。", "§7Ground / OnGround 模式不会使用跳跃高度。"), mouseX, mouseY);
         } else if (isMouseOver(mouseX, mouseY, vanillaSpeedButton)) {
-            drawHoveringText(Arrays.asList("§e水平速度", "§7当前: " + formatFloat(SpeedHandler.vanillaSpeed),
-                    "§7所有模式都会把它作为水平速度基准。"), mouseX, mouseY);
+            drawHoveringText(
+                    Arrays.asList("§e水平速度", "§7当前: " + formatFloat(SpeedHandler.vanillaSpeed),
+                            "§7所有模式都会把它作为基础速度，再叠加绕过等级倍率。"),
+                    mouseX, mouseY);
+        } else if (isMouseOver(mouseX, mouseY, randomizeJumpButton)) {
+            drawHoveringText(Arrays.asList("§e跳高随机化", "§7当前: " + stateText(SpeedHandler.randomizeJump),
+                    "§7开启后每次起跳高度会在当前值附近 ±5% 波动。", "§7仅对会起跳的模式生效。"), mouseX, mouseY);
         } else if (isMouseOver(mouseX, mouseY, statusHudButton)) {
             drawHoveringText(Arrays.asList("§e单项状态HUD", "§7当前: " + stateText(SpeedHandler.showStatusHud),
-                    "§7开启后，在主界面左上角显示当前模式和参数状态。",
-                    "§7仍受顶部“总状态HUD”总开关控制。"), mouseX, mouseY);
+                    "§7开启后，在主界面左上角显示当前模式和参数状态。", "§7仍受顶部“总状态HUD”总开关控制。"), mouseX, mouseY);
         }
     }
 
@@ -532,11 +574,11 @@ public class GuiSpeedConfig extends ThemedGuiScreen {
         drawRect(stripX, stripY, stripX + stripW, stripY + stripH, 0x33202A36);
         drawHorizontalLine(stripX, stripX + stripW, stripY, 0x664FA6D9);
         drawHorizontalLine(stripX, stripX + stripW, stripY + stripH, 0x4435536C);
-        String status = "状态: " + (SpeedHandler.enabled ? "§a开启" : "§c关闭")
-                + " §7| 模式: §f" + SpeedHandler.getModeDisplayName()
-                + " §7| 预设: §f" + SpeedHandler.getPresetDisplayName()
-                + " §7| Timer: " + (SpeedHandler.useTimerBoost ? "§a开" : "§c关")
-                + " §7| HUD: " + (SpeedHandler.showStatusHud ? "§a单开" : "§c单关")
+        String status = "状态: " + (SpeedHandler.enabled ? "§a开启" : "§c关闭") + " §7| 模式: §f"
+                + SpeedHandler.getModeDisplayName() + " §7| 预设: §f" + SpeedHandler.getPresetDisplayName()
+                + " §7| 绕过: §f" + SpeedHandler.getBypassDisplayName()
+                + " §7| Timer: " + (SpeedHandler.useTimerBoost ? "§a开" : "§c关") + " §7| HUD: "
+                + (SpeedHandler.showStatusHud ? "§a单开" : "§c单关")
                 + (MovementFeatureManager.isMasterStatusHudEnabled() ? " §7/总开" : " §c/总关");
         drawString(this.fontRenderer, this.fontRenderer.trimStringToWidth(status, stripW - 12), stripX + 6, stripY + 5,
                 0xFFFFFFFF);
@@ -558,14 +600,14 @@ public class GuiSpeedConfig extends ThemedGuiScreen {
         startScissor(viewportX, viewportY, viewportW, viewportH);
         try {
             drawSectionBox("模式与预设", modeDropdown.x, modeDropdown.y, presetDropdown.x + presetDropdown.width,
-                    presetDropdown.y + presetDropdown.height
-                            + Math.max(modeDropdown.getVisibleMenuHeight(), presetDropdown.getVisibleMenuHeight()));
+                    Math.max(
+                            Math.max(modeDropdown.y + modeDropdown.height + modeDropdown.getVisibleMenuHeight(),
+                                    presetDropdown.y + presetDropdown.height + presetDropdown.getVisibleMenuHeight()),
+                            bypassDropdown.y + bypassDropdown.height + bypassDropdown.getVisibleMenuHeight()));
             drawSectionBox("速度参数", timerToggleButton.x, timerToggleButton.y,
-                    vanillaSpeedButton.x + vanillaSpeedButton.width,
-                    vanillaSpeedButton.y + vanillaSpeedButton.height);
-            drawSectionBox("状态提示", statusHudButton.x, statusHudButton.y,
-                    statusHudButton.x + statusHudButton.width,
-                    statusHudButton.y + statusHudButton.height);
+                    vanillaSpeedButton.x + vanillaSpeedButton.width, vanillaSpeedButton.y + vanillaSpeedButton.height);
+            drawSectionBox("附加选项", randomizeJumpButton.x, randomizeJumpButton.y,
+                    statusHudButton.x + statusHudButton.width, statusHudButton.y + statusHudButton.height);
 
             for (GuiButton button : this.buttonList) {
                 if (isScrollableButton(button)) {
@@ -573,8 +615,13 @@ public class GuiSpeedConfig extends ThemedGuiScreen {
                 }
             }
 
-            modeDropdown.draw(clippedMouseX, clippedMouseY);
-            presetDropdown.draw(clippedMouseX, clippedMouseY);
+            modeDropdown.drawBase(clippedMouseX, clippedMouseY);
+            presetDropdown.drawBase(clippedMouseX, clippedMouseY);
+            bypassDropdown.drawBase(clippedMouseX, clippedMouseY);
+
+            modeDropdown.drawExpandedMenu(clippedMouseX, clippedMouseY);
+            presetDropdown.drawExpandedMenu(clippedMouseX, clippedMouseY);
+            bypassDropdown.drawExpandedMenu(clippedMouseX, clippedMouseY);
         } finally {
             endScissor();
         }
@@ -639,13 +686,14 @@ public class GuiSpeedConfig extends ThemedGuiScreen {
         int sbH = Math.max(20, this.contentBottom - sbY);
         int thumbH = Math.max(16, (int) ((float) sbH * sbH / Math.max(sbH, sbH + this.contentMaxScroll)));
         int thumbTravel = Math.max(0, sbH - thumbH);
-        int thumbY = sbY + (int) ((this.contentScrollOffset / (float) Math.max(1, this.contentMaxScroll)) * thumbTravel);
+        int thumbY = sbY
+                + (int) ((this.contentScrollOffset / (float) Math.max(1, this.contentMaxScroll)) * thumbTravel);
         drawRect(sbX, sbY, sbX + 4, sbY + sbH, 0x55141C24);
         drawRect(sbX, thumbY, sbX + 4, thumbY + thumbH, 0xCC7CCBFF);
     }
 
     private void openFloatInput(String title, float currentValue, float min, float max, FloatConsumer consumer) {
-        mc.displayGuiScreen(new GuiTextInput(this, title, formatFloat(currentValue), value -> {
+        mc.setScreen(new GuiTextInput(this, title, formatFloat(currentValue), value -> {
             float parsed = currentValue;
             try {
                 parsed = Float.parseFloat(value.trim());
@@ -654,15 +702,19 @@ public class GuiSpeedConfig extends ThemedGuiScreen {
             consumer.accept(clampFloat(parsed, min, max));
             refreshControlTexts();
             relayoutControls();
-            mc.displayGuiScreen(this);
+            mc.setScreen(this);
         }));
     }
 
     private void onDropdownValueChanged(SimpleDropdown dropdown, int selectedIndex) {
         if (dropdown == modeDropdown) {
             SpeedHandler.speedMode = getModeIdByIndex(selectedIndex);
+            SpeedHandler.markCustomPreset();
         } else if (dropdown == presetDropdown) {
             SpeedHandler.applyPreset(getPresetIdByIndex(selectedIndex));
+        } else if (dropdown == bypassDropdown) {
+            SpeedHandler.bypassLevel = getBypassIdByIndex(selectedIndex);
+            SpeedHandler.markCustomPreset();
         }
         refreshControlTexts();
         relayoutControls();
@@ -714,6 +766,16 @@ public class GuiSpeedConfig extends ThemedGuiScreen {
         return 1;
     }
 
+    private int getBypassIndex(String bypassLevel) {
+        if (SpeedHandler.BYPASS_SAFE.equalsIgnoreCase(bypassLevel)) {
+            return 0;
+        }
+        if (SpeedHandler.BYPASS_AGGRESSIVE.equalsIgnoreCase(bypassLevel)) {
+            return 2;
+        }
+        return 1;
+    }
+
     private String getPresetIdByIndex(int index) {
         switch (index) {
         case 0:
@@ -727,9 +789,19 @@ public class GuiSpeedConfig extends ThemedGuiScreen {
         }
     }
 
+    private String getBypassIdByIndex(int index) {
+        switch (index) {
+        case 0:
+            return SpeedHandler.BYPASS_SAFE;
+        case 2:
+            return SpeedHandler.BYPASS_AGGRESSIVE;
+        default:
+            return SpeedHandler.BYPASS_NORMAL;
+        }
+    }
+
     private boolean isMouseOver(int mouseX, int mouseY, GuiButton button) {
-        return button != null && button.visible
-                && isPointInsideButtonArea(button, mouseX, mouseY);
+        return button != null && button.visible && isPointInsideButtonArea(button, mouseX, mouseY);
     }
 
     private boolean isMouseOverDropdown(SimpleDropdown dropdown, int mouseX, int mouseY) {

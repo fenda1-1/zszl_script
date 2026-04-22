@@ -35,7 +35,7 @@ public enum ArgParserManager implements IArgParserManager {
 
     @Override
     public <T> IArgParser.Stateless<T> getParserStateless(Class<T> type) {
-        // noinspection unchecked
+        //noinspection unchecked
         return this.registry.descendingStream()
                 .filter(IArgParser.Stateless.class::isInstance)
                 .map(IArgParser.Stateless.class::cast)
@@ -46,7 +46,7 @@ public enum ArgParserManager implements IArgParserManager {
 
     @Override
     public <T, S> IArgParser.Stated<T, S> getParserStated(Class<T> type, Class<S> stateKlass) {
-        // noinspection unchecked
+        //noinspection unchecked
         return this.registry.descendingStream()
                 .filter(IArgParser.Stated.class::isInstance)
                 .map(IArgParser.Stated.class::cast)
@@ -71,8 +71,7 @@ public enum ArgParserManager implements IArgParserManager {
     }
 
     @Override
-    public <T, S> T parseStated(Class<T> type, Class<S> stateKlass, ICommandArgument arg, S state)
-            throws CommandInvalidTypeException {
+    public <T, S> T parseStated(Class<T> type, Class<S> stateKlass, ICommandArgument arg, S state) throws CommandInvalidTypeException {
         IArgParser.Stated<T, S> parser = this.getParserStated(type, stateKlass);
         if (parser == null) {
             throw new CommandNoParserForTypeException(type);
@@ -89,3 +88,4 @@ public enum ArgParserManager implements IArgParserManager {
         return this.registry;
     }
 }
+

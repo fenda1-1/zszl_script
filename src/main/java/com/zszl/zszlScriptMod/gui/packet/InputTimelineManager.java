@@ -3,8 +3,8 @@ package com.zszl.zszlScriptMod.gui.packet;
 import com.zszl.zszlScriptMod.utils.PacketCaptureHandler;
 import com.zszl.zszlScriptMod.utils.guiinspect.GuiElementInspector;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiScreen;
-import org.lwjgl.input.Keyboard;
+import net.minecraft.client.gui.screens.Screen;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Keyboard;
 
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -145,8 +145,8 @@ public final class InputTimelineManager {
     }
 
     private static SessionInfo resolveCurrentSession() {
-        Minecraft mc = Minecraft.getMinecraft();
-        GuiScreen screen = mc == null ? null : mc.currentScreen;
+        Minecraft mc = Minecraft.getInstance();
+        Screen screen = mc == null ? null : mc.screen;
         String guiTitle = GuiElementInspector.getCurrentGuiTitle(mc);
         String screenSimpleName = screen == null ? "Hud" : screen.getClass().getSimpleName();
         String stableTitle = guiTitle == null || guiTitle.trim().isEmpty() ? "(无标题)" : guiTitle.trim();
@@ -158,3 +158,5 @@ public final class InputTimelineManager {
         return new SessionInfo(nextSessionId, stableTitle, screenSimpleName);
     }
 }
+
+

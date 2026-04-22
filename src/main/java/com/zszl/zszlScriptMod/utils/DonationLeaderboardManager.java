@@ -1,8 +1,6 @@
 package com.zszl.zszlScriptMod.utils;
 
 import com.zszl.zszlScriptMod.zszlScriptMod;
-import org.jsoup.nodes.Document;
-import org.jsoup.nodes.Element;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -12,9 +10,9 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-public class DonationLeaderboardManager {
+public final class DonationLeaderboardManager {
 
-    public static class Entry {
+    public static final class Entry {
         public final int rank;
         public final String name;
         public final String amount;
@@ -26,10 +24,10 @@ public class DonationLeaderboardManager {
         }
     }
 
-    // 打赏码图片资源（内置到 jar）
     public static final String PAYMENT_QR_RESOURCE = "img/Sponsored.jpg";
+
     private static final String LEADERBOARD_URL_KEY = "donation_leaderboard.url";
-    private static final String MOBILE_USER_AGENT = "Mozilla/5.0 (iPhone; CPU iPhone OS 13_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.1.1 Mobile/15E148 Safari/604.1";
+    private static final String MOBILE_USER_AGENT = SharechainPageParser.MOBILE_USER_AGENT;
     private static final String CACHE_FILE = "donation_leaderboard.md";
 
     public static volatile List<Entry> leaderboard = new CopyOnWriteArrayList<>();
@@ -39,12 +37,14 @@ public class DonationLeaderboardManager {
     private static volatile boolean hasFetched = false;
     private static volatile long lastFetchTime = 0L;
 
+    private DonationLeaderboardManager() {
+    }
+
     public static void fetchContent() {
         if (hasFetched) {
             return;
         }
 
-        // 与神人榜一致：优先显示本地缓存，再异步刷新云端
         String cached = CloudContentCache.readText(CACHE_FILE);
         if (!cached.isEmpty()) {
             rawMarkdown = cached;
@@ -69,41 +69,33 @@ public class DonationLeaderboardManager {
         fetchInProgress = true;
         lastFetchTime = System.currentTimeMillis();
 
-        new Thread(() -> {
+        Thread thread = new Thread(() -> {
             try {
-                Document doc = HttpsCompat.connect(SharechainLinkConfig.getRequiredUrl(LEADERBOARD_URL_KEY))
-                        .userAgent(MOBILE_USER_AGENT)
-                        .timeout(15000)
-                        .get();
-
-                Element noteContentDiv = doc.selectFirst("div.note-content");
-                if (noteContentDiv == null) {
-                    throw new Exception("note-content not found");
-                }
-
-                StringBuilder markdownBuilder = new StringBuilder();
-                for (Element p : noteContentDiv.select("p")) {
-                    String lineText = p.text().replace("\u00a0", " ").trim();
-                    if (!lineText.isEmpty()) {
-                        markdownBuilder.append(lineText).append("\n");
-                    }
-                }
-
-                String latest = markdownBuilder.toString().trim();
+                String latest = SharechainPageParser.fetchBestMarkdown(
+                        SharechainLinkConfig.getRequiredUrl(LEADERBOARD_URL_KEY),
+                        MOBILE_USER_AGENT,
+                        15000).trim();
                 if (!latest.isEmpty()) {
                     rawMarkdown = latest;
                     leaderboard = parseLeaderboardFromMarkdown(latest);
                     CloudContentCache.writeText(CACHE_FILE, latest);
+                    zszlScriptMod.LOGGER.info("[Donation] 榜单刷新完成，解析到 {} 行文本与 {} 条记录 cache={}",
+                            latest.split("\\r?\\n").length, leaderboard.size(),
+                            CloudContentCache.getCachePath(CACHE_FILE).toAbsolutePath());
+                } else {
+                    throw new Exception("sharechain markdown content is empty");
                 }
-            } catch (Exception e) {
+            } catch (Throwable t) {
                 if (leaderboard.isEmpty() && (rawMarkdown == null || rawMarkdown.trim().isEmpty())) {
-                    rawMarkdown = "榜单加载失败：" + e.getMessage();
+                    rawMarkdown = "榜单加载失败：" + safeMessage(t);
                 }
-                zszlScriptMod.LOGGER.warn("[Donation] 榜单刷新失败", e);
+                zszlScriptMod.LOGGER.warn("[Donation] 榜单刷新失败", t);
             } finally {
                 fetchInProgress = false;
             }
-        }, "DonationLeaderboard-Refresh").start();
+        }, "DonationLeaderboard-Refresh");
+        thread.setDaemon(true);
+        thread.start();
     }
 
     private static List<Entry> parseLeaderboardFromMarkdown(String markdown) {
@@ -144,9 +136,9 @@ public class DonationLeaderboardManager {
         String[] cells = line.split("\\|");
         List<String> trimmed = new ArrayList<>();
         for (String cell : cells) {
-            String c = cell.trim();
-            if (!c.isEmpty()) {
-                trimmed.add(c);
+            String value = cell.trim();
+            if (!value.isEmpty()) {
+                trimmed.add(value);
             }
         }
 
@@ -157,44 +149,36 @@ public class DonationLeaderboardManager {
         String rankCell = trimmed.get(0);
         String nameCell = trimmed.get(1);
         String amountCell = trimmed.get(2);
-
         if (isHeaderOrSeparator(rankCell, nameCell, amountCell)) {
             return null;
         }
 
         int rank = parseRank(rankCell);
-        if (rank <= 0) {
+        if (rank <= 0 || nameCell.isEmpty() || amountCell.isEmpty()) {
             return null;
         }
-
-        if (nameCell.isEmpty() || amountCell.isEmpty()) {
-            return null;
-        }
-
         return new Entry(rank, nameCell, normalizeAmount(amountCell));
     }
 
     private static Entry tryParseLooseLine(String line) {
-        // 例如：1. 张三 66.6
-        Pattern p = Pattern.compile("^(\\d{1,3})[、.．)]\\s*([^\\s]+)\\s+(.+)$");
-        Matcher m = p.matcher(line);
-        if (!m.find()) {
+        Pattern pattern = Pattern.compile("^(\\d{1,3})[、.．)]\\s*([^\\s]+)\\s+(.+)$");
+        Matcher matcher = pattern.matcher(line);
+        if (!matcher.find()) {
             return null;
         }
 
         int rank;
         try {
-            rank = Integer.parseInt(m.group(1));
+            rank = Integer.parseInt(matcher.group(1));
         } catch (Exception e) {
             return null;
         }
-
         if (rank <= 0) {
             return null;
         }
 
-        String name = m.group(2).trim();
-        String amount = normalizeAmount(m.group(3).trim());
+        String name = matcher.group(2).trim();
+        String amount = normalizeAmount(matcher.group(3).trim());
         if (name.isEmpty() || amount.isEmpty()) {
             return null;
         }
@@ -203,17 +187,17 @@ public class DonationLeaderboardManager {
     }
 
     private static boolean isHeaderOrSeparator(String rankCell, String nameCell, String amountCell) {
-        String r = rankCell.replace(" ", "");
-        String n = nameCell.replace(" ", "");
-        String a = amountCell.replace(" ", "");
+        String rank = rankCell.replace(" ", "");
+        String name = nameCell.replace(" ", "");
+        String amount = amountCell.replace(" ", "");
 
-        if (r.matches("[-:]+") || n.matches("[-:]+") || a.matches("[-:]+")) {
+        if (rank.matches("[-:]+") || name.matches("[-:]+") || amount.matches("[-:]+")) {
             return true;
         }
 
-        return containsAny(r, "排名", "名次", "rank")
-                || containsAny(n, "昵称", "名字", "玩家", "name")
-                || containsAny(a, "金额", "打赏", "amount");
+        return containsAny(rank, "排名", "名次", "rank")
+                || containsAny(name, "昵称", "名字", "玩家", "name")
+                || containsAny(amount, "金额", "打赏", "amount");
     }
 
     private static boolean containsAny(String text, String... keys) {
@@ -227,22 +211,29 @@ public class DonationLeaderboardManager {
     }
 
     private static int parseRank(String rankCell) {
-        Matcher m = Pattern.compile("(\\d{1,3})").matcher(rankCell);
-        if (!m.find()) {
+        Matcher matcher = Pattern.compile("(\\d{1,3})").matcher(rankCell);
+        if (!matcher.find()) {
             return -1;
         }
         try {
-            return Integer.parseInt(m.group(1));
+            return Integer.parseInt(matcher.group(1));
         } catch (Exception e) {
             return -1;
         }
     }
 
     private static String normalizeAmount(String amount) {
-        String a = amount.trim();
-        if (a.endsWith("元") || a.endsWith("¥")) {
-            return a;
+        String normalized = amount.trim();
+        if (normalized.endsWith("元") || normalized.endsWith("¥")) {
+            return normalized;
         }
-        return a + " 元";
+        return normalized + " 元";
+    }
+
+    private static String safeMessage(Throwable throwable) {
+        if (throwable == null || throwable.getMessage() == null || throwable.getMessage().trim().isEmpty()) {
+            return throwable == null ? "" : throwable.getClass().getName();
+        }
+        return throwable.getMessage().trim();
     }
 }

@@ -1,6 +1,6 @@
 package com.zszl.zszlScriptMod.otherfeatures.gui.movement;
 
-import net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
 
 public class GuiBlinkMoveConfig extends SingleMovementFeatureConfigScreen {
 
@@ -8,3 +8,6 @@ public class GuiBlinkMoveConfig extends SingleMovementFeatureConfigScreen {
         super(parentScreen, "blink_move", "闪烁移动设置");
     }
 }
+
+
+

@@ -25,7 +25,6 @@ import com.zszl.zszlScriptMod.shadowbaritone.api.command.datatypes.ForWaypoints;
 import com.zszl.zszlScriptMod.shadowbaritone.api.command.exception.CommandException;
 import com.zszl.zszlScriptMod.shadowbaritone.api.command.exception.CommandInvalidStateException;
 import com.zszl.zszlScriptMod.shadowbaritone.api.utils.BetterBlockPos;
-import com.zszl.zszlScriptMod.shadowbaritone.api.utils.ShadowBaritoneI18n;
 
 import java.util.Arrays;
 import java.util.List;
@@ -42,31 +41,28 @@ public class FarmCommand extends Command {
         args.requireMax(2);
         int range = 0;
         BetterBlockPos origin = null;
-        // range
+        //range
         if (args.has(1)) {
             range = args.getAs(Integer.class);
         }
-        // waypoint
+        //waypoint
         if (args.has(1)) {
             IWaypoint[] waypoints = args.getDatatypeFor(ForWaypoints.INSTANCE);
             IWaypoint waypoint = null;
             switch (waypoints.length) {
                 case 0:
-                    throw new CommandInvalidStateException(ShadowBaritoneI18n.trKey(
-                            "shadowbaritone.command.farm.error.no_waypoints"));
+                    throw new CommandInvalidStateException("No waypoints found");
                 case 1:
                     waypoint = waypoints[0];
                     break;
                 default:
-                    throw new CommandInvalidStateException(ShadowBaritoneI18n.trKey(
-                            "shadowbaritone.command.farm.error.multiple_waypoints"));
+                    throw new CommandInvalidStateException("Multiple waypoints were found");
             }
             origin = waypoint.getLocation();
         }
 
         baritone.getFarmProcess().farm(range, origin);
-        logDirect(ShadowBaritoneI18n.trKey(
-                "shadowbaritone.command.farm.status.farming"));
+        logDirect("Farming");
     }
 
     @Override
@@ -76,23 +72,19 @@ public class FarmCommand extends Command {
 
     @Override
     public String getShortDesc() {
-        return ShadowBaritoneI18n.trKey(
-                "shadowbaritone.command.farm.short_desc");
+        return "Farm nearby crops";
     }
 
     @Override
     public List<String> getLongDesc() {
         return Arrays.asList(
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.farm.long_desc.1"),
+                "The farm command starts farming nearby plants. It harvests mature crops and plants new ones.",
                 "",
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.farm.long_desc.usage"),
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.farm.long_desc.example.default"),
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.farm.long_desc.example.range"),
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.farm.long_desc.example.waypoint"));
+                "Usage:",
+                "> farm - farms every crop it can find.",
+                "> farm <range> - farm crops within range from the starting position.",
+                "> farm <range> <waypoint> - farm crops within range from waypoint."
+        );
     }
 }
+

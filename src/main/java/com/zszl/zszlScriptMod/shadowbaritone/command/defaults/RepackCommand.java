@@ -22,7 +22,6 @@ import com.zszl.zszlScriptMod.shadowbaritone.api.IBaritone;
 import com.zszl.zszlScriptMod.shadowbaritone.api.command.Command;
 import com.zszl.zszlScriptMod.shadowbaritone.api.command.argument.IArgConsumer;
 import com.zszl.zszlScriptMod.shadowbaritone.api.command.exception.CommandException;
-import com.zszl.zszlScriptMod.shadowbaritone.api.utils.ShadowBaritoneI18n;
 
 import java.util.Arrays;
 import java.util.List;
@@ -37,9 +36,7 @@ public class RepackCommand extends Command {
     @Override
     public void execute(String label, IArgConsumer args) throws CommandException {
         args.requireMax(0);
-        logDirect(ShadowBaritoneI18n.trKey(
-                "shadowbaritone.command.repack.status.queued",
-                BaritoneAPI.getProvider().getWorldScanner().repack(ctx)));
+        logDirect(String.format("Queued %d chunks for repacking", BaritoneAPI.getProvider().getWorldScanner().repack(ctx)));
     }
 
     @Override
@@ -49,19 +46,17 @@ public class RepackCommand extends Command {
 
     @Override
     public String getShortDesc() {
-        return ShadowBaritoneI18n.trKey(
-                "shadowbaritone.command.repack.short_desc");
+        return "Re-cache chunks";
     }
 
     @Override
     public List<String> getLongDesc() {
         return Arrays.asList(
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.repack.long_desc.1"),
+                "Repack chunks around you. This basically re-caches them.",
                 "",
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.repack.long_desc.usage"),
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.repack.long_desc.example.default"));
+                "Usage:",
+                "> repack - Repack chunks."
+        );
     }
 }
+

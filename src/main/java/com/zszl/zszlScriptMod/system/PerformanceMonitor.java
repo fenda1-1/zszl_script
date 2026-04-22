@@ -1,6 +1,10 @@
 package com.zszl.zszlScriptMod.system;
 
 import net.minecraft.client.Minecraft;
+import net.minecraftforge.eventbus.api.SubscribeEvent;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraftforge.fml.common.gameevent.TickEvent;
+
+import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -9,7 +13,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * 用于监控各种功能模块的性能表现
  */
 public class PerformanceMonitor {
-    private static final Minecraft mc = Minecraft.getMinecraft();
+    private static final Minecraft mc = Minecraft.getInstance();
 
     // 功能开关控制
     public static final Map<String, Boolean> featureEnabled = new ConcurrentHashMap<>();
@@ -212,3 +216,6 @@ public class PerformanceMonitor {
         }
     }
 }
+
+
+

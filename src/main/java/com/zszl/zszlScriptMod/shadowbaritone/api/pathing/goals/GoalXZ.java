@@ -20,8 +20,8 @@ package com.zszl.zszlScriptMod.shadowbaritone.api.pathing.goals;
 import com.zszl.zszlScriptMod.shadowbaritone.api.BaritoneAPI;
 import com.zszl.zszlScriptMod.shadowbaritone.api.utils.BetterBlockPos;
 import com.zszl.zszlScriptMod.shadowbaritone.api.utils.SettingsUtil;
-import net.minecraft.util.math.MathHelper;
-import net.minecraft.util.math.Vec3d;
+import net.minecraft.util.Mth;
+import net.minecraft.world.phys.Vec3;
 
 /**
  * Useful for long-range goals that don't have a specific Y level.
@@ -58,7 +58,7 @@ public class GoalXZ implements Goal {
     }
 
     @Override
-    public double heuristic(int x, int y, int z) {// mostly copied from GoalBlock
+    public double heuristic(int x, int y, int z) {//mostly copied from GoalBlock
         int xDiff = x - this.x;
         int zDiff = z - this.z;
         return calculate(xDiff, zDiff);
@@ -90,16 +90,16 @@ public class GoalXZ implements Goal {
         return String.format(
                 "GoalXZ{x=%s,z=%s}",
                 SettingsUtil.maybeCensor(x),
-                SettingsUtil.maybeCensor(z));
+                SettingsUtil.maybeCensor(z)
+        );
     }
 
     public static double calculate(double xDiff, double zDiff) {
-        // This is a combination of pythagorean and manhattan distance
-        // It takes into account the fact that pathing can either walk diagonally or
-        // forwards
+        //This is a combination of pythagorean and manhattan distance
+        //It takes into account the fact that pathing can either walk diagonally or forwards
 
-        // It's not possible to walk forward 1 and right 2 in sqrt(5) time
-        // It's really 1+sqrt(2) because it'll walk forward 1 then diagonally 1
+        //It's not possible to walk forward 1 and right 2 in sqrt(5) time
+        //It's really 1+sqrt(2) because it'll walk forward 1 then diagonally 1
         double x = Math.abs(xDiff);
         double z = Math.abs(zDiff);
         double straight;
@@ -115,11 +115,11 @@ public class GoalXZ implements Goal {
         return (diagonal + straight) * BaritoneAPI.getSettings().costHeuristic.value; // big TODO tune
     }
 
-    public static GoalXZ fromDirection(Vec3d origin, float yaw, double distance) {
+    public static GoalXZ fromDirection(Vec3 origin, float yaw, double distance) {
         float theta = (float) Math.toRadians(yaw);
-        double x = origin.x - MathHelper.sin(theta) * distance;
-        double z = origin.z + MathHelper.cos(theta) * distance;
-        return new GoalXZ(MathHelper.floor(x), MathHelper.floor(z));
+        double x = origin.x - Mth.sin(theta) * distance;
+        double z = origin.z + Mth.cos(theta) * distance;
+        return new GoalXZ(Mth.floor(x), Mth.floor(z));
     }
 
     public int getX() {
@@ -130,3 +130,4 @@ public class GoalXZ implements Goal {
         return z;
     }
 }
+

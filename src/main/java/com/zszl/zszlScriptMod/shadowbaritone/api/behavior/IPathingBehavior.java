@@ -46,9 +46,7 @@ public interface IPathingBehavior extends IBehavior {
      * segment. Given that the return type is an optional, {@link Optional#empty()}
      * will be returned in the case that there is no current segment being pathed.
      *
-     * @param includeCurrentMovement whether or not to include the entirety of the
-     *                               cost of the currently executing movement in the
-     *                               total
+     * @param includeCurrentMovement whether or not to include the entirety of the cost of the currently executing movement in the total
      * @return The estimated remaining ticks in the current segment.
      */
     default Optional<Double> ticksRemainingInSegment(boolean includeCurrentMovement) {
@@ -75,16 +73,14 @@ public interface IPathingBehavior extends IBehavior {
     Goal getGoal();
 
     /**
-     * @return Whether or not a path is currently being executed. This will be false
-     *         if there's currently a pause.
+     * @return Whether or not a path is currently being executed. This will be false if there's currently a pause.
      * @see #hasPath()
      */
     boolean isPathing();
 
     /**
-     * @return If there is a current path. Note that the path is not necessarily
-     *         being executed, for example when there
-     *         is a pause in effect.
+     * @return If there is a current path. Note that the path is not necessarily being executed, for example when there
+     * is a pause in effect.
      * @see #isPathing()
      */
     default boolean hasPath() {
@@ -92,23 +88,19 @@ public interface IPathingBehavior extends IBehavior {
     }
 
     /**
-     * Cancels the pathing behavior or the current path calculation, and all
-     * processes that could be controlling path.
+     * Cancels the pathing behavior or the current path calculation, and all processes that could be controlling path.
      * <p>
      * Basically, "MAKE IT STOP".
      *
-     * @return Whether or not the pathing behavior was canceled. All processes are
-     *         guaranteed to be canceled, but the
-     *         PathingBehavior might be in the middle of an uncancelable action like
-     *         a parkour jump
+     * @return Whether or not the pathing behavior was canceled. All processes are guaranteed to be canceled, but the
+     * PathingBehavior might be in the middle of an uncancelable action like a parkour jump
      */
     boolean cancelEverything();
 
     /**
      * PLEASE never call this
      * <p>
-     * If cancelEverything was like "kill" this is "sudo kill -9". Or shutting off
-     * your computer.
+     * If cancelEverything was like "kill" this is "sudo kill -9". Or shutting off your computer.
      */
     void forceCancel();
 
@@ -138,3 +130,4 @@ public interface IPathingBehavior extends IBehavior {
      */
     IPathExecutor getNext();
 }
+

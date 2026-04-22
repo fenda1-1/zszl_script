@@ -101,10 +101,8 @@ public interface IBaritone {
     IWorldProvider getWorldProvider();
 
     /**
-     * Returns the {@link IPathingControlManager} for this {@link IBaritone}
-     * instance, which is responsible
-     * for managing the {@link IBaritoneProcess}es which control the
-     * {@link IPathingBehavior} state.
+     * Returns the {@link IPathingControlManager} for this {@link IBaritone} instance, which is responsible
+     * for managing the {@link IBaritoneProcess}es which control the {@link IPathingBehavior} state.
      *
      * @return The {@link IPathingControlManager} instance
      * @see IPathingControlManager
@@ -146,3 +144,4 @@ public interface IBaritone {
      */
     void openClick();
 }
+

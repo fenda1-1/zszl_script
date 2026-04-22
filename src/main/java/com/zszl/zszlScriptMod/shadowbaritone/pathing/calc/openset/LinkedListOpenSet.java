@@ -20,11 +20,9 @@ package com.zszl.zszlScriptMod.shadowbaritone.pathing.calc.openset;
 import com.zszl.zszlScriptMod.shadowbaritone.pathing.calc.PathNode;
 
 /**
- * A linked list implementation of an open set. This is the original
- * implementation from MineBot.
+ * A linked list implementation of an open set. This is the original implementation from MineBot.
  * It has incredibly fast insert performance, at the cost of O(n) removeLowest.
- * It sucks. BinaryHeapOpenSet results in more than 10x more nodes considered in
- * 4 seconds.
+ * It sucks. BinaryHeapOpenSet results in more than 10x more nodes considered in 4 seconds.
  *
  * @author leijurv
  */
@@ -85,9 +83,10 @@ class LinkedListOpenSet implements IOpenSet {
         return bestNode.val;
     }
 
-    public static class Node { // wrapper with next
+    public static class Node { //wrapper with next
 
         private Node nextOpen;
         private PathNode val;
     }
 }
+

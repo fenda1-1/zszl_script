@@ -1,7 +1,7 @@
 package com.zszl.zszlScriptMod.otherfeatures.gui.item;
 
 import com.zszl.zszlScriptMod.otherfeatures.handler.item.ItemFeatureManager;
-import net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
 
 public final class ItemFeatureGuiFactory {
 
@@ -16,3 +16,6 @@ public final class ItemFeatureGuiFactory {
         return new SingleItemFeatureConfigScreen(parent, feature.id, feature.name + "设置");
     }
 }
+
+
+

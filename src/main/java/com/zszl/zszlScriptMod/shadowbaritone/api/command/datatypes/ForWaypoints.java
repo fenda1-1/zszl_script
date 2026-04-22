@@ -79,3 +79,4 @@ public enum ForWaypoints implements IDatatypeFor<IWaypoint[]> {
                 .toArray(IWaypoint[]::new);
     }
 }
+

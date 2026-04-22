@@ -9,10 +9,10 @@ import com.zszl.zszlScriptMod.gui.components.ToggleGuiButton;
 import com.zszl.zszlScriptMod.gui.path.GuiSequenceSelector;
 import com.zszl.zszlScriptMod.handlers.KillAuraHandler;
 import com.zszl.zszlScriptMod.path.PathSequenceManager;
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiScreen;
-import org.lwjgl.input.Keyboard;
-import org.lwjgl.input.Mouse;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Keyboard;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Mouse;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -60,9 +60,8 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
     private static final int BTN_ATTACK_SEQUENCE_DELAY = 37;
     private static final int BTN_HUNT_FIXED_DISTANCE = 38;
     private static final int BTN_HUNT_ORBIT = 39;
-    private static final int BTN_AIM_YAW_OFFSET = 40;
-    private static final int BTN_HUNT_JUMP_ORBIT = 41;
-    private static final int BTN_HUNT_ORBIT_SAMPLE_POINTS = 42;
+    private static final int BTN_HUNT_JUMP_ORBIT = 40;
+    private static final int BTN_HUNT_ORBIT_SAMPLE_POINTS = 41;
 
     private static final int BTN_SAVE = 100;
     private static final int BTN_DEFAULT = 101;
@@ -112,7 +111,6 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
     private ToggleGuiButton nameBlacklistButton;
 
     private GuiButton attackModeButton;
-    private GuiButton aimYawOffsetButton;
     private GuiButton rangeButton;
     private GuiButton minStrengthButton;
     private GuiButton minTurnSpeedButton;
@@ -297,7 +295,6 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
                 KillAuraHandler.enableNameBlacklist);
 
         attackModeButton = new ThemedButton(BTN_ATTACK_MODE, 0, 0, 100, 20, "");
-        aimYawOffsetButton = new ThemedButton(BTN_AIM_YAW_OFFSET, 0, 0, 100, 20, "");
         rangeButton = new ThemedButton(BTN_RANGE, 0, 0, 100, 20, "");
         minStrengthButton = new ThemedButton(BTN_MIN_STRENGTH, 0, 0, 100, 20, "");
         minTurnSpeedButton = new ThemedButton(BTN_MIN_TURN_SPEED, 0, 0, 100, 20, "");
@@ -348,7 +345,6 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
         this.buttonList.add(nameWhitelistButton);
         this.buttonList.add(nameBlacklistButton);
         this.buttonList.add(attackModeButton);
-        this.buttonList.add(aimYawOffsetButton);
         this.buttonList.add(rangeButton);
         this.buttonList.add(minStrengthButton);
         this.buttonList.add(minTurnSpeedButton);
@@ -400,8 +396,6 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
         smoothRotateButton.setEnabledState(KillAuraHandler.smoothRotation);
         smoothRotateButton.displayString = "平滑转向: " + stateText(KillAuraHandler.smoothRotation);
         smoothRotateButton.enabled = !packetMode || aimOnly;
-        aimYawOffsetButton.displayString = "索敌视角偏移: " + formatSignedPreciseFloat(KillAuraHandler.aimYawOffset) + "°";
-        aimYawOffsetButton.enabled = !packetMode || aimOnly;
 
         lineOfSightButton.setEnabledState(KillAuraHandler.requireLineOfSight);
         lineOfSightButton.displayString = "必须可见: " + stateText(KillAuraHandler.requireLineOfSight);
@@ -448,9 +442,7 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
         huntOrbitButton.setEnabledState(KillAuraHandler.huntOrbitEnabled);
         huntOrbitButton.displayString = "自动绕圈攻击: " + stateText(KillAuraHandler.huntOrbitEnabled);
         huntJumpOrbitButton.setEnabledState(KillAuraHandler.huntJumpOrbitEnabled);
-        boolean maxOrbitSamples = KillAuraHandler.isHuntOrbitSampleCountAtMaximum();
-        huntJumpOrbitButton.displayString = "跳跃绕圈: " + stateText(KillAuraHandler.huntJumpOrbitEnabled)
-                + (maxOrbitSamples ? "" : " (多边形停用)");
+        huntJumpOrbitButton.displayString = "跳跃绕圈: " + stateText(KillAuraHandler.huntJumpOrbitEnabled);
         huntOrbitSamplePointsButton.displayString = "轨道采样点: "
                 + KillAuraHandler.getConfiguredHuntOrbitSamplePoints() + " 点";
 
@@ -492,8 +484,7 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
         huntOrbitButton.enabled = huntEnabled && KillAuraHandler.isHuntFixedDistanceMode();
         huntJumpOrbitButton.enabled = huntEnabled
                 && KillAuraHandler.isHuntFixedDistanceMode()
-                && KillAuraHandler.huntOrbitEnabled
-                && maxOrbitSamples;
+                && KillAuraHandler.huntOrbitEnabled;
         huntOrbitSamplePointsButton.enabled = huntEnabled
                 && KillAuraHandler.isHuntFixedDistanceMode()
                 && KillAuraHandler.huntOrbitEnabled;
@@ -659,13 +650,10 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
         if (showRotationControls) {
             placeContentButton(rotateButton, leftX, currentY, buttonW, buttonHeight, layout);
             placeContentButton(smoothRotateButton, rightX, currentY, buttonW, buttonHeight, layout);
-            currentY += rowStep;
-            placeContentButton(aimYawOffsetButton, leftX, currentY, fullButtonWidth, buttonHeight, layout);
         } else {
             if (layout) {
                 hideButton(rotateButton);
                 hideButton(smoothRotateButton);
-                hideButton(aimYawOffsetButton);
             }
             currentY -= rowStep;
         }
@@ -822,7 +810,6 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
         hideButton(nameWhitelistButton);
         hideButton(nameBlacklistButton);
         hideButton(attackModeButton);
-        hideButton(aimYawOffsetButton);
         hideButton(rangeButton);
         hideButton(minStrengthButton);
         hideButton(minTurnSpeedButton);
@@ -1043,8 +1030,8 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
             return;
         }
 
-        int mouseX = Mouse.getEventX() * this.width / this.mc.displayWidth;
-        int mouseY = this.height - Mouse.getEventY() * this.height / this.mc.displayHeight - 1;
+        int mouseX = Mouse.getEventX() * this.width / this.mc.getWindow().getWidth();
+        int mouseY = this.height - Mouse.getEventY() * this.height / this.mc.getWindow().getHeight() - 1;
 
         if (handlePresetWheel(wheel, mouseX, mouseY)) {
             return;
@@ -1287,7 +1274,7 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
                     refreshButtonTexts();
                     relayoutButtons();
                 }
-                mc.displayGuiScreen(this);
+                mc.setScreen(this);
             });
             return;
         case BTN_PRESET_APPLY:
@@ -1315,7 +1302,7 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
                     refreshButtonTexts();
                     relayoutButtons();
                 }
-                mc.displayGuiScreen(this);
+                mc.setScreen(this);
             });
             return;
         case BTN_PRESET_DELETE:
@@ -1331,13 +1318,6 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
         case BTN_SMOOTH_ROTATE:
             KillAuraHandler.smoothRotation = !KillAuraHandler.smoothRotation;
             break;
-        case BTN_AIM_YAW_OFFSET:
-            openPreciseFloatInput("输入索敌视角偏移 (-30.0000 - 30.0000，正数向右，负数向左)",
-                    KillAuraHandler.aimYawOffset, -30.0F, 30.0F, value -> {
-                        KillAuraHandler.aimYawOffset = value;
-                        refreshButtonTexts();
-                    });
-            return;
         case BTN_LINE_OF_SIGHT:
             KillAuraHandler.requireLineOfSight = !KillAuraHandler.requireLineOfSight;
             break;
@@ -1396,15 +1376,15 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
             break;
         case BTN_ATTACK_SEQUENCE:
             PathSequenceManager.initializePathSequences();
-            mc.displayGuiScreen(new GuiSequenceSelector(this, seq -> {
+            mc.setScreen(new GuiSequenceSelector(this, seq -> {
                 KillAuraHandler.attackSequenceName = safe(seq).trim();
                 refreshButtonTexts();
                 relayoutButtons();
-                mc.displayGuiScreen(this);
+                mc.setScreen(this);
             }));
             return;
         case BTN_ATTACK_SEQUENCE_DELAY:
-            mc.displayGuiScreen(new GuiTextInput(this, "输入执行序列延迟 Tick (0 - 200)",
+            mc.setScreen(new GuiTextInput(this, "输入执行序列延迟 Tick (0 - 200)",
                     String.valueOf(KillAuraHandler.attackSequenceDelayTicks), value -> {
                         int parsed = KillAuraHandler.attackSequenceDelayTicks;
                         try {
@@ -1413,7 +1393,7 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
                         }
                         KillAuraHandler.attackSequenceDelayTicks = clampInt(parsed, 0, 200);
                         refreshButtonTexts();
-                        mc.displayGuiScreen(this);
+                        mc.setScreen(this);
                     }));
             return;
         case BTN_HUNT_PICKUP:
@@ -1422,6 +1402,30 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
         case BTN_HUNT_VISUALIZE:
             KillAuraHandler.visualizeHuntRadius = !KillAuraHandler.visualizeHuntRadius;
             break;
+        case BTN_HUNT_ORBIT:
+            KillAuraHandler.huntOrbitEnabled = !KillAuraHandler.huntOrbitEnabled;
+            break;
+        case BTN_HUNT_JUMP_ORBIT:
+            KillAuraHandler.huntJumpOrbitEnabled = !KillAuraHandler.huntJumpOrbitEnabled;
+            break;
+        case BTN_HUNT_ORBIT_SAMPLE_POINTS:
+            mc.setScreen(new GuiTextInput(this,
+                    "输入绕圈轨道采样点个数 (" + KillAuraHandler.MIN_HUNT_ORBIT_SAMPLE_POINTS
+                            + " - " + KillAuraHandler.MAX_HUNT_ORBIT_SAMPLE_POINTS + ")",
+                    String.valueOf(KillAuraHandler.getConfiguredHuntOrbitSamplePoints()), value -> {
+                        int parsed = KillAuraHandler.getConfiguredHuntOrbitSamplePoints();
+                        try {
+                            parsed = Integer.parseInt(value.trim());
+                        } catch (Exception ignored) {
+                        }
+                        KillAuraHandler.huntOrbitSamplePoints = clampInt(parsed,
+                                KillAuraHandler.MIN_HUNT_ORBIT_SAMPLE_POINTS,
+                                KillAuraHandler.MAX_HUNT_ORBIT_SAMPLE_POINTS);
+                        refreshButtonTexts();
+                        relayoutButtons();
+                        mc.setScreen(this);
+                    }));
+            return;
         case BTN_RANGE:
             openFloatInput("输入攻击范围 (1.0 - 100.0)", KillAuraHandler.attackRange, 1.0F, 100.0F, value -> {
                 KillAuraHandler.attackRange = value;
@@ -1454,7 +1458,7 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
                     });
             return;
         case BTN_INTERVAL:
-            mc.displayGuiScreen(new GuiTextInput(this, "输入最小攻击间隔 Tick (0 - 20)",
+            mc.setScreen(new GuiTextInput(this, "输入最小攻击间隔 Tick (0 - 20)",
                     String.valueOf(KillAuraHandler.minAttackIntervalTicks), value -> {
                         int parsed = KillAuraHandler.minAttackIntervalTicks;
                         try {
@@ -1463,11 +1467,11 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
                         }
                         KillAuraHandler.minAttackIntervalTicks = clampInt(parsed, 0, 20);
                         refreshButtonTexts();
-                        mc.displayGuiScreen(this);
+                        mc.setScreen(this);
                     }));
             return;
         case BTN_TARGETS_PER_ATTACK:
-            mc.displayGuiScreen(new GuiTextInput(this, "输入单次攻击目标数 (1 - 50)",
+            mc.setScreen(new GuiTextInput(this, "输入单次攻击目标数 (1 - 50)",
                     String.valueOf(KillAuraHandler.targetsPerAttack), value -> {
                         int parsed = KillAuraHandler.targetsPerAttack;
                         try {
@@ -1476,7 +1480,7 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
                         }
                         KillAuraHandler.targetsPerAttack = clampInt(parsed, 1, 50);
                         refreshButtonTexts();
-                        mc.displayGuiScreen(this);
+                        mc.setScreen(this);
                     }));
             return;
         case BTN_HUNT_RADIUS:
@@ -1492,30 +1496,6 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
                         KillAuraHandler.huntFixedDistance = value;
                         refreshButtonTexts();
                     });
-            return;
-        case BTN_HUNT_ORBIT:
-            KillAuraHandler.huntOrbitEnabled = !KillAuraHandler.huntOrbitEnabled;
-            break;
-        case BTN_HUNT_JUMP_ORBIT:
-            KillAuraHandler.huntJumpOrbitEnabled = !KillAuraHandler.huntJumpOrbitEnabled;
-            break;
-        case BTN_HUNT_ORBIT_SAMPLE_POINTS:
-            mc.displayGuiScreen(new GuiTextInput(this,
-                    "输入绕圈轨道采样点个数 (" + KillAuraHandler.MIN_HUNT_ORBIT_SAMPLE_POINTS
-                            + " - " + KillAuraHandler.MAX_HUNT_ORBIT_SAMPLE_POINTS + ")",
-                    String.valueOf(KillAuraHandler.getConfiguredHuntOrbitSamplePoints()), value -> {
-                        int parsed = KillAuraHandler.getConfiguredHuntOrbitSamplePoints();
-                        try {
-                            parsed = Integer.parseInt(value.trim());
-                        } catch (Exception ignored) {
-                        }
-                        KillAuraHandler.huntOrbitSamplePoints = clampInt(parsed,
-                                KillAuraHandler.MIN_HUNT_ORBIT_SAMPLE_POINTS,
-                                KillAuraHandler.MAX_HUNT_ORBIT_SAMPLE_POINTS);
-                        refreshButtonTexts();
-                        relayoutButtons();
-                        mc.displayGuiScreen(this);
-                    }));
             return;
         case BTN_NAME_WHITELIST:
             KillAuraHandler.enableNameWhitelist = !KillAuraHandler.enableNameWhitelist;
@@ -1546,7 +1526,7 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
             return;
         case BTN_SAVE:
             KillAuraHandler.saveConfig();
-            mc.displayGuiScreen(parentScreen);
+            mc.setScreen(parentScreen);
             return;
         case BTN_DEFAULT:
             applyDefaultValues();
@@ -1558,7 +1538,7 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
             KillAuraHandler.loadConfig();
             clearWhitelistSelectionState();
             refreshNearbyEntityOptions(false);
-            mc.displayGuiScreen(parentScreen);
+            mc.setScreen(parentScreen);
             return;
         default:
             break;
@@ -1596,7 +1576,7 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
     }
 
     private void openNameInput(String title, boolean toWhitelist) {
-        mc.displayGuiScreen(new GuiTextInput(this, title, "", value -> {
+        mc.setScreen(new GuiTextInput(this, title, "", value -> {
             String trimmed = safe(value).trim();
             if (!trimmed.isEmpty()) {
                 int addedIndex = addNameToList(
@@ -1609,12 +1589,12 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
             }
             refreshButtonTexts();
             relayoutButtons();
-            mc.displayGuiScreen(this);
+            mc.setScreen(this);
         }));
     }
 
     private void openPresetNameInput(String title, String initialValue, java.util.function.Consumer<String> onDone) {
-        mc.displayGuiScreen(new GuiTextInput(this, title, safe(initialValue), value -> {
+        mc.setScreen(new GuiTextInput(this, title, safe(initialValue), value -> {
             if (onDone != null) {
                 onDone.accept(safe(value).trim());
             }
@@ -1762,16 +1742,14 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
             drawHoveringText(Arrays.asList("§e固定距离", "§7仅在追击模式=固定距离时生效。", "§7它和攻击范围完全独立，不会再跟随攻击范围变化。"),
                     mouseX, mouseY);
         } else if (huntOrbitButton.visible && isMouseOver(mouseX, mouseY, huntOrbitButton)) {
-            drawHoveringText(Arrays.asList("§e自动绕圈攻击", "§7仅在追击模式=固定距离时生效。", "§7开启后会尝试以目标为圆心，围绕固定距离持续绕圈。",
-                    "§7遇到障碍会优先微调半径并改选可站立的平地方块。", "§7候选位置不会高于你当前脚底一格。"), mouseX, mouseY);
+            drawHoveringText(Arrays.asList("§e自动绕圈攻击", "§7仅在追击模式=固定距离时生效。", "§7开启后会优先沿采样轨道寻找合适进场点，",
+                    "§7进入轨道后会围绕目标持续绕圈。", "§7遇到障碍时会优先微调到可站立位置。"), mouseX, mouseY);
         } else if (huntJumpOrbitButton.visible && isMouseOver(mouseX, mouseY, huntJumpOrbitButton)) {
-            drawHoveringText(Arrays.asList("§e跳跃绕圈", "§7默认开启。", "§7开启后，进入绕圈轨道后会切换到内置的本地跳跃绕圈。",
-                    "§7关闭后，不再使用内置跳跃绕圈，而是继续依赖 Baritone 的绕圈路径。",
-                    "§7当轨道采样点小于最大值时，为保证多边形轨道不被圆化，本项会自动停用接管。"), mouseX, mouseY);
+            drawHoveringText(Arrays.asList("§e跳跃绕圈", "§7默认开启。", "§7开启后，进入绕圈轨道后会切换到内置本地跳跃绕圈。",
+                    "§7关闭后仍会沿同一套轨道绕圈，只是不持续按跳。"), mouseX, mouseY);
         } else if (huntOrbitSamplePointsButton.visible && isMouseOver(mouseX, mouseY, huntOrbitSamplePointsButton)) {
-            drawHoveringText(Arrays.asList("§e轨道采样点", "§7仅在自动绕圈攻击开启时生效。", "§7决定绕圈轨道一圈采多少个等间隔点。",
-                    "§7例如设为 3 时，会按三角形轨道渲染并沿三角形节点绕圈。", "§7默认最大值会尽量保持接近当前的圆形平滑效果。",
-                    "§7最小值为 3。"), mouseX, mouseY);
+            drawHoveringText(Arrays.asList("§e轨道采样点", "§7仅在自动绕圈攻击开启时生效。", "§7决定一圈轨道采多少个等间隔点。",
+                    "§7例如设为 3 时，会按三角形节点绕圈进场；数值越大越接近圆。", "§7最小值为 3。"), mouseX, mouseY);
         } else if (huntRadiusButton.visible && isMouseOver(mouseX, mouseY, huntRadiusButton)) {
             drawHoveringText(Arrays.asList("§e追击半径", "§7用于决定在多大范围内主动搜怪并追击。", "§7该值不能小于攻击范围。"), mouseX, mouseY);
         } else if (huntPickupButton.visible && isMouseOver(mouseX, mouseY, huntPickupButton)) {
@@ -2273,7 +2251,6 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
         KillAuraHandler.enableFullBrightVision = false;
         KillAuraHandler.fullBrightGamma = 1000.0F;
         KillAuraHandler.attackMode = KillAuraHandler.ATTACK_MODE_NORMAL;
-        KillAuraHandler.aimYawOffset = 0.0F;
         KillAuraHandler.huntEnabled = true;
         KillAuraHandler.huntMode = KillAuraHandler.HUNT_MODE_APPROACH;
         KillAuraHandler.huntPickupItemsEnabled = false;
@@ -2310,7 +2287,7 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
     }
 
     private void openFloatInput(String title, float current, float min, float max, FloatConsumer consumer) {
-        mc.displayGuiScreen(new GuiTextInput(this, title, formatFloat(current), value -> {
+        mc.setScreen(new GuiTextInput(this, title, formatFloat(current), value -> {
             float parsed = current;
             try {
                 parsed = Float.parseFloat(value.trim());
@@ -2318,20 +2295,7 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
             }
             parsed = clampFloat(parsed, min, max);
             consumer.accept(parsed);
-            mc.displayGuiScreen(this);
-        }));
-    }
-
-    private void openPreciseFloatInput(String title, float current, float min, float max, FloatConsumer consumer) {
-        mc.displayGuiScreen(new GuiTextInput(this, title, formatPreciseFloat(current), value -> {
-            float parsed = current;
-            try {
-                parsed = Float.parseFloat(value.trim());
-            } catch (Exception ignored) {
-            }
-            parsed = clampFloat(parsed, min, max);
-            consumer.accept(parsed);
-            mc.displayGuiScreen(this);
+            mc.setScreen(this);
         }));
     }
 
@@ -2345,14 +2309,6 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
 
     private String formatFloat(float value) {
         return String.format(Locale.ROOT, "%.2f", value);
-    }
-
-    private String formatPreciseFloat(float value) {
-        return String.format(Locale.ROOT, "%.4f", value);
-    }
-
-    private String formatSignedPreciseFloat(float value) {
-        return String.format(Locale.ROOT, "%+.4f", value);
     }
 
     private String stateText(boolean enabled) {
@@ -2453,7 +2409,7 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
                     this.options.size() * this.height);
         }
 
-        void drawMain(int mouseX, int mouseY, net.minecraft.client.gui.FontRenderer fontRenderer) {
+        void drawMain(int mouseX, int mouseY, com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.FontRenderer fontRenderer) {
             boolean hover = isHoveringMain(mouseX, mouseY);
             int bg = this.enabled ? (hover ? 0xCC203146 : 0xCC152433) : 0xAA18212D;
             int border = !this.enabled ? 0xFF4E5F73 : (this.expanded ? 0xFF76D1FF : (hover ? 0xFF4FA6D9 : 0xFF3F6A8C));
@@ -2473,7 +2429,7 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
                     this.y + 6, 0xFF9FDFFF);
         }
 
-        void drawExpanded(int mouseX, int mouseY, net.minecraft.client.gui.FontRenderer fontRenderer) {
+        void drawExpanded(int mouseX, int mouseY, com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.FontRenderer fontRenderer) {
             if (!this.expanded || !this.enabled) {
                 return;
             }
@@ -2575,7 +2531,7 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
                     this.options.size() * this.height);
         }
 
-        void drawMain(int mouseX, int mouseY, net.minecraft.client.gui.FontRenderer fontRenderer) {
+        void drawMain(int mouseX, int mouseY, com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.FontRenderer fontRenderer) {
             boolean hover = isHoveringMain(mouseX, mouseY);
             int bg = this.enabled ? (hover ? 0xCC203146 : 0xCC152433) : 0xAA18212D;
             int border = !this.enabled ? 0xFF4E5F73 : (this.expanded ? 0xFF76D1FF : (hover ? 0xFF4FA6D9 : 0xFF3F6A8C));
@@ -2594,7 +2550,7 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
                     this.y + 6, 0xFF9FDFFF);
         }
 
-        void drawExpanded(int mouseX, int mouseY, net.minecraft.client.gui.FontRenderer fontRenderer) {
+        void drawExpanded(int mouseX, int mouseY, com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.FontRenderer fontRenderer) {
             if (!this.expanded || !this.enabled) {
                 return;
             }
@@ -2713,7 +2669,7 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
             return isMouseInside(mouseX, mouseY, this.x, this.y + this.height, this.width, listHeight);
         }
 
-        void drawMain(int mouseX, int mouseY, net.minecraft.client.gui.FontRenderer fontRenderer) {
+        void drawMain(int mouseX, int mouseY, com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.FontRenderer fontRenderer) {
             boolean hover = isHoveringMain(mouseX, mouseY);
             int bg = hover ? 0xCC203146 : 0xCC152433;
             int border = this.expanded ? 0xFF76D1FF : (hover ? 0xFF4FA6D9 : 0xFF3F6A8C);
@@ -2729,7 +2685,7 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
             drawString(fontRenderer, this.expanded ? "▲" : "▼", this.x + this.width - 10, this.y + 6, 0xFF9FDFFF);
         }
 
-        void drawExpanded(int mouseX, int mouseY, net.minecraft.client.gui.FontRenderer fontRenderer) {
+        void drawExpanded(int mouseX, int mouseY, com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.FontRenderer fontRenderer) {
             if (!this.expanded || this.options.isEmpty()) {
                 return;
             }
@@ -2828,3 +2784,9 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
         }
     }
 }
+
+
+
+
+
+

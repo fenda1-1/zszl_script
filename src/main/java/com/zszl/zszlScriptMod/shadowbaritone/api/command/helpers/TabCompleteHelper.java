@@ -23,37 +23,30 @@ import com.zszl.zszlScriptMod.shadowbaritone.api.command.argument.IArgConsumer;
 import com.zszl.zszlScriptMod.shadowbaritone.api.command.manager.ICommandManager;
 import com.zszl.zszlScriptMod.shadowbaritone.api.event.events.TabCompleteEvent;
 import com.zszl.zszlScriptMod.shadowbaritone.api.utils.SettingsUtil;
-import net.minecraft.util.ResourceLocation;
-
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.stream.Stream;
+import net.minecraft.resources.ResourceLocation;
 
 /**
- * The {@link TabCompleteHelper} is a <b>single-use</b> object that helps you
- * handle tab completion. It includes helper
- * methods for appending and prepending streams, sorting, filtering by prefix,
- * and so on.
+ * The {@link TabCompleteHelper} is a <b>single-use</b> object that helps you handle tab completion. It includes helper
+ * methods for appending and prepending streams, sorting, filtering by prefix, and so on.
  * <p>
  * The recommended way to use this class is:
  * <ul>
  * <li>Create a new instance with the empty constructor</li>
- * <li>Use {@code append}, {@code prepend} or {@code add<something>} methods to
- * add completions</li>
- * <li>Sort using {@link #sort(Comparator)} or {@link #sortAlphabetically()} and
- * then filter by prefix using
+ * <li>Use {@code append}, {@code prepend} or {@code add<something>} methods to add completions</li>
+ * <li>Sort using {@link #sort(Comparator)} or {@link #sortAlphabetically()} and then filter by prefix using
  * {@link #filterPrefix(String)}</li>
  * <li>Get the stream using {@link #stream()}</li>
  * <li>Pass it up to whatever's calling your tab complete function (i.e.
- * {@link ICommandManager#tabComplete(String)} or
- * {@link IArgConsumer}#tabCompleteDatatype(IDatatype)})</li>
+ * {@link ICommandManager#tabComplete(String)} or {@link IArgConsumer}#tabCompleteDatatype(IDatatype)})</li>
  * </ul>
  * <p>
- * For advanced users: if you're intercepting {@link TabCompleteEvent}s
- * directly, use {@link #build()} instead for an
+ * For advanced users: if you're intercepting {@link TabCompleteEvent}s directly, use {@link #build()} instead for an
  * array.
  */
 public class TabCompleteHelper {
@@ -73,8 +66,7 @@ public class TabCompleteHelper {
     }
 
     /**
-     * Appends the specified stream to this {@link TabCompleteHelper} and returns it
-     * for chaining
+     * Appends the specified stream to this {@link TabCompleteHelper} and returns it for chaining
      *
      * @param source The stream to append
      * @return This {@link TabCompleteHelper} after having appended the stream
@@ -87,8 +79,7 @@ public class TabCompleteHelper {
     }
 
     /**
-     * Appends the specified strings to this {@link TabCompleteHelper} and returns
-     * it for chaining
+     * Appends the specified strings to this {@link TabCompleteHelper} and returns it for chaining
      *
      * @param source The stream to append
      * @return This {@link TabCompleteHelper} after having appended the strings
@@ -100,8 +91,7 @@ public class TabCompleteHelper {
     }
 
     /**
-     * Appends all values of the specified enum to this {@link TabCompleteHelper}
-     * and returns it for chaining
+     * Appends all values of the specified enum to this {@link TabCompleteHelper} and returns it for chaining
      *
      * @param num The enum to append the values of
      * @return This {@link TabCompleteHelper} after having appended the values
@@ -112,12 +102,12 @@ public class TabCompleteHelper {
         return append(
                 Stream.of(num.getEnumConstants())
                         .map(Enum::name)
-                        .map(String::toLowerCase));
+                        .map(String::toLowerCase)
+        );
     }
 
     /**
-     * Prepends the specified stream to this {@link TabCompleteHelper} and returns
-     * it for chaining
+     * Prepends the specified stream to this {@link TabCompleteHelper} and returns it for chaining
      *
      * @param source The stream to prepend
      * @return This {@link TabCompleteHelper} after having prepended the stream
@@ -130,8 +120,7 @@ public class TabCompleteHelper {
     }
 
     /**
-     * Prepends the specified strings to this {@link TabCompleteHelper} and returns
-     * it for chaining
+     * Prepends the specified strings to this {@link TabCompleteHelper} and returns it for chaining
      *
      * @param source The stream to prepend
      * @return This {@link TabCompleteHelper} after having prepended the strings
@@ -143,8 +132,7 @@ public class TabCompleteHelper {
     }
 
     /**
-     * Prepends all values of the specified enum to this {@link TabCompleteHelper}
-     * and returns it for chaining
+     * Prepends all values of the specified enum to this {@link TabCompleteHelper} and returns it for chaining
      *
      * @param num The enum to prepend the values of
      * @return This {@link TabCompleteHelper} after having prepended the values
@@ -155,12 +143,12 @@ public class TabCompleteHelper {
         return prepend(
                 Stream.of(num.getEnumConstants())
                         .map(Enum::name)
-                        .map(String::toLowerCase));
+                        .map(String::toLowerCase)
+        );
     }
 
     /**
-     * Apply the specified {@code transform} to every element <b>currently</b> in
-     * this {@link TabCompleteHelper} and
+     * Apply the specified {@code transform} to every element <b>currently</b> in this {@link TabCompleteHelper} and
      * return this object for chaining
      *
      * @param transform The transform to apply
@@ -172,8 +160,7 @@ public class TabCompleteHelper {
     }
 
     /**
-     * Apply the specified {@code filter} to every element <b>currently</b> in this
-     * {@link TabCompleteHelper} and return
+     * Apply the specified {@code filter} to every element <b>currently</b> in this {@link TabCompleteHelper} and return
      * this object for chaining
      *
      * @param filter The filter to apply
@@ -185,8 +172,7 @@ public class TabCompleteHelper {
     }
 
     /**
-     * Apply the specified {@code sort} to every element <b>currently</b> in this
-     * {@link TabCompleteHelper} and return
+     * Apply the specified {@code sort} to every element <b>currently</b> in this {@link TabCompleteHelper} and return
      * this object for chaining
      *
      * @param comparator The comparator to use
@@ -198,8 +184,7 @@ public class TabCompleteHelper {
     }
 
     /**
-     * Sort every element <b>currently</b> in this {@link TabCompleteHelper}
-     * alphabetically and return this object for
+     * Sort every element <b>currently</b> in this {@link TabCompleteHelper} alphabetically and return this object for
      * chaining
      *
      * @return This {@link TabCompleteHelper}
@@ -209,8 +194,7 @@ public class TabCompleteHelper {
     }
 
     /**
-     * Filter out any element that doesn't start with {@code prefix} and return this
-     * object for chaining
+     * Filter out any element that doesn't start with {@code prefix} and return this object for chaining
      *
      * @param prefix The prefix to filter for
      * @return This {@link TabCompleteHelper}
@@ -220,17 +204,20 @@ public class TabCompleteHelper {
     }
 
     /**
-     * Filter out any element that doesn't start with {@code prefix} and return this
-     * object for chaining
+     * Filter out any element that doesn't start with {@code prefix} and return this object for chaining
      * <p>
-     * Assumes every element in this {@link TabCompleteHelper} is a
-     * {@link ResourceLocation}
+     * Assumes every element in this {@link TabCompleteHelper} is a {@link ResourceLocation}
      *
      * @param prefix The prefix to filter for
      * @return This {@link TabCompleteHelper}
      */
     public TabCompleteHelper filterPrefixNamespaced(String prefix) {
-        return filterPrefix(new ResourceLocation(prefix).toString());
+        ResourceLocation loc = ResourceLocation.tryParse(prefix);
+        if (loc == null) {
+            stream = Stream.empty();
+            return this;
+        }
+        return filterPrefix(loc.toString());
     }
 
     /**
@@ -250,8 +237,7 @@ public class TabCompleteHelper {
     }
 
     /**
-     * Appends every command in the specified {@link ICommandManager} to this
-     * {@link TabCompleteHelper}
+     * Appends every command in the specified {@link ICommandManager} to this {@link TabCompleteHelper}
      *
      * @param manager A command manager
      * @return This {@link TabCompleteHelper}
@@ -259,12 +245,12 @@ public class TabCompleteHelper {
     public TabCompleteHelper addCommands(ICommandManager manager) {
         return append(manager.getRegistry().descendingStream()
                 .flatMap(command -> command.getNames().stream())
-                .distinct());
+                .distinct()
+        );
     }
 
     /**
-     * Appends every setting in the {@link Settings} to this
-     * {@link TabCompleteHelper}
+     * Appends every setting in the {@link Settings} to this {@link TabCompleteHelper}
      *
      * @return This {@link TabCompleteHelper}
      */
@@ -273,12 +259,12 @@ public class TabCompleteHelper {
                 BaritoneAPI.getSettings().allSettings.stream()
                         .filter(s -> !s.isJavaOnly())
                         .map(Settings.Setting::getName)
-                        .sorted(String.CASE_INSENSITIVE_ORDER));
+                        .sorted(String.CASE_INSENSITIVE_ORDER)
+        );
     }
 
     /**
-     * Appends every modified setting in the {@link Settings} to this
-     * {@link TabCompleteHelper}
+     * Appends every modified setting in the {@link Settings} to this {@link TabCompleteHelper}
      *
      * @return This {@link TabCompleteHelper}
      */
@@ -286,12 +272,12 @@ public class TabCompleteHelper {
         return append(
                 SettingsUtil.modifiedSettings(BaritoneAPI.getSettings()).stream()
                         .map(Settings.Setting::getName)
-                        .sorted(String.CASE_INSENSITIVE_ORDER));
+                        .sorted(String.CASE_INSENSITIVE_ORDER)
+        );
     }
 
     /**
-     * Appends every {@link Boolean} setting in the {@link Settings} to this
-     * {@link TabCompleteHelper}
+     * Appends every {@link Boolean} setting in the {@link Settings} to this {@link TabCompleteHelper}
      *
      * @return This {@link TabCompleteHelper}
      */
@@ -299,6 +285,8 @@ public class TabCompleteHelper {
         return append(
                 BaritoneAPI.getSettings().getAllValuesByType(Boolean.class).stream()
                         .map(Settings.Setting::getName)
-                        .sorted(String.CASE_INSENSITIVE_ORDER));
+                        .sorted(String.CASE_INSENSITIVE_ORDER)
+        );
     }
 }
+

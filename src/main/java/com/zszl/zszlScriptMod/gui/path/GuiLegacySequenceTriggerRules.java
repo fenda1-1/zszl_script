@@ -12,13 +12,14 @@ import com.zszl.zszlScriptMod.path.PathSequenceManager;
 import com.zszl.zszlScriptMod.path.runtime.ScopedRuntimeVariables;
 import com.zszl.zszlScriptMod.path.trigger.LegacySequenceTriggerManager;
 import com.zszl.zszlScriptMod.utils.PacketCaptureHandler;
+import com.zszl.zszlScriptMod.utils.PinyinSearchHelper;
 import com.zszl.zszlScriptMod.utils.guiinspect.GuiInspectionManager;
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiScreen;
-import net.minecraft.client.gui.ScaledResolution;
-import net.minecraft.client.gui.GuiTextField;
-import org.lwjgl.input.Keyboard;
-import org.lwjgl.input.Mouse;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.ScaledResolution;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiTextField;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Keyboard;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Mouse;
 import org.lwjgl.opengl.GL11;
 
 import java.io.IOException;
@@ -335,8 +336,8 @@ public class GuiLegacySequenceTriggerRules extends ThemedGuiScreen {
         itemPickupCountField.setText(String.valueOf(intParam(params, "minCount", 1)));
         entityTextField.setText(stringParam(params, "entityText"));
         entityMinCountField.setText(String.valueOf(intParam(params, "minCount", 1)));
-        editingIdleExcludePath = booleanParam(params, "excludePathTracking", true);
-        editingIdleIgnoreDamage = booleanParam(params, "ignoreDamageReset", false);
+        editingIdleExcludePath = boolParam(params, "excludePathTracking", true);
+        editingIdleIgnoreDamage = boolParam(params, "ignoreDamageReset", false);
     }
 
     private void clearEditor() {
@@ -386,7 +387,7 @@ public class GuiLegacySequenceTriggerRules extends ThemedGuiScreen {
         importPacketBtn.enabled = packetTrigger;
         idleExcludePathBtn.enabled = idleTrigger;
         idleIgnoreDamageBtn.enabled = idleTrigger;
-        if (!idleTrigger || activeEditorTab != TAB_EVENT) {
+        if (!idleTrigger) {
             idleExcludePathBtn.visible = false;
             idleIgnoreDamageBtn.visible = false;
         }
@@ -508,17 +509,17 @@ public class GuiLegacySequenceTriggerRules extends ThemedGuiScreen {
             statusMessage = "§a触发器规则已保存";
             break;
         case BTN_BACK:
-            mc.displayGuiScreen(parent);
+            mc.setScreen(parent);
             return;
         case BTN_SELECT_SEQUENCE:
             flushEditorToSelected();
-            mc.displayGuiScreen(new GuiSequenceSelector(this, seq -> {
+            mc.setScreen(new GuiSequenceSelector(this, seq -> {
                 String selectedSequence = seq == null ? "" : seq;
                 sequenceField.setText(selectedSequence);
                 if (selectedRuleIndex >= 0 && selectedRuleIndex < rules.size()) {
                     rules.get(selectedRuleIndex).sequenceName = selectedSequence;
                 }
-                mc.displayGuiScreen(this);
+                mc.setScreen(this);
             }));
             return;
         case BTN_TOGGLE_ENABLED:
@@ -541,7 +542,7 @@ public class GuiLegacySequenceTriggerRules extends ThemedGuiScreen {
             break;
         case BTN_OPEN_GUI_INSPECTOR:
             flushEditorToSelected();
-            mc.displayGuiScreen(new GuiGuiInspectorManager(this));
+            mc.setScreen(new GuiGuiInspectorManager(this));
             return;
         case BTN_IMPORT_PACKET:
             fillFromLatestPacketText();
@@ -808,10 +809,10 @@ public class GuiLegacySequenceTriggerRules extends ThemedGuiScreen {
                     "§7留空表示任意标题都可触发。");
             nextY += 24;
         } else if (LegacySequenceTriggerManager.TRIGGER_ACTIONBAR.equals(type)) {
-            drawField("动作栏文本包含", eventTextField, nextY,
-                    "§e动作栏文本包含",
-                    "§7匹配快捷栏上方弹出的动作栏提示文本。",
-                    "§7留空表示任意动作栏提示都可触发。");
+            drawField("ActionBar文本包含", eventTextField, nextY,
+                    "§eActionBar文本包含",
+                    "§7匹配 ActionBar 文本。",
+                    "§7留空表示任意 ActionBar 都可触发。");
             nextY += 24;
         } else if (LegacySequenceTriggerManager.TRIGGER_SCOREBOARD_CHANGED.equals(type)) {
             drawField("记分板文本包含", eventTextField, nextY,
@@ -820,10 +821,10 @@ public class GuiLegacySequenceTriggerRules extends ThemedGuiScreen {
                     "§7留空表示任意记分板变化都可触发。");
             nextY += 24;
         } else if (LegacySequenceTriggerManager.TRIGGER_BOSSBAR.equals(type)) {
-            drawField("Boss血条文本包含", eventTextField, nextY,
-                    "§eBoss血条文本包含",
-                    "§7匹配屏幕顶部 Boss 血条的标题文本。",
-                    "§7留空表示任意 Boss 血条变化都可触发。");
+            drawField("BossBar文本包含", eventTextField, nextY,
+                    "§eBossBar文本包含",
+                    "§7匹配 BossBar 标题文本。",
+                    "§7留空表示任意 BossBar 变化都可触发。");
             nextY += 24;
         } else if (LegacySequenceTriggerManager.TRIGGER_KEY_INPUT.equals(type)) {
             drawField("按键名称包含", keyNameField, nextY,
@@ -835,13 +836,12 @@ public class GuiLegacySequenceTriggerRules extends ThemedGuiScreen {
             drawField("静止时长(毫秒)", idleDurationMsField, nextY,
                     "§e静止时长(毫秒)",
                     "§7当角色持续站立不动达到这个时长后触发。",
-                    "§7检测按客户端 tick 进行，精度约为 50ms；打开界面、移动、跳跃都会重新计时。");
+                    "§7填 1000 表示连续静止 1 秒。",
+                    "§7如果想过滤掉路径执行造成的短暂停顿，可开启下面的“排除正在执行路径”。");
             nextY += 24;
-            drawLabel("排除正在执行路径", nextY);
+            drawLabel("路径执行过滤", nextY);
             registerTooltip(getLabelX(), nextY, getLabelWidth(), 18,
-                    buildTooltipLines("§e排除正在执行路径",
-                            "§7默认开启。",
-                            "§7开启后，只要有任意路径序列在执行，就不会把这段时间算作罚站。"));
+                    buildTooltipLines("§e路径执行过滤", "§7控制站立不动检测是否排除路径正在执行时的停顿。"));
             idleExcludePathBtn.x = fieldX;
             idleExcludePathBtn.y = nextY - 1;
             idleExcludePathBtn.width = fieldW;
@@ -850,15 +850,11 @@ public class GuiLegacySequenceTriggerRules extends ThemedGuiScreen {
                     idleExcludePathBtn.height);
             registerButtonTooltip(idleExcludePathBtn,
                     "§e排除正在执行路径",
-                    "§7默认开启。",
                     "§7开启后，路径执行过程中的静止不会累计到站立不动触发器。");
             nextY += 24;
-            drawLabel("受击不重置空闲", nextY);
-            registerTooltip(fieldX, nextY - 2, fieldW, 20,
-                    buildTooltipLines("§e受击不重置空闲",
-                            "§7默认关闭。",
-                            "§7开启后，被怪打到产生的击退/位移不会打断空闲计时。",
-                            "§7适合站桩挂机、原地等待类触发。"));
+            drawLabel("受伤重置规则", nextY);
+            registerTooltip(getLabelX(), nextY, getLabelWidth(), 18,
+                    buildTooltipLines("§e受伤重置规则", "§7控制受击击退时是否把静止计时清零。"));
             idleIgnoreDamageBtn.x = fieldX;
             idleIgnoreDamageBtn.y = nextY - 1;
             idleIgnoreDamageBtn.width = fieldW;
@@ -867,8 +863,8 @@ public class GuiLegacySequenceTriggerRules extends ThemedGuiScreen {
                     idleIgnoreDamageBtn.height);
             registerButtonTooltip(idleIgnoreDamageBtn,
                     "§e受击不重置空闲",
-                    "§7默认关闭。",
-                    "§7开启后，受击击退造成的位移不会让空闲计时重新开始。");
+                    "§7开启后，受击后的短暂击退不会把站立不动计时立刻清零。",
+                    "§7适合把挂机防打断、站桩监控这类规则调得更稳。");
             nextY += 24;
         } else if (LegacySequenceTriggerManager.TRIGGER_TIMER.equals(type)) {
             drawField("间隔秒数", timerIntervalField, nextY,
@@ -1419,7 +1415,7 @@ public class GuiLegacySequenceTriggerRules extends ThemedGuiScreen {
     @Override
     protected void keyTyped(char typedChar, int keyCode) throws IOException {
         if (keyCode == Keyboard.KEY_ESCAPE) {
-            mc.displayGuiScreen(parent);
+            mc.setScreen(parent);
             return;
         }
         super.keyTyped(typedChar, keyCode);
@@ -1451,8 +1447,8 @@ public class GuiLegacySequenceTriggerRules extends ThemedGuiScreen {
         if (dWheel == 0) {
             return;
         }
-        int mouseX = Mouse.getEventX() * this.width / this.mc.displayWidth;
-        int mouseY = this.height - Mouse.getEventY() * this.height / this.mc.displayHeight - 1;
+        int mouseX = Mouse.getEventX() * this.width / this.mc.getWindow().getWidth();
+        int mouseY = this.height - Mouse.getEventY() * this.height / this.mc.getWindow().getHeight() - 1;
         if (!listCollapsed && isHoverRegion(mouseX, mouseY, listX, listY, listW, listH)) {
             int visible = Math.max(1, (listH - 30) / (RULE_CARD_H + RULE_CARD_GAP));
             maxListScroll = Math.max(0, rules.size() - visible);
@@ -1512,7 +1508,8 @@ public class GuiLegacySequenceTriggerRules extends ThemedGuiScreen {
 
     private void rebuildVisibleLibraryRows() {
         visibleLibraryRows.clear();
-        String filter = safe(librarySearchField == null ? "" : librarySearchField.getText()).trim().toLowerCase(Locale.ROOT);
+        String filter = PinyinSearchHelper.normalizeQuery(
+                safe(librarySearchField == null ? "" : librarySearchField.getText()));
         LegacyTriggerEventItem currentHeader = null;
         List<LegacyTriggerEventItem> pendingChildren = new ArrayList<>();
         for (LegacyTriggerEventItem item : EVENT_LIBRARY) {
@@ -1522,10 +1519,8 @@ public class GuiLegacySequenceTriggerRules extends ThemedGuiScreen {
                 pendingChildren = new ArrayList<>();
                 continue;
             }
-            boolean matches = filter.isEmpty()
-                    || item.label.toLowerCase(Locale.ROOT).contains(filter)
-                    || item.type.toLowerCase(Locale.ROOT).contains(filter)
-                    || item.help.toLowerCase(Locale.ROOT).contains(filter);
+            String searchText = safe(item.label) + " " + safe(item.type) + " " + safe(item.help);
+            boolean matches = filter.isEmpty() || PinyinSearchHelper.matchesNormalized(searchText, filter);
             if (matches) {
                 pendingChildren.add(item);
             }
@@ -1881,23 +1876,23 @@ public class GuiLegacySequenceTriggerRules extends ThemedGuiScreen {
         }
     }
 
+    private boolean boolParam(JsonObject params, String key, boolean fallback) {
+        if (params == null || !params.has(key)) {
+            return fallback;
+        }
+        try {
+            return params.get(key).getAsBoolean();
+        } catch (Exception ignored) {
+            return fallback;
+        }
+    }
+
     private double doubleParam(JsonObject params, String key, double fallback) {
         if (params == null || !params.has(key)) {
             return fallback;
         }
         try {
             return params.get(key).getAsDouble();
-        } catch (Exception ignored) {
-            return fallback;
-        }
-    }
-
-    private boolean booleanParam(JsonObject params, String key, boolean fallback) {
-        if (params == null || !params.has(key)) {
-            return fallback;
-        }
-        try {
-            return params.get(key).getAsBoolean();
         } catch (Exception ignored) {
             return fallback;
         }
@@ -1976,3 +1971,9 @@ public class GuiLegacySequenceTriggerRules extends ThemedGuiScreen {
         return false;
     }
 }
+
+
+
+
+
+

@@ -19,9 +19,8 @@ package com.zszl.zszlScriptMod.shadowbaritone.api.command.exception;
 
 import com.zszl.zszlScriptMod.shadowbaritone.api.command.ICommand;
 import com.zszl.zszlScriptMod.shadowbaritone.api.command.argument.ICommandArgument;
-import net.minecraft.util.text.TextFormatting;
-
 import java.util.List;
+import net.minecraft.ChatFormatting;
 
 import static com.zszl.zszlScriptMod.shadowbaritone.api.utils.Helper.HELPER;
 
@@ -30,8 +29,7 @@ import static com.zszl.zszlScriptMod.shadowbaritone.api.utils.Helper.HELPER;
  * {@link #handle(ICommand, List)} method that is used to provide useful output
  * to the user for diagnosing issues that may have occurred during execution.
  * <p>
- * Anything implementing this interface should be assignable to
- * {@link Exception}.
+ * Anything implementing this interface should be assignable to {@link Exception}.
  *
  * @author Brady
  * @since 9/20/2019
@@ -51,6 +49,7 @@ public interface ICommandException {
      * @param args    The arguments the command was called with.
      */
     default void handle(ICommand command, List<ICommandArgument> args) {
-        HELPER.logDirect(this.getMessage(), TextFormatting.RED);
+        HELPER.logDirect(this.getMessage(), ChatFormatting.RED);
     }
 }
+

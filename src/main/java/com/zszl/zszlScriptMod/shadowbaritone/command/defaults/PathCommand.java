@@ -23,7 +23,6 @@ import com.zszl.zszlScriptMod.shadowbaritone.api.command.Command;
 import com.zszl.zszlScriptMod.shadowbaritone.api.command.argument.IArgConsumer;
 import com.zszl.zszlScriptMod.shadowbaritone.api.command.exception.CommandException;
 import com.zszl.zszlScriptMod.shadowbaritone.api.process.ICustomGoalProcess;
-import com.zszl.zszlScriptMod.shadowbaritone.api.utils.ShadowBaritoneI18n;
 
 import java.util.Arrays;
 import java.util.List;
@@ -41,8 +40,7 @@ public class PathCommand extends Command {
         args.requireMax(0);
         BaritoneAPI.getProvider().getWorldScanner().repack(ctx);
         customGoalProcess.path();
-        logDirect(ShadowBaritoneI18n.trKey(
-                "shadowbaritone.command.path.status.pathing"));
+        logDirect("Now pathing");
     }
 
     @Override
@@ -52,19 +50,17 @@ public class PathCommand extends Command {
 
     @Override
     public String getShortDesc() {
-        return ShadowBaritoneI18n.trKey(
-                "shadowbaritone.command.path.short_desc");
+        return "Start heading towards the goal";
     }
 
     @Override
     public List<String> getLongDesc() {
         return Arrays.asList(
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.path.long_desc.1"),
+                "The path command tells Baritone to head towards the current goal.",
                 "",
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.path.long_desc.usage"),
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.path.long_desc.example.default"));
+                "Usage:",
+                "> path - Start the pathing."
+        );
     }
 }
+

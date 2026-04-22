@@ -3,8 +3,8 @@ package com.zszl.zszlScriptMod.gui.path.GuiActionEditor;
 import com.zszl.zszlScriptMod.gui.components.ThemedButton;
 import com.zszl.zszlScriptMod.handlers.KillAuraHandler;
 
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.resources.I18n;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
 
 import static com.zszl.zszlScriptMod.gui.path.GuiActionEditor.util.ActionEditorDisplayConverters.*;
 
@@ -449,3 +449,4 @@ final class ActionParameterSections {
                         : "foreground"));
     }
 }
+

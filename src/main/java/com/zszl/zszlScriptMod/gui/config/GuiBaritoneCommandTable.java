@@ -2,30 +2,30 @@ package com.zszl.zszlScriptMod.gui.config;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonSyntaxException;
-import com.zszl.zszlScriptMod.config.BaritoneParkourSettingsHelper;
 import com.zszl.zszlScriptMod.gui.components.GuiTheme;
 import com.zszl.zszlScriptMod.gui.components.ThemedButton;
 import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
+import com.zszl.zszlScriptMod.gui.config.GuiHumanLikeMovementSettings;
 import com.zszl.zszlScriptMod.shadowbaritone.api.BaritoneAPI;
-import com.zszl.zszlScriptMod.system.ProfileManager;
 import com.zszl.zszlScriptMod.shadowbaritone.api.Settings;
 import com.zszl.zszlScriptMod.shadowbaritone.api.command.ICommand;
 import com.zszl.zszlScriptMod.shadowbaritone.api.command.manager.ICommandManager;
 import com.zszl.zszlScriptMod.shadowbaritone.api.utils.SettingsUtil;
-import net.minecraft.block.Block;
+import com.zszl.zszlScriptMod.system.ProfileManager;
+import com.zszl.zszlScriptMod.utils.PinyinSearchHelper;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.Gui;
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiScreen;
-import net.minecraft.client.gui.GuiTextField;
-import net.minecraft.item.Item;
-import net.minecraft.util.math.MathHelper;
-import net.minecraftforge.fml.client.config.GuiUtils;
-import org.lwjgl.input.Keyboard;
-import org.lwjgl.input.Mouse;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.Gui;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiTextField;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.util.math.MathHelper;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraftforge.fml.client.config.GuiUtils;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Keyboard;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Mouse;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.level.block.Block;
 
 import java.awt.Color;
-import java.awt.Rectangle;
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.File;
@@ -85,14 +85,12 @@ public class GuiBaritoneCommandTable extends ThemedGuiScreen {
     private static final int BTN_SETTINGS_TYPE_FILTER = 3006;
     private static final int BTN_SETTINGS_MODIFIED_ONLY = 3007;
     private static final int BTN_SETTINGS_CLEAR_FILTER = 3008;
-    private static final int BTN_SETTINGS_STABLE_PARKOUR_PRESET = 3009;
 
     private static final int BTN_EXAMPLE_BASE = 5000;
     private static final int BTN_ARG_CONTROL_BASE = 6000;
 
     private static final int MAX_HISTORY_ITEMS = 40;
     private static final int MAX_RECENT_COMMANDS = 20;
-    private static final String[] SETTINGS_TYPE_FILTERS = {"all", "boolean", "int", "long", "float", "double", "string", "list", "map", "color", "vec3i"};
 
     private static final Set<String> FAVORITE_COMMANDS = new LinkedHashSet<String>();
     private static final List<String> RECENT_COMMANDS = new ArrayList<String>();
@@ -172,29 +170,10 @@ public class GuiBaritoneCommandTable extends ThemedGuiScreen {
     private static final int COMMAND_ROW_HEIGHT = 26;
     private static final int HISTORY_ROW_HEIGHT = 18;
     private static final int ARG_ROW_HEIGHT = 34;
-    private static final int PANE_DIVIDER_WIDTH = 12;
-    private static final int PANE_DIVIDER_HIT_WIDTH = 24;
-    private static double SAVED_LEFT_PANE_RATIO = 0.24D;
-    private static double SAVED_MIDDLE_PANE_RATIO = 0.18D;
 
     private String hoverTooltip;
     private int hoverTooltipX;
     private int hoverTooltipY;
-    private double leftPaneRatio = SAVED_LEFT_PANE_RATIO;
-    private double middlePaneRatio = SAVED_MIDDLE_PANE_RATIO;
-    private boolean draggingLeftDivider = false;
-    private boolean draggingMiddleDivider = false;
-    private Rectangle leftDividerBounds;
-    private Rectangle middleDividerBounds;
-    private int toolbarX;
-    private int toolbarY;
-    private int toolbarW;
-    private int toolbarH;
-    private int leftSearchFieldY;
-    private int leftSelectorY;
-    private int leftSelectorBlockHeight;
-    private int leftStatsY;
-    private boolean leftSelectorStacked = false;
 
     private final List<SettingDef> settingAllDefs = new ArrayList<SettingDef>();
     private final List<SettingDef> settingFilteredDefs = new ArrayList<SettingDef>();
@@ -202,15 +181,9 @@ public class GuiBaritoneCommandTable extends ThemedGuiScreen {
     private final Map<String, String> settingStatusMessages = new HashMap<String, String>();
     private final List<GuiTextField> settingValueFields = new ArrayList<GuiTextField>();
     private final List<GuiButton> settingBoolButtons = new ArrayList<GuiButton>();
-    private final List<GuiButton> settingChoiceButtons = new ArrayList<GuiButton>();
     private final List<GuiButton> settingVisualEditorButtons = new ArrayList<GuiButton>();
     private final Map<GuiButton, String> settingButtonToKey = new HashMap<GuiButton, String>();
-    private final Map<GuiButton, String> settingChoiceButtonToKey = new HashMap<GuiButton, String>();
-    private final Map<String, List<String>> settingChoiceOptions = new HashMap<String, List<String>>();
     private final Map<GuiButton, SettingDef> settingVisualEditorButtonDefs = new HashMap<GuiButton, SettingDef>();
-    private String openSettingChoiceKey;
-    private boolean settingsTypeDropdownOpen = false;
-    private boolean settingsModifiedDropdownOpen = false;
 
     private GuiTextField settingsSearchField;
     private String settingsSearchText = "";
@@ -244,19 +217,11 @@ public class GuiBaritoneCommandTable extends ThemedGuiScreen {
         this.hoverTooltip = null;
         this.settingValueFields.clear();
         this.settingBoolButtons.clear();
-        this.settingChoiceButtons.clear();
         this.settingVisualEditorButtons.clear();
         this.settingButtonToKey.clear();
-        this.settingChoiceButtonToKey.clear();
-        this.settingChoiceOptions.clear();
         this.settingVisualEditorButtonDefs.clear();
-        this.openSettingChoiceKey = null;
-        this.settingsTypeDropdownOpen = false;
-        this.settingsModifiedDropdownOpen = false;
 
         loadPersistentStateIfNeeded();
-        this.leftPaneRatio = SAVED_LEFT_PANE_RATIO;
-        this.middlePaneRatio = SAVED_MIDDLE_PANE_RATIO;
 
         if (this.allCommands.isEmpty()) {
             loadCommands();
@@ -271,8 +236,7 @@ public class GuiBaritoneCommandTable extends ThemedGuiScreen {
             return;
         }
 
-        this.searchField = new GuiTextField(9000, this.fontRenderer, this.leftPaneX + 8, this.leftSearchFieldY,
-                Math.max(40, this.leftPaneW - 16), 18);
+        this.searchField = new GuiTextField(9000, this.fontRenderer, this.leftPaneX + 8, this.leftPaneY + 28, Math.max(40, this.leftPaneW - 16), 18);
         this.searchField.setMaxStringLength(128);
         this.searchField.setText(this.searchText == null ? "" : this.searchText);
 
@@ -313,30 +277,43 @@ public class GuiBaritoneCommandTable extends ThemedGuiScreen {
     }
 
     private void initTopButtons() {
-        int gap = this.toolbarW < 520 ? 4 : 6;
-        int[] preferred = new int[]{72, 72, 96, 72, 72, 72};
-        int[] minimum = new int[]{46, 46, 58, 46, 46, 46};
-        int[] fitted = fitTopButtonWidths(this.toolbarW - gap * 5 - 8, preferred, minimum);
-        int totalButtonsWidth = sumInts(fitted) + gap * 5;
-        int x = this.toolbarX + Math.max(4, (this.toolbarW - totalButtonsWidth) / 2);
-        int y = this.toolbarY + (this.toolbarH - 20) / 2;
+        int titleButtonY = this.panelY + 26;
+        int leftX = this.panelX + 12;
+        int leftGap = 6;
+        int navButtonW = Math.max(60, Math.min(86, (this.panelW - 80) / 7));
+        int navSettingsX = leftX + navButtonW + leftGap;
 
-        this.buttonList.add(new ThemedButton(BTN_NAV_COMMANDS, x, y, fitted[0], 20,
+        this.buttonList.add(new ThemedButton(BTN_NAV_COMMANDS, leftX, titleButtonY, navButtonW, 18,
                 buildMainSectionLabel(MainSection.COMMANDS)));
-        x += fitted[0] + gap;
-        this.buttonList.add(new ThemedButton(BTN_NAV_SETTINGS, x, y, fitted[1], 20,
+        this.buttonList.add(new ThemedButton(BTN_NAV_SETTINGS, navSettingsX, titleButtonY, navButtonW, 18,
                 buildMainSectionLabel(MainSection.SETTINGS)));
-        x += fitted[1] + gap;
-        this.buttonList.add(new ThemedButton(BTN_HUMAN_LIKE_MOVEMENT, x, y, fitted[2], 20,
-                getHumanLikeButtonLabel(fitted[2])));
-        x += fitted[2] + gap;
-        this.buttonList.add(new ThemedButton(BTN_CLEAR_ARGS, x, y, fitted[3], 20,
-                getClearArgsButtonLabel(fitted[3])));
-        x += fitted[3] + gap;
-        this.buttonList.add(new ThemedButton(BTN_EXECUTE, x, y, fitted[4], 20,
-                getExecuteButtonLabel(fitted[4])));
-        x += fitted[4] + gap;
-        this.buttonList.add(new ThemedButton(BTN_BACK, x, y, fitted[5], 20, getBackButtonLabel(fitted[5])));
+
+        int rightEdge = this.panelX + this.panelW - 10;
+        int reservedLeft = navSettingsX + navButtonW + 12;
+        int availableRightWidth = Math.max(300, rightEdge - reservedLeft);
+
+        int gap = availableRightWidth < 430 ? 4 : 6;
+        int[] preferred = new int[]{74, 88, 82, 74, 74}; // 返回 / 模拟真人 / 设置 / 清空 / 执行
+        int[] minimum = new int[]{54, 68, 60, 54, 54};
+        int[] fitted = fitTopButtonWidths(availableRightWidth - gap * 4, preferred, minimum);
+
+        int executeW = fitted[4];
+        int clearW = fitted[3];
+        int settingsW = fitted[2];
+        int humanLikeW = fitted[1];
+        int backW = fitted[0];
+
+        int executeX = rightEdge - executeW;
+        int clearX = executeX - gap - clearW;
+        int settingsX = clearX - gap - settingsW;
+        int humanLikeX = settingsX - gap - humanLikeW;
+        int backX = humanLikeX - gap - backW;
+
+        this.buttonList.add(new ThemedButton(BTN_EXECUTE, executeX, titleButtonY, executeW, 20, "§a执行"));
+        this.buttonList.add(new ThemedButton(BTN_CLEAR_ARGS, clearX, titleButtonY, clearW, 20, "§e清空"));
+        this.buttonList.add(new ThemedButton(BTN_OPEN_SETTINGS, settingsX, titleButtonY, settingsW, 20, "§b设置"));
+        this.buttonList.add(new ThemedButton(BTN_HUMAN_LIKE_MOVEMENT, humanLikeX, titleButtonY, humanLikeW, 20, "§d模拟真人"));
+        this.buttonList.add(new ThemedButton(BTN_BACK, backX, titleButtonY, backW, 20, "返回"));
     }
 
     private int[] fitTopButtonWidths(int targetWidth, int[] preferred, int[] minimum) {
@@ -347,7 +324,7 @@ public class GuiBaritoneCommandTable extends ThemedGuiScreen {
             return widths;
         }
         if (targetWidth <= minimumSum) {
-            return scaleWidthsToTarget(targetWidth, minimum);
+            return Arrays.copyOf(minimum, minimum.length);
         }
 
         int shrinkable = preferredSum - minimumSum;
@@ -372,63 +349,6 @@ public class GuiBaritoneCommandTable extends ThemedGuiScreen {
         return widths;
     }
 
-    private int[] scaleWidthsToTarget(int targetWidth, int[] basis) {
-        int[] widths = new int[basis.length];
-        if (basis.length == 0 || targetWidth <= 0) {
-            return widths;
-        }
-        int basisSum = Math.max(1, sumInts(basis));
-        int used = 0;
-        double[] fractions = new double[basis.length];
-        for (int i = 0; i < basis.length; i++) {
-            double scaled = Math.max(1, basis[i]) * (double) targetWidth / (double) basisSum;
-            widths[i] = Math.max(1, (int) Math.floor(scaled));
-            fractions[i] = scaled - widths[i];
-            used += widths[i];
-        }
-        while (used < targetWidth) {
-            int index = 0;
-            for (int i = 1; i < fractions.length; i++) {
-                if (fractions[i] > fractions[index]) {
-                    index = i;
-                }
-            }
-            widths[index]++;
-            fractions[index] = 0.0D;
-            used++;
-        }
-        while (used > targetWidth) {
-            int index = 0;
-            for (int i = 1; i < widths.length; i++) {
-                if (widths[i] > widths[index]) {
-                    index = i;
-                }
-            }
-            if (widths[index] <= 1) {
-                break;
-            }
-            widths[index]--;
-            used--;
-        }
-        return widths;
-    }
-
-    private String getHumanLikeButtonLabel(int width) {
-        return width < 74 ? "§d真人" : "§d模拟真人";
-    }
-
-    private String getClearArgsButtonLabel(int width) {
-        return width < 58 ? "§e清" : "§e清空";
-    }
-
-    private String getExecuteButtonLabel(int width) {
-        return width < 58 ? "§a执行" : "§a执行";
-    }
-
-    private String getBackButtonLabel(int width) {
-        return width < 58 ? "返" : "返回";
-    }
-
     private int sumInts(int[] values) {
         int sum = 0;
         for (int value : values) {
@@ -441,25 +361,24 @@ public class GuiBaritoneCommandTable extends ThemedGuiScreen {
         if (this.leftPaneCollapsed) {
             return;
         }
-        int selectorX = this.leftPaneX + 8;
-        int selectorY = this.leftSelectorY;
+        int selectorY = this.leftPaneY + 50;
         int gap = 6;
-        int availableW = Math.max(56, this.leftPaneW - 16);
-        if (this.leftSelectorStacked) {
-            this.buttonList.add(new ThemedButton(BTN_FILTER_MODE, selectorX, selectorY, availableW, 18,
-                    buildModeDropdownLabel(availableW)));
-            this.buttonList.add(new ThemedButton(BTN_FILTER_CATEGORY, selectorX, selectorY + 18 + gap, availableW, 18,
-                    buildCategoryDropdownLabel(availableW)));
-            return;
-        }
+        int availableW = Math.max(140, this.leftPaneW - 16);
+        int modeW = Math.max(72, Math.min(86, availableW / 3));
+        int categoryW = Math.max(80, availableW - modeW - gap);
 
-        int modeW = Math.max(52, Math.min(92, availableW / 3));
-        int categoryW = Math.max(60, availableW - modeW - gap);
-
-        this.buttonList.add(new ThemedButton(BTN_FILTER_MODE, selectorX, selectorY, modeW, 18,
-                buildModeDropdownLabel(modeW)));
-        this.buttonList.add(new ThemedButton(BTN_FILTER_CATEGORY, selectorX + modeW + gap, selectorY, categoryW, 18,
-                buildCategoryDropdownLabel(categoryW)));
+        this.buttonList.add(new ThemedButton(BTN_FILTER_MODE,
+                this.leftPaneX + 8,
+                selectorY,
+                modeW,
+                18,
+                buildModeDropdownLabel()));
+        this.buttonList.add(new ThemedButton(BTN_FILTER_CATEGORY,
+                this.leftPaneX + 8 + modeW + gap,
+                selectorY,
+                categoryW,
+                18,
+                buildCategoryDropdownLabel()));
     }
 
     private void initTabButtons() {
@@ -484,12 +403,8 @@ public class GuiBaritoneCommandTable extends ThemedGuiScreen {
 
         int sidePadding = 10;
         int columnGap = 10;
-        int innerWidth = Math.max(1, this.panelW - sidePadding * 2 - columnGap * 2);
+        int innerWidth = this.panelW - sidePadding * 2 - columnGap * 2;
         int innerX = this.panelX + sidePadding;
-        this.toolbarX = this.panelX + 10;
-        this.toolbarY = this.panelY + 24;
-        this.toolbarW = this.panelW - 20;
-        this.toolbarH = 26;
 
         this.leftPaneY = this.panelY + 56;
         this.leftPaneH = this.panelH - 66;
@@ -502,46 +417,77 @@ public class GuiBaritoneCommandTable extends ThemedGuiScreen {
         int middleCollapsedW = getCollapsedSectionWidth("历史");
         int rightCollapsedW = getCollapsedSectionWidth("详情");
 
-        int[] paneMinimums = getPaneMinimums(innerWidth, leftCollapsedW, middleCollapsedW, rightCollapsedW);
-        int leftMin = paneMinimums[0];
-        int middleMin = paneMinimums[1];
-        int rightMin = paneMinimums[2];
+        int leftMin = this.leftPaneCollapsed ? leftCollapsedW : 190;
+        int middleMin = this.historyPaneCollapsed ? middleCollapsedW : 120;
+        int rightMin = this.rightPaneCollapsed ? rightCollapsedW : 360;
 
-        if (this.leftPaneCollapsed) {
-            this.leftPaneW = leftCollapsedW;
-        } else {
-            int maxLeftWidth = Math.max(leftMin, innerWidth - middleMin - rightMin);
-            this.leftPaneW = MathHelper.clamp((int) Math.round(innerWidth * this.leftPaneRatio), leftMin, maxLeftWidth);
+        this.leftPaneW = leftMin;
+        this.middlePaneW = middleMin;
+        this.rightPaneW = rightMin;
+
+        int remaining = innerWidth - this.leftPaneW - this.middlePaneW - this.rightPaneW;
+        if (remaining < 0) {
+            int shortage = -remaining;
+
+            int middleFloor = this.historyPaneCollapsed ? middleCollapsedW : 84;
+            int leftFloor = this.leftPaneCollapsed ? leftCollapsedW : 160;
+            int rightFloor = this.rightPaneCollapsed ? rightCollapsedW : 260;
+
+            int middleReducible = Math.max(0, this.middlePaneW - middleFloor);
+            int reduceMiddle = Math.min(shortage, middleReducible);
+            this.middlePaneW -= reduceMiddle;
+            shortage -= reduceMiddle;
+
+            int leftReducible = Math.max(0, this.leftPaneW - leftFloor);
+            int reduceLeft = Math.min(shortage, leftReducible);
+            this.leftPaneW -= reduceLeft;
+            shortage -= reduceLeft;
+
+            int rightReducible = Math.max(0, this.rightPaneW - rightFloor);
+            int reduceRight = Math.min(shortage, rightReducible);
+            this.rightPaneW -= reduceRight;
+            shortage -= reduceRight;
+
+            remaining = innerWidth - this.leftPaneW - this.middlePaneW - this.rightPaneW;
         }
 
-        int remainingAfterLeft = Math.max(1, innerWidth - this.leftPaneW);
-        if (this.historyPaneCollapsed) {
-            this.middlePaneW = middleCollapsedW;
-        } else {
-            int maxMiddleWidth = Math.max(middleMin, remainingAfterLeft - rightMin);
-            this.middlePaneW = MathHelper.clamp((int) Math.round(remainingAfterLeft * this.middlePaneRatio),
-                    middleMin, maxMiddleWidth);
+        if (remaining > 0) {
+            int weightSum = 0;
+            if (!this.leftPaneCollapsed) {
+                weightSum += 55;
+            }
+            if (!this.historyPaneCollapsed) {
+                weightSum += 20;
+            }
+            if (!this.rightPaneCollapsed) {
+                weightSum += 225;
+            }
+            if (weightSum <= 0) {
+                this.rightPaneW += remaining;
+            } else {
+                int distributed = 0;
+                if (!this.leftPaneCollapsed) {
+                    int share = remaining * 55 / weightSum;
+                    this.leftPaneW += share;
+                    distributed += share;
+                }
+                if (!this.historyPaneCollapsed) {
+                    int share = remaining * 20 / weightSum;
+                    this.middlePaneW += share;
+                    distributed += share;
+                }
+                this.rightPaneW += remaining - distributed;
+            }
         }
-
-        this.rightPaneW = Math.max(1, innerWidth - this.leftPaneW - this.middlePaneW);
-        this.leftPaneRatio = this.leftPaneCollapsed ? SAVED_LEFT_PANE_RATIO
-                : this.leftPaneW / (double) Math.max(1, innerWidth);
-        this.middlePaneRatio = this.historyPaneCollapsed ? SAVED_MIDDLE_PANE_RATIO
-                : this.middlePaneW / (double) Math.max(1, remainingAfterLeft);
 
         this.leftPaneX = innerX;
         this.middlePaneX = this.leftPaneX + this.leftPaneW + columnGap;
         this.rightPaneX = this.middlePaneX + this.middlePaneW + columnGap;
 
-        this.leftSelectorStacked = shouldStackLeftSelectorButtons(this.leftPaneW - 16);
-        this.leftSearchFieldY = this.leftPaneY + 28;
-        this.leftSelectorY = this.leftSearchFieldY + 24;
-        this.leftSelectorBlockHeight = getLeftSelectorBlockHeight(this.leftPaneW - 16);
-        this.leftStatsY = this.leftSelectorY + this.leftSelectorBlockHeight + 8;
         this.commandListX = this.leftPaneX + 6;
-        this.commandListY = this.leftStatsY + 12;
+        this.commandListY = this.leftPaneY + 88;
         this.commandListW = this.leftPaneW - 12;
-        this.commandListH = Math.max(40, this.leftPaneY + this.leftPaneH - this.commandListY - 8);
+        this.commandListH = Math.max(40, this.leftPaneH - 96);
         this.commandVisibleRows = Math.max(3, this.commandListH / COMMAND_ROW_HEIGHT);
 
         this.historyListX = this.middlePaneX + 6;
@@ -549,233 +495,6 @@ public class GuiBaritoneCommandTable extends ThemedGuiScreen {
         this.historyListW = this.middlePaneW - 12;
         this.historyListH = Math.max(40, this.middlePaneH - 54);
         this.historyVisibleRows = Math.max(1, this.historyListH / HISTORY_ROW_HEIGHT);
-
-        this.leftDividerBounds = this.leftPaneCollapsed ? null
-                : new Rectangle(this.leftPaneX + this.leftPaneW + columnGap / 2 - PANE_DIVIDER_HIT_WIDTH / 2,
-                        this.leftPaneY + 4, PANE_DIVIDER_HIT_WIDTH, Math.max(40, this.leftPaneH - 8));
-        this.middleDividerBounds = this.historyPaneCollapsed ? null
-                : new Rectangle(this.middlePaneX + this.middlePaneW + columnGap / 2 - PANE_DIVIDER_HIT_WIDTH / 2,
-                        this.middlePaneY + 4, PANE_DIVIDER_HIT_WIDTH, Math.max(40, this.middlePaneH - 8));
-    }
-
-    private int getLayoutSidePadding() {
-        return 10;
-    }
-
-    private int getLayoutColumnGap() {
-        return 10;
-    }
-
-    private int getLayoutInnerX() {
-        return this.panelX + getLayoutSidePadding();
-    }
-
-    private int getLayoutInnerWidth() {
-        return Math.max(1, this.panelW - getLayoutSidePadding() * 2 - getLayoutColumnGap() * 2);
-    }
-
-    private Rectangle getDropdownBounds(GuiButton button, int optionCount) {
-        if (button == null || optionCount <= 0 || this.leftPaneCollapsed) {
-            return null;
-        }
-        int rowH = 18;
-        int dropX = button.x;
-        int dropY = getDropdownStartY(button, optionCount);
-        int dropW = Math.max(24, Math.min(button.width, this.leftPaneX + this.leftPaneW - 8 - button.x));
-        int dropH = optionCount * rowH;
-        return new Rectangle(dropX, dropY, dropW, dropH);
-    }
-
-    private int getDropdownStartY(GuiButton button, int optionCount) {
-        int preferredY = button.y + button.height + 2;
-        int dropdownH = optionCount * 18;
-        int minY = this.leftPaneY + 24;
-        int maxY = Math.max(minY, this.leftPaneY + this.leftPaneH - 8 - dropdownH);
-        return MathHelper.clamp(preferredY, minY, maxY);
-    }
-
-    private void applyLeftPaneDividerDrag(int mouseX) {
-        if (this.leftPaneCollapsed) {
-            return;
-        }
-        int innerWidth = getLayoutInnerWidth();
-        int[] paneMinimums = getPaneMinimums(innerWidth,
-                getCollapsedSectionWidth("命令"),
-                getCollapsedSectionWidth("历史"),
-                getCollapsedSectionWidth("详情"));
-        int leftMin = paneMinimums[0];
-        int middleMin = paneMinimums[1];
-        int rightMin = paneMinimums[2];
-        int maxLeftWidth = Math.max(leftMin, innerWidth - middleMin - rightMin);
-        int desiredWidth = mouseX - getLayoutInnerX() - getLayoutColumnGap() / 2;
-        int leftWidth = MathHelper.clamp(desiredWidth, leftMin, maxLeftWidth);
-        this.leftPaneRatio = leftWidth / (double) Math.max(1, innerWidth);
-        SAVED_LEFT_PANE_RATIO = this.leftPaneRatio;
-        initGui();
-    }
-
-    private void applyMiddlePaneDividerDrag(int mouseX) {
-        if (this.historyPaneCollapsed) {
-            return;
-        }
-        int innerWidth = getLayoutInnerWidth();
-        int[] paneMinimums = getPaneMinimums(innerWidth,
-                getCollapsedSectionWidth("命令"),
-                getCollapsedSectionWidth("历史"),
-                getCollapsedSectionWidth("详情"));
-        int middleMin = paneMinimums[1];
-        int rightMin = paneMinimums[2];
-        int remainingWidth = Math.max(1, innerWidth - this.leftPaneW);
-        int maxMiddleWidth = Math.max(middleMin, remainingWidth - rightMin);
-        int desiredWidth = mouseX - this.middlePaneX - getLayoutColumnGap() / 2;
-        int middleWidth = MathHelper.clamp(desiredWidth, middleMin, maxMiddleWidth);
-        this.middlePaneRatio = middleWidth / (double) Math.max(1, remainingWidth);
-        SAVED_MIDDLE_PANE_RATIO = this.middlePaneRatio;
-        initGui();
-    }
-
-    private void persistCurrentPaneRatios() {
-        SAVED_LEFT_PANE_RATIO = clampStoredPaneRatio(Double.valueOf(this.leftPaneRatio), 0.24D);
-        SAVED_MIDDLE_PANE_RATIO = clampStoredPaneRatio(Double.valueOf(this.middlePaneRatio), 0.18D);
-        this.leftPaneRatio = SAVED_LEFT_PANE_RATIO;
-        this.middlePaneRatio = SAVED_MIDDLE_PANE_RATIO;
-        savePersistentState();
-    }
-
-    private void drawPaneDivider(Rectangle bounds, int mouseX, int mouseY, boolean dragging) {
-        if (bounds == null) {
-            return;
-        }
-        boolean hovered = bounds.contains(mouseX, mouseY);
-        int actualX = bounds.x + Math.max(0, (bounds.width - PANE_DIVIDER_WIDTH) / 2);
-        int accent = dragging ? 0xFF7CD9FF : (hovered ? 0xFF63BFEF : 0xFF3E617A);
-        if (hovered || dragging) {
-            drawRect(bounds.x, bounds.y, bounds.x + bounds.width, bounds.y + bounds.height, 0x33111922);
-        }
-        drawRect(actualX, bounds.y, actualX + PANE_DIVIDER_WIDTH, bounds.y + bounds.height, 0x77111922);
-        drawRect(actualX + 5, bounds.y + 18, actualX + 7, bounds.y + bounds.height - 18, accent);
-        int centerY = bounds.y + bounds.height / 2 - 12;
-        for (int i = 0; i < 4; i++) {
-            drawRect(actualX + 3, centerY + i * 7, actualX + PANE_DIVIDER_WIDTH - 3, centerY + i * 7 + 2, accent);
-        }
-    }
-
-    private int[] getPaneMinimums(int totalWidth, int leftCollapsedW, int middleCollapsedW, int rightCollapsedW) {
-        int leftPreferred = this.leftPaneCollapsed ? leftCollapsedW : 190;
-        int middlePreferred = this.historyPaneCollapsed ? middleCollapsedW : 120;
-        int rightPreferred = this.rightPaneCollapsed ? rightCollapsedW : 360;
-        int leftFloor = this.leftPaneCollapsed ? leftCollapsedW : 132;
-        int middleFloor = this.historyPaneCollapsed ? middleCollapsedW : 78;
-        int rightFloor = this.rightPaneCollapsed ? rightCollapsedW : 220;
-        return fitPaneWidthsToTotal(totalWidth,
-                new int[] { leftPreferred, middlePreferred, rightPreferred },
-                new int[] { leftFloor, middleFloor, rightFloor });
-    }
-
-    private int[] fitPaneWidthsToTotal(int totalWidth, int[] preferredWidths, int[] floorWidths) {
-        int count = Math.min(preferredWidths.length, floorWidths.length);
-        int[] result = new int[count];
-        if (count == 0 || totalWidth <= 0) {
-            return result;
-        }
-
-        int preferredSum = 0;
-        int floorSum = 0;
-        for (int i = 0; i < count; i++) {
-            int floor = Math.max(1, floorWidths[i]);
-            int preferred = Math.max(floor, preferredWidths[i]);
-            floorWidths[i] = floor;
-            result[i] = preferred;
-            preferredSum += preferred;
-            floorSum += floor;
-        }
-
-        if (preferredSum <= totalWidth) {
-            return result;
-        }
-        if (floorSum >= totalWidth) {
-            return scaleWidthsToTarget(totalWidth, floorWidths);
-        }
-
-        int overflow = preferredSum - totalWidth;
-        while (overflow > 0) {
-            int reducibleTotal = 0;
-            for (int i = 0; i < count; i++) {
-                reducibleTotal += Math.max(0, result[i] - floorWidths[i]);
-            }
-            if (reducibleTotal <= 0) {
-                break;
-            }
-
-            int reducedThisPass = 0;
-            for (int i = 0; i < count && overflow > 0; i++) {
-                int reducible = Math.max(0, result[i] - floorWidths[i]);
-                if (reducible <= 0) {
-                    continue;
-                }
-                int reduce = Math.max(1, (int) Math.floor(overflow * (reducible / (double) reducibleTotal)));
-                reduce = Math.min(reduce, reducible);
-                result[i] -= reduce;
-                overflow -= reduce;
-                reducedThisPass += reduce;
-            }
-            if (reducedThisPass <= 0) {
-                break;
-            }
-        }
-
-        while (overflow > 0) {
-            boolean reduced = false;
-            for (int i = count - 1; i >= 0 && overflow > 0; i--) {
-                if (result[i] > floorWidths[i]) {
-                    result[i]--;
-                    overflow--;
-                    reduced = true;
-                }
-            }
-            if (!reduced) {
-                break;
-            }
-        }
-        return result;
-    }
-
-    private boolean shouldStackLeftSelectorButtons(int contentWidth) {
-        return Math.max(56, contentWidth) < 172;
-    }
-
-    private int getLeftSelectorBlockHeight(int contentWidth) {
-        return shouldStackLeftSelectorButtons(contentWidth) ? 42 : 18;
-    }
-
-    private String getCompactModeLabel(CommandListMode mode) {
-        if (mode == CommandListMode.FAVORITES) {
-            return "藏";
-        }
-        if (mode == CommandListMode.RECENT) {
-            return "近";
-        }
-        return "全";
-    }
-
-    private String getCompactCategoryLabel(CommandCategory category) {
-        if (category == null) {
-            return "全";
-        }
-        switch (category) {
-            case NAVIGATION:
-                return "导";
-            case WORLD:
-                return "世";
-            case CONTROL:
-                return "控";
-            case INFO:
-                return "信";
-            case OTHER:
-                return "其";
-            default:
-                return "全";
-        }
     }
 
     private void loadCommands() {
@@ -850,7 +569,7 @@ public class GuiBaritoneCommandTable extends ThemedGuiScreen {
 
     private void refreshFilteredCommands() {
         this.filteredCommands.clear();
-        String query = this.searchText == null ? "" : this.searchText.trim().toLowerCase(Locale.ROOT);
+        String query = PinyinSearchHelper.normalizeQuery(this.searchText);
 
         List<CommandEntry> baseList = new ArrayList<CommandEntry>();
         if (this.commandListMode == CommandListMode.ALL) {
@@ -874,8 +593,7 @@ public class GuiBaritoneCommandTable extends ThemedGuiScreen {
             if (this.activeCategory != CommandCategory.ALL && entry.category != this.activeCategory) {
                 continue;
             }
-            String haystack = entry.searchText.toLowerCase(Locale.ROOT);
-            if (query.isEmpty() || haystack.contains(query)) {
+            if (query.isEmpty() || PinyinSearchHelper.matchesNormalized(entry.searchText, query)) {
                 this.filteredCommands.add(entry);
             }
         }
@@ -1453,30 +1171,15 @@ public class GuiBaritoneCommandTable extends ThemedGuiScreen {
     }
 
     private String buildMainSectionLabel(MainSection section) {
-        if (section == MainSection.SETTINGS && this.currentSection == MainSection.SETTINGS) {
-            return "§e返回";
-        }
         boolean active = this.currentSection == section;
         return (active ? "§b" : "§7") + section.label;
     }
 
-    private String buildModeDropdownLabel(int width) {
-        if (width < 62) {
-            return "§f" + getCompactModeLabel(this.commandListMode) + " §7▼";
-        }
-        if (width < 86) {
-            return "§b模式 §f" + this.commandListMode.label + " §7▼";
-        }
+    private String buildModeDropdownLabel() {
         return "§b模式: §f" + this.commandListMode.label + " §7▼";
     }
 
-    private String buildCategoryDropdownLabel(int width) {
-        if (width < 64) {
-            return "§f" + getCompactCategoryLabel(this.activeCategory) + " §7▼";
-        }
-        if (width < 96) {
-            return "§a分类 §f" + this.activeCategory.label + " §7▼";
-        }
+    private String buildCategoryDropdownLabel() {
         return "§a分类: §f" + this.activeCategory.label + " §7▼";
     }
 
@@ -1510,8 +1213,6 @@ public class GuiBaritoneCommandTable extends ThemedGuiScreen {
 
     private void drawCommandView(int mouseX, int mouseY, float partialTicks) {
         drawCenteredString(this.fontRenderer, "Baritone命令表", this.panelX + this.panelW / 2, this.panelY + 10, 0xFFFFFFFF);
-        GuiTheme.drawPanelSegment(this.toolbarX, this.toolbarY, this.toolbarW, this.toolbarH,
-                this.panelX, this.panelY, this.panelW, this.panelH);
 
         GuiTheme.drawPanelSegment(this.leftPaneX, this.leftPaneY, this.leftPaneW, this.leftPaneH,
                 this.panelX, this.panelY, this.panelW, this.panelH);
@@ -1522,7 +1223,7 @@ public class GuiBaritoneCommandTable extends ThemedGuiScreen {
             drawString(this.fontRenderer,
                     String.format("全部 %d / 当前 %d / 收藏 %d / 最近 %d", this.allCommands.size(), this.filteredCommands.size(),
                             FAVORITE_COMMANDS.size(), RECENT_COMMANDS.size()),
-                    this.leftPaneX + 8, this.leftStatsY, 0xFF9FB2C8);
+                    this.leftPaneX + 8, this.leftPaneY + 76, 0xFF9FB2C8);
             drawCommandList(mouseX, mouseY);
         }
 
@@ -1536,8 +1237,6 @@ public class GuiBaritoneCommandTable extends ThemedGuiScreen {
         }
 
         drawRightPane(mouseX, mouseY, partialTicks);
-        drawPaneDivider(this.leftDividerBounds, mouseX, mouseY, this.draggingLeftDivider);
-        drawPaneDivider(this.middleDividerBounds, mouseX, mouseY, this.draggingMiddleDivider);
 
         super.drawScreen(mouseX, mouseY, partialTicks);
 
@@ -1603,8 +1302,7 @@ public class GuiBaritoneCommandTable extends ThemedGuiScreen {
         }
 
         if (this.filteredCommands.isEmpty()) {
-            GuiTheme.drawEmptyState(this.commandListX + this.commandListW / 2, this.commandListY + this.commandListH / 2,
-                    "当前筛选下没有命令", this.fontRenderer);
+            GuiTheme.drawEmptyState(this.leftPaneX + this.leftPaneW / 2, this.leftPaneY + 140, "当前筛选下没有命令", this.fontRenderer);
             return;
         }
 
@@ -2171,7 +1869,7 @@ public class GuiBaritoneCommandTable extends ThemedGuiScreen {
         }
 
         if (button.id == BTN_BACK) {
-            this.mc.displayGuiScreen(this.parentScreen);
+            this.mc.setScreen(this.parentScreen);
             return;
         }
         if (button.id == BTN_NAV_COMMANDS) {
@@ -2179,13 +1877,13 @@ public class GuiBaritoneCommandTable extends ThemedGuiScreen {
             initGui();
             return;
         }
-        if (button.id == BTN_NAV_SETTINGS) {
+        if (button.id == BTN_NAV_SETTINGS || button.id == BTN_OPEN_SETTINGS) {
             this.currentSection = MainSection.SETTINGS;
             initGui();
             return;
         }
         if (button.id == BTN_HUMAN_LIKE_MOVEMENT) {
-            this.mc.displayGuiScreen(new GuiHumanLikeMovementSettings(this));
+            this.mc.setScreen(new GuiHumanLikeMovementSettings(this));
             return;
         }
         if (button.id == BTN_EXECUTE) {
@@ -2303,9 +2001,12 @@ public class GuiBaritoneCommandTable extends ThemedGuiScreen {
     }
 
     private void handleSettingsAction(GuiButton button) {
-        if (button.id == BTN_NAV_COMMANDS || button.id == BTN_NAV_SETTINGS || button.id == BTN_SETTINGS_BACK) {
+        if (button.id == BTN_NAV_COMMANDS || button.id == BTN_SETTINGS_BACK) {
             this.currentSection = MainSection.COMMANDS;
             initGui();
+            return;
+        }
+        if (button.id == BTN_NAV_SETTINGS) {
             return;
         }
         if (button.id == BTN_SETTINGS_CLEAR_FILTER) {
@@ -2314,8 +2015,6 @@ public class GuiBaritoneCommandTable extends ThemedGuiScreen {
             this.settingsModifiedOnly = false;
             this.settingsSearchText = "";
             this.settingsPage = 0;
-            this.settingsTypeDropdownOpen = false;
-            this.settingsModifiedDropdownOpen = false;
             initGui();
             if (this.settingsSearchField != null) {
                 this.settingsSearchField.setText("");
@@ -2325,15 +2024,17 @@ public class GuiBaritoneCommandTable extends ThemedGuiScreen {
             return;
         }
         if (button.id == BTN_SETTINGS_TYPE_FILTER) {
-            this.settingsTypeDropdownOpen = !this.settingsTypeDropdownOpen;
-            this.settingsModifiedDropdownOpen = false;
-            this.openSettingChoiceKey = null;
+            saveSettingsPageEdits();
+            cycleSettingsTypeFilter();
+            this.settingsPage = 0;
+            initGui();
             return;
         }
         if (button.id == BTN_SETTINGS_MODIFIED_ONLY) {
-            this.settingsModifiedDropdownOpen = !this.settingsModifiedDropdownOpen;
-            this.settingsTypeDropdownOpen = false;
-            this.openSettingChoiceKey = null;
+            saveSettingsPageEdits();
+            this.settingsModifiedOnly = !this.settingsModifiedOnly;
+            this.settingsPage = 0;
+            initGui();
             return;
         }
         if (button.id == BTN_SETTINGS_PREV_PAGE) {
@@ -2369,234 +2070,15 @@ public class GuiBaritoneCommandTable extends ThemedGuiScreen {
         }
     }
 
-    private boolean handleSettingsDropdownClick(int mouseX, int mouseY) {
-        if (handleSettingChoiceDropdownClick(mouseX, mouseY)) {
-            return true;
-        }
-        return handleSettingsFilterDropdownClick(mouseX, mouseY);
-    }
-
-    private boolean handleSettingsFilterDropdownClick(int mouseX, int mouseY) {
-        GuiButton typeButton = findButtonById(BTN_SETTINGS_TYPE_FILTER);
-        GuiButton modifiedButton = findButtonById(BTN_SETTINGS_MODIFIED_ONLY);
-        boolean hadOpenDropdown = this.settingsTypeDropdownOpen || this.settingsModifiedDropdownOpen;
-
-        if (this.settingsTypeDropdownOpen && typeButton != null) {
-            if (mouseX >= typeButton.x && mouseX < typeButton.x + typeButton.width
-                    && mouseY >= typeButton.y && mouseY < typeButton.y + typeButton.height) {
-                return false;
-            }
-            for (int i = 0; i < SETTINGS_TYPE_FILTERS.length; i++) {
-                int rowX = typeButton.x;
-                int rowY = typeButton.y + typeButton.height + i * 18;
-                int rowW = typeButton.width;
-                int rowH = 18;
-                if (mouseX >= rowX && mouseX < rowX + rowW && mouseY >= rowY && mouseY < rowY + rowH) {
-                    saveSettingsPageEdits();
-                    this.settingsTypeFilter = SETTINGS_TYPE_FILTERS[i];
-                    this.settingsPage = 0;
-                    initGui();
-                    return true;
-                }
-            }
-        }
-
-        if (this.settingsModifiedDropdownOpen && modifiedButton != null) {
-            if (mouseX >= modifiedButton.x && mouseX < modifiedButton.x + modifiedButton.width
-                    && mouseY >= modifiedButton.y && mouseY < modifiedButton.y + modifiedButton.height) {
-                return false;
-            }
-            for (int i = 0; i < 2; i++) {
-                int rowX = modifiedButton.x;
-                int rowY = modifiedButton.y + modifiedButton.height + i * 18;
-                int rowW = modifiedButton.width;
-                int rowH = 18;
-                if (mouseX >= rowX && mouseX < rowX + rowW && mouseY >= rowY && mouseY < rowY + rowH) {
-                    saveSettingsPageEdits();
-                    this.settingsModifiedOnly = i == 1;
-                    this.settingsPage = 0;
-                    initGui();
-                    return true;
-                }
-            }
-        }
-
-        if (hadOpenDropdown) {
-            this.settingsTypeDropdownOpen = false;
-            this.settingsModifiedDropdownOpen = false;
-            return true;
-        }
-        return false;
-    }
-
-    private boolean handleSettingChoiceDropdownClick(int mouseX, int mouseY) {
-        if (this.openSettingChoiceKey == null) {
-            return false;
-        }
-        GuiButton button = findSettingChoiceButtonByKey(this.openSettingChoiceKey);
-        List<String> options = this.settingChoiceOptions.get(this.openSettingChoiceKey);
-        if (button == null || options == null || options.isEmpty()) {
-            this.openSettingChoiceKey = null;
-            return false;
-        }
-        if (mouseX >= button.x && mouseX < button.x + button.width
-                && mouseY >= button.y && mouseY < button.y + button.height) {
-            return false;
-        }
-        int rowH = 18;
-        int dropX = button.x;
-        int dropY = button.y + button.height + 2;
-        int dropW = button.width;
-        int dropH = rowH * options.size();
-        if (mouseX >= dropX && mouseX < dropX + dropW && mouseY >= dropY && mouseY < dropY + dropH) {
-            int index = (mouseY - dropY) / rowH;
-            if (index >= 0 && index < options.size()) {
-                String value = options.get(index);
-                this.settingEditingValues.put(this.openSettingChoiceKey, value);
-                this.settingStatusMessages.put(this.openSettingChoiceKey, "待应用");
-                if (button != null) {
-                    button.displayString = buildSettingChoiceLabel(getSettingDefinitionByKey(this.openSettingChoiceKey), value);
-                }
-                this.settingsStatusMessage = this.openSettingChoiceKey + " 已修改";
-                this.settingsStatusColor = 0xFFE7C35A;
-            }
-            this.openSettingChoiceKey = null;
-            return true;
-        }
-        this.openSettingChoiceKey = null;
-        return true;
-    }
-
-    private void drawSettingsDropdownOverlays(int mouseX, int mouseY) {
-        drawSettingsTypeFilterDropdown(mouseX, mouseY);
-        drawSettingsModifiedFilterDropdown(mouseX, mouseY);
-        drawSettingChoiceDropdown(mouseX, mouseY);
-    }
-
-    private void drawSettingsTypeFilterDropdown(int mouseX, int mouseY) {
-        if (!this.settingsTypeDropdownOpen) {
-            return;
-        }
-        GuiButton button = findButtonById(BTN_SETTINGS_TYPE_FILTER);
-        if (button == null) {
-            return;
-        }
-        for (int i = 0; i < SETTINGS_TYPE_FILTERS.length; i++) {
-            int rowX = button.x;
-            int rowY = button.y + button.height + i * 18;
-            int rowW = button.width;
-            int rowH = 18;
-            boolean hover = mouseX >= rowX && mouseX < rowX + rowW && mouseY >= rowY && mouseY < rowY + rowH;
-            boolean selected = SETTINGS_TYPE_FILTERS[i].equals(this.settingsTypeFilter);
-            GuiTheme.drawButtonFrame(rowX, rowY, rowW, rowH,
-                    selected ? GuiTheme.UiState.SELECTED : (hover ? GuiTheme.UiState.HOVER : GuiTheme.UiState.NORMAL));
-            if (selected) {
-                Gui.drawRect(rowX + 1, rowY + 1, rowX + 4, rowY + rowH - 1, 0xFF7ED0FF);
-            }
-            drawString(this.fontRenderer,
-                    (selected ? "§b✔ " : "§7") + ("all".equals(SETTINGS_TYPE_FILTERS[i]) ? "全部" : SETTINGS_TYPE_FILTERS[i]),
-                    rowX + 6, rowY + 5, 0xFFFFFFFF);
-        }
-    }
-
-    private void drawSettingsModifiedFilterDropdown(int mouseX, int mouseY) {
-        if (!this.settingsModifiedDropdownOpen) {
-            return;
-        }
-        GuiButton button = findButtonById(BTN_SETTINGS_MODIFIED_ONLY);
-        if (button == null) {
-            return;
-        }
-        for (int i = 0; i < 2; i++) {
-            boolean optionModifiedOnly = i == 1;
-            int rowX = button.x;
-            int rowY = button.y + button.height + i * 18;
-            int rowW = button.width;
-            int rowH = 18;
-            boolean hover = mouseX >= rowX && mouseX < rowX + rowW && mouseY >= rowY && mouseY < rowY + rowH;
-            boolean selected = this.settingsModifiedOnly == optionModifiedOnly;
-            GuiTheme.drawButtonFrame(rowX, rowY, rowW, rowH,
-                    selected ? GuiTheme.UiState.SELECTED : (hover ? GuiTheme.UiState.HOVER : GuiTheme.UiState.NORMAL));
-            if (selected) {
-                Gui.drawRect(rowX + 1, rowY + 1, rowX + 4, rowY + rowH - 1, 0xFF7ED0FF);
-            }
-            drawString(this.fontRenderer, (selected ? "§b✔ " : "§7") + (optionModifiedOnly ? "仅已修改" : "全部"),
-                    rowX + 6, rowY + 5, 0xFFFFFFFF);
-        }
-    }
-
-    private void drawSettingChoiceDropdown(int mouseX, int mouseY) {
-        if (this.openSettingChoiceKey == null) {
-            return;
-        }
-        GuiButton button = findSettingChoiceButtonByKey(this.openSettingChoiceKey);
-        SettingDef def = getSettingDefinitionByKey(this.openSettingChoiceKey);
-        List<String> options = this.settingChoiceOptions.get(this.openSettingChoiceKey);
-        if (button == null || def == null || options == null || options.isEmpty()) {
-            return;
-        }
-        int rowH = 18;
-        int x = button.x;
-        int y = button.y + button.height + 2;
-        int w = button.width;
-        Gui.drawRect(x, y, x + w, y + rowH * options.size(), 0xEE1B2633);
-        for (int i = 0; i < options.size(); i++) {
-            int rowY = y + i * rowH;
-            boolean hover = mouseX >= x && mouseX < x + w && mouseY >= rowY && mouseY < rowY + rowH;
-            boolean selected = options.get(i).equalsIgnoreCase(this.settingEditingValues.getOrDefault(this.openSettingChoiceKey, def.defaultValue));
-            if (hover) {
-                Gui.drawRect(x + 1, rowY + 1, x + w - 1, rowY + rowH - 1, 0xAA36506A);
-            } else if (selected) {
-                Gui.drawRect(x + 1, rowY + 1, x + w - 1, rowY + rowH - 1, 0xAA27435C);
-            }
-            drawString(this.fontRenderer, trimToWidth(formatSettingChoiceValue(def, options.get(i)), w - 8),
-                    x + 4, rowY + 5, selected ? 0xFFFFFFFF : 0xFFD7E5F3);
-        }
-    }
-
-    private GuiButton findSettingChoiceButtonByKey(String key) {
-        for (GuiButton button : this.settingChoiceButtons) {
-            if (key.equals(this.settingChoiceButtonToKey.get(button))) {
-                return button;
-            }
-        }
-        return null;
-    }
-
-    private SettingDef getSettingDefinitionByKey(String key) {
-        for (SettingDef def : this.settingFilteredDefs) {
-            if (def.key.equalsIgnoreCase(key)) {
-                return def;
-            }
-        }
-        for (SettingDef def : this.settingAllDefs) {
-            if (def.key.equalsIgnoreCase(key)) {
-                return def;
-            }
-        }
-        return null;
-    }
-
     @Override
     protected void mouseClicked(int mouseX, int mouseY, int mouseButton) throws IOException {
         if (this.currentSection == MainSection.SETTINGS) {
-            if (handleSettingsDropdownClick(mouseX, mouseY)) {
-                return;
-            }
             super.mouseClicked(mouseX, mouseY, mouseButton);
             handleSettingsMouseClicked(mouseX, mouseY, mouseButton);
             return;
         }
 
         if (mouseButton == 0) {
-            if (this.leftDividerBounds != null && this.leftDividerBounds.contains(mouseX, mouseY)) {
-                this.draggingLeftDivider = true;
-                return;
-            }
-            if (this.middleDividerBounds != null && this.middleDividerBounds.contains(mouseX, mouseY)) {
-                this.draggingMiddleDivider = true;
-                return;
-            }
             if (isInCollapseButton(mouseX, mouseY, this.leftPaneX, this.leftPaneY, this.leftPaneW)) {
                 this.leftPaneCollapsed = !this.leftPaneCollapsed;
                 initGui();
@@ -2614,11 +2096,11 @@ public class GuiBaritoneCommandTable extends ThemedGuiScreen {
             }
         }
 
+        super.mouseClicked(mouseX, mouseY, mouseButton);
+
         if (handleDropdownClick(mouseX, mouseY)) {
             return;
         }
-
-        super.mouseClicked(mouseX, mouseY, mouseButton);
 
         if (!this.leftPaneCollapsed && this.searchField != null) {
             this.searchField.mouseClicked(mouseX, mouseY, mouseButton);
@@ -2662,7 +2144,6 @@ public class GuiBaritoneCommandTable extends ThemedGuiScreen {
     private boolean handleDropdownClick(int mouseX, int mouseY) {
         GuiButton modeButton = findButtonById(BTN_FILTER_MODE);
         GuiButton categoryButton = findButtonById(BTN_FILTER_CATEGORY);
-        boolean hadOpenDropdown = this.modeDropdownOpen || this.categoryDropdownOpen;
 
         if (this.modeDropdownOpen && modeButton != null) {
             if (mouseX >= modeButton.x && mouseX < modeButton.x + modeButton.width
@@ -2670,11 +2151,10 @@ public class GuiBaritoneCommandTable extends ThemedGuiScreen {
                 return true;
             }
             CommandListMode[] values = CommandListMode.values();
-            Rectangle bounds = getDropdownBounds(modeButton, values.length);
             for (int i = 0; i < values.length; i++) {
-                int rowX = bounds == null ? modeButton.x : bounds.x;
-                int rowY = (bounds == null ? modeButton.y + modeButton.height + 2 : bounds.y) + i * 18;
-                int rowW = bounds == null ? modeButton.width : bounds.width;
+                int rowX = modeButton.x;
+                int rowY = modeButton.y + modeButton.height + i * 18;
+                int rowW = modeButton.width;
                 int rowH = 18;
                 if (mouseX >= rowX && mouseX < rowX + rowW && mouseY >= rowY && mouseY < rowY + rowH) {
                     this.commandListMode = values[i];
@@ -2693,11 +2173,10 @@ public class GuiBaritoneCommandTable extends ThemedGuiScreen {
                 return true;
             }
             CommandCategory[] values = CommandCategory.values();
-            Rectangle bounds = getDropdownBounds(categoryButton, values.length);
             for (int i = 0; i < values.length; i++) {
-                int rowX = bounds == null ? categoryButton.x : bounds.x;
-                int rowY = (bounds == null ? categoryButton.y + categoryButton.height + 2 : bounds.y) + i * 18;
-                int rowW = bounds == null ? categoryButton.width : bounds.width;
+                int rowX = categoryButton.x;
+                int rowY = categoryButton.y + categoryButton.height + i * 18;
+                int rowW = categoryButton.width;
                 int rowH = 18;
                 if (mouseX >= rowX && mouseX < rowX + rowW && mouseY >= rowY && mouseY < rowY + rowH) {
                     this.activeCategory = values[i];
@@ -2710,40 +2189,7 @@ public class GuiBaritoneCommandTable extends ThemedGuiScreen {
             this.categoryDropdownOpen = false;
         }
 
-        return hadOpenDropdown;
-    }
-
-    @Override
-    protected void mouseReleased(int mouseX, int mouseY, int state) {
-        if (this.currentSection != MainSection.SETTINGS && state == 0
-                && (this.draggingLeftDivider || this.draggingMiddleDivider)) {
-            if (this.draggingLeftDivider) {
-                applyLeftPaneDividerDrag(mouseX);
-            }
-            if (this.draggingMiddleDivider) {
-                applyMiddlePaneDividerDrag(mouseX);
-            }
-            this.draggingLeftDivider = false;
-            this.draggingMiddleDivider = false;
-            persistCurrentPaneRatios();
-            return;
-        }
-        super.mouseReleased(mouseX, mouseY, state);
-    }
-
-    @Override
-    protected void mouseClickMove(int mouseX, int mouseY, int clickedMouseButton, long timeSinceLastClick) {
-        if (this.currentSection != MainSection.SETTINGS) {
-            if (this.draggingLeftDivider) {
-                applyLeftPaneDividerDrag(mouseX);
-                return;
-            }
-            if (this.draggingMiddleDivider) {
-                applyMiddlePaneDividerDrag(mouseX);
-                return;
-            }
-        }
-        super.mouseClickMove(mouseX, mouseY, clickedMouseButton, timeSinceLastClick);
+        return false;
     }
 
     private void drawDropdownOverlays(int mouseX, int mouseY) {
@@ -2761,15 +2207,10 @@ public class GuiBaritoneCommandTable extends ThemedGuiScreen {
         }
 
         CommandListMode[] values = CommandListMode.values();
-        Rectangle bounds = getDropdownBounds(button, values.length);
-        if (bounds == null) {
-            return;
-        }
-        Gui.drawRect(bounds.x, bounds.y, bounds.x + bounds.width, bounds.y + bounds.height, 0xEE1B2633);
         for (int i = 0; i < values.length; i++) {
-            int rowX = bounds.x;
-            int rowY = bounds.y + i * 18;
-            int rowW = bounds.width;
+            int rowX = button.x;
+            int rowY = button.y + button.height + i * 18;
+            int rowW = button.width;
             int rowH = 18;
             boolean hover = mouseX >= rowX && mouseX < rowX + rowW && mouseY >= rowY && mouseY < rowY + rowH;
             boolean selected = this.commandListMode == values[i];
@@ -2792,15 +2233,10 @@ public class GuiBaritoneCommandTable extends ThemedGuiScreen {
         }
 
         CommandCategory[] values = CommandCategory.values();
-        Rectangle bounds = getDropdownBounds(button, values.length);
-        if (bounds == null) {
-            return;
-        }
-        Gui.drawRect(bounds.x, bounds.y, bounds.x + bounds.width, bounds.y + bounds.height, 0xEE1B2633);
         for (int i = 0; i < values.length; i++) {
-            int rowX = bounds.x;
-            int rowY = bounds.y + i * 18;
-            int rowW = bounds.width;
+            int rowX = button.x;
+            int rowY = button.y + button.height + i * 18;
+            int rowW = button.width;
             int rowH = 18;
             boolean hover = mouseX >= rowX && mouseX < rowX + rowW && mouseY >= rowY && mouseY < rowY + rowH;
             boolean selected = this.activeCategory == values[i];
@@ -2826,7 +2262,7 @@ public class GuiBaritoneCommandTable extends ThemedGuiScreen {
                 this.categoryDropdownOpen = false;
                 return;
             }
-            this.mc.displayGuiScreen(this.parentScreen);
+            this.mc.setScreen(this.parentScreen);
             return;
         }
 
@@ -2868,12 +2304,6 @@ public class GuiBaritoneCommandTable extends ThemedGuiScreen {
 
     private void handleSettingsKeyTyped(char typedChar, int keyCode) throws IOException {
         if (keyCode == Keyboard.KEY_ESCAPE) {
-            if (this.settingsTypeDropdownOpen || this.settingsModifiedDropdownOpen || this.openSettingChoiceKey != null) {
-                this.settingsTypeDropdownOpen = false;
-                this.settingsModifiedDropdownOpen = false;
-                this.openSettingChoiceKey = null;
-                return;
-            }
             this.currentSection = MainSection.COMMANDS;
             initGui();
             return;
@@ -2923,8 +2353,8 @@ public class GuiBaritoneCommandTable extends ThemedGuiScreen {
             return;
         }
 
-        int mouseX = Mouse.getEventX() * this.width / this.mc.displayWidth;
-        int mouseY = this.height - Mouse.getEventY() * this.height / this.mc.displayHeight - 1;
+        int mouseX = Mouse.getEventX() * this.width / this.mc.getWindow().getWidth();
+        int mouseY = this.height - Mouse.getEventY() * this.height / this.mc.getWindow().getHeight() - 1;
 
         if (handleDropdownWheel(mouseX, mouseY, wheel)) {
             return;
@@ -2971,11 +2401,8 @@ public class GuiBaritoneCommandTable extends ThemedGuiScreen {
         GuiButton categoryButton = findButtonById(BTN_FILTER_CATEGORY);
 
         if (this.modeDropdownOpen && modeButton != null) {
-            Rectangle bounds = getDropdownBounds(modeButton, CommandListMode.values().length);
-            boolean overButton = mouseX >= modeButton.x && mouseX < modeButton.x + modeButton.width
-                    && mouseY >= modeButton.y && mouseY < modeButton.y + modeButton.height;
-            boolean overDropdown = bounds != null && bounds.contains(mouseX, mouseY);
-            if (overButton || overDropdown) {
+            if (mouseX >= modeButton.x && mouseX < modeButton.x + modeButton.width
+                    && mouseY >= modeButton.y && mouseY < modeButton.y + modeButton.height + CommandListMode.values().length * 18) {
                 int currentIndex = this.commandListMode.ordinal();
                 int next = wheel < 0 ? Math.min(CommandListMode.values().length - 1, currentIndex + 1)
                         : Math.max(0, currentIndex - 1);
@@ -2988,11 +2415,8 @@ public class GuiBaritoneCommandTable extends ThemedGuiScreen {
         }
 
         if (this.categoryDropdownOpen && categoryButton != null) {
-            Rectangle bounds = getDropdownBounds(categoryButton, CommandCategory.values().length);
-            boolean overButton = mouseX >= categoryButton.x && mouseX < categoryButton.x + categoryButton.width
-                    && mouseY >= categoryButton.y && mouseY < categoryButton.y + categoryButton.height;
-            boolean overDropdown = bounds != null && bounds.contains(mouseX, mouseY);
-            if (overButton || overDropdown) {
+            if (mouseX >= categoryButton.x && mouseX < categoryButton.x + categoryButton.width
+                    && mouseY >= categoryButton.y && mouseY < categoryButton.y + categoryButton.height + CommandCategory.values().length * 18) {
                 int currentIndex = this.activeCategory.ordinal();
                 int next = wheel < 0 ? Math.min(CommandCategory.values().length - 1, currentIndex + 1)
                         : Math.max(0, currentIndex - 1);
@@ -3027,9 +2451,6 @@ public class GuiBaritoneCommandTable extends ThemedGuiScreen {
 
         int modifiedCount = 0;
         for (SettingDef def : this.settingAllDefs) {
-            if (BaritoneParkourSettingsHelper.isParkourSettingKey(def.key)) {
-                continue;
-            }
             String value = this.settingEditingValues.getOrDefault(def.key, def.defaultValue);
             if (!isSettingDefaultValue(def, value)) {
                 modifiedCount++;
@@ -3039,7 +2460,7 @@ public class GuiBaritoneCommandTable extends ThemedGuiScreen {
         drawString(this.fontRenderer,
                 String.format(Locale.ROOT, "当前页: %d/%d   本页容量: %d   结果: %d   已修改: %d",
                         this.settingsPage + 1, this.settingsTotalPages, this.settingsItemsPerPage, this.settingFilteredDefs.size(), modifiedCount),
-                this.panelX + 10, this.panelY + 52, 0xFFCFCFCF);
+                this.panelX + 10, this.panelY + 34, 0xFFCFCFCF);
 
         int start = this.settingsPage * this.settingsItemsPerPage;
         int end = Math.min(this.settingFilteredDefs.size(), start + this.settingsItemsPerPage);
@@ -3058,9 +2479,7 @@ public class GuiBaritoneCommandTable extends ThemedGuiScreen {
 
             String descText = trimToWidth(def.desc, cardW - 12);
             String keyText = trimToWidth(def.key, cardW - 12);
-            String metaText = trimToWidth(
-                    "当前: " + getCurrentSettingDisplayValue(def) + "  默认: " + getDefaultSettingDisplayValue(def),
-                    cardW - 12);
+            String metaText = trimToWidth("类型: " + def.type + "  默认: " + getResolvedSettingDefaultValue(def), cardW - 12);
 
             drawString(this.fontRenderer, descText, cardX + 6, cardY + 4, 0xFFFFFFFF);
             drawString(this.fontRenderer, keyText, cardX + 6, cardY + 16, 0xFF98B9FF);
@@ -3076,7 +2495,6 @@ public class GuiBaritoneCommandTable extends ThemedGuiScreen {
                 this.hoverTooltip = "§e设置项: " + def.key
                         + "\n§7描述: " + def.desc
                         + "\n§7类型: " + def.type
-                        + "\n§7当前: " + getCurrentSettingDisplayValue(def)
                         + "\n§7默认: " + getResolvedSettingDefaultValue(def);
                 this.hoverTooltipX = mouseX;
                 this.hoverTooltipY = mouseY;
@@ -3084,9 +2502,6 @@ public class GuiBaritoneCommandTable extends ThemedGuiScreen {
         }
 
         for (GuiButton b : this.settingBoolButtons) {
-            b.drawButton(this.mc, mouseX, mouseY, partialTicks);
-        }
-        for (GuiButton b : this.settingChoiceButtons) {
             b.drawButton(this.mc, mouseX, mouseY, partialTicks);
         }
         for (GuiButton b : this.settingVisualEditorButtons) {
@@ -3097,7 +2512,6 @@ public class GuiBaritoneCommandTable extends ThemedGuiScreen {
         }
 
         super.drawScreen(mouseX, mouseY, partialTicks);
-        drawSettingsDropdownOverlays(mouseX, mouseY);
 
         drawString(this.fontRenderer, this.settingsStatusMessage == null ? "" : this.settingsStatusMessage,
                 this.panelX + 10, this.panelY + this.panelH - 14, this.settingsStatusColor);
@@ -3171,7 +2585,7 @@ public class GuiBaritoneCommandTable extends ThemedGuiScreen {
 
         updateSettingsResponsiveLayout();
         this.settingsContentX = this.panelX + 10;
-        this.settingsContentY = this.panelY + 74;
+        this.settingsContentY = this.panelY + 60;
         this.settingsContentW = this.panelW - 20;
 
         int searchW = Math.max(180, Math.min(360, this.panelW / 3));
@@ -3182,22 +2596,11 @@ public class GuiBaritoneCommandTable extends ThemedGuiScreen {
         this.settingsSearchField.setText(this.settingsSearchText == null ? "" : this.settingsSearchText);
 
         int topY = this.panelY + 26;
-        int navButtonW = Math.max(60, Math.min(86, (this.panelW - 80) / 7));
-        int navCommandsX = this.panelX + 12;
-        int navSettingsX = navCommandsX + navButtonW + 6;
-        int filterX = navSettingsX + navButtonW + 12;
-        int typeW = Math.max(104, Math.min(122, this.panelW / 7));
-        int modifiedW = Math.max(106, Math.min(126, this.panelW / 7));
-
-        this.buttonList.add(new ThemedButton(BTN_NAV_COMMANDS, navCommandsX, topY, navButtonW, 18,
-                buildMainSectionLabel(MainSection.COMMANDS)));
-        this.buttonList.add(new ThemedButton(BTN_NAV_SETTINGS, navSettingsX, topY, navButtonW, 18,
-                buildMainSectionLabel(MainSection.SETTINGS)));
-        this.buttonList.add(new ThemedButton(BTN_SETTINGS_TYPE_FILTER, filterX, topY, typeW, 18,
-                buildSettingsTypeFilterLabel()));
-        this.buttonList.add(new ThemedButton(BTN_SETTINGS_MODIFIED_ONLY, filterX + typeW + 6, topY, modifiedW, 18,
-                buildSettingsModifiedFilterLabel()));
-        this.buttonList.add(new ThemedButton(BTN_SETTINGS_CLEAR_FILTER, filterX + typeW + modifiedW + 12, topY, 78, 18, "§f清空"));
+        this.buttonList.add(new ThemedButton(BTN_NAV_COMMANDS, this.panelX + 12, topY, 86, 18, buildMainSectionLabel(MainSection.COMMANDS)));
+        this.buttonList.add(new ThemedButton(BTN_NAV_SETTINGS, this.panelX + 104, topY, 86, 18, buildMainSectionLabel(MainSection.SETTINGS)));
+        this.buttonList.add(new ThemedButton(BTN_SETTINGS_TYPE_FILTER, this.panelX + 196, topY, 112, 18, buildSettingsTypeFilterLabel()));
+        this.buttonList.add(new ThemedButton(BTN_SETTINGS_MODIFIED_ONLY, this.panelX + 314, topY, 102, 18, buildSettingsModifiedFilterLabel()));
+        this.buttonList.add(new ThemedButton(BTN_SETTINGS_CLEAR_FILTER, this.panelX + 422, topY, 78, 18, "§f清空"));
 
         applySettingsFilter(this.settingsSearchField.getText());
         recalcSettingsPaging();
@@ -3221,11 +2624,8 @@ public class GuiBaritoneCommandTable extends ThemedGuiScreen {
     private void buildSettingsPageControls() {
         this.settingValueFields.clear();
         this.settingBoolButtons.clear();
-        this.settingChoiceButtons.clear();
         this.settingVisualEditorButtons.clear();
         this.settingButtonToKey.clear();
-        this.settingChoiceButtonToKey.clear();
-        this.settingChoiceOptions.clear();
         this.settingVisualEditorButtonDefs.clear();
 
         int start = this.settingsPage * this.settingsItemsPerPage;
@@ -3246,21 +2646,13 @@ public class GuiBaritoneCommandTable extends ThemedGuiScreen {
             int controlX = cardX + 6;
             int controlY = cardY + this.settingsCardHeight - 22;
             int controlW = cardW - 12;
-
             SettingBlockEditorMode editorMode = getSettingBlockEditorMode(def);
-            List<String> finiteChoices = getSettingFiniteChoices(def);
 
             if ("boolean".equals(def.type)) {
                 boolean on = parseSettingBoolean(value, def.defaultValue);
                 ThemedButton btn = new ThemedButton(idBase + local, controlX, controlY, controlW, 16, buildSettingBoolLabel(on));
                 this.settingBoolButtons.add(btn);
                 this.settingButtonToKey.put(btn, def.key);
-            } else if (shouldUseSettingChoiceEditor(def, finiteChoices)) {
-                ThemedButton btn = new ThemedButton(idBase + local, controlX, controlY, controlW, 16,
-                        buildSettingChoiceLabel(def, value));
-                this.settingChoiceButtons.add(btn);
-                this.settingChoiceButtonToKey.put(btn, def.key);
-                this.settingChoiceOptions.put(def.key, finiteChoices);
             } else if (editorMode != SettingBlockEditorMode.NONE) {
                 ThemedButton btn = new ThemedButton(idBase + local, controlX, controlY, controlW, 16,
                         buildSettingVisualEditorLabel(def, value, editorMode));
@@ -3286,16 +2678,12 @@ public class GuiBaritoneCommandTable extends ThemedGuiScreen {
 
     private void applySettingsFilter(String query) {
         this.settingsSearchText = query == null ? "" : query.trim();
-        String q = this.settingsSearchText.toLowerCase(Locale.ROOT);
+        String q = PinyinSearchHelper.normalizeQuery(this.settingsSearchText);
         this.settingFilteredDefs.clear();
 
         for (SettingDef def : this.settingAllDefs) {
-            if (BaritoneParkourSettingsHelper.isParkourSettingKey(def.key)) {
-                continue;
-            }
-            String key = def.key == null ? "" : def.key.toLowerCase(Locale.ROOT);
-            String desc = def.desc == null ? "" : def.desc.toLowerCase(Locale.ROOT);
-            boolean textMatch = q.isEmpty() || key.contains(q) || desc.contains(q);
+            String searchContent = (def.key == null ? "" : def.key) + " " + (def.desc == null ? "" : def.desc);
+            boolean textMatch = q.isEmpty() || PinyinSearchHelper.matchesNormalized(searchContent, q);
             boolean typeMatch = matchesSettingsTypeFilter(def);
             boolean modifiedMatch = !this.settingsModifiedOnly || isSettingsModifiedValue(def);
             if (textMatch && typeMatch && modifiedMatch) {
@@ -3325,76 +2713,17 @@ public class GuiBaritoneCommandTable extends ThemedGuiScreen {
         return "true".equalsIgnoreCase(v.trim());
     }
 
-    private String getCurrentSettingDisplayValue(SettingDef def) {
-        String value = normalizeSettingValue(def, this.settingEditingValues.getOrDefault(def.key, def.defaultValue));
-        if ("boolean".equals(def.type)) {
-            return parseSettingBoolean(value, def.defaultValue) ? "开启" : "关闭";
-        }
-        if (shouldUseSettingChoiceEditor(def)) {
-            return formatSettingChoiceValue(def, value);
-        }
-        return value == null || value.trim().isEmpty() ? "(空)" : value.trim();
-    }
-
-    private String getDefaultSettingDisplayValue(SettingDef def) {
-        String value = normalizeSettingValue(def, getResolvedSettingDefaultValue(def));
-        if ("boolean".equals(def.type)) {
-            return parseSettingBoolean(value, value) ? "开启" : "关闭";
-        }
-        if (shouldUseSettingChoiceEditor(def)) {
-            return formatSettingChoiceValue(def, value);
-        }
-        return value == null || value.trim().isEmpty() ? "(空)" : value.trim();
-    }
-
     private String buildSettingBoolLabel(boolean on) {
         return on ? "§a开启" : "§c关闭";
     }
 
-    private List<String> getSettingFiniteChoices(SettingDef def) {
-        Settings.Setting<?> setting = getBaritoneSetting(def.key);
-        if (setting != null && setting.getType() instanceof Class
-                && Enum.class.isAssignableFrom((Class<?>) setting.getType())) {
-            Object[] constants = ((Class<?>) setting.getType()).getEnumConstants();
-            List<String> values = new ArrayList<String>();
-            if (constants != null) {
-                for (Object constant : constants) {
-                    if (constant instanceof Enum) {
-                        values.add(((Enum<?>) constant).name());
-                    }
-                }
-            }
-            return values;
-        }
-        return null;
-    }
-
-    private boolean shouldUseSettingChoiceEditor(SettingDef def, List<String> finiteChoices) {
-        return finiteChoices != null && !finiteChoices.isEmpty() && !"boolean".equals(def.type);
-    }
-
-    private boolean shouldUseSettingChoiceEditor(SettingDef def) {
-        return shouldUseSettingChoiceEditor(def, getSettingFiniteChoices(def));
-    }
-
-    private String buildSettingChoiceLabel(SettingDef def, String value) {
-        return "§b" + formatSettingChoiceValue(def, value) + " §7▼";
-    }
-
-    private String formatSettingChoiceValue(SettingDef def, String value) {
-        if (value == null || value.trim().isEmpty()) {
-            return "(空)";
-        }
-        return value.trim();
-    }
-
     private String buildSettingsTypeFilterLabel() {
         String label = "all".equals(this.settingsTypeFilter) ? "全部" : this.settingsTypeFilter;
-        return "§b类型: §f" + label + " §7▼";
+        return "§b类型: " + label;
     }
 
     private String buildSettingsModifiedFilterLabel() {
-        return "§b显示: §f" + (this.settingsModifiedOnly ? "仅已修改" : "全部") + " §7▼";
+        return this.settingsModifiedOnly ? "§a仅已修改" : "§7全部";
     }
 
     private void saveSettingsPageEdits() {
@@ -3403,9 +2732,7 @@ public class GuiBaritoneCommandTable extends ThemedGuiScreen {
         int textIdx = 0;
         for (int i = start; i < end; i++) {
             SettingDef def = this.settingFilteredDefs.get(i);
-            if ("boolean".equals(def.type)
-                    || shouldUseSettingChoiceEditor(def)
-                    || getSettingBlockEditorMode(def) != SettingBlockEditorMode.NONE) {
+            if ("boolean".equals(def.type) || getSettingBlockEditorMode(def) != SettingBlockEditorMode.NONE) {
                 continue;
             }
             if (textIdx < this.settingValueFields.size()) {
@@ -3420,9 +2747,10 @@ public class GuiBaritoneCommandTable extends ThemedGuiScreen {
         int end = Math.min(this.settingFilteredDefs.size(), start + this.settingsItemsPerPage);
         for (int i = start; i < end; i++) {
             SettingDef def = this.settingFilteredDefs.get(i);
-            this.settingEditingValues.put(def.key, normalizeSettingValue(def, getResolvedSettingDefaultValue(def)));
+            this.settingEditingValues.put(def.key, getResolvedSettingDefaultValue(def));
             this.settingStatusMessages.put(def.key, "已重置");
         }
+        saveSettingsPageEdits();
         this.settingsStatusMessage = "当前页设置已恢复默认";
         this.settingsStatusColor = 0xFFE7C35A;
     }
@@ -3448,8 +2776,8 @@ public class GuiBaritoneCommandTable extends ThemedGuiScreen {
     }
 
     private boolean isSettingDefaultValue(SettingDef def, String value) {
-        String v = normalizeSettingValue(def, value);
-        String d = normalizeSettingValue(def, getResolvedSettingDefaultValue(def));
+        String v = value == null ? "" : value.trim();
+        String d = getResolvedSettingDefaultValue(def).trim();
         if ("boolean".equals(def.type)) {
             return parseSettingBoolean(v, d) == parseSettingBoolean(d, d);
         }
@@ -3534,18 +2862,18 @@ public class GuiBaritoneCommandTable extends ThemedGuiScreen {
     }
 
     private Settings.Setting<?> getBaritoneSetting(String key) {
-        if (key == null) {
+        if (key == null || key.trim().isEmpty()) {
             return null;
         }
         return BaritoneAPI.getSettings().byLowerName.get(key.toLowerCase(Locale.ROOT));
     }
 
     private SettingBlockEditorMode getSettingBlockEditorMode(SettingDef def) {
-        return getSettingBlockEditorMode(getBaritoneSetting(def.key));
+        return def == null ? SettingBlockEditorMode.NONE : getSettingBlockEditorMode(getBaritoneSetting(def.key));
     }
 
     private SettingBlockEditorMode getSettingBlockEditorMode(Settings.Setting<?> setting) {
-        if (setting == null || setting.isJavaOnly()) {
+        if (setting == null) {
             return SettingBlockEditorMode.NONE;
         }
         Type type = setting.getType();
@@ -3629,7 +2957,7 @@ public class GuiBaritoneCommandTable extends ThemedGuiScreen {
         String defaultValue = getResolvedSettingDefaultValue(def);
 
         if (editorMode == SettingBlockEditorMode.BLOCK_LIST) {
-            this.mc.displayGuiScreen(new GuiBaritoneBlockListEditor(this, def.key, def.desc,
+            this.mc.setScreen(new GuiBaritoneBlockListEditor(this, def.key, def.desc,
                     BaritoneBlockSettingEditorSupport.parseBlockListValue(currentValue),
                     BaritoneBlockSettingEditorSupport.parseBlockListValue(defaultValue),
                     new Consumer<String>() {
@@ -3642,7 +2970,7 @@ public class GuiBaritoneCommandTable extends ThemedGuiScreen {
         }
 
         if (editorMode == SettingBlockEditorMode.BLOCK_MAP) {
-            this.mc.displayGuiScreen(new GuiBaritoneBlockMapEditor(this, def.key, def.desc,
+            this.mc.setScreen(new GuiBaritoneBlockMapEditor(this, def.key, def.desc,
                     BaritoneBlockSettingEditorSupport.parseBlockMapValue(currentValue),
                     BaritoneBlockSettingEditorSupport.parseBlockMapValue(defaultValue),
                     new Consumer<String>() {
@@ -3718,22 +3046,10 @@ public class GuiBaritoneCommandTable extends ThemedGuiScreen {
             }
         }
 
-        for (GuiButton b : this.settingChoiceButtons) {
-            if (b.mousePressed(this.mc, mouseX, mouseY)) {
-                String key = this.settingChoiceButtonToKey.get(b);
-                this.settingsTypeDropdownOpen = false;
-                this.settingsModifiedDropdownOpen = false;
-                this.openSettingChoiceKey = key != null && key.equals(this.openSettingChoiceKey) ? null : key;
-                return;
-            }
-        }
-
         for (GuiButton b : this.settingVisualEditorButtons) {
             if (b.mousePressed(this.mc, mouseX, mouseY)) {
                 SettingDef def = this.settingVisualEditorButtonDefs.get(b);
                 if (def != null) {
-                    b.playPressSound(this.mc.getSoundHandler());
-                    saveSettingsPageEdits();
                     openSettingVisualEditor(def);
                 }
                 return;
@@ -3755,19 +3071,33 @@ public class GuiBaritoneCommandTable extends ThemedGuiScreen {
     }
 
     private static File getLegacyStateFile() {
-        File configDir = new File(Minecraft.getMinecraft().mcDataDir, "config");
+        File configDir = new File(Minecraft.getInstance().gameDirectory, "config");
         File modDir = new File(configDir, "zszl_script");
-        if (!modDir.exists()) {
-            modDir.mkdirs();
-        }
         return new File(modDir, STATE_FILE_NAME);
     }
 
-    private static double clampStoredPaneRatio(Double value, double fallback) {
-        if (value == null || value.isNaN() || value.doubleValue() <= 0.0D) {
-            return fallback;
+    public static void cleanupLegacyStateDirectory() {
+        cleanupLegacyStateArtifacts(false);
+    }
+
+    private static void cleanupLegacyStateArtifacts(boolean deleteLegacyFile) {
+        try {
+            File legacyFile = getLegacyStateFile();
+            if (deleteLegacyFile && legacyFile.isFile()) {
+                legacyFile.delete();
+            }
+
+            File legacyDir = legacyFile.getParentFile();
+            if (legacyDir == null || !legacyDir.isDirectory()) {
+                return;
+            }
+
+            String[] children = legacyDir.list();
+            if (children != null && children.length == 0) {
+                legacyDir.delete();
+            }
+        } catch (Exception ignored) {
         }
-        return Math.max(0.05D, Math.min(0.90D, value.doubleValue()));
     }
 
     private static void loadPersistentStateIfNeeded() {
@@ -3775,12 +3105,11 @@ public class GuiBaritoneCommandTable extends ThemedGuiScreen {
             return;
         }
         PERSISTENT_STATE_LOADED = true;
+        cleanupLegacyStateArtifacts(false);
 
         FAVORITE_COMMANDS.clear();
         RECENT_COMMANDS.clear();
         EXECUTION_HISTORY.clear();
-        SAVED_LEFT_PANE_RATIO = 0.24D;
-        SAVED_MIDDLE_PANE_RATIO = 0.18D;
 
         File file = getStateFile();
         File legacyFile = getLegacyStateFile();
@@ -3807,14 +3136,11 @@ public class GuiBaritoneCommandTable extends ThemedGuiScreen {
                     }
                 }
             }
-            SAVED_LEFT_PANE_RATIO = clampStoredPaneRatio(state.leftPaneRatio, SAVED_LEFT_PANE_RATIO);
-            SAVED_MIDDLE_PANE_RATIO = clampStoredPaneRatio(state.middlePaneRatio, SAVED_MIDDLE_PANE_RATIO);
             if (!file.isFile() && loadFile.equals(legacyFile)) {
                 savePersistentState();
+                cleanupLegacyStateArtifacts(true);
             }
         } catch (Exception ignored) {
-            SAVED_LEFT_PANE_RATIO = 0.24D;
-            SAVED_MIDDLE_PANE_RATIO = 0.18D;
         }
     }
 
@@ -3825,8 +3151,6 @@ public class GuiBaritoneCommandTable extends ThemedGuiScreen {
             state.favorites = new ArrayList<String>(FAVORITE_COMMANDS);
             state.recent = new ArrayList<String>(RECENT_COMMANDS);
             state.history = new ArrayList<HistoryEntry>(EXECUTION_HISTORY);
-            state.leftPaneRatio = clampStoredPaneRatio(Double.valueOf(SAVED_LEFT_PANE_RATIO), 0.24D);
-            state.middlePaneRatio = clampStoredPaneRatio(Double.valueOf(SAVED_MIDDLE_PANE_RATIO), 0.18D);
 
             try (BufferedWriter writer = new BufferedWriter(new FileWriter(file))) {
                 GSON.toJson(state, writer);
@@ -3884,6 +3208,12 @@ public class GuiBaritoneCommandTable extends ThemedGuiScreen {
         RightTab(String label) {
             this.label = label;
         }
+    }
+
+    private enum SettingBlockEditorMode {
+        NONE,
+        BLOCK_LIST,
+        BLOCK_MAP
     }
 
     private enum ArgValueType {
@@ -4148,14 +3478,6 @@ public class GuiBaritoneCommandTable extends ThemedGuiScreen {
         private List<String> favorites = new ArrayList<String>();
         private List<String> recent = new ArrayList<String>();
         private List<HistoryEntry> history = new ArrayList<HistoryEntry>();
-        private Double leftPaneRatio;
-        private Double middlePaneRatio;
-    }
-
-    private enum SettingBlockEditorMode {
-        NONE,
-        BLOCK_LIST,
-        BLOCK_MAP
     }
 
     private static final class SettingDef {
@@ -4177,4 +3499,9 @@ public class GuiBaritoneCommandTable extends ThemedGuiScreen {
         private List<SettingDef> settings;
     }
 }
+
+
+
+
+
 

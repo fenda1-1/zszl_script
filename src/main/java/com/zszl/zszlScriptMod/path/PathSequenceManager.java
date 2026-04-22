@@ -1,4 +1,5 @@
 // 文件路径: src/main/java/com/zszl/zszlScriptMod/path/PathSequenceManager.java
+// !! 这是更新了 send_packet 动作解析和描述逻辑的最终版本 !!
 package com.zszl.zszlScriptMod.path;
 
 import com.google.gson.*;
@@ -11,6 +12,7 @@ import com.zszl.zszlScriptMod.handlers.AutoEatHandler;
 import com.zszl.zszlScriptMod.handlers.AutoEquipHandler;
 import com.zszl.zszlScriptMod.handlers.AutoFishingHandler;
 import com.zszl.zszlScriptMod.handlers.AutoPickupHandler;
+import com.zszl.zszlScriptMod.handlers.ConditionalExecutionHandler;
 import com.zszl.zszlScriptMod.handlers.EmbeddedNavigationHandler;
 import com.zszl.zszlScriptMod.handlers.FlyHandler;
 import com.zszl.zszlScriptMod.handlers.GuiBlockerHandler;
@@ -31,13 +33,13 @@ import com.zszl.zszlScriptMod.handlers.AutoSkillHandler;
 import com.zszl.zszlScriptMod.handlers.AutoUseItemHandler;
 import com.zszl.zszlScriptMod.system.AutoUseItemRule;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.resources.I18n;
-import net.minecraft.client.entity.EntityPlayerSP;
-import net.minecraft.entity.Entity;
-import net.minecraft.inventory.Slot;
-import net.minecraft.util.EnumHand;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.text.TextComponentString;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.inventory.Slot;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.core.BlockPos;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.util.text.TextComponentString;
 import net.minecraftforge.common.MinecraftForge;
 
 import java.io.*;
@@ -241,7 +243,6 @@ public class PathSequenceManager {
     private static String getOtherFeatureDisplayName(String featureId, String fallbackName) {
         String normalizedId = featureId == null ? "" : featureId.trim();
         if (!normalizedId.isEmpty()) {
-            OtherFeatureGroupManager.reload();
             for (OtherFeatureGroupManager.GroupDef group : OtherFeatureGroupManager.getGroups()) {
                 if (group == null || group.features == null) {
                     continue;
@@ -306,15 +307,13 @@ public class PathSequenceManager {
                     case "system_message":
                         return I18n.format("path.action.desc.system_message",
                                 params.has("message") ? params.get("message").getAsString() : "");
+                    case "disconnect":
+                        return I18n.format("path.action.desc.disconnect");
                     case "delay":
-                        return I18n.format("path.action.desc.delay", params.get("ticks").getAsInt())
-                                + getDelayNormalizationDescriptionSuffix(params);
+                        return I18n.format("path.action.desc.delay", params.get("ticks").getAsInt());
                     case "key":
-                        String keyState = params.has("state") ? params.get("state").getAsString() : "Press";
-                        String keyStateText = "Up".equalsIgnoreCase(keyState)
-                                ? "抬起"
-                                : ("Press".equalsIgnoreCase(keyState) ? "单击" : "按下");
-                        return I18n.format("path.action.desc.key", params.get("key").getAsString(), keyStateText);
+                        return I18n.format("path.action.desc.key", params.get("key").getAsString(),
+                                params.get("state").getAsString());
                     case "jump":
                         int jumpCountDesc = params.has("count") ? params.get("count").getAsInt() : 1;
                         int jumpIntervalDesc = params.has("intervalTicks") ? params.get("intervalTicks").getAsInt()
@@ -324,20 +323,39 @@ public class PathSequenceManager {
                     case "click":
                         if (params.has("locatorMode")
                                 && !ActionTargetLocator.CLICK_MODE_COORDINATE
-                                        .equalsIgnoreCase(params.get("locatorMode").getAsString())) {
+                                        .equalsIgnoreCase(ActionTargetLocator.normalizeClickLocatorMode(
+                                                params.get("locatorMode").getAsString()))) {
+                            String normalizedClickLocatorMode = ActionTargetLocator.normalizeClickLocatorMode(
+                                    params.get("locatorMode").getAsString());
                             return "点击元素: "
                                     + (params.has("locatorText") ? params.get("locatorText").getAsString() : "")
                                     + " / "
                                     + (ActionTargetLocator.CLICK_MODE_BUTTON_TEXT
-                                            .equalsIgnoreCase(params.get("locatorMode").getAsString())
-                                                    ? "按钮文本"
-                                                    : (ActionTargetLocator.CLICK_MODE_SLOT_TEXT
-                                                            .equalsIgnoreCase(params.get("locatorMode").getAsString())
-                                                                    ? "槽位文本"
-                                                                    : "元素路径"));
+                                            .equalsIgnoreCase(normalizedClickLocatorMode)
+                                            ? "按钮文本"
+                                            : (ActionTargetLocator.CLICK_MODE_SLOT_TEXT
+                                                    .equalsIgnoreCase(normalizedClickLocatorMode)
+                                                            ? "槽位文本"
+                                            : "元素路径"));
                         }
+                        int clickOriginalWidthDesc = params.has("originalWidth") ? params.get("originalWidth").getAsInt()
+                                : 0;
+                        int clickOriginalHeightDesc = params.has("originalHeight")
+                                ? params.get("originalHeight").getAsInt()
+                                : 0;
+                        String clickCoordinateModeDesc = ModUtils.normalizeClickCoordinateMode(
+                                params.has("coordinateMode") ? params.get("coordinateMode").getAsString() : "",
+                                clickOriginalWidthDesc, clickOriginalHeightDesc);
+                        String clickMouseMoveModeDesc = ModUtils.normalizeClickMouseMoveMode(
+                                params.has("mouseMoveMode") ? params.get("mouseMoveMode").getAsString() : "");
                         return I18n.format("path.action.desc.click", params.get("x").getAsInt(),
-                                params.get("y").getAsInt());
+                                params.get("y").getAsInt(),
+                                ModUtils.CLICK_COORDINATE_MODE_SCALED.equals(clickCoordinateModeDesc)
+                                        ? I18n.format("gui.path.action_editor.option.click_coordinate_mode.scaled")
+                                        : I18n.format("gui.path.action_editor.option.click_coordinate_mode.raw"),
+                                ModUtils.CLICK_MOUSE_MOVE_MODE_MOVE.equals(clickMouseMoveModeDesc)
+                                        ? I18n.format("gui.path.action_editor.option.click_mouse_move_mode.move")
+                                        : I18n.format("gui.path.action_editor.option.click_mouse_move_mode.silent"));
                     case "window_click":
                         String containsText = params.has("contains") ? params.get("contains").getAsString() : "";
                         if (params.has("locatorMode")
@@ -351,9 +369,9 @@ public class PathSequenceManager {
                                                     ? "按路径 " + (params.has("locatorText")
                                                             ? params.get("locatorText").getAsString()
                                                             : "")
-                                                    : "按物品文本 " + (params.has("locatorText")
-                                                            ? params.get("locatorText").getAsString()
-                                                            : "")))
+                                            : "按物品文本 " + (params.has("locatorText")
+                                                    ? params.get("locatorText").getAsString()
+                                                    : "")))
                                     + (containsText.trim().isEmpty() ? "" : " / 匹配: " + containsText)
                                     + " / 类型: "
                                     + ModUtils.clickTypeToDisplayName(
@@ -394,9 +412,9 @@ public class PathSequenceManager {
                                                             ? "按路径 " + (params.has("locatorText")
                                                                     ? params.get("locatorText").getAsString()
                                                                     : "")
-                                                            : "按物品文本 " + (params.has("locatorText")
-                                                                    ? params.get("locatorText").getAsString()
-                                                                    : "")))
+                                            : "按物品文本 " + (params.has("locatorText")
+                                                    ? params.get("locatorText").getAsString()
+                                                    : "")))
                                     + " / 匹配: "
                                     + (params.has("contains") ? params.get("contains").getAsString() : "");
                         }
@@ -413,6 +431,7 @@ public class PathSequenceManager {
                         return "HUD 文本识别: "
                                 + (params.has("contains") ? params.get("contains").getAsString() : "");
                     case "condition_inventory_item":
+                        List<String> condInvExpressions = InventoryItemFilterExpressionEngine.readExpressions(params);
                         String condInvItem = params.has("itemName") ? params.get("itemName").getAsString() : "";
                         String condInvMatch = params.has("matchMode") ? params.get("matchMode").getAsString()
                                 : "CONTAINS";
@@ -424,10 +443,12 @@ public class PathSequenceManager {
                                 ? params.get("requiredNbtTagsMode").getAsString()
                                 : ItemFilterHandler.NBT_TAG_MATCH_MODE_CONTAINS;
                         return "条件分支-背包物品: "
-                                + (condInvItem == null || condInvItem.trim().isEmpty() ? "任意物品" : condInvItem) + " / "
-                                + ("EXACT".equalsIgnoreCase(condInvMatch) ? "完全相同" : "包含")
+                                + (!condInvExpressions.isEmpty()
+                                        ? InventoryItemFilterExpressionEngine.summarizeExpressions(condInvExpressions)
+                                        : (condInvItem == null || condInvItem.trim().isEmpty() ? "任意物品" : condInvItem)
+                                                + " / " + ("EXACT".equalsIgnoreCase(condInvMatch) ? "完全相同" : "包含"))
                                 + " / 数量>=" + Math.max(1, condInvCount)
-                                + (condInvNbtCount > 0
+                                + (condInvExpressions.isEmpty() && condInvNbtCount > 0
                                         ? " / NBT"
                                                 + (ItemFilterHandler.NBT_TAG_MATCH_MODE_NOT_CONTAINS
                                                         .equalsIgnoreCase(condInvNbtMode) ? "不包含" : "包含")
@@ -453,22 +474,23 @@ public class PathSequenceManager {
                         return "条件分支-附近实体: " + condEntityName + " / 半径 " + condEntityRadius
                                 + " / 失败跳过" + Math.max(0, condEntitySkip) + "个动作";
                     case "condition_expression":
-                        List<String> conditionExpressions = readBooleanExpressionList(params, "expressions",
-                                "expression");
+                        String expr = params.has("expression") ? params.get("expression").getAsString() : "";
                         int exprSkip = params.has("skipCount") ? params.get("skipCount").getAsInt() : 1;
-                        return "条件分支-表达式: " + describeBooleanExpressionSummary(conditionExpressions)
-                                + " / 失败跳过" + Math.max(0, exprSkip) + "个动作";
+                        return "条件分支-表达式: " + expr + " / 失败跳过" + Math.max(0, exprSkip) + "个动作";
                     case "wait_until_inventory_item":
+                        List<String> waitInvExpressions = InventoryItemFilterExpressionEngine.readExpressions(params);
                         int waitInvNbtCount = countStringListParam(params, "requiredNbtTags", "requiredNbtTagsText");
                         int waitInvSlotCount = countIntListParam(params, "inventorySlots", "inventorySlotsText");
                         String waitInvNbtMode = params.has("requiredNbtTagsMode")
                                 ? params.get("requiredNbtTagsMode").getAsString()
                                 : ItemFilterHandler.NBT_TAG_MATCH_MODE_CONTAINS;
                         return "等待背包物品: "
-                                + (params.has("itemName") && !params.get("itemName").getAsString().trim().isEmpty()
-                                        ? params.get("itemName").getAsString()
-                                        : "任意物品")
-                                + (waitInvNbtCount > 0
+                                + (!waitInvExpressions.isEmpty()
+                                        ? InventoryItemFilterExpressionEngine.summarizeExpressions(waitInvExpressions)
+                                        : (params.has("itemName") && !params.get("itemName").getAsString().trim().isEmpty()
+                                                ? params.get("itemName").getAsString()
+                                                : "任意物品"))
+                                + (waitInvExpressions.isEmpty() && waitInvNbtCount > 0
                                         ? " / NBT"
                                                 + (ItemFilterHandler.NBT_TAG_MATCH_MODE_NOT_CONTAINS
                                                         .equalsIgnoreCase(waitInvNbtMode) ? "不包含" : "包含")
@@ -492,35 +514,26 @@ public class PathSequenceManager {
                         return "等待HUD文本: "
                                 + (params.has("contains") ? params.get("contains").getAsString() : "")
                                 + waitTimeoutSkipSuffix(params);
-                    case "wait_until_expression":
-                        return "等待表达式: "
-                                + describeBooleanExpressionSummary(
-                                        readBooleanExpressionList(params, "expressions", "expression"))
-                                + waitTimeoutSkipSuffix(params);
-                    case "wait_combined":
-                        String combinedMode = params.has("combinedMode") ? params.get("combinedMode").getAsString()
-                                : "ANY";
-                        String conditionsText = params.has("conditionsText")
-                                ? params.get("conditionsText").getAsString()
-                                : "";
-                        int conditionCount = countSeparatedValues(conditionsText);
-                        String cancelExpression = params.has("cancelExpression")
-                                ? params.get("cancelExpression").getAsString()
-                                : "";
-                        int combinedPreExecuteCount = params.has("preExecuteCount")
-                                ? params.get("preExecuteCount").getAsInt()
-                                : 0;
-                        return "组合等待: "
-                                + ("ALL".equalsIgnoreCase(combinedMode) ? "全部满足" : "任意满足")
-                                + " / 条件" + conditionCount + "项"
-                                + (!cancelExpression.trim().isEmpty() ? " / 取消条件" : "")
-                                + " / 先执行" + Math.max(0, combinedPreExecuteCount) + "个动作"
-                                + waitTimeoutSkipSuffix(params);
-                    case "wait_until_captured_id":
-                        String capturedIdName = params.has("capturedId") ? params.get("capturedId").getAsString() : "";
-                        String waitMode = params.has("waitMode") ? params.get("waitMode").getAsString() : "update";
-                        int preExecuteCount = params.has("preExecuteCount") ? params.get("preExecuteCount").getAsInt()
-                                : 0;
+              case "wait_until_expression":
+                  return "等待表达式: "
+                          + (params.has("expression") ? params.get("expression").getAsString() : "")
+                          + waitTimeoutSkipSuffix(params);
+              case "wait_combined":
+                  String combinedMode = params.has("combinedMode") ? params.get("combinedMode").getAsString() : "ANY";
+                  String conditionsText = params.has("conditionsText") ? params.get("conditionsText").getAsString() : "";
+                  int conditionCount = countSeparatedValues(conditionsText);
+                  String cancelExpression = params.has("cancelExpression") ? params.get("cancelExpression").getAsString() : "";
+                  int combinedPreExecuteCount = params.has("preExecuteCount") ? params.get("preExecuteCount").getAsInt() : 0;
+                  return "组合等待: "
+                          + ("ALL".equalsIgnoreCase(combinedMode) ? "全部满足" : "任意满足")
+                          + " / 条件" + conditionCount + "项"
+                          + (!cancelExpression.trim().isEmpty() ? " / 取消条件" : "")
+                          + " / 先执行" + Math.max(0, combinedPreExecuteCount) + "个动作"
+                          + waitTimeoutSkipSuffix(params);
+              case "wait_until_captured_id":
+                  String capturedIdName = params.has("capturedId") ? params.get("capturedId").getAsString() : "";
+                  String waitMode = params.has("waitMode") ? params.get("waitMode").getAsString() : "update";
+                        int preExecuteCount = params.has("preExecuteCount") ? params.get("preExecuteCount").getAsInt() : 0;
                         return "等待数据包: "
                                 + capturedIdName
                                 + " / "
@@ -529,8 +542,7 @@ public class PathSequenceManager {
                                 + waitTimeoutSkipSuffix(params);
                     case "wait_until_packet_text":
                         String packetText = params.has("packetText") ? params.get("packetText").getAsString() : "";
-                        int packetPreExecuteCount = params.has("preExecuteCount")
-                                ? params.get("preExecuteCount").getAsInt()
+                        int packetPreExecuteCount = params.has("preExecuteCount") ? params.get("preExecuteCount").getAsInt()
                                 : 0;
                         return "等待数据包文本: "
                                 + packetText
@@ -631,14 +643,7 @@ public class PathSequenceManager {
                                 + (params.has("regionRect") ? params.get("regionRect").toString() : "[0,0,50,50]");
                     case "goto_action":
                         return "跳转到动作序号: "
-                                + (params.has("targetActionIndex") ? params.get("targetActionIndex").getAsString()
-                                        : "0");
-                    case "skip_actions":
-                        return "跳过后续动作: "
-                                + (params.has("count") ? params.get("count").getAsString() : "1");
-                    case "skip_steps":
-                        return "跳过后续步骤: "
-                                + (params.has("count") ? params.get("count").getAsString() : "1");
+                                + (params.has("targetActionIndex") ? params.get("targetActionIndex").getAsString() : "0");
                     case "repeat_actions":
                         return "循环动作块: 次数="
                                 + (params.has("count") ? params.get("count").getAsString() : "1")
@@ -671,8 +676,7 @@ public class PathSequenceManager {
                         int chestDelayTicks = params.has("delayTicks")
                                 ? Math.max(0, params.get("delayTicks").getAsInt())
                                 : 1;
-                        String chestClickType = params.has("clickType") ? params.get("clickType").getAsString()
-                                : "PICKUP";
+                        String chestClickType = params.has("clickType") ? params.get("clickType").getAsString() : "PICKUP";
                         if (params.has("locatorMode")
                                 && !ActionTargetLocator.SLOT_MODE_DIRECT
                                         .equalsIgnoreCase(params.get("locatorMode").getAsString())) {
@@ -684,9 +688,9 @@ public class PathSequenceManager {
                                                             ? "按路径 " + (params.has("locatorText")
                                                                     ? params.get("locatorText").getAsString()
                                                                     : "")
-                                                            : "按物品文本 " + (params.has("locatorText")
-                                                                    ? params.get("locatorText").getAsString()
-                                                                    : "")))
+                                            : "按物品文本 " + (params.has("locatorText")
+                                                    ? params.get("locatorText").getAsString()
+                                                    : "")))
                                     + " / 类型: " + ModUtils.clickTypeToDisplayName(chestClickType)
                                     + " / 延迟: " + chestDelayTicks + " tick";
                         }
@@ -696,8 +700,7 @@ public class PathSequenceManager {
                     case "move_inventory_items_to_chest_slots":
                         int chestSlotCount = countIntListParam(params, "chestSlots", "chestSlotsText");
                         int inventorySlotCount = countIntListParam(params, "inventorySlots", "inventorySlotsText");
-                        List<ItemFilterHandler.MoveChestFilterRule> moveChestRules = ItemFilterHandler
-                                .readMoveChestFilterRules(params);
+                        int nbtTagCount = countStringListParam(params, "requiredNbtTags", "requiredNbtTagsText");
                         String nbtTagMode = params.has("requiredNbtTagsMode")
                                 ? params.get("requiredNbtTagsMode").getAsString()
                                 : "CONTAINS";
@@ -711,44 +714,20 @@ public class PathSequenceManager {
                         int sourceSlotCount = chestToInventory ? chestSlotCount : inventorySlotCount;
                         String targetLabel = chestToInventory ? "背包" : "容器";
                         int targetSlotCount = chestToInventory ? inventorySlotCount : chestSlotCount;
-                        StringBuilder moveChestFilter = new StringBuilder();
-                        if (moveChestRules.isEmpty()) {
-                            moveChestFilter.append("未设置");
-                        } else {
-                            moveChestFilter.append("规则").append(moveChestRules.size()).append("条");
-                            ItemFilterHandler.MoveChestFilterRule firstRule = moveChestRules.get(0);
-                            String firstItem = firstRule.getItemName();
-                            int firstNbtCount = firstRule.getRequiredNbtTags() == null ? 0
-                                    : firstRule.getRequiredNbtTags().size();
-                            if ((firstItem != null && !firstItem.trim().isEmpty()) || firstNbtCount > 0) {
-                                moveChestFilter.append(" (首条: ");
-                                if (firstItem != null && !firstItem.trim().isEmpty()) {
-                                    moveChestFilter.append("物品=").append(firstItem.trim());
-                                }
-                                if (firstNbtCount > 0) {
-                                    if (firstItem != null && !firstItem.trim().isEmpty()) {
-                                        moveChestFilter.append(", ");
-                                    }
-                                    moveChestFilter.append("NBT")
-                                            .append("NOT_CONTAINS".equalsIgnoreCase(nbtTagMode) ? "不包含" : "包含")
-                                            .append(firstNbtCount)
-                                            .append("项");
-                                }
-                                moveChestFilter.append(")");
-                            }
-                        }
                         return "容器物品批量移动: "
                                 + sourceLabel
                                 + sourceSlotCount
                                 + "格 -> "
                                 + targetLabel
                                 + targetSlotCount
-                                + "格 / 过滤: "
-                                + moveChestFilter
+                                + "格 / NBT标签"
+                                + nbtTagCount
+                                + "项("
+                                + ("NOT_CONTAINS".equalsIgnoreCase(nbtTagMode) ? "不包含" : "包含")
+                                + ")"
                                 + " / 延迟"
                                 + moveChestDelayTicks
-                                + " tick"
-                                + getDelayNormalizationDescriptionSuffix(params);
+                                + " tick";
                     case "transferitemstowarehouse":
                         return I18n.format("path.action.desc.transfer_to_warehouse");
                     case "warehouse_auto_deposit":
@@ -807,34 +786,12 @@ public class PathSequenceManager {
                     case "hunt":
                         double radius = params.has("radius") ? params.get("radius").getAsDouble() : 3.0;
                         boolean autoAttack = params.has("autoAttack") ? params.get("autoAttack").getAsBoolean() : false;
-                        String attackMode = params.has("attackMode") ? params.get("attackMode").getAsString()
-                                : KillAuraHandler.ATTACK_MODE_NORMAL;
-                        String attackSequenceName = params.has("attackSequenceName")
-                                ? params.get("attackSequenceName").getAsString().trim()
-                                : "";
-                        boolean aimLockEnabled = !params.has("huntAimLockEnabled")
-                                || params.get("huntAimLockEnabled").getAsBoolean();
                         double trackDist = params.has("trackingDistance") ? params.get("trackingDistance").getAsDouble()
                                 : 1.0;
-                        String huntMode = params.has("huntMode") ? params.get("huntMode").getAsString()
-                                : KillAuraHandler.HUNT_MODE_FIXED_DISTANCE;
-                        boolean huntOrbitEnabled = params.has("huntOrbitEnabled")
-                                && params.get("huntOrbitEnabled").getAsBoolean();
-                        boolean chaseIntervalEnabled = params.has("huntChaseIntervalEnabled")
-                                && params.get("huntChaseIntervalEnabled").getAsBoolean();
-                        double chaseIntervalSeconds = params.has("huntChaseIntervalSeconds")
-                                ? params.get("huntChaseIntervalSeconds").getAsDouble()
-                                : 0.0D;
                         int attackCount = params.has("attackCount") ? params.get("attackCount").getAsInt() : -1;
-                        int noTargetSkipCount = params.has("noTargetSkipCount")
-                                ? Math.max(0, params.get("noTargetSkipCount").getAsInt())
-                                : 0;
-                        boolean targetHostile = !params.has("targetHostile")
-                                || params.get("targetHostile").getAsBoolean();
-                        boolean targetPassive = params.has("targetPassive")
-                                && params.get("targetPassive").getAsBoolean();
-                        boolean targetPlayers = params.has("targetPlayers")
-                                && params.get("targetPlayers").getAsBoolean();
+                        boolean targetHostile = !params.has("targetHostile") || params.get("targetHostile").getAsBoolean();
+                        boolean targetPassive = params.has("targetPassive") && params.get("targetPassive").getAsBoolean();
+                        boolean targetPlayers = params.has("targetPlayers") && params.get("targetPlayers").getAsBoolean();
                         boolean enableWhitelist = params.has("enableNameWhitelist")
                                 && params.get("enableNameWhitelist").getAsBoolean();
                         boolean enableBlacklist = params.has("enableNameBlacklist")
@@ -844,28 +801,8 @@ public class PathSequenceManager {
                         StringBuilder huntDesc = new StringBuilder(I18n.format("path.action.desc.hunt", radius,
                                 autoAttack ? I18n.format("path.common.on") : I18n.format("path.common.off"),
                                 trackDist));
-                        huntDesc.append(", 模式 ")
-                                .append(KillAuraHandler.HUNT_MODE_APPROACH.equalsIgnoreCase(huntMode) ? "靠近目标"
-                                        : "固定距离");
-                        huntDesc.append(", 攻击 ")
-                                .append(KillAuraHandler.ATTACK_MODE_SEQUENCE.equalsIgnoreCase(attackMode) ? "序列"
-                                        : "普通");
-                        if (KillAuraHandler.ATTACK_MODE_SEQUENCE.equalsIgnoreCase(attackMode)
-                                && !attackSequenceName.isEmpty()) {
-                            huntDesc.append("[").append(attackSequenceName).append("]");
-                        }
-                        huntDesc.append(aimLockEnabled ? ", 瞄准" : ", 不瞄准");
-                        if (huntOrbitEnabled) {
-                            huntDesc.append(", 绕圈");
-                        }
-                        if (chaseIntervalEnabled) {
-                            huntDesc.append(", 间隔 ").append(chaseIntervalSeconds).append("秒");
-                        }
                         huntDesc.append(", 次数 ")
                                 .append(attackCount > 0 ? attackCount : "不限");
-                        if (noTargetSkipCount > 0) {
-                            huntDesc.append(", 无目标跳过 ").append(noTargetSkipCount).append("个");
-                        }
                         if (!targetHostile || targetPassive || targetPlayers) {
                             huntDesc.append(", 目标[")
                                     .append(targetHostile ? "敌对" : "")
@@ -886,16 +823,12 @@ public class PathSequenceManager {
                         }
                         return huntDesc.toString();
                     case "follow_entity":
-                        String entityType = params.has("entityType") ? params.get("entityType").getAsString()
-                                : "player";
-                        String targetName = params.has("targetName") ? params.get("targetName").getAsString().trim()
-                                : "";
-                        double searchRadius = params.has("searchRadius") ? params.get("searchRadius").getAsDouble()
-                                : 16.0;
-                        double followDist = params.has("followDistance") ? params.get("followDistance").getAsDouble()
-                                : 3.0;
+                        String entityType = params.has("entityType") ? params.get("entityType").getAsString() : "player";
+                        String targetName = params.has("targetName") ? params.get("targetName").getAsString().trim() : "";
+                        double searchRadius = params.has("searchRadius") ? params.get("searchRadius").getAsDouble() : 16.0;
+                        double followDist = params.has("followDistance") ? params.get("followDistance").getAsDouble() : 3.0;
                         int timeout = params.has("timeout") ? params.get("timeout").getAsInt() : 0;
-
+                        
                         String entityTypeDisplay = "玩家";
                         if ("hostile".equalsIgnoreCase(entityType) || "monster".equalsIgnoreCase(entityType)) {
                             entityTypeDisplay = "敌对生物";
@@ -904,7 +837,7 @@ public class PathSequenceManager {
                         } else if ("all".equalsIgnoreCase(entityType) || "entity".equalsIgnoreCase(entityType)) {
                             entityTypeDisplay = "所有实体";
                         }
-
+                        
                         StringBuilder followDesc = new StringBuilder("跟随");
                         followDesc.append(entityTypeDisplay);
                         if (!targetName.isEmpty()) {
@@ -994,24 +927,24 @@ public class PathSequenceManager {
                                 : 0;
                         return I18n.format("path.action.desc.use_held_item",
                                 formatTickDelayText(useHeldItemDelayTicks));
-                    case "run_sequence":
-                        String sequenceName = params.has("sequenceName") ? params.get("sequenceName").getAsString()
-                                : I18n.format("msg.common.unknown");
-                        return I18n.format("path.action.desc.run_sequence", sequenceName)
-                                + getRunSequenceActionDescriptionSuffix(params);
-                    case "stop_current_sequence":
-                        return I18n.format("path.action.desc.stop_current_sequence",
-                                getStopCurrentSequenceScopeText(params));
-                    case "run_template":
-                        String templateName = params.has("templateName") ? params.get("templateName").getAsString()
-                                : I18n.format("msg.common.unknown");
-                        String templateTarget = LegacyActionTemplateManager.resolveTemplateTargetSequence(templateName);
-                        return "执行模板: " + templateName
-                                + (templateTarget == null || templateTarget.trim().isEmpty() ? ""
-                                        : " -> " + templateTarget)
-                                + getRunSequenceActionDescriptionSuffix(params);
-                    // --- 核心修改：更新 send_packet 的描述 ---
-                    case "send_packet":
+              case "run_sequence":
+                  String sequenceName = params.has("sequenceName") ? params.get("sequenceName").getAsString()
+                          : I18n.format("msg.common.unknown");
+                  return I18n.format("path.action.desc.run_sequence", sequenceName)
+                          + getRunSequenceActionDescriptionSuffix(params);
+              case "stop_current_sequence":
+                  return I18n.format("path.action.desc.stop_current_sequence",
+                          getStopCurrentSequenceScopeText(params));
+              case "run_template":
+                  String templateName = params.has("templateName") ? params.get("templateName").getAsString()
+                          : I18n.format("msg.common.unknown");
+                  String templateTarget = LegacyActionTemplateManager.resolveTemplateTargetSequence(templateName);
+                  return "执行模板: " + templateName
+                          + (templateTarget == null || templateTarget.trim().isEmpty() ? ""
+                                  : " -> " + templateTarget)
+                          + getRunSequenceActionDescriptionSuffix(params);
+              // --- 核心修改：更新 send_packet 的描述 ---
+              case "send_packet":
                         String direction = params.has("direction") ? params.get("direction").getAsString() : "C2S";
                         String directionText = "S2C".equalsIgnoreCase(direction)
                                 ? I18n.format("path.action.desc.send_packet.direction.s2c")
@@ -1051,43 +984,6 @@ public class PathSequenceManager {
             }
         }
         return count;
-    }
-
-    private static List<String> readBooleanExpressionList(JsonObject params, String arrayKey, String legacyKey) {
-        List<String> expressions = new ArrayList<>();
-        if (params == null) {
-            return expressions;
-        }
-        if (params.has(arrayKey) && params.get(arrayKey).isJsonArray()) {
-            for (JsonElement element : params.getAsJsonArray(arrayKey)) {
-                if (element != null && element.isJsonPrimitive()) {
-                    String value = element.getAsString();
-                    if (value != null && !value.trim().isEmpty()) {
-                        expressions.add(value.trim());
-                    }
-                }
-            }
-            if (!expressions.isEmpty()) {
-                return expressions;
-            }
-        }
-        if (params.has(legacyKey) && params.get(legacyKey).isJsonPrimitive()) {
-            String value = params.get(legacyKey).getAsString();
-            if (value != null && !value.trim().isEmpty()) {
-                expressions.add(value.trim());
-            }
-        }
-        return expressions;
-    }
-
-    private static String describeBooleanExpressionSummary(List<String> expressions) {
-        if (expressions == null || expressions.isEmpty()) {
-            return "(未填写)";
-        }
-        if (expressions.size() == 1) {
-            return expressions.get(0);
-        }
-        return "全部满足 / 条件" + expressions.size() + "项";
     }
 
     private static int countIntListParam(JsonObject params, String arrayKey, String textKey) {
@@ -1186,17 +1082,6 @@ public class PathSequenceManager {
     private static boolean isRunSequenceExecuteAlways(JsonObject params) {
         String mode = params != null && params.has("executeMode") ? params.get("executeMode").getAsString() : "always";
         return !"interval".equalsIgnoreCase(mode) || getRunSequenceExecuteEveryCount(params) <= 1;
-    }
-
-    private static boolean isDelayNormalizedTo20Tps(JsonObject params) {
-        return params == null
-                || !params.has("normalizeDelayTo20Tps")
-                || !params.get("normalizeDelayTo20Tps").isJsonPrimitive()
-                || params.get("normalizeDelayTo20Tps").getAsBoolean();
-    }
-
-    private static String getDelayNormalizationDescriptionSuffix(JsonObject params) {
-        return isDelayNormalizedTo20Tps(params) ? " / 20TPS基准" : "";
     }
 
     private static boolean isRunSequenceBackgroundExecution(JsonObject params) {
@@ -1303,10 +1188,10 @@ public class PathSequenceManager {
     public static class PathStep {
         private double[] gotoPoint;
         private final List<ActionData> actions = new ArrayList<>();
-        private String note = "";
         private int retryCount = 3;
         private int pathRetryTimeoutSeconds = 5;
         private String retryExhaustedPolicy = "END_SEQUENCE";
+        private String retryExhaustedSequenceName = "";
 
         public PathStep(double[] gotoPoint) {
             this.gotoPoint = gotoPoint;
@@ -1314,10 +1199,10 @@ public class PathSequenceManager {
 
         public PathStep(PathStep other) {
             this.gotoPoint = Arrays.copyOf(other.gotoPoint, other.gotoPoint.length);
-            this.note = other.note;
             this.retryCount = other.retryCount;
             this.pathRetryTimeoutSeconds = other.pathRetryTimeoutSeconds;
             this.retryExhaustedPolicy = other.retryExhaustedPolicy;
+            this.retryExhaustedSequenceName = other.retryExhaustedSequenceName;
             for (ActionData action : other.actions) {
                 this.actions.add(new ActionData(action));
             }
@@ -1337,14 +1222,6 @@ public class PathSequenceManager {
 
         public List<ActionData> getActions() {
             return actions;
-        }
-
-        public String getNote() {
-            return note == null ? "" : note;
-        }
-
-        public void setNote(String note) {
-            this.note = note == null ? "" : note;
         }
 
         public int getRetryCount() {
@@ -1371,6 +1248,14 @@ public class PathSequenceManager {
             this.retryExhaustedPolicy = normalizeRetryExhaustedPolicy(retryExhaustedPolicy);
         }
 
+        public String getRetryExhaustedSequenceName() {
+            return retryExhaustedSequenceName == null ? "" : retryExhaustedSequenceName.trim();
+        }
+
+        public void setRetryExhaustedSequenceName(String retryExhaustedSequenceName) {
+            this.retryExhaustedSequenceName = retryExhaustedSequenceName == null ? "" : retryExhaustedSequenceName.trim();
+        }
+
         public boolean hasGotoTarget() {
             return gotoPoint != null && gotoPoint.length >= 3 && !Double.isNaN(gotoPoint[0]);
         }
@@ -1379,6 +1264,7 @@ public class PathSequenceManager {
             String normalized = policy == null ? "" : policy.trim().toUpperCase(Locale.ROOT);
             switch (normalized) {
                 case "RESTART_SEQUENCE":
+                case "RUN_SEQUENCE":
                     return normalized;
                 default:
                     return "END_SEQUENCE";
@@ -1563,7 +1449,17 @@ public class PathSequenceManager {
                 throw new FileNotFoundException(I18n.format("log.path.resource_not_found", resourceName));
 
             Files.createDirectories(targetPath.getParent());
-            Files.copy(in, targetPath, StandardCopyOption.REPLACE_EXISTING);
+            byte[] resourceBytes = in.readAllBytes();
+            if (Files.exists(targetPath)) {
+                try {
+                    byte[] existingBytes = Files.readAllBytes(targetPath);
+                    if (Arrays.equals(existingBytes, resourceBytes)) {
+                        return;
+                    }
+                } catch (IOException ignored) {
+                }
+            }
+            Files.write(targetPath, resourceBytes);
             zszlScriptMod.LOGGER.info(I18n.format("log.path.builtin_sync_done"), targetPath);
         }
     }
@@ -1612,10 +1508,15 @@ public class PathSequenceManager {
                     JsonArray stepsArray = seqObj.getAsJsonArray("steps");
                     for (JsonElement stepElement : stepsArray) {
                         JsonObject stepObj = stepElement.getAsJsonObject();
-                        JsonArray gotoArray = stepObj.getAsJsonArray("goto");
-                        double[] gotoPoint = new double[3];
-                        for (int i = 0; i < 3; i++)
-                            gotoPoint[i] = gotoArray.get(i).isJsonNull() ? Double.NaN : gotoArray.get(i).getAsDouble();
+                        JsonArray gotoArray = stepObj.has("goto") && stepObj.get("goto").isJsonArray()
+                                ? stepObj.getAsJsonArray("goto")
+                                : null;
+                        double[] gotoPoint = new double[] { Double.NaN, Double.NaN, Double.NaN };
+                        if (gotoArray != null) {
+                            for (int i = 0; i < 3 && i < gotoArray.size(); i++) {
+                                gotoPoint[i] = gotoArray.get(i).isJsonNull() ? Double.NaN : gotoArray.get(i).getAsDouble();
+                            }
+                        }
                         PathStep step = new PathStep(gotoPoint);
                         boolean hasLegacyStepSchedulingFields = stepObj.has("retryDelayTicks")
                                 || stepObj.has("failurePolicy")
@@ -1625,15 +1526,11 @@ public class PathSequenceManager {
                                 || stepObj.has("preconditionStepIndex");
                         if (stepObj.has("retryCount")) {
                             int retryCount = stepObj.get("retryCount").getAsInt();
-                            if (retryCount <= 0 && hasLegacyStepSchedulingFields
-                                    && !stepObj.has("pathRetryTimeoutSeconds")) {
+                            if (retryCount <= 0 && hasLegacyStepSchedulingFields && !stepObj.has("pathRetryTimeoutSeconds")) {
                                 step.setRetryCount(3);
                             } else {
                                 step.setRetryCount(retryCount);
                             }
-                        }
-                        if (stepObj.has("note")) {
-                            step.setNote(stepObj.get("note").getAsString());
                         }
                         if (stepObj.has("pathRetryTimeoutSeconds")) {
                             step.setPathRetryTimeoutSeconds(stepObj.get("pathRetryTimeoutSeconds").getAsInt());
@@ -1641,7 +1538,10 @@ public class PathSequenceManager {
                         if (stepObj.has("retryExhaustedPolicy")) {
                             step.setRetryExhaustedPolicy(stepObj.get("retryExhaustedPolicy").getAsString());
                         }
-                        if (stepObj.has("actions")) {
+                        if (stepObj.has("retryExhaustedSequenceName")) {
+                            step.setRetryExhaustedSequenceName(stepObj.get("retryExhaustedSequenceName").getAsString());
+                        }
+                        if (stepObj.has("actions") && stepObj.get("actions").isJsonArray()) {
                             JsonArray actionsArray = stepObj.getAsJsonArray("actions");
                             for (JsonElement actionElement : actionsArray) {
                                 JsonObject actionObj = actionElement.getAsJsonObject();
@@ -1666,26 +1566,21 @@ public class PathSequenceManager {
         }
     }
 
-    public static Consumer<EntityPlayerSP> parseAction(String type, JsonObject params) {
+    public static Consumer<LocalPlayer> parseAction(String type, JsonObject params) {
         try {
             switch (type.toLowerCase()) {
                 case "command":
                     return player -> ModUtils.sendChatCommand(params.get("command").getAsString());
                 case "system_message":
                     String rawMessage = params.has("message") ? params.get("message").getAsString() : "";
-                    return player -> player.sendMessage(new TextComponentString(rawMessage));
+                    return player -> player.sendSystemMessage(new TextComponentString(rawMessage));
+                case "disconnect":
+                    return player -> ModUtils.disconnectFromCurrentWorld();
                 case "delay":
-                    return new ModUtils.DelayAction(
-                            params.get("ticks").getAsInt(),
-                            isDelayNormalizedTo20Tps(params));
+                    return new ModUtils.DelayAction(params.get("ticks").getAsInt());
                 case "key":
-                    final String keyName = params.has("key") ? params.get("key").getAsString() : "";
-                    final String keyState = params.has("state") ? params.get("state").getAsString() : "Press";
-                    return player -> ModUtils.simulateKey(keyName, keyState);
-                case "skip_actions":
-                case "skip_steps":
-                    return player -> {
-                    };
+                    return player -> ModUtils.simulateKey(params.get("key").getAsString(),
+                            params.get("state").getAsString());
                 case "jump":
                     final int jumpCount = Math.max(1, params.has("count") ? params.get("count").getAsInt() : 1);
                     final int intervalTicks = Math.max(0,
@@ -1707,26 +1602,26 @@ public class PathSequenceManager {
                     final int x = params.get("x").getAsInt();
                     final int y = params.get("y").getAsInt();
                     final boolean isLeft = params.get("left").getAsBoolean();
-                    final String clickLocatorMode = params.has("locatorMode")
-                            ? params.get("locatorMode").getAsString()
-                            : ActionTargetLocator.CLICK_MODE_COORDINATE;
+                    final String clickLocatorMode = ActionTargetLocator.normalizeClickLocatorMode(
+                            params.has("locatorMode")
+                                    ? params.get("locatorMode").getAsString()
+                                    : ActionTargetLocator.CLICK_MODE_COORDINATE);
                     final String clickLocatorText = params.has("locatorText")
                             ? params.get("locatorText").getAsString()
                             : "";
                     final String clickLocatorMatchMode = params.has("locatorMatchMode")
                             ? params.get("locatorMatchMode").getAsString()
                             : ActionTargetLocator.MATCH_MODE_CONTAINS;
-                    final int originalWidth = params.has("originalWidth") ? params.get("originalWidth").getAsInt()
-                            : 2560;
-                    final int originalHeight = params.has("originalHeight") ? params.get("originalHeight").getAsInt()
-                            : 1334;
+                    final int originalWidth = params.has("originalWidth") ? params.get("originalWidth").getAsInt() : 2560;
+                    final int originalHeight = params.has("originalHeight") ? params.get("originalHeight").getAsInt() : 1334;
+                    final String clickCoordinateMode = ModUtils.normalizeClickCoordinateMode(
+                            params.has("coordinateMode") ? params.get("coordinateMode").getAsString() : "",
+                            originalWidth, originalHeight);
+                    final String clickMouseMoveMode = ModUtils.normalizeClickMouseMoveMode(
+                            params.has("mouseMoveMode") ? params.get("mouseMoveMode").getAsString() : "");
 
                     return player -> {
                         if (!ActionTargetLocator.CLICK_MODE_COORDINATE.equalsIgnoreCase(clickLocatorMode)) {
-                            if (ActionTargetLocator.tryInvokeCurrentScreenClick(clickLocatorMode, clickLocatorText,
-                                    clickLocatorMatchMode, isLeft)) {
-                                return;
-                            }
                             ActionTargetLocator.ClickPoint point = ActionTargetLocator.resolveScreenClickPoint(
                                     clickLocatorMode,
                                     clickLocatorText,
@@ -1736,12 +1631,21 @@ public class PathSequenceManager {
                                         clickLocatorMode, clickLocatorText);
                                 return;
                             }
-                            Minecraft mc = Minecraft.getMinecraft();
+                            Minecraft mc = Minecraft.getInstance();
+                            int pointRefWidth = mc.screen != null && mc.screen.width > 0
+                                    ? mc.screen.width
+                                    : mc.getWindow().getGuiScaledWidth();
+                            int pointRefHeight = mc.screen != null && mc.screen.height > 0
+                                    ? mc.screen.height
+                                    : mc.getWindow().getGuiScaledHeight();
                             ModUtils.simulateMouseClick(point.getX(), point.getY(), isLeft,
-                                    mc.displayWidth, mc.displayHeight);
+                                    pointRefWidth, pointRefHeight,
+                                    ModUtils.CLICK_COORDINATE_MODE_SCALED,
+                                    clickMouseMoveMode);
                             return;
                         }
-                        ModUtils.simulateMouseClick(x, y, isLeft, originalWidth, originalHeight);
+                        ModUtils.simulateMouseClick(x, y, isLeft, originalWidth, originalHeight,
+                                clickCoordinateMode, clickMouseMoveMode);
                     };
 
                 case "window_click":
@@ -1764,8 +1668,7 @@ public class PathSequenceManager {
                     final String windowSlotLocatorMatchMode = params.has("locatorMatchMode")
                             ? params.get("locatorMatchMode").getAsString()
                             : ActionTargetLocator.MATCH_MODE_CONTAINS;
-                    final String windowContainsText = params.has("contains") ? params.get("contains").getAsString()
-                            : "";
+                    final String windowContainsText = params.has("contains") ? params.get("contains").getAsString() : "";
                     final int button = params.has("button") ? params.get("button").getAsInt() : 0;
                     final String clickType = params.has("clickType") ? params.get("clickType").getAsString() : "PICKUP";
                     final boolean onlyOnSlotChange = params.has("onlyOnSlotChange")
@@ -1787,15 +1690,15 @@ public class PathSequenceManager {
                             resolvedSlotId = slotResult.getSlotIndex();
                         }
                         if (!windowContainsText.trim().isEmpty()) {
-                            Minecraft mc = Minecraft.getMinecraft();
-                            if (mc.player == null || mc.player.openContainer == null
+                            Minecraft mc = Minecraft.getInstance();
+                            if (mc.player == null || mc.player.containerMenu == null
                                     || resolvedSlotId < 0
-                                    || resolvedSlotId >= mc.player.openContainer.inventorySlots.size()) {
+                                    || resolvedSlotId >= mc.player.containerMenu.slots.size()) {
                                 return;
                             }
-                            Slot slotObj = mc.player.openContainer.getSlot(resolvedSlotId);
-                            if (slotObj == null || !slotObj.getHasStack()
-                                    || !slotObj.getStack().getDisplayName().contains(windowContainsText.trim())) {
+                            Slot slotObj = mc.player.containerMenu.getSlot(resolvedSlotId);
+                            if (slotObj == null || !slotObj.hasItem()
+                                    || !slotObj.getItem().getHoverName().getString().contains(windowContainsText.trim())) {
                                 return;
                             }
                         }
@@ -1811,11 +1714,9 @@ public class PathSequenceManager {
                         ModUtils.performWindowClick(windowId, resolvedSlotId, button, clickType);
                     };
                 case "conditional_window_click":
-                    final String conditionalWindowId = params.has("windowId") ? params.get("windowId").getAsString()
-                            : "-1";
+                    final String conditionalWindowId = params.has("windowId") ? params.get("windowId").getAsString() : "-1";
                     final String conditionalSlotRaw = params.has("slot") ? params.get("slot").getAsString() : "-1";
-                    final String conditionalSlotBase = params.has("slotBase") ? params.get("slotBase").getAsString()
-                            : "DEC";
+                    final String conditionalSlotBase = params.has("slotBase") ? params.get("slotBase").getAsString() : "DEC";
                     final String conditionalSlotLocatorMode = params.has("locatorMode")
                             ? params.get("locatorMode").getAsString()
                             : ActionTargetLocator.SLOT_MODE_DIRECT;
@@ -1826,13 +1727,12 @@ public class PathSequenceManager {
                             ? params.get("locatorMatchMode").getAsString()
                             : ActionTargetLocator.MATCH_MODE_CONTAINS;
                     final int conditionalButton = params.has("button") ? params.get("button").getAsInt() : 0;
-                    final String conditionalClickType = params.has("clickType") ? params.get("clickType").getAsString()
-                            : "PICKUP";
+                    final String conditionalClickType = params.has("clickType") ? params.get("clickType").getAsString() : "PICKUP";
                     final String containsText = params.has("contains") ? params.get("contains").getAsString() : "";
                     return player -> {
                         try {
-                            Minecraft mc = Minecraft.getMinecraft();
-                            if (mc.player == null || mc.player.openContainer == null) {
+                            Minecraft mc = Minecraft.getInstance();
+                            if (mc.player == null || mc.player.containerMenu == null) {
                                 return;
                             }
                             int conditionalSlot;
@@ -1851,16 +1751,15 @@ public class PathSequenceManager {
                                 }
                                 conditionalSlot = slotResult.getSlotIndex();
                             }
-                            if (conditionalSlot < 0
-                                    || conditionalSlot >= mc.player.openContainer.inventorySlots.size()) {
+                            if (conditionalSlot < 0 || conditionalSlot >= mc.player.containerMenu.slots.size()) {
                                 return;
                             }
-                            Slot slotObj = mc.player.openContainer.getSlot(conditionalSlot);
-                            if (slotObj == null || !slotObj.getHasStack()) {
+                            Slot slotObj = mc.player.containerMenu.getSlot(conditionalSlot);
+                            if (slotObj == null || !slotObj.hasItem()) {
                                 return;
                             }
                             if (!containsText.trim().isEmpty()
-                                    && !slotObj.getStack().getDisplayName().contains(containsText.trim())) {
+                                    && !slotObj.getItem().getHoverName().getString().contains(containsText.trim())) {
                                 return;
                             }
                             ModUtils.performWindowClick(conditionalWindowId, conditionalSlot, conditionalButton,
@@ -1894,9 +1793,9 @@ public class PathSequenceManager {
                         }
                         if (player != null) {
                             if (matches.isEmpty()) {
-                                player.sendMessage(new TextComponentString("§e[HUD识别] 未找到匹配文本"));
+                                player.sendSystemMessage(new TextComponentString("§e[HUD识别] 未找到匹配文本"));
                             } else {
-                                player.sendMessage(new TextComponentString("§a[HUD识别] " + matches.get(0)));
+                                player.sendSystemMessage(new TextComponentString("§a[HUD识别] " + matches.get(0)));
                             }
                         }
                     };
@@ -1955,9 +1854,9 @@ public class PathSequenceManager {
                                         entityLocatorText);
                                 return;
                             }
-                            Minecraft.getMinecraft().playerController.interactWithEntity(player, targetEntity,
-                                    EnumHand.MAIN_HAND);
-                            player.swingArm(EnumHand.MAIN_HAND);
+                            Minecraft.getInstance().gameMode.interact(player, targetEntity,
+                                    InteractionHand.MAIN_HAND);
+                            player.swing(InteractionHand.MAIN_HAND);
                             return;
                         }
                         ModUtils.rightClickOnNearestEntity(player, entityPos, range);
@@ -2013,15 +1912,9 @@ public class PathSequenceManager {
                     return player -> GuiBlockerHandler.blockGui(blockCount, blockCurrentGui);
                 case "close_container_window":
                     return player -> {
-                        Minecraft mc = Minecraft.getMinecraft();
-                        if (mc != null && mc.currentScreen != null) {
-                            mc.displayGuiScreen(null);
-                        }
-                        if (player != null && player.openContainer != null) {
-                            player.closeScreen();
-                            if (player.inventoryContainer != null) {
-                                player.openContainer = player.inventoryContainer;
-                            }
+                        if (player != null && player.containerMenu != null && player.inventoryMenu != null
+                                && player.containerMenu != player.inventoryMenu) {
+                            player.closeContainer();
                         }
                     };
                 case "autoeat":
@@ -2086,8 +1979,7 @@ public class PathSequenceManager {
                             || params.get("enabled").getAsBoolean();
                     return player -> AutoFishingHandler.INSTANCE.setEnabled(toggleAutoFishingEnabled);
                 case "toggle_kill_aura":
-                    final boolean toggleKillAuraEnabled = !params.has("enabled")
-                            || params.get("enabled").getAsBoolean();
+                    final boolean toggleKillAuraEnabled = !params.has("enabled") || params.get("enabled").getAsBoolean();
                     return player -> KillAuraHandler.INSTANCE.setEnabled(toggleKillAuraEnabled);
                 case "toggle_fly":
                     final boolean toggleFlyEnabled = !params.has("enabled") || params.get("enabled").getAsBoolean();
@@ -2099,50 +1991,48 @@ public class PathSequenceManager {
                     final boolean toggleOtherFeatureEnabled = !params.has("enabled")
                             || params.get("enabled").getAsBoolean();
                     return player -> applyOtherFeatureToggle(targetOtherFeatureId, toggleOtherFeatureEnabled);
-                case "run_sequence":
-                    String targetSequenceName = params.has("sequenceName")
-                            ? params.get("sequenceName").getAsString()
-                            : "";
-                    final String runSequenceActionUuid = ensurePersistentActionUuid(params, "run_sequence");
-                    final boolean intervalExecutionMode = "interval".equalsIgnoreCase(
-                            params.has("executeMode") ? params.get("executeMode").getAsString() : "always");
-                    final int executeEveryCount = getRunSequenceExecuteEveryCount(params);
-                    final boolean backgroundExecution = isRunSequenceBackgroundExecution(params);
-                    return player -> runSequenceFromAction(targetSequenceName, runSequenceActionUuid,
-                            intervalExecutionMode, executeEveryCount, backgroundExecution, player);
-                case "stop_current_sequence":
-                    final String stopTargetScope = getStopCurrentSequenceTargetScope(params);
-                    return player -> stopCurrentSequenceFromAction(stopTargetScope);
-                case "run_template":
-                    final String templateNameValue = params.has("templateName")
-                            ? params.get("templateName").getAsString()
-                            : "";
-                    final String templateParamsText = params.has("paramsText") ? params.get("paramsText").getAsString()
-                            : "";
-                    final String runTemplateActionUuid = ensurePersistentActionUuid(params, "run_template");
-                    final boolean templateIntervalExecutionMode = "interval".equalsIgnoreCase(
-                            params.has("executeMode") ? params.get("executeMode").getAsString() : "always");
-                    final int templateExecuteEveryCount = getRunSequenceExecuteEveryCount(params);
-                    final boolean templateBackgroundExecution = isRunSequenceBackgroundExecution(params);
-                    return player -> runTemplateFromAction(templateNameValue, runTemplateActionUuid, templateParamsText,
-                            templateIntervalExecutionMode, templateExecuteEveryCount, templateBackgroundExecution,
-                            player);
-                case "silentuse":
-                    String itemName = params.has("item") ? params.get("item").getAsString() : "";
-                    int tempSlot = params.has("tempslot")
-                            ? Math.max(0, Math.min(8, params.get("tempslot").getAsInt()))
-                            : 0;
-                    int switchDelayTicks = params.has("switchDelayTicks")
-                            ? Math.max(0, params.get("switchDelayTicks").getAsInt())
-                            : -1;
-                    int useDelayTicks = params.has("useDelayTicks")
-                            ? Math.max(0, params.get("useDelayTicks").getAsInt())
-                            : -1;
-                    int switchBackDelayTicks = params.has("switchBackDelayTicks")
-                            ? Math.max(0, params.get("switchBackDelayTicks").getAsInt())
-                            : -1;
-                    return player -> ModUtils.useItemFromInventory(itemName, tempSlot, switchDelayTicks,
-                            useDelayTicks, switchBackDelayTicks);
+            case "run_sequence":
+                String targetSequenceName = params.has("sequenceName")
+                        ? params.get("sequenceName").getAsString()
+                        : "";
+                final String runSequenceActionUuid = ensurePersistentActionUuid(params, "run_sequence");
+                final boolean intervalExecutionMode = "interval".equalsIgnoreCase(
+                        params.has("executeMode") ? params.get("executeMode").getAsString() : "always");
+                final int executeEveryCount = getRunSequenceExecuteEveryCount(params);
+                final boolean backgroundExecution = isRunSequenceBackgroundExecution(params);
+                return player -> runSequenceFromAction(targetSequenceName, runSequenceActionUuid,
+                        intervalExecutionMode, executeEveryCount, backgroundExecution, player);
+            case "stop_current_sequence":
+                final String stopTargetScope = getStopCurrentSequenceTargetScope(params);
+                return player -> stopCurrentSequenceFromAction(stopTargetScope);
+            case "run_template":
+                final String templateNameValue = params.has("templateName")
+                        ? params.get("templateName").getAsString()
+                        : "";
+                final String templateParamsText = params.has("paramsText") ? params.get("paramsText").getAsString() : "";
+                final String runTemplateActionUuid = ensurePersistentActionUuid(params, "run_template");
+                final boolean templateIntervalExecutionMode = "interval".equalsIgnoreCase(
+                        params.has("executeMode") ? params.get("executeMode").getAsString() : "always");
+                final int templateExecuteEveryCount = getRunSequenceExecuteEveryCount(params);
+                final boolean templateBackgroundExecution = isRunSequenceBackgroundExecution(params);
+                return player -> runTemplateFromAction(templateNameValue, runTemplateActionUuid, templateParamsText,
+                        templateIntervalExecutionMode, templateExecuteEveryCount, templateBackgroundExecution, player);
+            case "silentuse":
+                String itemName = params.has("item") ? params.get("item").getAsString() : "";
+                int tempSlot = params.has("tempslot")
+                        ? Math.max(0, Math.min(8, params.get("tempslot").getAsInt()))
+                        : 0;
+                int switchDelayTicks = params.has("switchDelayTicks")
+                        ? Math.max(0, params.get("switchDelayTicks").getAsInt())
+                        : -1;
+                int useDelayTicks = params.has("useDelayTicks")
+                        ? Math.max(0, params.get("useDelayTicks").getAsInt())
+                        : -1;
+                int switchBackDelayTicks = params.has("switchBackDelayTicks")
+                        ? Math.max(0, params.get("switchBackDelayTicks").getAsInt())
+                        : -1;
+                return player -> ModUtils.useItemFromInventory(itemName, tempSlot, switchDelayTicks,
+                        useDelayTicks, switchBackDelayTicks);
                 case "hunt":
                     return player -> PathSequenceEventListener.instance.startHunting(params);
                 case "follow_entity":
@@ -2261,7 +2151,7 @@ public class PathSequenceManager {
                     } else {
                         // 如果两者都未提供，则记录错误
                         zszlScriptMod.LOGGER.error(I18n.format("log.path.send_packet_missing_target"));
-                        return player -> player.sendMessage(
+                        return player -> player.sendSystemMessage(
                                 new TextComponentString(I18n.format("msg.path.send_packet.invalid_config")));
                     }
                     // --- 修改结束 ---
@@ -2359,16 +2249,18 @@ public class PathSequenceManager {
             seqObj.addProperty("loopDelayTicks", seq.getLoopDelayTicks());
 
             JsonArray stepsArray = new JsonArray();
-            for (PathStep step : seq.getSteps()) {
-                JsonObject stepObj = new JsonObject();
-                stepObj.add("goto", GSON.toJsonTree(step.getGotoPoint()));
-                stepObj.addProperty("note", step.getNote());
-                stepObj.addProperty("retryCount", step.getRetryCount());
-                stepObj.addProperty("pathRetryTimeoutSeconds", step.getPathRetryTimeoutSeconds());
-                stepObj.addProperty("retryExhaustedPolicy", step.getRetryExhaustedPolicy());
-                JsonArray actionsArray = new JsonArray();
-                for (ActionData action : step.getActions()) {
-                    JsonObject actionObj = new JsonObject();
+        for (PathStep step : seq.getSteps()) {
+            JsonObject stepObj = new JsonObject();
+            stepObj.add("goto", GSON.toJsonTree(step.getGotoPoint()));
+            stepObj.addProperty("retryCount", step.getRetryCount());
+            stepObj.addProperty("pathRetryTimeoutSeconds", step.getPathRetryTimeoutSeconds());
+            stepObj.addProperty("retryExhaustedPolicy", step.getRetryExhaustedPolicy());
+            if (!step.getRetryExhaustedSequenceName().isEmpty()) {
+                stepObj.addProperty("retryExhaustedSequenceName", step.getRetryExhaustedSequenceName());
+            }
+            JsonArray actionsArray = new JsonArray();
+            for (ActionData action : step.getActions()) {
+                JsonObject actionObj = new JsonObject();
                     actionObj.addProperty("type", action.type);
                     actionObj.add("params", action.params);
                     actionsArray.add(actionObj);
@@ -2466,8 +2358,7 @@ public class PathSequenceManager {
         return true;
     }
 
-    public static boolean moveCustomSequenceRelative(String sequenceName, String anchorSequenceName,
-            boolean placeAfter) {
+    public static boolean moveCustomSequenceRelative(String sequenceName, String anchorSequenceName, boolean placeAfter) {
         String normalizedMove = sequenceName == null ? "" : sequenceName.trim();
         String normalizedAnchor = anchorSequenceName == null ? "" : anchorSequenceName.trim();
         if (normalizedMove.isEmpty() || normalizedAnchor.isEmpty() || normalizedMove.equals(normalizedAnchor)) {
@@ -2712,7 +2603,7 @@ public class PathSequenceManager {
         runSequenceCallStack.clear();
     }
 
-    public static boolean resumeCallerSequenceAfterAction(EntityPlayerSP player) {
+    public static boolean resumeCallerSequenceAfterAction(LocalPlayer player) {
         SequenceCallContext context;
         synchronized (PathSequenceManager.class) {
             if (runSequenceCallStack.isEmpty()) {
@@ -2743,7 +2634,7 @@ public class PathSequenceManager {
 
     private static void runSequenceFromAction(String targetSequenceName, String actionUuid,
             boolean intervalExecutionMode, int executeEveryCount, boolean backgroundExecution,
-            EntityPlayerSP player) {
+            LocalPlayer player) {
         if (!intervalExecutionMode || executeEveryCount <= 1) {
             setRunSequenceCurrentCount(actionUuid, 0);
             executeRunSequenceFromAction(targetSequenceName, player, backgroundExecution);
@@ -2767,7 +2658,7 @@ public class PathSequenceManager {
 
     private static void runTemplateFromAction(String templateName, String actionUuid,
             String paramsText, boolean intervalExecutionMode, int executeEveryCount, boolean backgroundExecution,
-            EntityPlayerSP player) {
+            LocalPlayer player) {
         if (!intervalExecutionMode || executeEveryCount <= 1) {
             setRunSequenceCurrentCount(actionUuid, 0);
             executeTemplateFromAction(templateName, paramsText, player, backgroundExecution);
@@ -2789,12 +2680,12 @@ public class PathSequenceManager {
         }
     }
 
-    private static boolean executeRunSequenceFromAction(String targetSequenceName, EntityPlayerSP player,
+    private static boolean executeRunSequenceFromAction(String targetSequenceName, LocalPlayer player,
             boolean backgroundExecution) {
         return executeRunSequenceFromAction(targetSequenceName, player, backgroundExecution, null);
     }
 
-    private static boolean executeRunSequenceFromAction(String targetSequenceName, EntityPlayerSP player,
+    private static boolean executeRunSequenceFromAction(String targetSequenceName, LocalPlayer player,
             boolean backgroundExecution, Map<String, Object> initialSequenceVariables) {
         if (targetSequenceName == null || targetSequenceName.trim().isEmpty()) {
             return false;
@@ -2804,7 +2695,7 @@ public class PathSequenceManager {
         if (!hasSequence(target)) {
             zszlScriptMod.LOGGER.warn("[run_sequence] 目标序列不存在: {}", target);
             if (player != null) {
-                player.sendMessage(
+                player.sendSystemMessage(
                         new TextComponentString(I18n.format("msg.path.run_sequence.target_not_found", target)));
             }
             return false;
@@ -2834,7 +2725,7 @@ public class PathSequenceManager {
         if (caller != null && !canInvokeSequence(caller, target)) {
             zszlScriptMod.LOGGER.warn("[run_sequence] 拒绝循环调用: {} -> {}", caller, target);
             if (player != null) {
-                player.sendMessage(
+                player.sendSystemMessage(
                         new TextComponentString(I18n.format("msg.path.run_sequence.cycle_blocked", caller, target)));
             }
             return false;
@@ -2876,13 +2767,59 @@ public class PathSequenceManager {
         return true;
     }
 
-    private static boolean executeTemplateFromAction(String templateName, String paramsText, EntityPlayerSP player,
+    public static boolean executeSequenceByConfiguredMode(String targetSequenceName, LocalPlayer player,
+            String callerSequenceName, Map<String, Object> initialSequenceVariables) {
+        if (targetSequenceName == null || targetSequenceName.trim().isEmpty()) {
+            if (player != null) {
+                player.sendSystemMessage(new TextComponentString("§c失败后执行序列未设置目标序列。"));
+            }
+            return false;
+        }
+
+        String target = targetSequenceName.trim();
+        if (!hasSequence(target)) {
+            zszlScriptMod.LOGGER.warn("[run_sequence] 目标序列不存在: {}", target);
+            if (player != null) {
+                player.sendSystemMessage(
+                        new TextComponentString(I18n.format("msg.path.run_sequence.target_not_found", target)));
+            }
+            return false;
+        }
+
+        PathSequence targetSequence = getSequence(target);
+        if (targetSequence == null || targetSequence.getSteps().isEmpty()) {
+            zszlScriptMod.LOGGER.warn("[run_sequence] 目标序列为空或无效: {}", target);
+            if (player != null) {
+                player.sendSystemMessage(new TextComponentString("§c目标序列为空或无有效步骤: " + target));
+            }
+            return false;
+        }
+
+        String caller = callerSequenceName == null ? "" : callerSequenceName.trim();
+        if (!caller.isEmpty() && !canInvokeSequence(caller, target)) {
+            zszlScriptMod.LOGGER.warn("[run_sequence] 拒绝循环调用: {} -> {}", caller, target);
+            if (player != null) {
+                player.sendSystemMessage(
+                        new TextComponentString(I18n.format("msg.path.run_sequence.cycle_blocked", caller, target)));
+            }
+            return false;
+        }
+
+        if (targetSequence.isNonInterruptingExecution()) {
+            return PathSequenceEventListener.startBackgroundSequence(targetSequence, 1, initialSequenceVariables);
+        }
+
+        runPathSequenceInternal(target, false, 1, initialSequenceVariables);
+        return true;
+    }
+
+    private static boolean executeTemplateFromAction(String templateName, String paramsText, LocalPlayer player,
             boolean backgroundExecution) {
         LegacyActionTemplateManager.ResolvedTemplateCall call = LegacyActionTemplateManager.resolveCall(templateName,
                 paramsText);
         if (call == null || call.getSequenceName().trim().isEmpty()) {
             if (player != null) {
-                player.sendMessage(new TextComponentString("§c模板不存在或模板目标序列无效: " + templateName));
+                player.sendSystemMessage(new TextComponentString("§c模板不存在或模板目标序列无效: " + templateName));
             }
             return false;
         }
@@ -2977,20 +2914,37 @@ public class PathSequenceManager {
         }
 
         PathSequence sequence = getSequence(sequenceName);
+        if (sequence == null || sequence.getSteps().isEmpty()) {
+            GuiInventory.isLooping = false;
+            zszlScriptMod.LOGGER.warn("[路径序列] 启动前台序列失败，序列为空或无有效步骤: {}", sequenceName);
+            return;
+        }
+        if (!allowForegroundSequenceStart(sequence)) {
+            return;
+        }
+        zszlScriptMod.LOGGER.info("[路径序列] 启动前台序列 {} loopAttempt={} explicitLoopCount={} configuredLoopCount={}",
+                buildSequenceStartDiagnostics(sequence),
+                GuiInventory.loopCounter + 1,
+                explicitLoopCount == null ? "<default>" : explicitLoopCount,
+                GuiInventory.loopCount);
 
         double[] firstTarget = sequence.getSteps().get(0).getGotoPoint();
+        PathStep firstStep = sequence.getSteps().get(0);
 
         if (isStopSequenceName(sequence.getName())) {
-            EntityPlayerSP player = Minecraft.getMinecraft().player;
+            LocalPlayer player = Minecraft.getInstance().player;
             if (player != null &&
-                    (player.posX < -1702 && player.posX > -1888 &&
-                            player.posZ < -2011 && player.posZ > -2056)) {
+                    (player.getX() < -1702 && player.getX() > -1888 &&
+                            player.getZ() < -2011 && player.getZ() > -2056)) {
                 firstTarget = sequence.getSteps().get(2).getGotoPoint();
             }
         }
 
         if (!Double.isNaN(firstTarget[0])) {
-            EmbeddedNavigationHandler.INSTANCE.startGoto(firstTarget[0], firstTarget[1], firstTarget[2]);
+            EmbeddedNavigationHandler.INSTANCE.startGoto(EmbeddedNavigationHandler.NavigationOwner.PATH_SEQUENCE,
+                    firstTarget[0], firstTarget[1], firstTarget[2], false, "路径序列开始时前往首个步骤目标");
+        } else if (firstStep != null && firstStep.getActions() != null && !firstStep.getActions().isEmpty()) {
+            zszlScriptMod.LOGGER.info("[路径序列] 首步无 goto，按纯动作步启动 {}", buildSequenceStartDiagnostics(sequence));
         } else {
             zszlScriptMod.LOGGER.warn(I18n.format("log.path.first_step_no_target"), sequenceName);
         }
@@ -3008,8 +2962,8 @@ public class PathSequenceManager {
             loopInfo += "/" + I18n.format("path.loop.infinite");
         }
 
-        if (Minecraft.getMinecraft().player != null) {
-            Minecraft.getMinecraft().player.sendMessage(new TextComponentString(
+        if (Minecraft.getInstance().player != null) {
+            Minecraft.getInstance().player.sendSystemMessage(new TextComponentString(
                     I18n.format("msg.path.sequence_start_loop", sequenceName, GuiInventory.loopCounter)));
         }
         PathSequenceEventListener.instance.setStatus(sequenceName + " - " + loopInfo);
@@ -3024,28 +2978,63 @@ public class PathSequenceManager {
         zszlScriptMod.LOGGER.info(I18n.format("log.path.start_running") + sequenceName);
     }
 
+    private static boolean allowForegroundSequenceStart(PathSequence sequence) {
+        ConditionalExecutionHandler.ForegroundSequenceStartDecision decision = ConditionalExecutionHandler
+                .assessForegroundSequenceStart(sequence == null ? "" : sequence.getName(), Minecraft.getInstance().player);
+        if (decision.isAllowed()) {
+            return true;
+        }
+        GuiInventory.isLooping = false;
+        zszlScriptMod.LOGGER.warn("[路径序列] 已阻止启动前台序列 source={} reason={} {}",
+                decision.getSource(),
+                decision.getReason(),
+                buildSequenceStartDiagnostics(sequence));
+        LocalPlayer player = Minecraft.getInstance().player;
+        if (player != null) {
+            player.sendSystemMessage(new TextComponentString("§e[路径序列] " + decision.getReason()));
+        }
+        return false;
+    }
+
+    private static String buildSequenceStartDiagnostics(PathSequence sequence) {
+        String sequenceName = sequence == null || sequence.getName() == null || sequence.getName().trim().isEmpty()
+                ? "<未命名序列>"
+                : sequence.getName().trim();
+        int stepCount = sequence == null || sequence.getSteps() == null ? 0 : sequence.getSteps().size();
+        PathStep firstStep = (sequence == null || sequence.getSteps() == null || sequence.getSteps().isEmpty())
+                ? null
+                : sequence.getSteps().get(0);
+        boolean firstStepHasGoto = firstStep != null && firstStep.hasGotoTarget();
+        int firstStepActionCount = firstStep == null || firstStep.getActions() == null ? 0 : firstStep.getActions().size();
+        return "sequence=" + sequenceName + " steps=" + stepCount + " firstStepHasGoto=" + firstStepHasGoto
+                + " firstStepActions=" + firstStepActionCount;
+    }
+
     public static List<String> getAllCategories() {
-        return new ArrayList<>(categories);
+        return categories.stream()
+                .filter(cat -> !isRemovedBuiltinServerCategory(cat))
+                .collect(Collectors.toList());
     }
 
     public static List<String> getVisibleCategories() {
         return categories.stream()
+                .filter(cat -> !isRemovedBuiltinServerCategory(cat))
                 .filter(cat -> !hiddenCategories.contains(cat))
-                .filter(cat -> {
-                    if ("魔塔之巅".equals(cat)) {
-                        return !ServerFeatureVisibilityManager.shouldHideMotaFeatures();
-                    }
-                    return true;
-                })
                 .collect(Collectors.toList());
     }
 
     public static boolean isCategoryHidden(String category) {
-        return category != null && hiddenCategories.contains(category);
+        return category != null
+                && (isRemovedBuiltinServerCategory(category) || hiddenCategories.contains(category));
     }
 
     public static void setCategoryHidden(String category, boolean hidden) {
         if (category == null || category.trim().isEmpty()) {
+            return;
+        }
+        if (isRemovedBuiltinServerCategory(category)) {
+            hiddenCategories.add(category);
+            saveCategories();
             return;
         }
         if (hidden) {
@@ -3058,19 +3047,17 @@ public class PathSequenceManager {
 
     public static List<PathSequence> getAllVisibleSequences() {
         return getAllSequences().stream()
-                .filter(seq -> seq != null && !hiddenCategories.contains(seq.getCategory()))
-                .filter(seq -> {
-                    String cat = seq.getCategory();
-                    if ("魔塔之巅".equals(cat)) {
-                        return !ServerFeatureVisibilityManager.shouldHideMotaFeatures();
-                    }
-                    return true;
-                })
+                .filter(seq -> seq != null)
+                .filter(seq -> !isRemovedBuiltinServerCategory(seq.getCategory()))
+                .filter(seq -> !hiddenCategories.contains(seq.getCategory()))
                 .collect(Collectors.toList());
     }
 
     public static void addCategory(String name) {
-        if (name != null && !name.trim().isEmpty() && !categories.contains(name)) {
+        if (name != null
+                && !name.trim().isEmpty()
+                && !isRemovedBuiltinServerCategory(name)
+                && !categories.contains(name)) {
             categories.add(name);
             saveCategories();
         }
@@ -3088,6 +3075,7 @@ public class PathSequenceManager {
 
     public static void renameCategory(String oldName, String newName) {
         if (categories.contains(oldName) && newName != null && !newName.trim().isEmpty()
+                && !isRemovedBuiltinServerCategory(newName)
                 && !categories.contains(newName)) {
             int index = categories.indexOf(oldName);
             categories.set(index, newName);
@@ -3196,7 +3184,7 @@ public class PathSequenceManager {
     }
 
     private static void loadCategories() {
-        categories = new ArrayList<>(Arrays.asList(defaultCategoryName(), builtinCategoryName(), "魔塔之巅"));
+        categories = new ArrayList<>(Arrays.asList(defaultCategoryName(), builtinCategoryName()));
         hiddenCategories = new HashSet<>();
         Path categoriesFile = getCategoriesFile();
         if (Files.exists(categoriesFile)) {
@@ -3211,7 +3199,7 @@ public class PathSequenceManager {
                         List<String> loaded = GSON.fromJson(obj.get("categories"), listType);
                         if (loaded != null) {
                             for (String cat : loaded) {
-                                if (!categories.contains(cat)) {
+                                if (!isRemovedBuiltinServerCategory(cat) && !categories.contains(cat)) {
                                     categories.add(cat);
                                 }
                             }
@@ -3229,19 +3217,25 @@ public class PathSequenceManager {
                 } else if (root != null && root.isJsonArray()) {
                     Type listType = new TypeToken<ArrayList<String>>() {
                     }.getType();
-                    List<String> loaded = GSON.fromJson(root, listType);
-                    if (loaded != null) {
-                        for (String cat : loaded) {
-                            if (!categories.contains(cat)) {
-                                categories.add(cat);
+                        List<String> loaded = GSON.fromJson(root, listType);
+                        if (loaded != null) {
+                            for (String cat : loaded) {
+                                if (!isRemovedBuiltinServerCategory(cat) && !categories.contains(cat)) {
+                                    categories.add(cat);
+                                }
                             }
-                        }
                     }
                 }
             } catch (IOException e) {
                 zszlScriptMod.LOGGER.error(I18n.format("log.path.load_categories_failed"), e);
             }
         }
+        hiddenCategories.add("再生之路");
+        hiddenCategories.add("魔塔之巅");
+    }
+
+    private static boolean isRemovedBuiltinServerCategory(String category) {
+        return "再生之路".equals(category) || "魔塔之巅".equals(category);
     }
 
     public static void saveCategories() {
@@ -3266,3 +3260,10 @@ public class PathSequenceManager {
         return all;
     }
 }
+
+
+
+
+
+
+

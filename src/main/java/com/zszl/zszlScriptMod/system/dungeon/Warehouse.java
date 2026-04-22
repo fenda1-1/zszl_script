@@ -1,7 +1,7 @@
 // 文件路径: src/main/java/com/zszl/zszlScriptMod/system/dungeon/Warehouse.java
 package com.zszl.zszlScriptMod.system.dungeon;
 
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.core.BlockPos;
 
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;

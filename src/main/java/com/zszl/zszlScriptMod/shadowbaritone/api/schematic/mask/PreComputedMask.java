@@ -42,3 +42,4 @@ final class PreComputedMask extends AbstractMask implements StaticMask {
         return this.mask[y][z][x];
     }
 }
+

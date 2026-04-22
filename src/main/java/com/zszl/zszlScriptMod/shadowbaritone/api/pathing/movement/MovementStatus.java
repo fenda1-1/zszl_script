@@ -24,14 +24,12 @@ package com.zszl.zszlScriptMod.shadowbaritone.api.pathing.movement;
 public enum MovementStatus {
 
     /**
-     * We are preparing the movement to be executed. This is when any blocks
-     * obstructing the destination are broken.
+     * We are preparing the movement to be executed. This is when any blocks obstructing the destination are broken.
      */
     PREPPING(false),
 
     /**
-     * We are waiting for the movement to begin, after
-     * {@link MovementStatus#PREPPING}.
+     * We are waiting for the movement to begin, after {@link MovementStatus#PREPPING}.
      */
     WAITING(false),
 
@@ -74,3 +72,4 @@ public enum MovementStatus {
         return this.complete;
     }
 }
+

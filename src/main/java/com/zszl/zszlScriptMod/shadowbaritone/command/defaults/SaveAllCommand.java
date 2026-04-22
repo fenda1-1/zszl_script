@@ -21,7 +21,6 @@ import com.zszl.zszlScriptMod.shadowbaritone.api.IBaritone;
 import com.zszl.zszlScriptMod.shadowbaritone.api.command.Command;
 import com.zszl.zszlScriptMod.shadowbaritone.api.command.argument.IArgConsumer;
 import com.zszl.zszlScriptMod.shadowbaritone.api.command.exception.CommandException;
-import com.zszl.zszlScriptMod.shadowbaritone.api.utils.ShadowBaritoneI18n;
 
 import java.util.Arrays;
 import java.util.List;
@@ -37,8 +36,7 @@ public class SaveAllCommand extends Command {
     public void execute(String label, IArgConsumer args) throws CommandException {
         args.requireMax(0);
         ctx.worldData().getCachedWorld().save();
-        logDirect(ShadowBaritoneI18n.trKey(
-                "shadowbaritone.command.saveall.status.saved"));
+        logDirect("Saved");
     }
 
     @Override
@@ -48,19 +46,17 @@ public class SaveAllCommand extends Command {
 
     @Override
     public String getShortDesc() {
-        return ShadowBaritoneI18n.trKey(
-                "shadowbaritone.command.saveall.short_desc");
+        return "Saves Baritone's cache for this world";
     }
 
     @Override
     public List<String> getLongDesc() {
         return Arrays.asList(
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.saveall.long_desc.1"),
+                "The saveall command saves Baritone's world cache.",
                 "",
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.saveall.long_desc.usage"),
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.saveall.long_desc.example.default"));
+                "Usage:",
+                "> saveall"
+        );
     }
 }
+

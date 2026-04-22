@@ -7,12 +7,12 @@ import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
 import com.zszl.zszlScriptMod.gui.path.GuiSequenceSelector;
 import com.zszl.zszlScriptMod.handlers.ConditionalExecutionHandler;
 import com.zszl.zszlScriptMod.system.ConditionalRule;
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiScreen;
-import net.minecraft.client.gui.GuiTextField;
-import net.minecraft.client.resources.I18n;
-import org.lwjgl.input.Keyboard;
-import org.lwjgl.input.Mouse;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiTextField;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Keyboard;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Mouse;
 
 import java.io.IOException;
 import java.text.DecimalFormat;
@@ -26,7 +26,6 @@ public class GuiConditionalExecutionManager extends ThemedGuiScreen {
 
     private static final String CATEGORY_ALL = "__all__";
     private static final String CATEGORY_DEFAULT = "默认";
-    private static final String CATEGORY_BUILTIN = "内置规则";
 
     private static final int BTN_NEW = 100;
     private static final int BTN_DELETE = 101;
@@ -67,7 +66,6 @@ public class GuiConditionalExecutionManager extends ThemedGuiScreen {
     private boolean creatingNew = false;
     private boolean treeCollapsed = false;
     private boolean listCollapsed = false;
-    private boolean editingBuiltin = false;
     private int lastClickedCardIndex = -1;
     private long lastClickedCardTimeMs = 0L;
 
@@ -141,12 +139,6 @@ public class GuiConditionalExecutionManager extends ThemedGuiScreen {
     private int contextMenuTargetIndex = -1;
     private String contextMenuTargetType = "card";
     private String contextMenuTargetCategory = "";
-    private int pendingTreePressIndex = -1;
-    private int pendingTreePressMouseX = 0;
-    private int pendingTreePressMouseY = 0;
-    private boolean treeDragging = false;
-    private DragPayload activeDragPayload = null;
-    private TreeDropTarget currentTreeDropTarget = null;
 
     private String statusMessage = "§7使用指南：左键筛选/折叠，右键分组或卡片打开菜单，滚轮可滚动右侧规则编辑器";
     private int statusColor = 0xFFB8C7D9;
@@ -333,7 +325,7 @@ public class GuiConditionalExecutionManager extends ThemedGuiScreen {
     }
 
     private int getEffectiveEditorTotalRows() {
-        return editingBuiltin && !creatingNew ? 15 : 14;
+        return 14;
     }
 
     private int getMaxEditorScroll() {
@@ -379,10 +371,9 @@ public class GuiConditionalExecutionManager extends ThemedGuiScreen {
         for (String category : categories) {
             visibleTreeRows.add(TreeRow.categoryRow(category));
             if (expandedCategories.contains(category)) {
-                for (int ruleIndex = 0; ruleIndex < allRules.size(); ruleIndex++) {
-                    ConditionalRule rule = allRules.get(ruleIndex);
+                for (ConditionalRule rule : allRules) {
                     if (category.equals(getRuleCategory(rule))) {
-                        visibleTreeRows.add(TreeRow.ruleRow(category, safe(rule.name), safe(rule.name), ruleIndex));
+                        visibleTreeRows.add(TreeRow.ruleRow(category, safe(rule.name), safe(rule.name)));
                     }
                 }
             }
@@ -420,7 +411,6 @@ public class GuiConditionalExecutionManager extends ThemedGuiScreen {
     }
 
     private void clearEditorForNew() {
-        editingBuiltin = false;
         ConditionalRule draft = new ConditionalRule();
         draft.category = isConcreteCategory(selectedCategory) ? selectedCategory : CATEGORY_DEFAULT;
         loadEditor(draft);
@@ -431,10 +421,9 @@ public class GuiConditionalExecutionManager extends ThemedGuiScreen {
 
     private void loadEditor(ConditionalRule rule) {
         ConditionalRule model = rule == null ? new ConditionalRule() : rule;
-        editingBuiltin = !creatingNew && ConditionalExecutionHandler.isBuiltinRule(model);
 
         setText(nameField, safe(model.name));
-        setText(categoryField, getEditableCategory(model));
+        setText(categoryField, getRuleCategory(model));
         setText(sequenceField, safe(model.sequenceName));
         setText(xField, formatDouble(model.centerX));
         setText(yField, formatDouble(model.centerY));
@@ -473,18 +462,16 @@ public class GuiConditionalExecutionManager extends ThemedGuiScreen {
         }
 
         boolean hasSelectedRule = !creatingNew && selectedVisibleIndex >= 0 && selectedVisibleIndex < visibleRules.size();
-        boolean selectedBuiltin = hasSelectedRule
-                && ConditionalExecutionHandler.isBuiltinRule(visibleRules.get(selectedVisibleIndex));
 
         if (btnDelete != null) {
-            btnDelete.enabled = hasSelectedRule && !selectedBuiltin;
+            btnDelete.enabled = hasSelectedRule;
         }
         if (btnMoveUp != null) {
-            btnMoveUp.enabled = hasSelectedRule && !selectedBuiltin && getSelectedRuleGlobalIndex() > 0;
+            btnMoveUp.enabled = hasSelectedRule && getSelectedRuleGlobalIndex() > 0;
         }
         if (btnMoveDown != null) {
             int globalIndex = getSelectedRuleGlobalIndex();
-            btnMoveDown.enabled = hasSelectedRule && !selectedBuiltin
+            btnMoveDown.enabled = hasSelectedRule
                     && globalIndex >= 0
                     && globalIndex < ConditionalExecutionHandler.rules.size() - 1;
         }
@@ -492,23 +479,22 @@ public class GuiConditionalExecutionManager extends ThemedGuiScreen {
             btnSave.enabled = true;
         }
 
-        boolean fieldsEditable = !editingBuiltin || creatingNew;
-        nameField.setEnabled(fieldsEditable);
-        categoryField.setEnabled(fieldsEditable);
-        xField.setEnabled(fieldsEditable);
-        yField.setEnabled(fieldsEditable);
-        zField.setEnabled(fieldsEditable);
-        rangeField.setEnabled(fieldsEditable);
-        loopCountField.setEnabled(fieldsEditable);
-        cooldownField.setEnabled(fieldsEditable);
-        visualizeColorField.setEnabled(fieldsEditable && editorVisualizeRange);
-        antiStuckTimeoutField.setEnabled(fieldsEditable && editorAntiStuckEnabled);
-        btnSelectSequence.enabled = fieldsEditable && btnSelectSequence.visible;
-        btnGetCoords.enabled = fieldsEditable && btnGetCoords.visible;
-        btnToggleVisualize.enabled = fieldsEditable && btnToggleVisualize.visible;
-        btnToggleAntiStuck.enabled = fieldsEditable && btnToggleAntiStuck.visible;
-        btnToggleStop.enabled = fieldsEditable && btnToggleStop.visible;
-        btnToggleRunOnce.enabled = fieldsEditable && btnToggleRunOnce.visible;
+        nameField.setEnabled(true);
+        categoryField.setEnabled(true);
+        xField.setEnabled(true);
+        yField.setEnabled(true);
+        zField.setEnabled(true);
+        rangeField.setEnabled(true);
+        loopCountField.setEnabled(true);
+        cooldownField.setEnabled(true);
+        visualizeColorField.setEnabled(editorVisualizeRange);
+        antiStuckTimeoutField.setEnabled(editorAntiStuckEnabled);
+        btnSelectSequence.enabled = btnSelectSequence.visible;
+        btnGetCoords.enabled = btnGetCoords.visible;
+        btnToggleVisualize.enabled = btnToggleVisualize.visible;
+        btnToggleAntiStuck.enabled = btnToggleAntiStuck.visible;
+        btnToggleStop.enabled = btnToggleStop.visible;
+        btnToggleRunOnce.enabled = btnToggleRunOnce.visible;
         btnToggleEnabled.enabled = btnToggleEnabled.visible;
     }
 
@@ -516,7 +502,7 @@ public class GuiConditionalExecutionManager extends ThemedGuiScreen {
     protected void actionPerformed(GuiButton button) throws IOException {
         if (button.id == BTN_DONE) {
             ConditionalExecutionHandler.saveConfig();
-            mc.displayGuiScreen(parentScreen);
+            mc.setScreen(parentScreen);
             return;
         }
         if (button.id == BTN_NEW) {
@@ -547,22 +533,22 @@ public class GuiConditionalExecutionManager extends ThemedGuiScreen {
             pendingEditorRestoreCreateMode = creatingNew;
             pendingEditorRestoreCategory = selectedCategory;
             pendingEditorRestoreRuleName = getSelectedRuleName();
-            mc.displayGuiScreen(new GuiSequenceSelector(this, selected -> {
+            mc.setScreen(new GuiSequenceSelector(this, selected -> {
                 if (selected != null) {
                     if (pendingEditorRestoreModel == null) {
                         pendingEditorRestoreModel = buildRuleFromEditor();
                     }
                     pendingEditorRestoreModel.sequenceName = selected;
                 }
-                mc.displayGuiScreen(this);
+                mc.setScreen(this);
             }));
             return;
         }
         if (button.id == BTN_GET_COORDS) {
             if (mc.player != null) {
-                setText(xField, formatDouble(mc.player.posX));
-                setText(yField, formatDouble(mc.player.posY));
-                setText(zField, formatDouble(mc.player.posZ));
+                setText(xField, formatDouble(mc.player.getX()));
+                setText(yField, formatDouble(mc.player.getY()));
+                setText(zField, formatDouble(mc.player.getZ()));
             }
             return;
         }
@@ -620,11 +606,7 @@ public class GuiConditionalExecutionManager extends ThemedGuiScreen {
             }
 
             ConditionalRule target = visibleRules.get(selectedVisibleIndex);
-            if (ConditionalExecutionHandler.isBuiltinRule(target)) {
-                target.enabled = model.enabled;
-            } else {
-                applyRuleValues(target, model);
-            }
+            applyRuleValues(target, model);
 
             ConditionalExecutionHandler.saveConfig();
             refreshData(true);
@@ -642,11 +624,6 @@ public class GuiConditionalExecutionManager extends ThemedGuiScreen {
         }
 
         ConditionalRule rule = visibleRules.get(selectedVisibleIndex);
-        if (ConditionalExecutionHandler.isBuiltinRule(rule)) {
-            setStatus("§c内置规则不能删除", 0xFFFF8E8E);
-            return;
-        }
-
         ConditionalExecutionHandler.rules.remove(rule);
         ConditionalExecutionHandler.saveConfig();
         refreshData(false);
@@ -695,11 +672,6 @@ public class GuiConditionalExecutionManager extends ThemedGuiScreen {
         }
 
         ConditionalRule rule = visibleRules.get(selectedVisibleIndex);
-        if (ConditionalExecutionHandler.isBuiltinRule(rule)) {
-            setStatus("§c内置规则不能移动分组", 0xFFFF8E8E);
-            return;
-        }
-
         rule.category = selectedCategory;
         ConditionalExecutionHandler.saveConfig();
         refreshData(true);
@@ -719,18 +691,9 @@ public class GuiConditionalExecutionManager extends ThemedGuiScreen {
         }
 
         ConditionalRule rule = visibleRules.get(selectedVisibleIndex);
-        if (ConditionalExecutionHandler.isBuiltinRule(rule)) {
-            return;
-        }
-
         int currentIndex = ConditionalExecutionHandler.rules.indexOf(rule);
         int targetIndex = currentIndex + offset;
         if (currentIndex < 0 || targetIndex < 0 || targetIndex >= ConditionalExecutionHandler.rules.size()) {
-            return;
-        }
-
-        ConditionalRule swapTarget = ConditionalExecutionHandler.rules.get(targetIndex);
-        if (ConditionalExecutionHandler.isBuiltinRule(swapTarget)) {
             return;
         }
 
@@ -760,8 +723,6 @@ public class GuiConditionalExecutionManager extends ThemedGuiScreen {
 
     @Override
     protected void mouseClicked(int mouseX, int mouseY, int mouseButton) throws IOException {
-        resetTreeDragState();
-
         if (contextMenuVisible) {
             if (handleContextMenuClick(mouseX, mouseY, mouseButton)) {
                 return;
@@ -797,14 +758,11 @@ public class GuiConditionalExecutionManager extends ThemedGuiScreen {
             return;
         }
 
+        super.mouseClicked(mouseX, mouseY, mouseButton);
+
         if (!treeCollapsed && isInTree(mouseX, mouseY)) {
             if (mouseButton == 0) {
-                int actualIndex = getTreeRowIndexAt(mouseY);
-                if (actualIndex >= 0 && actualIndex < visibleTreeRows.size()) {
-                    pendingTreePressIndex = actualIndex;
-                    pendingTreePressMouseX = mouseX;
-                    pendingTreePressMouseY = mouseY;
-                }
+                handleTreeClick(mouseY);
                 return;
             }
             if (mouseButton == 1) {
@@ -812,8 +770,6 @@ public class GuiConditionalExecutionManager extends ThemedGuiScreen {
                 return;
             }
         }
-
-        super.mouseClicked(mouseX, mouseY, mouseButton);
 
         if (!listCollapsed && mouseButton == 0 && isInCardList(mouseX, mouseY)) {
             int actual = getCardIndexAt(mouseY);
@@ -856,52 +812,12 @@ public class GuiConditionalExecutionManager extends ThemedGuiScreen {
         }
     }
 
-    @Override
-    protected void mouseReleased(int mouseX, int mouseY, int state) {
-        if (state == 0) {
-            if (treeDragging) {
-                completeTreeDrag();
-                resetTreeDragState();
-                return;
-            }
-            if (pendingTreePressIndex >= 0) {
-                handleTreeClickByIndex(pendingTreePressIndex);
-                pendingTreePressIndex = -1;
-                return;
-            }
-        }
-        super.mouseReleased(mouseX, mouseY, state);
-    }
-
-    @Override
-    protected void mouseClickMove(int mouseX, int mouseY, int clickedMouseButton, long timeSinceLastClick) {
-        if (clickedMouseButton == 0 && pendingTreePressIndex >= 0 && !treeDragging) {
-            if (Math.abs(mouseX - pendingTreePressMouseX) >= 4 || Math.abs(mouseY - pendingTreePressMouseY) >= 4) {
-                TreeRow row = pendingTreePressIndex >= 0 && pendingTreePressIndex < visibleTreeRows.size()
-                        ? visibleTreeRows.get(pendingTreePressIndex)
-                        : null;
-                activeDragPayload = buildDragPayload(row);
-                treeDragging = activeDragPayload != null;
-                currentTreeDropTarget = treeDragging ? computeTreeDropTarget(mouseX, mouseY, activeDragPayload) : null;
-            }
-        } else if (treeDragging) {
-            currentTreeDropTarget = computeTreeDropTarget(mouseX, mouseY, activeDragPayload);
-        }
-        super.mouseClickMove(mouseX, mouseY, clickedMouseButton, timeSinceLastClick);
-    }
-
     private void handleTreeClick(int mouseY) {
         int actualIndex = getTreeRowIndexAt(mouseY);
         if (actualIndex < 0 || actualIndex >= visibleTreeRows.size()) {
             return;
         }
-        handleTreeClickByIndex(actualIndex);
-    }
 
-    private void handleTreeClickByIndex(int actualIndex) {
-        if (actualIndex < 0 || actualIndex >= visibleTreeRows.size()) {
-            return;
-        }
         selectedTreeIndex = actualIndex;
         TreeRow row = visibleTreeRows.get(actualIndex);
         if (row.type == TreeRow.TYPE_ALL) {
@@ -960,8 +876,8 @@ public class GuiConditionalExecutionManager extends ThemedGuiScreen {
             return;
         }
 
-        int mouseX = Mouse.getEventX() * this.width / this.mc.displayWidth;
-        int mouseY = this.height - Mouse.getEventY() * this.height / this.mc.displayHeight - 1;
+        int mouseX = Mouse.getEventX() * this.width / this.mc.getWindow().getWidth();
+        int mouseY = this.height - Mouse.getEventY() * this.height / this.mc.getWindow().getHeight() - 1;
 
         if (isInEditor(mouseX, mouseY)) {
             if (wheel < 0) {
@@ -993,7 +909,7 @@ public class GuiConditionalExecutionManager extends ThemedGuiScreen {
                 return;
             }
             ConditionalExecutionHandler.loadConfig();
-            mc.displayGuiScreen(parentScreen);
+            mc.setScreen(parentScreen);
             return;
         }
 
@@ -1039,10 +955,6 @@ public class GuiConditionalExecutionManager extends ThemedGuiScreen {
         drawEditorPanel();
 
         super.drawScreen(mouseX, mouseY, partialTicks);
-
-        if (treeDragging) {
-            drawTreeDragOverlay(mouseX, mouseY);
-        }
 
         if (contextMenuVisible) {
             drawContextMenu(mouseX, mouseY);
@@ -1102,10 +1014,6 @@ public class GuiConditionalExecutionManager extends ThemedGuiScreen {
             }
         }
 
-        if (treeDragging && currentTreeDropTarget != null) {
-            drawTreeDropIndicator(currentTreeDropTarget);
-        }
-
         if (visibleTreeRows.size() > visibleRows) {
             int thumbHeight = Math.max(18,
                     (int) ((visibleRows / (float) Math.max(visibleRows, visibleTreeRows.size())) * (treeHeight - 28)));
@@ -1155,9 +1063,7 @@ public class GuiConditionalExecutionManager extends ThemedGuiScreen {
             drawVerticalLine(listX + 2, cardTop, cardBottom, border);
             drawVerticalLine(listX + listWidth - 2, cardTop, cardBottom, border);
 
-            String status = ConditionalExecutionHandler.isBuiltinRule(rule)
-                    ? "§b★"
-                    : (rule.enabled ? "§a✔" : "§c✘");
+            String status = rule.enabled ? "§a✔" : "§c✘";
             drawString(fontRenderer, trimToWidth(status + " " + safe(rule.name), listWidth - 18),
                     listX + 8, cardTop + 5, 0xFFFFFFFF);
             drawString(fontRenderer, trimToWidth("序列: " + safe(rule.sequenceName), listWidth - 18),
@@ -1196,8 +1102,6 @@ public class GuiConditionalExecutionManager extends ThemedGuiScreen {
             String label = getRowLabel(row);
             if (!isBlank(label)) {
                 drawLabel(editorLabelX, y + 4, label);
-            } else if (row == 14) {
-                drawString(fontRenderer, "§e内置规则仅允许修改启用状态", editorFieldX, y + 4, 0xFFFFFF88);
             }
         }
 
@@ -1295,7 +1199,7 @@ public class GuiConditionalExecutionManager extends ThemedGuiScreen {
 
         base.name = safe(nameField.getText()).trim();
         base.category = safe(categoryField.getText()).trim();
-        if (base.category.isEmpty() || CATEGORY_BUILTIN.equals(base.category)) {
+        if (base.category.isEmpty()) {
             base.category = CATEGORY_DEFAULT;
         }
         base.sequenceName = safe(sequenceField.getText()).trim();
@@ -1438,16 +1342,8 @@ public class GuiConditionalExecutionManager extends ThemedGuiScreen {
         if (rule == null) {
             return CATEGORY_DEFAULT;
         }
-        if (ConditionalExecutionHandler.isBuiltinRule(rule)) {
-            return CATEGORY_BUILTIN;
-        }
         String category = safe(rule.category).trim();
         return category.isEmpty() ? CATEGORY_DEFAULT : category;
-    }
-
-    private String getEditableCategory(ConditionalRule rule) {
-        String category = getRuleCategory(rule);
-        return CATEGORY_BUILTIN.equals(category) ? CATEGORY_BUILTIN : category;
     }
 
     private void drawContextMenu(int mouseX, int mouseY) {
@@ -1471,243 +1367,6 @@ public class GuiConditionalExecutionManager extends ThemedGuiScreen {
             }
             drawString(fontRenderer, item.label, x + 8, itemY + 5, item.enabled ? 0xFFFFFFFF : 0xFF777777);
         }
-    }
-
-    private void drawTreeDragOverlay(int mouseX, int mouseY) {
-        if (activeDragPayload == null) {
-            return;
-        }
-        String label = activeDragPayload.type == DragPayload.TYPE_CATEGORY
-                ? "移动分组: " + activeDragPayload.label
-                : "移动规则: " + activeDragPayload.label;
-        int width = Math.min(260, fontRenderer.getStringWidth(label) + 16);
-        int x = Math.min(mouseX + 12, this.width - width - 8);
-        int y = Math.min(mouseY + 10, this.height - 22);
-        drawRect(x, y, x + width, y + 18, 0xDD16212B);
-        drawHorizontalLine(x, x + width, y, 0xFF77C4FF);
-        drawHorizontalLine(x, x + width, y + 18, 0xFF35536C);
-        drawVerticalLine(x, y, y + 18, 0xFF35536C);
-        drawVerticalLine(x + width, y, y + 18, 0xFF35536C);
-        drawString(fontRenderer, trimToWidth(label, width - 10), x + 5, y + 5, 0xFFFFFFFF);
-    }
-
-    private void drawTreeDropIndicator(TreeDropTarget target) {
-        if (target == null) {
-            return;
-        }
-        if (target.highlightCategoryIndex >= 0 && target.highlightCategoryIndex < visibleTreeRows.size()) {
-            int drawIndex = target.highlightCategoryIndex - treeScrollOffset;
-            if (drawIndex >= 0 && drawIndex < getVisibleTreeRowCount()) {
-                int rowY = treeY + 22 + drawIndex * TREE_ROW_HEIGHT;
-                drawRect(treeX + 5, rowY, treeX + treeWidth - 9, rowY + TREE_ROW_HEIGHT - 2, 0x553A86B8);
-            }
-        }
-        if (target.lineY > 0) {
-            drawRect(treeX + 8, target.lineY - 1, treeX + treeWidth - 12, target.lineY + 1, 0xFF7FD4FF);
-            drawRect(treeX + 8, target.lineY - 3, treeX + 12, target.lineY + 3, 0xFF7FD4FF);
-            drawRect(treeX + treeWidth - 16, target.lineY - 3, treeX + treeWidth - 12, target.lineY + 3, 0xFF7FD4FF);
-        }
-    }
-
-    private DragPayload buildDragPayload(TreeRow row) {
-        if (row == null) {
-            return null;
-        }
-        if (row.type == TreeRow.TYPE_CATEGORY) {
-            return DragPayload.forCategory(row.category, row.label);
-        }
-        if (row.type == TreeRow.TYPE_RULE && row.ruleIndex >= 0 && row.ruleIndex < allRules.size()) {
-            ConditionalRule rule = allRules.get(row.ruleIndex);
-            if (ConditionalExecutionHandler.isBuiltinRule(rule)) {
-                return null;
-            }
-            return DragPayload.forRule(rule, row.label);
-        }
-        return null;
-    }
-
-    private TreeDropTarget computeTreeDropTarget(int mouseX, int mouseY, DragPayload payload) {
-        if (payload == null || treeCollapsed || !isInTree(mouseX, mouseY)) {
-            return null;
-        }
-        int actualIndex = getTreeRowIndexAt(mouseY);
-        if (actualIndex < 0 || actualIndex >= visibleTreeRows.size()) {
-            return null;
-        }
-        TreeRow row = visibleTreeRows.get(actualIndex);
-        if (payload.type == DragPayload.TYPE_CATEGORY) {
-            if (row.type != TreeRow.TYPE_CATEGORY || row.category.equalsIgnoreCase(payload.category)) {
-                return null;
-            }
-            boolean after = mouseY >= getTreeRowTop(actualIndex) + TREE_ROW_HEIGHT / 2;
-            return TreeDropTarget.forCategory(actualIndex, row.category, after, getInsertionLineY(actualIndex, after));
-        }
-        if (row.type == TreeRow.TYPE_ALL || !isConcreteCategory(row.category)) {
-            return null;
-        }
-        if (row.type == TreeRow.TYPE_CATEGORY) {
-            boolean append = mouseY >= getTreeRowTop(actualIndex) + TREE_ROW_HEIGHT / 2;
-            int anchorIndex = append ? findLastRowIndexOfCategory(row.category) : actualIndex;
-            return TreeDropTarget.forCategoryRule(row.category, append, actualIndex,
-                    getInsertionLineY(anchorIndex, append));
-        }
-        if (row.ruleIndex < 0 || row.ruleIndex >= allRules.size()) {
-            return null;
-        }
-        ConditionalRule targetRule = allRules.get(row.ruleIndex);
-        if (ConditionalExecutionHandler.isBuiltinRule(targetRule) || payload.rule == targetRule) {
-            return null;
-        }
-        boolean before = mouseY < getTreeRowTop(actualIndex) + TREE_ROW_HEIGHT / 2;
-        return TreeDropTarget.forRule(row.category, targetRule, before, !before, actualIndex,
-                getInsertionLineY(actualIndex, !before));
-    }
-
-    private int getTreeRowTop(int actualIndex) {
-        return treeY + 22 + (actualIndex - treeScrollOffset) * TREE_ROW_HEIGHT;
-    }
-
-    private int getInsertionLineY(int actualIndex, boolean afterRow) {
-        return getTreeRowTop(actualIndex) + (afterRow ? TREE_ROW_HEIGHT - 2 : 0);
-    }
-
-    private int findLastRowIndexOfCategory(String category) {
-        int last = -1;
-        for (int i = 0; i < visibleTreeRows.size(); i++) {
-            TreeRow row = visibleTreeRows.get(i);
-            if (safe(category).equalsIgnoreCase(row.category)) {
-                last = i;
-            } else if (last >= 0 && row.type == TreeRow.TYPE_CATEGORY) {
-                break;
-            }
-        }
-        return last >= 0 ? last : 0;
-    }
-
-    private void completeTreeDrag() {
-        if (!treeDragging || activeDragPayload == null || currentTreeDropTarget == null) {
-            return;
-        }
-        boolean changed = activeDragPayload.type == DragPayload.TYPE_CATEGORY
-                ? applyCategoryDrag(activeDragPayload, currentTreeDropTarget)
-                : applyRuleDrag(activeDragPayload, currentTreeDropTarget);
-        if (!changed) {
-            return;
-        }
-        refreshData(false);
-        if (activeDragPayload.rule != null) {
-            selectByRuleName(activeDragPayload.rule.name);
-        }
-    }
-
-    private boolean applyCategoryDrag(DragPayload payload, TreeDropTarget target) {
-        if (payload == null || target == null || !isConcreteCategory(payload.category)
-                || !isConcreteCategory(target.category)) {
-            return false;
-        }
-        List<String> reordered = new ArrayList<>(categories);
-        int fromIndex = findCategoryIndex(reordered, payload.category);
-        int targetIndex = findCategoryIndex(reordered, target.category);
-        if (fromIndex < 0 || targetIndex < 0 || fromIndex == targetIndex) {
-            return false;
-        }
-        String moved = reordered.remove(fromIndex);
-        int insertIndex = target.after ? targetIndex + (fromIndex < targetIndex ? 0 : 1) : targetIndex;
-        insertIndex = Math.max(0, Math.min(insertIndex, reordered.size()));
-        reordered.add(insertIndex, moved);
-        categories.clear();
-        categories.addAll(reordered);
-        persistTreeStructureChanges();
-        setStatus("§a已调整分组顺序: " + moved, 0xFF8CFF9E);
-        return true;
-    }
-
-    private boolean applyRuleDrag(DragPayload payload, TreeDropTarget target) {
-        if (payload == null || payload.rule == null || target == null || !isConcreteCategory(target.category)) {
-            return false;
-        }
-        if (ConditionalExecutionHandler.isBuiltinRule(payload.rule)) {
-            return false;
-        }
-        List<String> categoryOrder = new ArrayList<>(categories);
-        if (findCategoryIndex(categoryOrder, target.category) < 0) {
-            categoryOrder.add(target.category);
-        }
-        java.util.LinkedHashMap<String, List<ConditionalRule>> grouped = buildGroupedRules(categoryOrder);
-        String sourceCategory = getRuleCategory(payload.rule);
-        List<ConditionalRule> sourceRules = grouped.get(sourceCategory);
-        if (sourceRules == null || !sourceRules.remove(payload.rule)) {
-            return false;
-        }
-        payload.rule.category = target.category;
-        List<ConditionalRule> targetRules = grouped.get(target.category);
-        if (targetRules == null) {
-            targetRules = new ArrayList<>();
-            grouped.put(target.category, targetRules);
-        }
-        int insertIndex;
-        if (target.targetRule != null) {
-            insertIndex = targetRules.indexOf(target.targetRule);
-            if (insertIndex < 0) {
-                insertIndex = targetRules.size();
-            } else if (target.after) {
-                insertIndex++;
-            }
-        } else {
-            insertIndex = target.appendToCategory ? targetRules.size() : 0;
-        }
-        insertIndex = Math.max(0, Math.min(insertIndex, targetRules.size()));
-        targetRules.add(insertIndex, payload.rule);
-
-        allRules.clear();
-        for (String category : categoryOrder) {
-            List<ConditionalRule> rules = grouped.get(safe(category));
-            if (rules != null) {
-                allRules.addAll(rules);
-            }
-        }
-        persistTreeStructureChanges();
-        selectedCategory = target.category;
-        setStatus("§a已移动规则: " + safe(payload.rule.name), 0xFF8CFF9E);
-        return true;
-    }
-
-    private java.util.LinkedHashMap<String, List<ConditionalRule>> buildGroupedRules(List<String> categoryOrder) {
-        java.util.LinkedHashMap<String, List<ConditionalRule>> grouped = new java.util.LinkedHashMap<>();
-        for (String category : categoryOrder) {
-            grouped.put(safe(category), new ArrayList<ConditionalRule>());
-        }
-        for (ConditionalRule rule : allRules) {
-            String category = getRuleCategory(rule);
-            if (!grouped.containsKey(category)) {
-                grouped.put(category, new ArrayList<ConditionalRule>());
-            }
-            grouped.get(category).add(rule);
-        }
-        return grouped;
-    }
-
-    private int findCategoryIndex(List<String> source, String category) {
-        for (int i = 0; i < source.size(); i++) {
-            if (safe(source.get(i)).equalsIgnoreCase(safe(category))) {
-                return i;
-            }
-        }
-        return -1;
-    }
-
-    private void persistTreeStructureChanges() {
-        ConditionalExecutionHandler.replaceCategoryOrder(new ArrayList<>(categories));
-        ConditionalExecutionHandler.rules.clear();
-        ConditionalExecutionHandler.rules.addAll(allRules);
-        ConditionalExecutionHandler.saveConfig();
-    }
-
-    private void resetTreeDragState() {
-        pendingTreePressIndex = -1;
-        treeDragging = false;
-        activeDragPayload = null;
-        currentTreeDropTarget = null;
     }
 
     private boolean handleContextMenuClick(int mouseX, int mouseY, int mouseButton) {
@@ -1790,10 +1449,8 @@ public class GuiConditionalExecutionManager extends ThemedGuiScreen {
         if (rule != null) {
             contextMenuItems.add(new ContextMenuItem("duplicate", "复制当前规则", true));
             contextMenuItems.add(new ContextMenuItem("copy_name", "复制规则名", !isBlank(rule.name)));
-            contextMenuItems.add(new ContextMenuItem("delete", "删除规则",
-                    !ConditionalExecutionHandler.isBuiltinRule(rule)));
-            boolean canMove = !ConditionalExecutionHandler.isBuiltinRule(rule)
-                    && isConcreteCategory(selectedCategory)
+            contextMenuItems.add(new ContextMenuItem("delete", "删除规则", true));
+            boolean canMove = isConcreteCategory(selectedCategory)
                     && !selectedCategory.equalsIgnoreCase(getRuleCategory(rule));
             contextMenuItems.add(new ContextMenuItem("move", "移动到当前分组", canMove));
         }
@@ -1859,7 +1516,7 @@ public class GuiConditionalExecutionManager extends ThemedGuiScreen {
     }
 
     private void openAddCategoryDialog() {
-        mc.displayGuiScreen(new GuiTextInput(this, "输入新分组名称", value -> {
+        mc.setScreen(new GuiTextInput(this, "输入新分组名称", value -> {
             String normalized = value == null ? "" : value.trim();
             if (normalized.isEmpty()) {
                 setStatus("§7已取消创建分组", 0xFFB8C7D9);
@@ -1911,7 +1568,7 @@ public class GuiConditionalExecutionManager extends ThemedGuiScreen {
             setStatus("§c该分组不能重命名", 0xFFFF8E8E);
             return;
         }
-        mc.displayGuiScreen(new GuiTextInput(this, "重命名分组", normalized, value -> {
+        mc.setScreen(new GuiTextInput(this, "重命名分组", normalized, value -> {
             String newName = value == null ? "" : value.trim();
             if (newName.isEmpty()) {
                 setStatus("§7已取消重命名分组", 0xFFB8C7D9);
@@ -1948,8 +1605,7 @@ public class GuiConditionalExecutionManager extends ThemedGuiScreen {
 
     private boolean isConcreteCategory(String category) {
         return !isBlank(category)
-                && !CATEGORY_ALL.equals(category)
-                && !CATEGORY_BUILTIN.equals(category);
+                && !CATEGORY_ALL.equals(category);
     }
 
     private int getVisibleTreeRowCount() {
@@ -2121,27 +1777,25 @@ public class GuiConditionalExecutionManager extends ThemedGuiScreen {
         private final String category;
         private final String ruleName;
         private final int indent;
-        private final int ruleIndex;
 
-        private TreeRow(int type, String label, String category, String ruleName, int indent, int ruleIndex) {
+        private TreeRow(int type, String label, String category, String ruleName, int indent) {
             this.type = type;
             this.label = label == null ? "" : label;
             this.category = category == null ? "" : category;
             this.ruleName = ruleName == null ? "" : ruleName;
             this.indent = indent;
-            this.ruleIndex = ruleIndex;
         }
 
         private static TreeRow allRow(String label) {
-            return new TreeRow(TYPE_ALL, label, CATEGORY_ALL, "", 0, -1);
+            return new TreeRow(TYPE_ALL, label, CATEGORY_ALL, "", 0);
         }
 
         private static TreeRow categoryRow(String category) {
-            return new TreeRow(TYPE_CATEGORY, category, category, "", 0, -1);
+            return new TreeRow(TYPE_CATEGORY, category, category, "", 0);
         }
 
-        private static TreeRow ruleRow(String category, String ruleName, String displayName, int ruleIndex) {
-            return new TreeRow(TYPE_RULE, displayName, category, ruleName, 1, ruleIndex);
+        private static TreeRow ruleRow(String category, String ruleName, String displayName) {
+            return new TreeRow(TYPE_RULE, displayName, category, ruleName, 1);
         }
     }
 
@@ -2156,63 +1810,12 @@ public class GuiConditionalExecutionManager extends ThemedGuiScreen {
             this.enabled = enabled;
         }
     }
-
-    private static final class DragPayload {
-        private static final int TYPE_CATEGORY = 1;
-        private static final int TYPE_RULE = 2;
-
-        private final int type;
-        private final String category;
-        private final String label;
-        private final ConditionalRule rule;
-
-        private DragPayload(int type, String category, String label, ConditionalRule rule) {
-            this.type = type;
-            this.category = category == null ? "" : category;
-            this.label = label == null ? "" : label;
-            this.rule = rule;
-        }
-
-        private static DragPayload forCategory(String category, String label) {
-            return new DragPayload(TYPE_CATEGORY, category, label, null);
-        }
-
-        private static DragPayload forRule(ConditionalRule rule, String label) {
-            return new DragPayload(TYPE_RULE, "", label, rule);
-        }
-    }
-
-    private static final class TreeDropTarget {
-        private final String category;
-        private final ConditionalRule targetRule;
-        private final boolean after;
-        private final boolean appendToCategory;
-        private final int highlightCategoryIndex;
-        private final int lineY;
-
-        private TreeDropTarget(String category, ConditionalRule targetRule, boolean after,
-                boolean appendToCategory, int highlightCategoryIndex, int lineY) {
-            this.category = category == null ? "" : category;
-            this.targetRule = targetRule;
-            this.after = after;
-            this.appendToCategory = appendToCategory;
-            this.highlightCategoryIndex = highlightCategoryIndex;
-            this.lineY = lineY;
-        }
-
-        private static TreeDropTarget forCategory(int highlightCategoryIndex, String category, boolean after, int lineY) {
-            return new TreeDropTarget(category, null, after, false, highlightCategoryIndex, lineY);
-        }
-
-        private static TreeDropTarget forRule(String category, ConditionalRule targetRule, boolean before, boolean after,
-                int highlightCategoryIndex, int lineY) {
-            return new TreeDropTarget(category, targetRule, after, false, highlightCategoryIndex, lineY);
-        }
-
-        private static TreeDropTarget forCategoryRule(String category, boolean appendToCategory,
-                int highlightCategoryIndex, int lineY) {
-            return new TreeDropTarget(category, null, appendToCategory, appendToCategory,
-                    highlightCategoryIndex, lineY);
-        }
-    }
 }
+
+
+
+
+
+
+
+

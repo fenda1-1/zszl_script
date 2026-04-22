@@ -17,10 +17,11 @@
 
 package com.zszl.zszlScriptMod.shadowbaritone.api.utils;
 
+import com.zszl.zszlScriptMod.shadowbaritone.api.utils.accessor.IItemStack;
 import com.google.common.collect.ImmutableSet;
-import net.minecraft.block.Block;
-import net.minecraft.block.state.IBlockState;
-import net.minecraft.item.ItemStack;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.state.BlockState;
 
 import java.util.Arrays;
 import java.util.HashSet;
@@ -30,14 +31,14 @@ import java.util.stream.Stream;
 
 public class BlockOptionalMetaLookup {
     private final ImmutableSet<Block> blockSet;
-    private final ImmutableSet<IBlockState> blockStateSet;
+    private final ImmutableSet<BlockState> blockStateSet;
     private final ImmutableSet<Integer> stackHashes;
     private final BlockOptionalMeta[] boms;
 
     public BlockOptionalMetaLookup(BlockOptionalMeta... boms) {
         this.boms = boms;
         Set<Block> blocks = new HashSet<>();
-        Set<IBlockState> blockStates = new HashSet<>();
+        Set<BlockState> blockStates = new HashSet<>();
         Set<Integer> stacks = new HashSet<>();
         for (BlockOptionalMeta bom : boms) {
             blocks.add(bom.getBlock());
@@ -72,14 +73,14 @@ public class BlockOptionalMetaLookup {
         return blockSet.contains(block);
     }
 
-    public boolean has(IBlockState state) {
+    public boolean has(BlockState state) {
         return blockStateSet.contains(state);
     }
 
     public boolean has(ItemStack stack) {
-        int hash = BlockOptionalMeta.getBaritoneHash(stack);
-        return stackHashes.contains(hash)
-                || stackHashes.contains(hash - stack.getItemDamage());
+        int hash = ((IItemStack) (Object) stack).getBaritoneHash();
+        hash -= stack.getDamageValue();
+        return stackHashes.contains(hash);
     }
 
     public List<BlockOptionalMeta> blocks() {
@@ -90,6 +91,8 @@ public class BlockOptionalMetaLookup {
     public String toString() {
         return String.format(
                 "BlockOptionalMetaLookup{%s}",
-                Arrays.toString(boms));
+                Arrays.toString(boms)
+        );
     }
 }
+

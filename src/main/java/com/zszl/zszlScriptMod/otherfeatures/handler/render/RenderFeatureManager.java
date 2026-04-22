@@ -4,25 +4,27 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
-import com.zszl.zszlScriptMod.shadowbaritone.api.utils.BlockUtils;
+import com.mojang.blaze3d.shaders.FogShape;
 import com.zszl.zszlScriptMod.system.ProfileManager;
 import com.zszl.zszlScriptMod.zszlScriptMod;
-import net.minecraft.block.Block;
-import net.minecraft.block.state.IBlockState;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.entity.EntityPlayerSP;
-import net.minecraft.init.Blocks;
-import net.minecraft.util.ResourceLocation;
-import net.minecraftforge.client.event.EntityViewRenderEvent;
-import net.minecraftforge.client.event.RenderGameOverlayEvent;
-import net.minecraftforge.client.event.RenderWorldLastEvent;
-import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
-import net.minecraftforge.fml.common.gameevent.TickEvent;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.material.FogType;
+import net.minecraftforge.client.event.RenderGuiOverlayEvent;
+import net.minecraftforge.client.event.RenderLevelStageEvent;
+import net.minecraftforge.client.event.ViewportEvent;
+import net.minecraftforge.eventbus.api.SubscribeEvent;
 
-import java.io.File;
-import java.io.FileReader;
-import java.io.FileWriter;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -31,33 +33,55 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
-public class RenderFeatureManager {
+public final class RenderFeatureManager {
 
     public static final RenderFeatureManager INSTANCE = new RenderFeatureManager();
 
-    private static final String CONFIG_FILE_NAME = "other_features_render.json";
     private static final Map<String, FeatureState> FEATURES = new LinkedHashMap<>();
+    private static final String[] DEFAULT_XRAY_BLOCK_IDS = new String[] {
+            "minecraft:coal_ore",
+            "minecraft:deepslate_coal_ore",
+            "minecraft:iron_ore",
+            "minecraft:deepslate_iron_ore",
+            "minecraft:copper_ore",
+            "minecraft:deepslate_copper_ore",
+            "minecraft:gold_ore",
+            "minecraft:deepslate_gold_ore",
+            "minecraft:redstone_ore",
+            "minecraft:deepslate_redstone_ore",
+            "minecraft:lapis_ore",
+            "minecraft:deepslate_lapis_ore",
+            "minecraft:diamond_ore",
+            "minecraft:deepslate_diamond_ore",
+            "minecraft:emerald_ore",
+            "minecraft:deepslate_emerald_ore",
+            "minecraft:nether_quartz_ore",
+            "minecraft:nether_gold_ore",
+            "minecraft:ancient_debris",
+            "minecraft:spawner",
+            "minecraft:lava",
+            "minecraft:end_portal",
+            "minecraft:end_portal_frame",
+            "minecraft:portal"
+    };
+    private static final Set<String> XRAY_VISIBLE_BLOCK_IDS = new LinkedHashSet<>();
 
     public static boolean brightnessSoftMode = false;
     public static float brightnessGamma = 10.0F;
-
     public static boolean noFogRemoveLiquid = true;
     public static boolean noFogBrightenColor = true;
-
     public static boolean entityVisualPlayers = true;
     public static boolean entityVisualMonsters = true;
     public static boolean entityVisualAnimals = false;
     public static boolean entityVisualThroughWalls = true;
     public static boolean entityVisualFilledBox = true;
     public static float entityVisualMaxDistance = 48.0F;
-
     public static boolean tracerPlayers = true;
     public static boolean tracerMonsters = true;
     public static boolean tracerAnimals = false;
     public static boolean tracerThroughWalls = true;
     public static float tracerMaxDistance = 64.0F;
     public static float tracerLineWidth = 1.6F;
-
     public static boolean entityTagPlayers = true;
     public static boolean entityTagMonsters = true;
     public static boolean entityTagAnimals = false;
@@ -65,113 +89,63 @@ public class RenderFeatureManager {
     public static boolean entityTagShowDistance = true;
     public static boolean entityTagShowHeldItem = false;
     public static float entityTagMaxDistance = 32.0F;
-
     public static boolean blockHighlightStorages = true;
     public static boolean blockHighlightSpawners = true;
     public static boolean blockHighlightOres = true;
     public static boolean blockHighlightThroughWalls = true;
     public static boolean blockHighlightFilledBox = true;
     public static float blockHighlightMaxDistance = 24.0F;
-    private static final String[] DEFAULT_XRAY_BLOCK_IDS = new String[] {
-            "minecraft:coal_ore",
-            "minecraft:coal_block",
-            "minecraft:iron_ore",
-            "minecraft:iron_block",
-            "minecraft:gold_ore",
-            "minecraft:gold_block",
-            "minecraft:lapis_ore",
-            "minecraft:lapis_block",
-            "minecraft:redstone_ore",
-            "minecraft:lit_redstone_ore",
-            "minecraft:redstone_block",
-            "minecraft:diamond_ore",
-            "minecraft:diamond_block",
-            "minecraft:emerald_ore",
-            "minecraft:emerald_block",
-            "minecraft:quartz_ore",
-            "minecraft:lava",
-            "minecraft:mob_spawner",
-            "minecraft:portal",
-            "minecraft:end_portal",
-            "minecraft:end_portal_frame"
-    };
-    private static final Set<String> XRAY_VISIBLE_BLOCK_IDS = new LinkedHashSet<>();
-
     public static boolean itemEspShowName = true;
     public static boolean itemEspShowDistance = true;
     public static boolean itemEspThroughWalls = true;
     public static float itemEspMaxDistance = 24.0F;
-
     public static boolean trajectoryBows = true;
     public static boolean trajectoryPearls = true;
     public static boolean trajectoryThrowables = true;
     public static boolean trajectoryPotions = true;
     public static int trajectoryMaxSteps = 120;
-
     public static boolean crosshairDynamicGap = true;
     public static int crosshairColorRgb = 0x55FFFF;
     public static float crosshairSize = 6.0F;
     public static float crosshairThickness = 2.0F;
-
     public static boolean antiBobRemoveViewBobbing = true;
     public static boolean antiBobRemoveHurtShake = true;
-
     public static boolean radarPlayers = true;
     public static boolean radarMonsters = true;
     public static boolean radarAnimals = false;
     public static boolean radarRotateWithView = true;
     public static float radarMaxDistance = 48.0F;
     public static int radarSize = 90;
-
     public static boolean skeletonThroughWalls = true;
     public static float skeletonMaxDistance = 48.0F;
     public static float skeletonLineWidth = 1.7F;
-
     public static boolean blockOutlineFilledBox = false;
     public static float blockOutlineLineWidth = 2.0F;
-
     public static boolean entityInfoShowHealth = true;
     public static boolean entityInfoShowDistance = true;
     public static boolean entityInfoShowPosition = true;
     public static boolean entityInfoShowHeldItem = true;
     public static float entityInfoMaxDistance = 48.0F;
 
-    private boolean brightnessApplied = false;
-    private float previousGammaSetting = 1.0F;
-    private boolean antiBobApplied = false;
-    private boolean previousViewBobbing = false;
+    private boolean antiBobApplied;
+    private boolean previousViewBobbing = true;
 
     static {
-        register(new FeatureState("brightness_boost", "亮度增强",
-                "通过 Gamma 提升整体画面亮度，减少夜晚、洞穴和阴影区域的昏暗感。左键快速开关，右键打开渲染设置。"));
-        register(new FeatureState("no_fog", "迷雾移除",
-                "尽量移除世界与液体中的雾气遮挡，让远处视野更通透。左键快速开关，右键打开渲染设置。"));
-        register(new FeatureState("entity_visual", "实体视觉",
-                "高亮玩家、怪物和动物轮廓，可选择穿墙显示与填充方框。左键快速开关，右键打开渲染设置。"));
-        register(new FeatureState("tracer_line", "Tracer线",
-                "从屏幕中心向附近目标绘制引导线，帮助快速定位实体。左键快速开关，右键打开渲染设置。"));
-        register(new FeatureState("entity_tags", "实体标签",
-                "在实体头顶显示名称、血量、距离与手持物等信息。左键快速开关，右键打开渲染设置。"));
-        register(new FeatureState("block_highlight", "方块高亮",
-                "高亮矿石、箱子、潜影盒、末影箱和刷怪笼等重要方块。左键快速开关，右键打开渲染设置。"));
-        register(new FeatureState("xray", "X光",
-                "只渲染选中的矿石或特殊方块，并自动提亮画面，方便隔墙找矿。左键快速开关，右键打开渲染设置。"));
-        register(new FeatureState("item_esp", "物品ESP",
-                "高亮地面掉落物，并可显示名称和距离。左键快速开关，右键打开渲染设置。"));
-        register(new FeatureState("trajectory_line", "轨迹线",
-                "在持弓或投掷物时预估飞行轨迹和落点。左键快速开关，右键打开渲染设置。"));
-        register(new FeatureState("custom_crosshair", "自定义十字准星",
-                "使用可调颜色、大小和动态间距的十字准星替换原版准星。左键快速开关，右键打开渲染设置。"));
-        register(new FeatureState("anti_bob", "防抖动",
-                "减少走路视角晃动和受伤镜头抖动，让画面更稳定。左键快速开关，右键打开渲染设置。"));
-        register(new FeatureState("radar", "雷达",
-                "在屏幕角落显示附近玩家、怪物和动物的相对位置，方便快速判断周边目标分布。左键快速开关，右键打开渲染设置。"));
-        register(new FeatureState("player_skeleton", "玩家骨骼",
-                "用简化骨架线条高亮附近玩家的身体朝向和站姿，便于隔远识别动作。左键快速开关，右键打开渲染设置。"));
-        register(new FeatureState("block_outline", "方块轮廓",
-                "为当前准星指向的方块显示更清晰、更精确的边框和可选填充。左键快速开关，右键打开渲染设置。"));
-        register(new FeatureState("entity_info", "实体信息",
-                "准星指向实体时显示名称、血量、距离、坐标和手持物等详细信息面板。左键快速开关，右键打开渲染设置。"));
+        register(new FeatureState("brightness_boost", "亮度增强", "通过 Gamma 提升整体亮度。"));
+        register(new FeatureState("no_fog", "迷雾移除", "尽量移除世界和液体中的雾气遮挡。"));
+        register(new FeatureState("entity_visual", "实体视觉", "高亮玩家、怪物和动物轮廓。"));
+        register(new FeatureState("tracer_line", "Tracer线", "向附近目标绘制引导线。"));
+        register(new FeatureState("entity_tags", "实体标签", "显示实体名称、血量、距离和手持物。"));
+        register(new FeatureState("block_highlight", "方块高亮", "高亮矿石、箱子和刷怪笼等重要方块。"));
+        register(new FeatureState("xray", "X光", "仅保留透视列表中的方块可见。"));
+        register(new FeatureState("item_esp", "物品ESP", "高亮地面掉落物。"));
+        register(new FeatureState("trajectory_line", "轨迹线", "预估弓箭和投掷物的飞行轨迹。"));
+        register(new FeatureState("custom_crosshair", "自定义十字准星", "使用可调颜色、大小和动态间距的准星。"));
+        register(new FeatureState("anti_bob", "防抖动", "抑制走路视角晃动和受伤镜头抖动。"));
+        register(new FeatureState("radar", "雷达", "在屏幕角落显示附近目标的相对位置。"));
+        register(new FeatureState("player_skeleton", "玩家骨骼", "以骨架线条形式显示附近玩家站姿和朝向。"));
+        register(new FeatureState("block_outline", "方块轮廓", "为当前选中的方块显示更清晰的边框。"));
+        register(new FeatureState("entity_info", "实体信息", "准星指向实体时显示更详细的信息面板。"));
         loadConfig();
     }
 
@@ -199,22 +173,6 @@ public class RenderFeatureManager {
         }
     }
 
-    private static void register(FeatureState state) {
-        FEATURES.put(state.id, state);
-    }
-
-    private static String safe(String text) {
-        return text == null ? "" : text.trim();
-    }
-
-    private static String normalizeId(String featureId) {
-        return safe(featureId).toLowerCase(Locale.ROOT);
-    }
-
-    private static File getConfigFile() {
-        return ProfileManager.getCurrentProfileDir().resolve(CONFIG_FILE_NAME).toFile();
-    }
-
     public static List<FeatureState> getFeatures() {
         return new ArrayList<>(FEATURES.values());
     }
@@ -233,15 +191,7 @@ public class RenderFeatureManager {
     }
 
     public static void toggleFeature(String featureId) {
-        FeatureState state = getFeature(featureId);
-        if (state == null) {
-            return;
-        }
-        boolean wasEnabled = state.isEnabled();
-        boolean enabled = !wasEnabled;
-        state.setEnabledInternal(enabled);
-        handleRuntimeSideEffectsAfterToggle(featureId, wasEnabled, enabled);
-        saveConfig();
+        setEnabled(featureId, !isEnabled(featureId));
     }
 
     public static void setEnabled(String featureId, boolean enabled) {
@@ -249,9 +199,9 @@ public class RenderFeatureManager {
         if (state == null) {
             return;
         }
-        boolean wasEnabled = state.isEnabled();
+        boolean previous = state.isEnabled();
         state.setEnabledInternal(enabled);
-        handleRuntimeSideEffectsAfterToggle(featureId, wasEnabled, enabled);
+        handleRuntimeSideEffectsAfterToggle(featureId, previous, enabled);
         saveConfig();
     }
 
@@ -260,43 +210,21 @@ public class RenderFeatureManager {
         if (state == null) {
             return;
         }
-
-        boolean wasEnabled = state.isEnabled();
+        boolean previous = state.isEnabled();
         state.setEnabledInternal(enabled);
-
-        handleRuntimeSideEffectsAfterToggle(featureId, wasEnabled, enabled);
+        handleRuntimeSideEffectsAfterToggle(featureId, previous, enabled);
     }
 
     public static void resetFeature(String featureId) {
-        String normalizedId = normalizeId(featureId);
-        FeatureState state = getFeature(normalizedId);
+        FeatureState state = getFeature(featureId);
         if (state == null) {
             return;
         }
-        boolean wasEnabled = state.isEnabled();
+        boolean previous = state.isEnabled();
         state.setEnabledInternal(false);
-        applyFeatureDefaultsWithoutSave(normalizedId);
-        handleRuntimeSideEffectsAfterToggle(normalizedId, wasEnabled, false);
+        applyFeatureDefaultsWithoutSave(state.id);
+        handleRuntimeSideEffectsAfterToggle(state.id, previous, false);
         saveConfig();
-    }
-
-    private static void handleRuntimeSideEffectsAfterToggle(String featureId, boolean wasEnabled, boolean enabled) {
-        String normalizedId = normalizeId(featureId);
-        if (wasEnabled == enabled) {
-            return;
-        }
-        if ("xray".equals(normalizedId)) {
-            requestXrayRendererReload();
-            if (!enabled && !isEnabled("brightness_boost")) {
-                INSTANCE.restoreBrightness();
-            }
-            return;
-        }
-        if ("brightness_boost".equals(normalizedId) && !enabled && !isEnabled("xray")) {
-            INSTANCE.restoreBrightness();
-        } else if ("anti_bob".equals(normalizedId) && !enabled) {
-            INSTANCE.restoreAntiBob();
-        }
     }
 
     public static void applyFeatureDefaultsWithoutSave(String featureId) {
@@ -344,8 +272,7 @@ public class RenderFeatureManager {
             blockHighlightMaxDistance = 24.0F;
             break;
         case "xray":
-            resetXrayVisibleBlocksToDefaultInternal();
-            requestXrayRendererReloadIfEnabled();
+            resetXrayVisibleBlocksWithoutSave();
             break;
         case "item_esp":
             itemEspShowName = true;
@@ -415,10 +342,12 @@ public class RenderFeatureManager {
         case "entity_tags":
             return isEnabled(normalizedId) ? "头顶信息范围 " + formatFloat(entityTagMaxDistance) + " 格" : "未启用";
         case "block_highlight":
-            return isEnabled(normalizedId) ? "高亮重要方块，矿石按类型自动配色，范围 " + formatFloat(blockHighlightMaxDistance) + " 格"
+            return isEnabled(normalizedId)
+                    ? "高亮重要方块，范围 " + formatFloat(blockHighlightMaxDistance) + " 格"
                     : "未启用";
         case "xray":
-            return isEnabled(normalizedId) ? "仅渲染已选透视方块，当前 " + XRAY_VISIBLE_BLOCK_IDS.size() + " 项"
+            return isEnabled(normalizedId)
+                    ? "透视列表 " + XRAY_VISIBLE_BLOCK_IDS.size() + " 项 / 需要重编译区块"
                     : "未启用";
         case "item_esp":
             return isEnabled(normalizedId) ? "掉落物高亮范围 " + formatFloat(itemEspMaxDistance) + " 格" : "未启用";
@@ -451,13 +380,73 @@ public class RenderFeatureManager {
         return isEnabled("anti_bob") && antiBobRemoveHurtShake;
     }
 
+    public static boolean isOreBlock(BlockState state) {
+        if (state == null || state.isAir()) {
+            return false;
+        }
+        String id = normalizeBlockId(state.getBlock());
+        return id.contains("ore") || id.contains("debris");
+    }
+
+    public static int getBlockHighlightColor(BlockState state) {
+        String id = normalizeBlockId(state == null ? null : state.getBlock());
+        if (id.contains("coal")) {
+            return 0x707070;
+        }
+        if (id.contains("iron")) {
+            return 0xD2A97A;
+        }
+        if (id.contains("copper")) {
+            return 0xD07A4E;
+        }
+        if (id.contains("gold")) {
+            return 0xFFD53D;
+        }
+        if (id.contains("redstone")) {
+            return 0xFF4545;
+        }
+        if (id.contains("lapis")) {
+            return 0x4A72FF;
+        }
+        if (id.contains("diamond")) {
+            return 0x34F0EF;
+        }
+        if (id.contains("emerald")) {
+            return 0x3DFF66;
+        }
+        if (id.contains("quartz")) {
+            return 0xF3F3F3;
+        }
+        if (id.contains("ancient_debris")) {
+            return 0x9B6947;
+        }
+        if (id.contains("spawner")) {
+            return 0xD35AFF;
+        }
+        if (id.contains("lava")) {
+            return 0xFF8A33;
+        }
+        if (id.contains("portal")) {
+            return 0xB97CFF;
+        }
+        return 0x55FFAA;
+    }
+
+    public static boolean shouldRenderBlockInXray(BlockState state) {
+        return !isEnabled("xray") || isXrayBlockVisible(state);
+    }
+
+    public static boolean isXrayBlockVisible(BlockState state) {
+        return state != null && isXrayBlockVisible(state.getBlock());
+    }
+
     public static boolean isXrayBlockVisible(Block block) {
         String blockId = normalizeBlockId(block);
         return !blockId.isEmpty() && XRAY_VISIBLE_BLOCK_IDS.contains(blockId);
     }
 
     public static boolean isXrayBlockIdVisible(String rawBlockId) {
-        String blockId = normalizeBlockId(rawBlockId);
+        String blockId = normalizeXrayBlockId(rawBlockId);
         return !blockId.isEmpty() && XRAY_VISIBLE_BLOCK_IDS.contains(blockId);
     }
 
@@ -465,32 +454,20 @@ public class RenderFeatureManager {
         return sortBlockIds(XRAY_VISIBLE_BLOCK_IDS);
     }
 
-    public static List<String> getXrayEditableBlockIds() {
-        LinkedHashSet<String> editableIds = new LinkedHashSet<>();
-        Collections.addAll(editableIds, DEFAULT_XRAY_BLOCK_IDS);
-        editableIds.addAll(XRAY_VISIBLE_BLOCK_IDS);
-        return sortBlockIds(editableIds);
-    }
-
     public static Block resolveBlock(String rawBlockId) {
-        String normalized = safe(rawBlockId).toLowerCase(Locale.ROOT);
-        if (normalized.isEmpty()) {
-            return null;
-        }
-        Block block = BlockUtils.stringToBlockNullable(normalized);
+        Block block = BlockDisplayLookup.findBlockByUserInput(rawBlockId);
         return block == null || block == Blocks.AIR ? null : block;
     }
 
     public static String normalizeXrayBlockId(String rawBlockId) {
-        return normalizeBlockId(rawBlockId);
+        return normalizeBlockId(resolveBlock(rawBlockId));
     }
 
     public static boolean setXrayBlockVisible(String rawBlockId, boolean visible) {
-        String blockId = normalizeBlockId(rawBlockId);
+        String blockId = normalizeXrayBlockId(rawBlockId);
         if (blockId.isEmpty()) {
             return false;
         }
-
         boolean changed = visible ? XRAY_VISIBLE_BLOCK_IDS.add(blockId) : XRAY_VISIBLE_BLOCK_IDS.remove(blockId);
         if (changed) {
             requestXrayRendererReloadIfEnabled();
@@ -512,11 +489,22 @@ public class RenderFeatureManager {
     }
 
     public static void requestXrayRendererReload() {
-        Minecraft mc = Minecraft.getMinecraft();
-        if (mc == null || mc.renderGlobal == null) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc == null || mc.levelRenderer == null) {
             return;
         }
-        mc.renderGlobal.loadRenderers();
+        mc.levelRenderer.allChanged();
+    }
+
+    public void tick(Minecraft mc) {
+        LocalPlayer player = mc == null ? null : mc.player;
+        if (mc == null || mc.level == null || player == null) {
+            resetRuntimeState();
+            RenderFeatureSupport.clearRuntimeCaches();
+            return;
+        }
+        applyAntiBob(mc);
+        RenderFeatureSupport.onClientTick(mc, player);
     }
 
     public void onClientDisconnect() {
@@ -525,81 +513,70 @@ public class RenderFeatureManager {
     }
 
     @SubscribeEvent
-    public void onClientTick(TickEvent.ClientTickEvent event) {
-        if (event.phase != TickEvent.Phase.END) {
+    public void onRenderLevelStage(RenderLevelStageEvent event) {
+        if (event == null || event.getStage() != RenderLevelStageEvent.Stage.AFTER_LEVEL) {
             return;
         }
-        Minecraft mc = Minecraft.getMinecraft();
-        EntityPlayerSP player = mc.player;
-        if (mc.world == null || player == null) {
-            resetRuntimeState();
-            RenderFeatureSupport.clearRuntimeCaches();
+        Minecraft mc = Minecraft.getInstance();
+        if (mc == null || mc.level == null || mc.player == null) {
             return;
         }
-
-        applyBrightness();
-        applyAntiBob();
-        RenderFeatureSupport.onClientTick(mc, player);
+        RenderFeatureSupport.renderWorld(mc, event);
     }
 
     @SubscribeEvent
-    public void onRenderWorldLast(RenderWorldLastEvent event) {
-        Minecraft mc = Minecraft.getMinecraft();
-        if (mc.world == null || mc.player == null) {
+    public void onRenderOverlayPre(RenderGuiOverlayEvent.Pre event) {
+        if (event == null || !isCrosshairOverlay(event) || !isEnabled("custom_crosshair")) {
             return;
         }
-        RenderFeatureSupport.renderWorld(mc, event.getPartialTicks());
-    }
-
-    @SubscribeEvent
-    public void onRenderOverlayPre(RenderGameOverlayEvent.Pre event) {
-        if (event.getType() != RenderGameOverlayEvent.ElementType.CROSSHAIRS) {
-            return;
-        }
-        Minecraft mc = Minecraft.getMinecraft();
-        if (mc == null || mc.currentScreen != null || !isEnabled("custom_crosshair")) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc == null || mc.screen != null || mc.player == null) {
             return;
         }
         event.setCanceled(true);
     }
 
     @SubscribeEvent
-    public void onRenderOverlayPost(RenderGameOverlayEvent.Post event) {
-        if (event.getType() != RenderGameOverlayEvent.ElementType.ALL) {
+    public void onRenderOverlayPost(RenderGuiOverlayEvent.Post event) {
+        if (event == null) {
             return;
         }
-        Minecraft mc = Minecraft.getMinecraft();
-        if (mc == null || mc.player == null || mc.currentScreen != null) {
+        String overlayPath = overlayPath(event.getOverlay() == null ? null : event.getOverlay().id());
+        if (!"hotbar".equals(overlayPath)) {
+            return;
+        }
+        Minecraft mc = Minecraft.getInstance();
+        if (mc == null || mc.player == null || mc.screen != null) {
             return;
         }
         if (isEnabled("custom_crosshair")) {
-            RenderFeatureSupport.renderCrosshair(mc);
+            RenderFeatureSupport.renderCrosshair(mc, event.getGuiGraphics());
         }
         if (isEnabled("radar")) {
-            RenderFeatureSupport.renderRadar(mc);
+            RenderFeatureSupport.renderRadar(mc, event.getGuiGraphics());
         }
         if (isEnabled("entity_info")) {
-            RenderFeatureSupport.renderEntityInfo(mc);
+            RenderFeatureSupport.renderEntityInfo(mc, event.getGuiGraphics());
         }
     }
 
     @SubscribeEvent
-    public void onFogDensity(EntityViewRenderEvent.FogDensity event) {
+    public void onRenderFog(ViewportEvent.RenderFog event) {
         if (!isEnabled("no_fog") || event == null) {
             return;
         }
-        if (event.getState() != null
-                && event.getState().getMaterial() != null
-                && event.getState().getMaterial().isLiquid()
-                && !noFogRemoveLiquid) {
+        if (event.getType() != FogType.NONE && !noFogRemoveLiquid) {
             return;
         }
-        event.setDensity(0.0F);
+        float far = Math.max(event.getFarPlaneDistance(), 256.0F);
+        event.setNearPlaneDistance(far * 0.96F);
+        event.setFarPlaneDistance(far * 1.75F);
+        event.setFogShape(FogShape.CYLINDER);
         event.setCanceled(true);
     }
 
     @SubscribeEvent
-    public void onFogColors(EntityViewRenderEvent.FogColors event) {
+    public void onFogColor(ViewportEvent.ComputeFogColor event) {
         if (!isEnabled("no_fog") || event == null || !noFogBrightenColor) {
             return;
         }
@@ -608,249 +585,93 @@ public class RenderFeatureManager {
         event.setBlue(Math.max(event.getBlue(), 0.98F));
     }
 
-    private void resetRuntimeState() {
-        restoreBrightness();
-        restoreAntiBob();
-    }
-
-    public static boolean isOreBlock(Block block) {
-        return block == Blocks.COAL_ORE
-                || block == Blocks.IRON_ORE
-                || block == Blocks.GOLD_ORE
-                || block == Blocks.REDSTONE_ORE
-                || block == Blocks.LIT_REDSTONE_ORE
-                || block == Blocks.LAPIS_ORE
-                || block == Blocks.DIAMOND_ORE
-                || block == Blocks.EMERALD_ORE
-                || block == Blocks.QUARTZ_ORE;
-    }
-
-    public static float[] getBlockHighlightColor(IBlockState state) {
-        Block block = state == null ? null : state.getBlock();
-        if (block == Blocks.COAL_ORE) {
-            return new float[] { 0.25F, 0.25F, 0.25F };
-        }
-        if (block == Blocks.IRON_ORE) {
-            return new float[] { 0.82F, 0.66F, 0.46F };
-        }
-        if (block == Blocks.GOLD_ORE) {
-            return new float[] { 0.98F, 0.84F, 0.22F };
-        }
-        if (block == Blocks.REDSTONE_ORE || block == Blocks.LIT_REDSTONE_ORE) {
-            return new float[] { 0.96F, 0.18F, 0.18F };
-        }
-        if (block == Blocks.LAPIS_ORE) {
-            return new float[] { 0.20F, 0.42F, 0.98F };
-        }
-        if (block == Blocks.DIAMOND_ORE) {
-            return new float[] { 0.18F, 0.98F, 0.90F };
-        }
-        if (block == Blocks.EMERALD_ORE) {
-            return new float[] { 0.12F, 0.90F, 0.28F };
-        }
-        if (block == Blocks.QUARTZ_ORE) {
-            return new float[] { 0.95F, 0.95F, 0.95F };
-        }
-        return new float[] { 0.18F, 0.98F, 0.90F };
-    }
-
-    private void applyBrightness() {
-        Minecraft mc = Minecraft.getMinecraft();
-        boolean brightnessEnabled = isEnabled("brightness_boost");
-        boolean xrayEnabled = isEnabled("xray");
-        if (!brightnessEnabled && !xrayEnabled) {
-            restoreBrightness();
+    @SubscribeEvent
+    public void onComputeCameraAngles(ViewportEvent.ComputeCameraAngles event) {
+        if (!shouldSuppressHurtCamera() || event == null) {
             return;
         }
-        if (!brightnessApplied) {
-            previousGammaSetting = mc.gameSettings.gammaSetting;
-            brightnessApplied = true;
-        }
-        float targetGamma = 1.0F;
-        if (brightnessEnabled) {
-            targetGamma = brightnessSoftMode ? Math.max(4.0F, brightnessGamma * 0.55F)
-                    : Math.max(1.0F, brightnessGamma);
-        }
-        if (xrayEnabled) {
-            targetGamma = Math.max(targetGamma, 16.0F);
-        }
-        mc.gameSettings.gammaSetting = targetGamma;
-    }
-
-    private void restoreBrightness() {
-        Minecraft mc = Minecraft.getMinecraft();
-        if (!brightnessApplied || mc == null || mc.gameSettings == null) {
-            return;
-        }
-        mc.gameSettings.gammaSetting = previousGammaSetting;
-        brightnessApplied = false;
-    }
-
-    private void applyAntiBob() {
-        Minecraft mc = Minecraft.getMinecraft();
-        if (!isEnabled("anti_bob") || !antiBobRemoveViewBobbing) {
-            restoreAntiBob();
-            return;
-        }
-        if (!antiBobApplied) {
-            previousViewBobbing = mc.gameSettings.viewBobbing;
-            antiBobApplied = true;
-        }
-        mc.gameSettings.viewBobbing = false;
-    }
-
-    private void restoreAntiBob() {
-        Minecraft mc = Minecraft.getMinecraft();
-        if (!antiBobApplied || mc == null || mc.gameSettings == null) {
-            return;
-        }
-        mc.gameSettings.viewBobbing = previousViewBobbing;
-        antiBobApplied = false;
-    }
-
-    private static void applyDefaultValues() {
-        brightnessSoftMode = false;
-        brightnessGamma = 10.0F;
-        noFogRemoveLiquid = true;
-        noFogBrightenColor = true;
-        entityVisualPlayers = true;
-        entityVisualMonsters = true;
-        entityVisualAnimals = false;
-        entityVisualThroughWalls = true;
-        entityVisualFilledBox = true;
-        entityVisualMaxDistance = 48.0F;
-        tracerPlayers = true;
-        tracerMonsters = true;
-        tracerAnimals = false;
-        tracerThroughWalls = true;
-        tracerMaxDistance = 64.0F;
-        tracerLineWidth = 1.6F;
-        entityTagPlayers = true;
-        entityTagMonsters = true;
-        entityTagAnimals = false;
-        entityTagShowHealth = true;
-        entityTagShowDistance = true;
-        entityTagShowHeldItem = false;
-        entityTagMaxDistance = 32.0F;
-        blockHighlightStorages = true;
-        blockHighlightSpawners = true;
-        blockHighlightOres = true;
-        blockHighlightThroughWalls = true;
-        blockHighlightFilledBox = true;
-        blockHighlightMaxDistance = 24.0F;
-        resetXrayVisibleBlocksToDefaultInternal();
-        itemEspShowName = true;
-        itemEspShowDistance = true;
-        itemEspThroughWalls = true;
-        itemEspMaxDistance = 24.0F;
-        trajectoryBows = true;
-        trajectoryPearls = true;
-        trajectoryThrowables = true;
-        trajectoryPotions = true;
-        trajectoryMaxSteps = 120;
-        crosshairDynamicGap = true;
-        crosshairColorRgb = 0x55FFFF;
-        crosshairSize = 6.0F;
-        crosshairThickness = 2.0F;
-        antiBobRemoveViewBobbing = true;
-        antiBobRemoveHurtShake = true;
-        radarPlayers = true;
-        radarMonsters = true;
-        radarAnimals = false;
-        radarRotateWithView = true;
-        radarMaxDistance = 48.0F;
-        radarSize = 90;
-        skeletonThroughWalls = true;
-        skeletonMaxDistance = 48.0F;
-        skeletonLineWidth = 1.7F;
-        blockOutlineFilledBox = false;
-        blockOutlineLineWidth = 2.0F;
-        entityInfoShowHealth = true;
-        entityInfoShowDistance = true;
-        entityInfoShowPosition = true;
-        entityInfoShowHeldItem = true;
-        entityInfoMaxDistance = 48.0F;
+        event.setRoll(0.0F);
     }
 
     public static void loadConfig() {
         for (FeatureState state : FEATURES.values()) {
             state.setEnabledInternal(false);
         }
-        applyDefaultValues();
+        applyAllDefaultsWithoutSave();
 
         try {
-            File configFile = getConfigFile();
-            if (!configFile.exists()) {
+            Path file = ProfileManager.getCurrentProfileDir().resolve("other_features_render.json");
+            if (!Files.exists(file)) {
                 saveConfig();
                 return;
             }
-            JsonObject root = new JsonParser().parse(new FileReader(configFile)).getAsJsonObject();
-            for (Map.Entry<String, FeatureState> entry : FEATURES.entrySet()) {
-                entry.getValue().setEnabledInternal(root.has(entry.getKey() + "_enabled")
-                        && root.get(entry.getKey() + "_enabled").getAsBoolean());
+
+            JsonObject root = JsonParser.parseString(Files.readString(file, StandardCharsets.UTF_8)).getAsJsonObject();
+            for (FeatureState state : FEATURES.values()) {
+                state.setEnabledInternal(readFeatureEnabled(root, state.id));
             }
 
-            brightnessSoftMode = root.has("brightness_soft_mode") && root.get("brightness_soft_mode").getAsBoolean();
-            brightnessGamma = root.has("brightness_gamma") ? root.get("brightness_gamma").getAsFloat() : 10.0F;
-            noFogRemoveLiquid = !root.has("no_fog_remove_liquid") || root.get("no_fog_remove_liquid").getAsBoolean();
-            noFogBrightenColor = !root.has("no_fog_brighten_color") || root.get("no_fog_brighten_color").getAsBoolean();
-            entityVisualPlayers = !root.has("entity_visual_players") || root.get("entity_visual_players").getAsBoolean();
-            entityVisualMonsters = !root.has("entity_visual_monsters") || root.get("entity_visual_monsters").getAsBoolean();
-            entityVisualAnimals = root.has("entity_visual_animals") && root.get("entity_visual_animals").getAsBoolean();
-            entityVisualThroughWalls = !root.has("entity_visual_through_walls") || root.get("entity_visual_through_walls").getAsBoolean();
-            entityVisualFilledBox = !root.has("entity_visual_filled_box") || root.get("entity_visual_filled_box").getAsBoolean();
-            entityVisualMaxDistance = root.has("entity_visual_max_distance") ? root.get("entity_visual_max_distance").getAsFloat() : 48.0F;
-            tracerPlayers = !root.has("tracer_players") || root.get("tracer_players").getAsBoolean();
-            tracerMonsters = !root.has("tracer_monsters") || root.get("tracer_monsters").getAsBoolean();
-            tracerAnimals = root.has("tracer_animals") && root.get("tracer_animals").getAsBoolean();
-            tracerThroughWalls = !root.has("tracer_through_walls") || root.get("tracer_through_walls").getAsBoolean();
-            tracerMaxDistance = root.has("tracer_max_distance") ? root.get("tracer_max_distance").getAsFloat() : 64.0F;
-            tracerLineWidth = root.has("tracer_line_width") ? root.get("tracer_line_width").getAsFloat() : 1.6F;
-            entityTagPlayers = !root.has("entity_tag_players") || root.get("entity_tag_players").getAsBoolean();
-            entityTagMonsters = !root.has("entity_tag_monsters") || root.get("entity_tag_monsters").getAsBoolean();
-            entityTagAnimals = root.has("entity_tag_animals") && root.get("entity_tag_animals").getAsBoolean();
-            entityTagShowHealth = !root.has("entity_tag_show_health") || root.get("entity_tag_show_health").getAsBoolean();
-            entityTagShowDistance = !root.has("entity_tag_show_distance") || root.get("entity_tag_show_distance").getAsBoolean();
-            entityTagShowHeldItem = root.has("entity_tag_show_held_item") && root.get("entity_tag_show_held_item").getAsBoolean();
-            entityTagMaxDistance = root.has("entity_tag_max_distance") ? root.get("entity_tag_max_distance").getAsFloat() : 32.0F;
-            blockHighlightStorages = !root.has("block_highlight_storages") || root.get("block_highlight_storages").getAsBoolean();
-            blockHighlightSpawners = !root.has("block_highlight_spawners") || root.get("block_highlight_spawners").getAsBoolean();
-            blockHighlightOres = !root.has("block_highlight_ores") || root.get("block_highlight_ores").getAsBoolean();
-            blockHighlightThroughWalls = !root.has("block_highlight_through_walls") || root.get("block_highlight_through_walls").getAsBoolean();
-            blockHighlightFilledBox = !root.has("block_highlight_filled_box") || root.get("block_highlight_filled_box").getAsBoolean();
-            blockHighlightMaxDistance = root.has("block_highlight_max_distance") ? root.get("block_highlight_max_distance").getAsFloat() : 24.0F;
+            brightnessSoftMode = readBoolean(root, "brightness_soft_mode", "brightnessSoftMode", brightnessSoftMode);
+            brightnessGamma = readFloat(root, "brightness_gamma", "brightnessGamma", brightnessGamma);
+            noFogRemoveLiquid = readBoolean(root, "no_fog_remove_liquid", "noFogRemoveLiquid", noFogRemoveLiquid);
+            noFogBrightenColor = readBoolean(root, "no_fog_brighten_color", "noFogBrightenColor", noFogBrightenColor);
+            entityVisualPlayers = readBoolean(root, "entity_visual_players", "entityVisualPlayers", entityVisualPlayers);
+            entityVisualMonsters = readBoolean(root, "entity_visual_monsters", "entityVisualMonsters", entityVisualMonsters);
+            entityVisualAnimals = readBoolean(root, "entity_visual_animals", "entityVisualAnimals", entityVisualAnimals);
+            entityVisualThroughWalls = readBoolean(root, "entity_visual_through_walls", "entityVisualThroughWalls", entityVisualThroughWalls);
+            entityVisualFilledBox = readBoolean(root, "entity_visual_filled_box", "entityVisualFilledBox", entityVisualFilledBox);
+            entityVisualMaxDistance = readFloat(root, "entity_visual_max_distance", "entityVisualMaxDistance", entityVisualMaxDistance);
+            tracerPlayers = readBoolean(root, "tracer_players", "tracerPlayers", tracerPlayers);
+            tracerMonsters = readBoolean(root, "tracer_monsters", "tracerMonsters", tracerMonsters);
+            tracerAnimals = readBoolean(root, "tracer_animals", "tracerAnimals", tracerAnimals);
+            tracerThroughWalls = readBoolean(root, "tracer_through_walls", "tracerThroughWalls", tracerThroughWalls);
+            tracerMaxDistance = readFloat(root, "tracer_max_distance", "tracerMaxDistance", tracerMaxDistance);
+            tracerLineWidth = readFloat(root, "tracer_line_width", "tracerLineWidth", tracerLineWidth);
+            entityTagPlayers = readBoolean(root, "entity_tag_players", "entityTagPlayers", entityTagPlayers);
+            entityTagMonsters = readBoolean(root, "entity_tag_monsters", "entityTagMonsters", entityTagMonsters);
+            entityTagAnimals = readBoolean(root, "entity_tag_animals", "entityTagAnimals", entityTagAnimals);
+            entityTagShowHealth = readBoolean(root, "entity_tag_show_health", "entityTagShowHealth", entityTagShowHealth);
+            entityTagShowDistance = readBoolean(root, "entity_tag_show_distance", "entityTagShowDistance", entityTagShowDistance);
+            entityTagShowHeldItem = readBoolean(root, "entity_tag_show_held_item", "entityTagShowHeldItem", entityTagShowHeldItem);
+            entityTagMaxDistance = readFloat(root, "entity_tag_max_distance", "entityTagMaxDistance", entityTagMaxDistance);
+            blockHighlightStorages = readBoolean(root, "block_highlight_storages", "blockHighlightStorages", blockHighlightStorages);
+            blockHighlightSpawners = readBoolean(root, "block_highlight_spawners", "blockHighlightSpawners", blockHighlightSpawners);
+            blockHighlightOres = readBoolean(root, "block_highlight_ores", "blockHighlightOres", blockHighlightOres);
+            blockHighlightThroughWalls = readBoolean(root, "block_highlight_through_walls", "blockHighlightThroughWalls", blockHighlightThroughWalls);
+            blockHighlightFilledBox = readBoolean(root, "block_highlight_filled_box", "blockHighlightFilledBox", blockHighlightFilledBox);
+            blockHighlightMaxDistance = readFloat(root, "block_highlight_max_distance", "blockHighlightMaxDistance", blockHighlightMaxDistance);
             loadXrayVisibleBlocks(root);
-            itemEspShowName = !root.has("item_esp_show_name") || root.get("item_esp_show_name").getAsBoolean();
-            itemEspShowDistance = !root.has("item_esp_show_distance") || root.get("item_esp_show_distance").getAsBoolean();
-            itemEspThroughWalls = !root.has("item_esp_through_walls") || root.get("item_esp_through_walls").getAsBoolean();
-            itemEspMaxDistance = root.has("item_esp_max_distance") ? root.get("item_esp_max_distance").getAsFloat() : 24.0F;
-            trajectoryBows = !root.has("trajectory_bows") || root.get("trajectory_bows").getAsBoolean();
-            trajectoryPearls = !root.has("trajectory_pearls") || root.get("trajectory_pearls").getAsBoolean();
-            trajectoryThrowables = !root.has("trajectory_throwables") || root.get("trajectory_throwables").getAsBoolean();
-            trajectoryPotions = !root.has("trajectory_potions") || root.get("trajectory_potions").getAsBoolean();
-            trajectoryMaxSteps = root.has("trajectory_max_steps") ? root.get("trajectory_max_steps").getAsInt() : 120;
-            crosshairDynamicGap = !root.has("crosshair_dynamic_gap") || root.get("crosshair_dynamic_gap").getAsBoolean();
-            crosshairColorRgb = root.has("crosshair_color_rgb") ? root.get("crosshair_color_rgb").getAsInt() : 0x55FFFF;
-            crosshairSize = root.has("crosshair_size") ? root.get("crosshair_size").getAsFloat() : 6.0F;
-            crosshairThickness = root.has("crosshair_thickness") ? root.get("crosshair_thickness").getAsFloat() : 2.0F;
-            antiBobRemoveViewBobbing = !root.has("anti_bob_remove_view_bobbing") || root.get("anti_bob_remove_view_bobbing").getAsBoolean();
-            antiBobRemoveHurtShake = !root.has("anti_bob_remove_hurt_shake") || root.get("anti_bob_remove_hurt_shake").getAsBoolean();
-            radarPlayers = !root.has("radar_players") || root.get("radar_players").getAsBoolean();
-            radarMonsters = !root.has("radar_monsters") || root.get("radar_monsters").getAsBoolean();
-            radarAnimals = root.has("radar_animals") && root.get("radar_animals").getAsBoolean();
-            radarRotateWithView = !root.has("radar_rotate_with_view") || root.get("radar_rotate_with_view").getAsBoolean();
-            radarMaxDistance = root.has("radar_max_distance") ? root.get("radar_max_distance").getAsFloat() : 48.0F;
-            radarSize = root.has("radar_size") ? root.get("radar_size").getAsInt() : 90;
-            skeletonThroughWalls = !root.has("skeleton_through_walls") || root.get("skeleton_through_walls").getAsBoolean();
-            skeletonMaxDistance = root.has("skeleton_max_distance") ? root.get("skeleton_max_distance").getAsFloat() : 48.0F;
-            skeletonLineWidth = root.has("skeleton_line_width") ? root.get("skeleton_line_width").getAsFloat() : 1.7F;
-            blockOutlineFilledBox = root.has("block_outline_filled_box") && root.get("block_outline_filled_box").getAsBoolean();
-            blockOutlineLineWidth = root.has("block_outline_line_width") ? root.get("block_outline_line_width").getAsFloat() : 2.0F;
-            entityInfoShowHealth = !root.has("entity_info_show_health") || root.get("entity_info_show_health").getAsBoolean();
-            entityInfoShowDistance = !root.has("entity_info_show_distance") || root.get("entity_info_show_distance").getAsBoolean();
-            entityInfoShowPosition = !root.has("entity_info_show_position") || root.get("entity_info_show_position").getAsBoolean();
-            entityInfoShowHeldItem = !root.has("entity_info_show_held_item") || root.get("entity_info_show_held_item").getAsBoolean();
-            entityInfoMaxDistance = root.has("entity_info_max_distance") ? root.get("entity_info_max_distance").getAsFloat() : 48.0F;
+            itemEspShowName = readBoolean(root, "item_esp_show_name", "itemEspShowName", itemEspShowName);
+            itemEspShowDistance = readBoolean(root, "item_esp_show_distance", "itemEspShowDistance", itemEspShowDistance);
+            itemEspThroughWalls = readBoolean(root, "item_esp_through_walls", "itemEspThroughWalls", itemEspThroughWalls);
+            itemEspMaxDistance = readFloat(root, "item_esp_max_distance", "itemEspMaxDistance", itemEspMaxDistance);
+            trajectoryBows = readBoolean(root, "trajectory_bows", "trajectoryBows", trajectoryBows);
+            trajectoryPearls = readBoolean(root, "trajectory_pearls", "trajectoryPearls", trajectoryPearls);
+            trajectoryThrowables = readBoolean(root, "trajectory_throwables", "trajectoryThrowables", trajectoryThrowables);
+            trajectoryPotions = readBoolean(root, "trajectory_potions", "trajectoryPotions", trajectoryPotions);
+            trajectoryMaxSteps = readInt(root, "trajectory_max_steps", "trajectoryMaxSteps", trajectoryMaxSteps);
+            crosshairDynamicGap = readBoolean(root, "crosshair_dynamic_gap", "crosshairDynamicGap", crosshairDynamicGap);
+            crosshairColorRgb = readInt(root, "crosshair_color_rgb", "crosshairColorRgb", crosshairColorRgb);
+            crosshairSize = readFloat(root, "crosshair_size", "crosshairSize", crosshairSize);
+            crosshairThickness = readFloat(root, "crosshair_thickness", "crosshairThickness", crosshairThickness);
+            antiBobRemoveViewBobbing = readBoolean(root, "anti_bob_remove_view_bobbing", "antiBobRemoveViewBobbing", antiBobRemoveViewBobbing);
+            antiBobRemoveHurtShake = readBoolean(root, "anti_bob_remove_hurt_shake", "antiBobRemoveHurtShake", antiBobRemoveHurtShake);
+            radarPlayers = readBoolean(root, "radar_players", "radarPlayers", radarPlayers);
+            radarMonsters = readBoolean(root, "radar_monsters", "radarMonsters", radarMonsters);
+            radarAnimals = readBoolean(root, "radar_animals", "radarAnimals", radarAnimals);
+            radarRotateWithView = readBoolean(root, "radar_rotate_with_view", "radarRotateWithView", radarRotateWithView);
+            radarMaxDistance = readFloat(root, "radar_max_distance", "radarMaxDistance", radarMaxDistance);
+            radarSize = readInt(root, "radar_size", "radarSize", radarSize);
+            skeletonThroughWalls = readBoolean(root, "skeleton_through_walls", "skeletonThroughWalls", skeletonThroughWalls);
+            skeletonMaxDistance = readFloat(root, "skeleton_max_distance", "skeletonMaxDistance", skeletonMaxDistance);
+            skeletonLineWidth = readFloat(root, "skeleton_line_width", "skeletonLineWidth", skeletonLineWidth);
+            blockOutlineFilledBox = readBoolean(root, "block_outline_filled_box", "blockOutlineFilledBox", blockOutlineFilledBox);
+            blockOutlineLineWidth = readFloat(root, "block_outline_line_width", "blockOutlineLineWidth", blockOutlineLineWidth);
+            entityInfoShowHealth = readBoolean(root, "entity_info_show_health", "entityInfoShowHealth", entityInfoShowHealth);
+            entityInfoShowDistance = readBoolean(root, "entity_info_show_distance", "entityInfoShowDistance", entityInfoShowDistance);
+            entityInfoShowPosition = readBoolean(root, "entity_info_show_position", "entityInfoShowPosition", entityInfoShowPosition);
+            entityInfoShowHeldItem = readBoolean(root, "entity_info_show_held_item", "entityInfoShowHeldItem", entityInfoShowHeldItem);
+            entityInfoMaxDistance = readFloat(root, "entity_info_max_distance", "entityInfoMaxDistance", entityInfoMaxDistance);
             requestXrayRendererReload();
         } catch (Exception e) {
             zszlScriptMod.LOGGER.error("加载渲染功能配置失败", e);
@@ -859,10 +680,8 @@ public class RenderFeatureManager {
 
     public static void saveConfig() {
         try {
-            File configFile = getConfigFile();
-            if (!configFile.getParentFile().exists()) {
-                configFile.getParentFile().mkdirs();
-            }
+            Path file = ProfileManager.getCurrentProfileDir().resolve("other_features_render.json");
+            Files.createDirectories(file.getParent());
             JsonObject root = new JsonObject();
             for (FeatureState state : FEATURES.values()) {
                 root.addProperty(state.id + "_enabled", state.isEnabled());
@@ -932,48 +751,218 @@ public class RenderFeatureManager {
             root.addProperty("entity_info_show_position", entityInfoShowPosition);
             root.addProperty("entity_info_show_held_item", entityInfoShowHeldItem);
             root.addProperty("entity_info_max_distance", entityInfoMaxDistance);
-            try (FileWriter writer = new FileWriter(configFile)) {
-                writer.write(root.toString());
-            }
+            Files.writeString(file, root.toString(), StandardCharsets.UTF_8);
         } catch (Exception e) {
             zszlScriptMod.LOGGER.error("保存渲染功能配置失败", e);
         }
     }
 
-    private static String formatFloat(float value) {
-        return String.format(Locale.ROOT, "%.1f", value);
+    private static void register(FeatureState state) {
+        FEATURES.put(state.id, state);
     }
 
-    private static void resetXrayVisibleBlocksToDefaultInternal() {
-        XRAY_VISIBLE_BLOCK_IDS.clear();
-        for (String blockId : DEFAULT_XRAY_BLOCK_IDS) {
-            String normalized = normalizeBlockId(blockId);
-            if (!normalized.isEmpty()) {
-                XRAY_VISIBLE_BLOCK_IDS.add(normalized);
+    private static void handleRuntimeSideEffectsAfterToggle(String featureId, boolean previousEnabled, boolean enabled) {
+        String normalizedId = normalizeId(featureId);
+        if (previousEnabled == enabled) {
+            return;
+        }
+        if ("xray".equals(normalizedId)) {
+            requestXrayRendererReload();
+            return;
+        }
+        if ("anti_bob".equals(normalizedId) && !enabled) {
+            INSTANCE.restoreAntiBob(Minecraft.getInstance());
+        }
+    }
+
+    private static void applyAllDefaultsWithoutSave() {
+        brightnessSoftMode = false;
+        brightnessGamma = 10.0F;
+        noFogRemoveLiquid = true;
+        noFogBrightenColor = true;
+        entityVisualPlayers = true;
+        entityVisualMonsters = true;
+        entityVisualAnimals = false;
+        entityVisualThroughWalls = true;
+        entityVisualFilledBox = true;
+        entityVisualMaxDistance = 48.0F;
+        tracerPlayers = true;
+        tracerMonsters = true;
+        tracerAnimals = false;
+        tracerThroughWalls = true;
+        tracerMaxDistance = 64.0F;
+        tracerLineWidth = 1.6F;
+        entityTagPlayers = true;
+        entityTagMonsters = true;
+        entityTagAnimals = false;
+        entityTagShowHealth = true;
+        entityTagShowDistance = true;
+        entityTagShowHeldItem = false;
+        entityTagMaxDistance = 32.0F;
+        blockHighlightStorages = true;
+        blockHighlightSpawners = true;
+        blockHighlightOres = true;
+        blockHighlightThroughWalls = true;
+        blockHighlightFilledBox = true;
+        blockHighlightMaxDistance = 24.0F;
+        resetXrayVisibleBlocksToDefaultInternal();
+        itemEspShowName = true;
+        itemEspShowDistance = true;
+        itemEspThroughWalls = true;
+        itemEspMaxDistance = 24.0F;
+        trajectoryBows = true;
+        trajectoryPearls = true;
+        trajectoryThrowables = true;
+        trajectoryPotions = true;
+        trajectoryMaxSteps = 120;
+        crosshairDynamicGap = true;
+        crosshairColorRgb = 0x55FFFF;
+        crosshairSize = 6.0F;
+        crosshairThickness = 2.0F;
+        antiBobRemoveViewBobbing = true;
+        antiBobRemoveHurtShake = true;
+        radarPlayers = true;
+        radarMonsters = true;
+        radarAnimals = false;
+        radarRotateWithView = true;
+        radarMaxDistance = 48.0F;
+        radarSize = 90;
+        skeletonThroughWalls = true;
+        skeletonMaxDistance = 48.0F;
+        skeletonLineWidth = 1.7F;
+        blockOutlineFilledBox = false;
+        blockOutlineLineWidth = 2.0F;
+        entityInfoShowHealth = true;
+        entityInfoShowDistance = true;
+        entityInfoShowPosition = true;
+        entityInfoShowHeldItem = true;
+        entityInfoMaxDistance = 48.0F;
+    }
+
+    private void resetRuntimeState() {
+        Minecraft mc = Minecraft.getInstance();
+        restoreAntiBob(mc);
+    }
+
+    public static boolean isBrightnessOverrideActive() {
+        return isEnabled("brightness_boost") || isEnabled("xray");
+    }
+
+    public static float getEffectiveBrightnessGammaOverride() {
+        boolean brightnessEnabled = isEnabled("brightness_boost");
+        boolean xrayEnabled = isEnabled("xray");
+        float targetGamma = 1.0F;
+        if (brightnessEnabled) {
+            targetGamma = brightnessSoftMode ? Math.max(4.0F, brightnessGamma * 0.55F) : Math.max(1.0F, brightnessGamma);
+        }
+        if (xrayEnabled) {
+            targetGamma = Math.max(targetGamma, 16.0F);
+        }
+        return targetGamma;
+    }
+
+    private void applyAntiBob(Minecraft mc) {
+        if (!isEnabled("anti_bob") || !antiBobRemoveViewBobbing) {
+            restoreAntiBob(mc);
+            return;
+        }
+        if (mc == null || mc.options == null) {
+            return;
+        }
+        if (!antiBobApplied) {
+            previousViewBobbing = mc.options.bobView().get();
+            antiBobApplied = true;
+        }
+        mc.options.bobView().set(false);
+    }
+
+    private void restoreAntiBob(Minecraft mc) {
+        if (!antiBobApplied || mc == null || mc.options == null) {
+            return;
+        }
+        mc.options.bobView().set(previousViewBobbing);
+        antiBobApplied = false;
+    }
+
+    private static boolean readFeatureEnabled(JsonObject root, String featureId) {
+        if (root == null) {
+            return false;
+        }
+        String flatKey = normalizeId(featureId) + "_enabled";
+        if (root.has(flatKey)) {
+            return root.get(flatKey).getAsBoolean();
+        }
+        if (root.has(featureId) && root.get(featureId).isJsonObject()) {
+            JsonObject feature = root.getAsJsonObject(featureId);
+            if (feature.has("enabled")) {
+                return feature.get("enabled").getAsBoolean();
             }
         }
+        return false;
+    }
+
+    private static boolean readBoolean(JsonObject root, String legacyKey, String camelKey, boolean fallback) {
+        if (root.has(legacyKey)) {
+            return root.get(legacyKey).getAsBoolean();
+        }
+        if (root.has(camelKey)) {
+            return root.get(camelKey).getAsBoolean();
+        }
+        return fallback;
+    }
+
+    private static float readFloat(JsonObject root, String legacyKey, String camelKey, float fallback) {
+        if (root.has(legacyKey)) {
+            return root.get(legacyKey).getAsFloat();
+        }
+        if (root.has(camelKey)) {
+            return root.get(camelKey).getAsFloat();
+        }
+        return fallback;
+    }
+
+    private static int readInt(JsonObject root, String legacyKey, String camelKey, int fallback) {
+        if (root.has(legacyKey)) {
+            return root.get(legacyKey).getAsInt();
+        }
+        if (root.has(camelKey)) {
+            return root.get(camelKey).getAsInt();
+        }
+        return fallback;
     }
 
     private static void loadXrayVisibleBlocks(JsonObject root) {
         resetXrayVisibleBlocksToDefaultInternal();
-        if (root == null || !root.has("xray_visible_blocks") || !root.get("xray_visible_blocks").isJsonArray()) {
+        JsonArray blocks = null;
+        if (root.has("xray_visible_blocks") && root.get("xray_visible_blocks").isJsonArray()) {
+            blocks = root.getAsJsonArray("xray_visible_blocks");
+        } else if (root.has("xrayVisibleBlocks") && root.get("xrayVisibleBlocks").isJsonArray()) {
+            blocks = root.getAsJsonArray("xrayVisibleBlocks");
+        }
+        if (blocks == null) {
             return;
         }
-
         XRAY_VISIBLE_BLOCK_IDS.clear();
-        for (JsonElement element : root.getAsJsonArray("xray_visible_blocks")) {
+        for (JsonElement element : blocks) {
             if (element == null || !element.isJsonPrimitive()) {
                 continue;
             }
-            String blockId = normalizeBlockId(element.getAsString());
+            String blockId = normalizeXrayBlockId(element.getAsString());
             if (!blockId.isEmpty()) {
                 XRAY_VISIBLE_BLOCK_IDS.add(blockId);
             }
         }
-
         if (XRAY_VISIBLE_BLOCK_IDS.isEmpty()) {
             resetXrayVisibleBlocksToDefaultInternal();
         }
+    }
+
+    private static void resetXrayVisibleBlocksToDefaultInternal() {
+        XRAY_VISIBLE_BLOCK_IDS.clear();
+        Arrays.stream(DEFAULT_XRAY_BLOCK_IDS)
+                .map(RenderFeatureManager::normalizeXrayBlockId)
+                .filter(id -> !id.isEmpty())
+                .forEach(XRAY_VISIBLE_BLOCK_IDS::add);
     }
 
     private static void requestXrayRendererReloadIfEnabled() {
@@ -982,30 +971,41 @@ public class RenderFeatureManager {
         }
     }
 
-    private static String normalizeBlockId(String rawBlockId) {
-        Block block = resolveBlock(rawBlockId);
-        return normalizeBlockId(block);
+    private static List<String> sortBlockIds(Set<String> blockIds) {
+        List<String> sorted = new ArrayList<>(blockIds);
+        Collections.sort(sorted);
+        return sorted;
+    }
+
+    private static boolean isCrosshairOverlay(RenderGuiOverlayEvent event) {
+        String path = overlayPath(event.getOverlay() == null ? null : event.getOverlay().id());
+        return "crosshair".equals(path) || "crosshairs".equals(path);
+    }
+
+    private static String overlayPath(ResourceLocation id) {
+        return id == null ? "" : safe(id.getPath()).toLowerCase(Locale.ROOT);
     }
 
     private static String normalizeBlockId(Block block) {
         if (block == null || block == Blocks.AIR) {
             return "";
         }
-        ResourceLocation registryName = Block.REGISTRY.getNameForObject(block);
-        return registryName == null ? "" : registryName.toString();
+        ResourceLocation id = BuiltInRegistries.BLOCK.getKey(block);
+        if (id == null) {
+            return "";
+        }
+        return "minecraft".equals(id.getNamespace()) ? id.getPath() : id.toString();
     }
 
-    private static List<String> sortBlockIds(Iterable<String> blockIds) {
-        List<String> sorted = new ArrayList<>();
-        if (blockIds != null) {
-            for (String blockId : blockIds) {
-                String safeId = safe(blockId);
-                if (!safeId.isEmpty()) {
-                    sorted.add(safeId);
-                }
-            }
-        }
-        Collections.sort(sorted);
-        return sorted;
+    private static String safe(String text) {
+        return text == null ? "" : text.trim();
+    }
+
+    private static String normalizeId(String featureId) {
+        return safe(featureId).toLowerCase(Locale.ROOT);
+    }
+
+    private static String formatFloat(float value) {
+        return String.format(Locale.ROOT, "%.1f", value);
     }
 }

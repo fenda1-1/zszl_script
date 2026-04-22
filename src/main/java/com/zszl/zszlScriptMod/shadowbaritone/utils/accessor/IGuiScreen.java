@@ -17,37 +17,10 @@
 
 package com.zszl.zszlScriptMod.shadowbaritone.utils.accessor;
 
-import net.minecraft.client.gui.GuiScreen;
-
-import java.awt.Desktop;
-import java.io.IOException;
-import java.lang.reflect.Method;
 import java.net.URI;
 
 public interface IGuiScreen {
 
-    default void openLink(URI url) {
-        if (url == null) {
-            return;
-        }
-        if (this instanceof GuiScreen) {
-            try {
-                Method openWebLink = GuiScreen.class.getDeclaredMethod("openWebLink", URI.class);
-                openWebLink.setAccessible(true);
-                openWebLink.invoke(this, url);
-                return;
-            } catch (ReflectiveOperationException | SecurityException ignored) {
-            }
-        }
-        if (!Desktop.isDesktopSupported()) {
-            return;
-        }
-        try {
-            Desktop desktop = Desktop.getDesktop();
-            if (desktop.isSupported(Desktop.Action.BROWSE)) {
-                desktop.browse(url);
-            }
-        } catch (IOException | UnsupportedOperationException | SecurityException ignored) {
-        }
-    }
+    void openLinkInvoker(URI url);
 }
+

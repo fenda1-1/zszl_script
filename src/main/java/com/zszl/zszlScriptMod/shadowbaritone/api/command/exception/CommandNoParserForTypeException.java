@@ -23,3 +23,4 @@ public class CommandNoParserForTypeException extends CommandUnhandledException {
         super(String.format("Could not find a handler for type %s", klass.getSimpleName()));
     }
 }
+

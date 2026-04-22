@@ -1,19 +1,28 @@
 // --- Full Java Content (src/main/java/com/zszl/zszlScriptMod/config/ModConfig.java) ---
 package com.zszl.zszlScriptMod.config;
+
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import com.zszl.zszlScriptMod.zszlScriptMod;
+import com.zszl.zszlScriptMod.config.DebugModule;
+import com.zszl.zszlScriptMod.gui.config.GuiAntiStuckConfig;
 import com.zszl.zszlScriptMod.handlers.*;
 import com.zszl.zszlScriptMod.handlers.BlockReplacementHandler;
 import com.zszl.zszlScriptMod.path.PathSequenceManager;
 import com.zszl.zszlScriptMod.utils.CapturedIdRuleManager;
-import com.zszl.zszlScriptMod.system.ServerFeatureVisibilityManager;
 import com.zszl.zszlScriptMod.PerformanceMonitor;
 
 import net.minecraft.client.Minecraft;
-import net.minecraft.util.text.TextComponentString;
-import net.minecraft.util.text.TextFormatting;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.util.text.TextComponentString;
+import net.minecraft.ChatFormatting;
 import java.util.EnumMap;
 import java.util.Map;
 import java.io.*;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import com.zszl.zszlScriptMod.handlers.AutoPickupHandler; // 新增导入
 
 public class ModConfig {
@@ -21,7 +30,6 @@ public class ModConfig {
     public static boolean showMouseCoordinates = false;
     public static boolean showHoverInfo = false;
     public static final String CONFIG_DIR = "config/我的世界脚本";
-    public static final String LEGACY_CONFIG_DIR = "config/再生之路脚本";
     public static boolean ahkMoveMouseMode = false;
 
     public static boolean enableGuiListener = false;
@@ -32,7 +40,6 @@ public class ModConfig {
 
     public static boolean isDebugModeEnabled = false; // 全局调试模式开关
     public static final Map<DebugModule, Boolean> debugFlags = new EnumMap<>(DebugModule.class);
-    private static final ThreadLocal<Integer> INTERNAL_CHAT_SUPPRESSION_DEPTH = ThreadLocal.withInitial(() -> 0);
     public static boolean isMouseDetached = false;
     static {
         for (DebugModule module : DebugModule.values()) {
@@ -41,8 +48,7 @@ public class ModConfig {
     }
 
     /**
-     * 新的调试检查方法。
-     * 只有当总开关和对应模块的开关都打开时，才返回true。
+     * 新的调试检查方法。 只有当总开关和对应模块的开关都打开时，才返回true。
      * 
      * @param module 要检查的调试模块
      * @return 是否应为该模块输出调试日志
@@ -54,34 +60,6 @@ public class ModConfig {
         return debugFlags.getOrDefault(module, false);
     }
 
-    public static void runWithInternalChatSuppressed(Runnable action) {
-        if (action == null) {
-            return;
-        }
-        int depth = INTERNAL_CHAT_SUPPRESSION_DEPTH.get();
-        INTERNAL_CHAT_SUPPRESSION_DEPTH.set(depth + 1);
-        try {
-            action.run();
-        } finally {
-            int newDepth = INTERNAL_CHAT_SUPPRESSION_DEPTH.get() - 1;
-            if (newDepth <= 0) {
-                INTERNAL_CHAT_SUPPRESSION_DEPTH.remove();
-            } else {
-                INTERNAL_CHAT_SUPPRESSION_DEPTH.set(newDepth);
-            }
-        }
-    }
-
-    public static boolean isInternalChatSuppressed() {
-        return INTERNAL_CHAT_SUPPRESSION_DEPTH.get() > 0;
-    }
-
-    public static boolean isInternalDebugChatMessage(String text) {
-        String normalized = normalizeInternalDebugChatText(text);
-        return normalized.startsWith("[DEBUG:")
-                || normalized.startsWith("[FORCE DEBUG:");
-    }
-
     /**
      * 向游戏内聊天框打印调试信息的方法。
      * 
@@ -89,8 +67,12 @@ public class ModConfig {
      * @param message 要打印的消息
      */
     public static void debugPrint(DebugModule module, String message) {
-        if (isDebugFlagEnabled(module)) {
-            sendInternalDebugChatMessage(module, message, false);
+        if (isDebugFlagEnabled(module) && Minecraft.getInstance().player != null) {
+            // 使用 addScheduledTask 确保消息在主线程发送，避免多线程问题
+            Minecraft.getInstance().execute(() -> {
+                Minecraft.getInstance().player.sendSystemMessage(new TextComponentString(ChatFormatting.AQUA
+                        + "[DEBUG: " + module.getDisplayName() + "] " + ChatFormatting.GRAY + message));
+            });
         }
     }
 
@@ -101,7 +83,12 @@ public class ModConfig {
      * @param message 要打印的消息
      */
     public static void debugPrintForce(DebugModule module, String message) {
-        sendInternalDebugChatMessage(module, message, true);
+        if (Minecraft.getInstance().player != null) {
+            Minecraft.getInstance().execute(() -> {
+                Minecraft.getInstance().player.sendSystemMessage(new TextComponentString(ChatFormatting.RED
+                        + "[FORCE DEBUG: " + module.getDisplayName() + "] " + ChatFormatting.YELLOW + message));
+            });
+        }
     }
 
     /**
@@ -112,7 +99,8 @@ public class ModConfig {
      */
     public static void debugLog(DebugModule module, String message) {
         if (isDebugFlagEnabled(module)) {
-            zszlScriptMod.LOGGER.info("[DEBUG:{}|{}] {}", module.name(), module.getDisplayName(), message);
+            zszlScriptMod.LOGGER.info("[DEBUG:{}|{}] {}", getDebugModuleName(module), getDebugModuleDisplayName(module),
+                    safeDebugMessage(message));
         }
     }
 
@@ -123,7 +111,8 @@ public class ModConfig {
      * @param message 要打印的消息
      */
     public static void debugLogForce(DebugModule module, String message) {
-        zszlScriptMod.LOGGER.info("[FORCE DEBUG:{}|{}] {}", module.name(), module.getDisplayName(), message);
+        zszlScriptMod.LOGGER.info("[FORCE DEBUG:{}|{}] {}", getDebugModuleName(module),
+                getDebugModuleDisplayName(module), safeDebugMessage(message));
     }
 
     /**
@@ -138,10 +127,10 @@ public class ModConfig {
         AutoPickupHandler.loadConfig();
         AutoUseItemHandler.loadConfig();
         BlockReplacementHandler.loadConfig();
-        ServerFeatureVisibilityManager.loadConfig();
         PerformanceMonitor.loadConfig();
+        WarehouseManager.loadWarehouses();
         PathSequenceManager.initializePathSequences();
-        CapturedIdRuleManager.initialize();
+        CapturedIdRuleManager.reloadRules();
     }
 
     /**
@@ -150,46 +139,11 @@ public class ModConfig {
      * @return true if a GUI is open, false otherwise.
      */
     public static boolean isGuiOpen() {
-        return Minecraft.getMinecraft().currentScreen != null;
+        return Minecraft.getInstance().screen != null;
     }
 
-    private static void sendInternalDebugChatMessage(DebugModule module, String message, boolean force) {
-        Minecraft mc = Minecraft.getMinecraft();
-        if (mc.player == null) {
-            return;
-        }
-        mc.addScheduledTask(() -> {
-            Minecraft currentMc = Minecraft.getMinecraft();
-            if (currentMc.player == null) {
-                return;
-            }
-            TextComponentString component = buildInternalDebugChatComponent(module, message, force);
-            runWithInternalChatSuppressed(() -> currentMc.player.sendMessage(component));
-        });
-    }
-
-    private static TextComponentString buildInternalDebugChatComponent(DebugModule module, String message, boolean force) {
-        TextFormatting prefixColor = force ? TextFormatting.RED : TextFormatting.AQUA;
-        TextFormatting messageColor = force ? TextFormatting.YELLOW : TextFormatting.GRAY;
-        String prefix = force
-                ? "[FORCE DEBUG: " + getDebugModuleDisplayName(module) + "] "
-                : "[DEBUG: " + getDebugModuleDisplayName(module) + "] ";
-
-        TextComponentString root = new TextComponentString(prefix);
-        root.getStyle().setColor(prefixColor);
-
-        TextComponentString body = new TextComponentString(safeDebugMessage(message));
-        body.getStyle().setColor(messageColor);
-        root.appendSibling(body);
-        return root;
-    }
-
-    private static String normalizeInternalDebugChatText(String text) {
-        if (text == null) {
-            return "";
-        }
-        String stripped = TextFormatting.getTextWithoutFormattingCodes(text);
-        return (stripped == null ? text : stripped).trim();
+    private static String getDebugModuleName(DebugModule module) {
+        return module == null ? "UNKNOWN" : module.name();
     }
 
     private static String getDebugModuleDisplayName(DebugModule module) {
@@ -200,4 +154,3 @@ public class ModConfig {
         return message == null ? "" : message;
     }
 }
-

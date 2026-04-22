@@ -2,7 +2,7 @@ package com.zszl.zszlScriptMod.gui.path.GuiActionEditor;
 
 import com.zszl.zszlScriptMod.utils.locator.ActionTargetLocator;
 
-import net.minecraft.client.resources.I18n;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
 
 import static com.zszl.zszlScriptMod.gui.path.GuiActionEditor.util.ActionEditorDisplayConverters.*;
 
@@ -170,3 +170,4 @@ final class ActionCaptureSections {
                 "[0,0,50,50]");
     }
 }
+

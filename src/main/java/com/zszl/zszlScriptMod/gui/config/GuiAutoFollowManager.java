@@ -10,16 +10,17 @@ import com.zszl.zszlScriptMod.gui.path.GuiSequenceSelector;
 import com.zszl.zszlScriptMod.handlers.AutoFollowHandler;
 import com.zszl.zszlScriptMod.handlers.KillAuraHandler;
 import com.zszl.zszlScriptMod.system.AutoFollowRule;
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiScreen;
-import net.minecraft.client.gui.GuiTextField;
-import net.minecraft.client.resources.I18n;
-import net.minecraft.util.math.AxisAlignedBB;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.RayTraceResult;
-import net.minecraft.util.math.Vec3d;
-import org.lwjgl.input.Keyboard;
-import org.lwjgl.input.Mouse;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiTextField;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Keyboard;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Mouse;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.HitResult;
+import net.minecraft.world.phys.Vec3;
 
 import java.io.IOException;
 import java.text.DecimalFormat;
@@ -27,6 +28,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 
 public class GuiAutoFollowManager extends ThemedGuiScreen {
@@ -1178,7 +1180,7 @@ public class GuiAutoFollowManager extends ThemedGuiScreen {
             if (parentScreen instanceof GuiPathManager) {
                 ((GuiPathManager) parentScreen).requestReloadFromManager();
             }
-            mc.displayGuiScreen(parentScreen);
+            mc.setScreen(parentScreen);
             return;
         }
         if (button.id == BTN_NEW) {
@@ -1267,9 +1269,9 @@ public class GuiAutoFollowManager extends ThemedGuiScreen {
             return;
         }
         if (button.id == BTN_SELECT_OUT_OF_RANGE_SEQUENCE) {
-            mc.displayGuiScreen(new GuiSequenceSelector(this, seq -> {
+            mc.setScreen(new GuiSequenceSelector(this, seq -> {
                 editorOutOfRangeSequenceName = safe(seq);
-                mc.displayGuiScreen(this);
+                mc.setScreen(this);
             }));
             return;
         }
@@ -1626,8 +1628,8 @@ public class GuiAutoFollowManager extends ThemedGuiScreen {
             return;
         }
 
-        int mouseX = Mouse.getEventX() * this.width / this.mc.displayWidth;
-        int mouseY = this.height - Mouse.getEventY() * this.height / this.mc.displayHeight - 1;
+        int mouseX = Mouse.getEventX() * this.width / this.mc.getWindow().getWidth();
+        int mouseY = this.height - Mouse.getEventY() * this.height / this.mc.getWindow().getHeight() - 1;
 
         if (isInEditorTabBar(mouseX, mouseY)) {
             if (wheel < 0) {
@@ -1692,7 +1694,7 @@ public class GuiAutoFollowManager extends ThemedGuiScreen {
             if (parentScreen instanceof GuiPathManager) {
                 ((GuiPathManager) parentScreen).requestReloadFromManager();
             }
-            mc.displayGuiScreen(parentScreen);
+            mc.setScreen(parentScreen);
             return;
         }
 
@@ -2641,9 +2643,9 @@ public class GuiAutoFollowManager extends ThemedGuiScreen {
     }
 
     private void updatePointFromPlayer(GuiTextField xField, GuiTextField zField) {
-        if (mc.getRenderViewEntity() != null) {
-            setText(xField, formatDouble(mc.getRenderViewEntity().posX));
-            setText(zField, formatDouble(mc.getRenderViewEntity().posZ));
+        if (mc.getCameraEntity() != null) {
+            setText(xField, formatDouble(mc.getCameraEntity().getX()));
+            setText(zField, formatDouble(mc.getCameraEntity().getZ()));
         }
     }
 
@@ -2813,11 +2815,11 @@ public class GuiAutoFollowManager extends ThemedGuiScreen {
     }
 
     private AutoFollowHandler.Point getLookedBlockPoint() {
-        RayTraceResult result = mc == null ? null : mc.objectMouseOver;
-        if (result == null || result.typeOfHit != RayTraceResult.Type.BLOCK || result.getBlockPos() == null) {
+        HitResult result = mc == null ? null : mc.hitResult;
+        if (!(result instanceof BlockHitResult) || result.getType() != HitResult.Type.BLOCK) {
             return null;
         }
-        BlockPos pos = result.getBlockPos();
+        BlockPos pos = ((BlockHitResult) result).getBlockPos();
         return new AutoFollowHandler.Point(pos.getX(), pos.getZ());
     }
 
@@ -2836,12 +2838,12 @@ public class GuiAutoFollowManager extends ThemedGuiScreen {
             return -1;
         }
 
-        Vec3d eyePos = mc.player.getPositionEyes(1.0F);
-        Vec3d lookVec = mc.player.getLook(1.0F);
-        Vec3d end = eyePos.add(lookVec.scale(64.0));
+        Vec3 eyePos = mc.player.getEyePosition(1.0F);
+        Vec3 lookVec = mc.player.getViewVector(1.0F);
+        Vec3 end = eyePos.add(lookVec.scale(64.0));
 
-        double baseY = mc.player.posY - 1.0;
-        double topY = mc.player.posY + 2.0;
+        double baseY = mc.player.getY() - 1.0;
+        double topY = mc.player.getY() + 2.0;
 
         int bestIndex = -1;
         double bestDistanceSq = Double.MAX_VALUE;
@@ -2852,7 +2854,7 @@ public class GuiAutoFollowManager extends ThemedGuiScreen {
                 continue;
             }
 
-            AxisAlignedBB box = new AxisAlignedBB(
+            AABB box = new AABB(
                     point.x - 2.0,
                     baseY,
                     point.z - 2.0,
@@ -2860,12 +2862,12 @@ public class GuiAutoFollowManager extends ThemedGuiScreen {
                     topY,
                     point.z + 3.0);
 
-            RayTraceResult intercept = box.calculateIntercept(eyePos, end);
-            if (intercept == null || intercept.hitVec == null) {
+            Optional<Vec3> intercept = box.clip(eyePos, end);
+            if (!intercept.isPresent()) {
                 continue;
             }
 
-            double distSq = eyePos.squareDistanceTo(intercept.hitVec);
+            double distSq = eyePos.distanceToSqr(intercept.get());
             if (distSq < bestDistanceSq) {
                 bestDistanceSq = distSq;
                 bestIndex = i;
@@ -3342,7 +3344,7 @@ public class GuiAutoFollowManager extends ThemedGuiScreen {
     }
 
     private void openAddCategoryDialog() {
-        mc.displayGuiScreen(new GuiTextInput(this, "输入新分组名称", value -> {
+        mc.setScreen(new GuiTextInput(this, "输入新分组名称", value -> {
             String normalized = value == null ? "" : value.trim();
             if (normalized.isEmpty()) {
                 setStatus("§7已取消创建分组", 0xFFB8C7D9);
@@ -3394,7 +3396,7 @@ public class GuiAutoFollowManager extends ThemedGuiScreen {
             setStatus("§c该分组不能重命名", 0xFFFF8E8E);
             return;
         }
-        mc.displayGuiScreen(new GuiTextInput(this, "重命名分组", normalized, value -> {
+        mc.setScreen(new GuiTextInput(this, "重命名分组", normalized, value -> {
             String newName = value == null ? "" : value.trim();
             if (newName.isEmpty()) {
                 setStatus("§7已取消重命名分组", 0xFFB8C7D9);
@@ -3604,8 +3606,8 @@ public class GuiAutoFollowManager extends ThemedGuiScreen {
             if (primary == null) {
                 return "--";
             }
-            double dx = this.mc.player.posX - primary.x;
-            double dz = this.mc.player.posZ - primary.z;
+            double dx = this.mc.player.getX() - primary.x;
+            double dz = this.mc.player.getZ() - primary.z;
             return formatDouble(Math.sqrt(dx * dx + dz * dz));
         }
 
@@ -3614,8 +3616,8 @@ public class GuiAutoFollowManager extends ThemedGuiScreen {
             if (point == null) {
                 continue;
             }
-            double dx = this.mc.player.posX - point.x;
-            double dz = this.mc.player.posZ - point.z;
+            double dx = this.mc.player.getX() - point.x;
+            double dz = this.mc.player.getZ() - point.z;
             best = Math.min(best, Math.sqrt(dx * dx + dz * dz));
         }
         return best == Double.MAX_VALUE ? "--" : formatDouble(best);

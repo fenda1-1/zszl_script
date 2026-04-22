@@ -9,12 +9,13 @@ import com.zszl.zszlScriptMod.gui.path.GuiKeybindRecorder;
 import com.zszl.zszlScriptMod.system.BindableAction;
 import com.zszl.zszlScriptMod.system.KeybindManager;
 import com.zszl.zszlScriptMod.system.KeybindManager.Keybind;
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiScreen;
-import net.minecraft.client.gui.GuiTextField;
-import net.minecraft.client.resources.I18n;
-import org.lwjgl.input.Keyboard;
-import org.lwjgl.input.Mouse;
+import com.zszl.zszlScriptMod.utils.PinyinSearchHelper;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiTextField;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Keyboard;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Mouse;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -188,12 +189,12 @@ public class GuiKeybindManager extends ThemedGuiScreen {
     }
 
     private void rebuildFilteredRows() {
-        String keyword = this.searchField == null ? "" : this.searchField.getText().trim().toLowerCase(Locale.ROOT);
+        String keyword = PinyinSearchHelper.normalizeQuery(this.searchField == null ? "" : this.searchField.getText());
         this.filteredRows.clear();
 
         for (BindableAction action : BindableAction.values()) {
             RowEntry row = new RowEntry(action);
-            if (keyword.isEmpty() || buildSearchText(row).contains(keyword)) {
+            if (keyword.isEmpty() || PinyinSearchHelper.matchesNormalized(buildSearchText(row), keyword)) {
                 this.filteredRows.add(row);
             }
         }
@@ -202,7 +203,7 @@ public class GuiKeybindManager extends ThemedGuiScreen {
         sequenceNames.sort(Comparator.naturalOrder());
         for (String sequenceName : sequenceNames) {
             RowEntry row = new RowEntry(sequenceName);
-            if (keyword.isEmpty() || buildSearchText(row).contains(keyword)) {
+            if (keyword.isEmpty() || PinyinSearchHelper.matchesNormalized(buildSearchText(row), keyword)) {
                 this.filteredRows.add(row);
             }
         }
@@ -531,15 +532,15 @@ public class GuiKeybindManager extends ThemedGuiScreen {
     }
 
     private void openPacketSelector(final RowEntry row) {
-        this.mc.displayGuiScreen(new GuiPacketSequenceSelector(this, sequenceName -> {
+        this.mc.setScreen(new GuiPacketSequenceSelector(this, sequenceName -> {
             Keybind keybind = KeybindManager.keybinds.computeIfAbsent(row.action, ignored -> new Keybind());
             keybind.setParameter(sequenceName);
-            this.mc.displayGuiScreen(this);
+            this.mc.setScreen(this);
         }));
     }
 
     private void openKeyRecorder(final RowEntry row) {
-        this.mc.displayGuiScreen(new GuiKeybindRecorder(this, getRowKeybind(row), newKeybind -> {
+        this.mc.setScreen(new GuiKeybindRecorder(this, getRowKeybind(row), newKeybind -> {
             if (newKeybind != null && newKeybind.getKeyCode() != Keyboard.KEY_NONE) {
                 if (row.actionRow) {
                     Keybind oldKeybind = KeybindManager.keybinds.get(row.action);
@@ -557,7 +558,7 @@ public class GuiKeybindManager extends ThemedGuiScreen {
                     KeybindManager.pathSequenceKeybinds.put(row.sequenceName, new Keybind());
                 }
             }
-            this.mc.displayGuiScreen(this);
+            this.mc.setScreen(this);
         }));
     }
 
@@ -566,10 +567,10 @@ public class GuiKeybindManager extends ThemedGuiScreen {
         if (button.id == BUTTON_SAVE) {
             KeybindManager.syncPathSequenceKeybinds();
             KeybindManager.saveConfig();
-            this.mc.displayGuiScreen(this.parentScreen);
+            this.mc.setScreen(this.parentScreen);
         } else if (button.id == BUTTON_BACK) {
             KeybindManager.loadConfig();
-            this.mc.displayGuiScreen(this.parentScreen);
+            this.mc.setScreen(this.parentScreen);
         }
     }
 
@@ -613,8 +614,8 @@ public class GuiKeybindManager extends ThemedGuiScreen {
             return;
         }
 
-        int mouseX = Mouse.getEventX() * this.width / this.mc.displayWidth;
-        int mouseY = this.height - Mouse.getEventY() * this.height / this.mc.displayHeight - 1;
+        int mouseX = Mouse.getEventX() * this.width / this.mc.getWindow().getWidth();
+        int mouseY = this.height - Mouse.getEventY() * this.height / this.mc.getWindow().getHeight() - 1;
         boolean overList = isHoverRegion(mouseX, mouseY, this.tableX, this.listTop, this.tableWidth, this.listHeight)
                 || isHoverRegion(mouseX, mouseY, getScrollbarX(), this.listTop, 6, this.listHeight);
         if (!overList) {
@@ -730,3 +731,10 @@ public class GuiKeybindManager extends ThemedGuiScreen {
         super.keyTyped(typedChar, keyCode);
     }
 }
+
+
+
+
+
+
+

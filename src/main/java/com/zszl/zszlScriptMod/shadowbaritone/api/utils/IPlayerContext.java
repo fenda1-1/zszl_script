@@ -18,17 +18,20 @@
 package com.zszl.zszlScriptMod.shadowbaritone.api.utils;
 
 import com.zszl.zszlScriptMod.shadowbaritone.api.cache.IWorldData;
-import net.minecraft.block.BlockSlab;
-import net.minecraft.block.BlockStairs;
-import net.minecraft.block.state.IBlockState;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.entity.EntityPlayerSP;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.RayTraceResult;
-import net.minecraft.util.math.Vec3d;
-import net.minecraft.world.World;
+import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.SlabBlock;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.HitResult;
+import net.minecraft.world.phys.Vec3;
 
 import java.util.Optional;
+import java.util.stream.Stream;
+import java.util.stream.StreamSupport;
 
 /**
  * @author Brady
@@ -38,76 +41,85 @@ public interface IPlayerContext {
 
     Minecraft minecraft();
 
-    EntityPlayerSP player();
+    LocalPlayer player();
 
     IPlayerController playerController();
 
-    World world();
+    Level world();
+
+    default Iterable<Entity> entities() {
+        return ((ClientLevel) world()).entitiesForRendering();
+    }
+
+    default Stream<Entity> entitiesStream() {
+        return StreamSupport.stream(entities().spliterator(), false);
+    }
+
 
     IWorldData worldData();
 
-    RayTraceResult objectMouseOver();
+    HitResult objectMouseOver();
 
     default BetterBlockPos playerFeet() {
         // TODO find a better way to deal with soul sand!!!!!
-        BetterBlockPos feet = new BetterBlockPos(player().posX, player().posY + 0.1251, player().posZ);
+        BetterBlockPos feet = new BetterBlockPos(player().position().x, player().position().y + 0.1251, player().position().z);
 
-        // sometimes when calling this from another thread or while world is null, it'll
-        // throw a NullPointerException
+        // sometimes when calling this from another thread or while world is null, it'll throw a NullPointerException
         // that causes the game to immediately crash
         //
-        // so of course crashing on 2b is horribly bad due to queue times and logout
-        // spot
+        // so of course crashing on 2b is horribly bad due to queue times and logout spot
         // catch the NPE and ignore it if it does happen
         //
-        // this does not impact performance at all since we're not null checking
-        // constantly
-        // if there is an exception, the only overhead is Java generating the exception
-        // object... so we can ignore it
+        // this does not impact performance at all since we're not null checking constantly
+        // if there is an exception, the only overhead is Java generating the exception object... so we can ignore it
         try {
-            IBlockState standingState = world().getBlockState(feet);
-            if (standingState.getBlock() instanceof BlockSlab
-                    || standingState.getBlock() instanceof BlockStairs) {
-                return feet.up();
+            if (world().getBlockState(feet).getBlock() instanceof SlabBlock) {
+                return feet.above();
             }
-        } catch (NullPointerException ignored) {
-        }
+        } catch (NullPointerException ignored) {}
 
         return feet;
     }
 
-    default Vec3d playerFeetAsVec() {
-        return new Vec3d(player().posX, player().posY, player().posZ);
+    default Vec3 playerFeetAsVec() {
+        return new Vec3(player().position().x, player().position().y, player().position().z);
     }
 
-    default Vec3d playerHead() {
-        return new Vec3d(player().posX, player().posY + player().getEyeHeight(), player().posZ);
+    default Vec3 playerHead() {
+        return new Vec3(player().position().x, player().position().y + player().getEyeHeight(), player().position().z);
     }
 
-    default Vec3d playerMotion() {
-        return new Vec3d(player().motionX, player().motionY, player().motionZ);
+    default Vec3 playerMotion() {
+        return player().getDeltaMovement();
     }
 
     BetterBlockPos viewerPos();
 
     default Rotation playerRotations() {
-        return new Rotation(player().rotationYaw, player().rotationPitch);
-    }
-
-    static double eyeHeight(boolean ifSneaking) {
-        return ifSneaking ? 1.54 : 1.62;
+        return new Rotation(player().getYRot(), player().getXRot());
     }
 
     /**
-     * Returns the block that the crosshair is currently placed over. Updated once
-     * per tick.
+     * Returns the player's eye height, taking into account whether or not the player is sneaking.
+     *
+     * @param ifSneaking Whether or not the player is sneaking
+     * @return The player's eye height
+     * @deprecated Use entity.getEyeHeight(Pose.CROUCHING) instead
+     */
+    @Deprecated
+    static double eyeHeight(boolean ifSneaking) {
+        return ifSneaking ? 1.27 : 1.62;
+    }
+
+    /**
+     * Returns the block that the crosshair is currently placed over. Updated once per tick.
      *
      * @return The position of the highlighted block
      */
     default Optional<BlockPos> getSelectedBlock() {
-        RayTraceResult result = objectMouseOver();
-        if (result != null && result.typeOfHit == RayTraceResult.Type.BLOCK) {
-            return Optional.of(result.getBlockPos());
+        HitResult result = objectMouseOver();
+        if (result != null && result.getType() == HitResult.Type.BLOCK) {
+            return Optional.of(((BlockHitResult) result).getBlockPos());
         }
         return Optional.empty();
     }
@@ -116,3 +128,4 @@ public interface IPlayerContext {
         return getSelectedBlock().equals(Optional.of(pos));
     }
 }
+

@@ -37,6 +37,8 @@ public abstract class CommandInvalidArgumentException extends CommandErrorMessag
         return String.format(
                 "Error at argument #%s: %s",
                 arg.getIndex() == -1 ? "<unknown>" : Integer.toString(arg.getIndex() + 1),
-                message);
+                message
+        );
     }
 }
+

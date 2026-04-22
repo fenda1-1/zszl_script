@@ -22,12 +22,9 @@ import java.util.Objects;
 /**
  * Invert any goal.
  * <p>
- * In the old chat control system, #invert just tried to pick a
- * {@link GoalRunAway} that <i>effectively</i> inverted the
- * current goal. This goal just reverses the heuristic to act as a TRUE invert.
- * Inverting a Y level? Baritone tries to
- * get away from that Y level. Inverting a GoalBlock? Baritone will try to make
- * distance whether it's in the X, Y or Z
+ * In the old chat control system, #invert just tried to pick a {@link GoalRunAway} that <i>effectively</i> inverted the
+ * current goal. This goal just reverses the heuristic to act as a TRUE invert. Inverting a Y level? Baritone tries to
+ * get away from that Y level. Inverting a GoalBlock? Baritone will try to make distance whether it's in the X, Y or Z
  * directions. And of course, you can always invert a GoalXZ.
  *
  * @author LoganDark
@@ -78,3 +75,4 @@ public class GoalInverted implements Goal {
         return String.format("GoalInverted{%s}", origin.toString());
     }
 }
+

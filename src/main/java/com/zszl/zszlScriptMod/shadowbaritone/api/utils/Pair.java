@@ -57,3 +57,4 @@ public final class Pair<A, B> {
         return 31 * Objects.hashCode(this.a) + Objects.hashCode(this.b);
     }
 }
+

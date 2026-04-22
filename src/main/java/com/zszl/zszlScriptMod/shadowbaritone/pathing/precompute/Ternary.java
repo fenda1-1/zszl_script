@@ -20,3 +20,4 @@ package com.zszl.zszlScriptMod.shadowbaritone.pathing.precompute;
 public enum Ternary {
     YES, MAYBE, NO
 }
+

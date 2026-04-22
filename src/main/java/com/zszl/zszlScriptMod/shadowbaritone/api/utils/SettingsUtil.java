@@ -20,14 +20,18 @@ package com.zszl.zszlScriptMod.shadowbaritone.api.utils;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.reflect.TypeToken;
-import com.zszl.zszlScriptMod.config.BaritoneParkourSettingsHelper;
-import com.zszl.zszlScriptMod.system.ProfileManager;
 import com.zszl.zszlScriptMod.shadowbaritone.api.BaritoneAPI;
 import com.zszl.zszlScriptMod.shadowbaritone.api.Settings;
-import net.minecraft.block.Block;
-import net.minecraft.item.Item;
-import net.minecraft.util.EnumFacing;
-import net.minecraft.util.math.Vec3i;
+import com.zszl.zszlScriptMod.system.ProfileManager;
+import net.minecraft.core.Direction;
+import net.minecraft.core.Registry;
+import net.minecraft.core.Vec3i;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Mirror;
+import net.minecraft.world.level.block.Rotation;
 
 import java.awt.*;
 import java.io.BufferedReader;
@@ -53,11 +57,9 @@ public class SettingsUtil {
 
     public static final String SETTINGS_DEFAULT_NAME = "setting.json";
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
-    private static final Type STRING_MAP_TYPE = new TypeToken<Map<String, String>>() {
-    }.getType();
-    private static final Pattern SETTING_PATTERN = Pattern.compile("^(?<setting>[^ ]+) +(?<value>.+)"); // key and value
-                                                                                                        // split by the
-                                                                                                        // first space
+    private static final Type STRING_MAP_TYPE = new TypeToken<Map<String, String>>() { }.getType();
+    private static final Pattern SETTING_PATTERN = Pattern.compile("^(?<setting>[^ ]+) +(?<value>.+)"); // key and value split by the first space
+
 
     private static boolean isComment(String line) {
         return line.startsWith("#") || line.startsWith("//");
@@ -76,58 +78,47 @@ public class SettingsUtil {
     }
 
     public static void readAndApply(Settings settings, String settingsName) {
-        Path file = settingsByName(settingsName);
         try {
+            Path file = settingsByName(settingsName);
             if (settingsName.toLowerCase().endsWith(".json")) {
                 readAndApplyFromJson(settings, file);
             } else {
                 readAndApplyFromText(settings, file);
             }
-            return;
         } catch (NoSuchFileException ignored) {
-            if (!settingsName.equalsIgnoreCase(SETTINGS_DEFAULT_NAME)) {
-                Helper.HELPER.logDirect(ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.settings.status.file_not_found_named",
-                        settingsName));
+            if (!SETTINGS_DEFAULT_NAME.equalsIgnoreCase(settingsName)) {
+                Helper.HELPER.logDirect("ShadowBaritone settings file not found: " + settingsName);
+                return;
+            }
+            try {
+                readAndApplyFromText(settings, settingsByName("settings.txt"));
+                save(settings);
+                Helper.HELPER.logDirect("Loaded legacy settings.txt and migrated it to setting.json");
+            } catch (NoSuchFileException ignoredLegacy) {
+                Helper.HELPER.logDirect("ShadowBaritone settings file not found, resetting.");
+            } catch (Exception ex) {
+                Helper.HELPER.logDirect("Exception while reading ShadowBaritone settings, some settings may be reset to default values!");
+                ex.printStackTrace();
             }
         } catch (Exception ex) {
-            Helper.HELPER.logDirect(ShadowBaritoneI18n.trKey(
-                    "shadowbaritone.settings.status.load_failed_fallback",
-                    settingsName));
-        }
-
-        if (!settingsName.equalsIgnoreCase(SETTINGS_DEFAULT_NAME)) {
-            return;
-        }
-
-        try {
-            Path legacy = settingsByName("settings.txt");
-            readAndApplyFromText(settings, legacy);
-            save(settings);
-            Helper.HELPER.logDirect(ShadowBaritoneI18n.trKey(
-                    "shadowbaritone.settings.status.loaded_legacy_migrated"));
-        } catch (NoSuchFileException ignored) {
-            Helper.HELPER.logDirect(ShadowBaritoneI18n.trKey(
-                    "shadowbaritone.settings.status.file_not_found_resetting"));
-        } catch (Exception ex) {
-            Helper.HELPER.logDirect(ShadowBaritoneI18n.trKey(
-                    "shadowbaritone.settings.error.read_exception_some_reset"));
+            Helper.HELPER.logDirect("Exception while reading ShadowBaritone settings, some settings may be reset to default values!");
             ex.printStackTrace();
         }
     }
 
     public static synchronized void save(Settings settings) {
+        Path target = settingsByName(SETTINGS_DEFAULT_NAME);
         try {
-            Path path = settingsByName(SETTINGS_DEFAULT_NAME);
-            Files.createDirectories(path.getParent());
-            Map<String, String> serialized = modifiedSettings(settings).stream()
-                    .collect(Collectors.toMap(Settings.Setting::getName, SettingsUtil::settingValueToString));
-            try (BufferedWriter out = Files.newBufferedWriter(path)) {
-                GSON.toJson(serialized, STRING_MAP_TYPE, out);
+            Files.createDirectories(target.getParent());
+            try (BufferedWriter out = Files.newBufferedWriter(target)) {
+                GSON.toJson(
+                        modifiedSettings(settings).stream().collect(Collectors.toMap(Settings.Setting::getName, SettingsUtil::settingValueToString)),
+                        STRING_MAP_TYPE,
+                        out
+                );
             }
         } catch (Exception ex) {
-            Helper.HELPER.logDirect(ShadowBaritoneI18n.trKey(
-                    "shadowbaritone.settings.error.save_exception"));
+            Helper.HELPER.logDirect("Exception thrown while saving ShadowBaritone settings!");
             ex.printStackTrace();
         }
     }
@@ -140,20 +131,19 @@ public class SettingsUtil {
         forEachLine(file, line -> {
             Matcher matcher = SETTING_PATTERN.matcher(line);
             if (!matcher.matches()) {
-                Helper.HELPER.logDirect(ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.settings.error.invalid_syntax",
-                        line));
+                Helper.HELPER.logDirect("Invalid syntax in setting file: " + line);
                 return;
             }
 
             String settingName = matcher.group("setting").toLowerCase();
             String settingValue = matcher.group("value");
+            if ("allowjumpat256".equals(settingName)) {
+                settingName = "allowjumpatbuildlimit";
+            }
             try {
                 parseAndApply(settings, settingName, settingValue);
             } catch (Exception ex) {
-                Helper.HELPER.logDirect(ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.settings.error.unable_parse_line",
-                        line));
+                Helper.HELPER.logDirect("Unable to parse line " + line);
                 ex.printStackTrace();
             }
         });
@@ -171,13 +161,13 @@ public class SettingsUtil {
                 if (settingName.isEmpty()) {
                     continue;
                 }
+                if ("allowjumpat256".equals(settingName)) {
+                    settingName = "allowjumpatbuildlimit";
+                }
                 try {
                     parseAndApply(settings, settingName, settingValue);
                 } catch (Exception ex) {
-                    Helper.HELPER.logDirect(ShadowBaritoneI18n.trKey(
-                            "shadowbaritone.settings.error.unable_parse_setting",
-                            settingName,
-                            settingValue));
+                    Helper.HELPER.logDirect("Unable to parse setting " + settingName + "=" + settingValue);
                     ex.printStackTrace();
                 }
             }
@@ -203,11 +193,9 @@ public class SettingsUtil {
     }
 
     /**
-     * Gets the type of a setting and returns it as a string, with package names
-     * stripped.
+     * Gets the type of a setting and returns it as a string, with package names stripped.
      * <p>
-     * For example, if the setting type is {@code java.util.List<java.lang.String>},
-     * this function returns
+     * For example, if the setting type is {@code java.util.List<java.lang.String>}, this function returns
      * {@code List<String>}.
      *
      * @param setting The setting
@@ -218,24 +206,23 @@ public class SettingsUtil {
                 .replaceAll("(?:\\w+\\.)+(\\w+)", "$1");
     }
 
-    public static <T> String settingValueToString(Settings.Setting<T> setting, T value)
-            throws IllegalArgumentException {
+    public static <T> String settingValueToString(Settings.Setting<T> setting, T value) throws IllegalArgumentException {
         Parser io = Parser.getParser(setting.getType());
 
         if (io == null) {
             throw new IllegalStateException("Missing " + setting.getValueClass() + " " + setting.getName());
         }
 
-        return io.toString(new ParserContext(setting), value);
+        return io.toString(setting.getType(), value);
     }
 
     public static String settingValueToString(Settings.Setting setting) throws IllegalArgumentException {
-        // noinspection unchecked
+        //noinspection unchecked
         return settingValueToString(setting, setting.value);
     }
 
     public static String settingDefaultToString(Settings.Setting setting) throws IllegalArgumentException {
-        // noinspection unchecked
+        //noinspection unchecked
         return settingValueToString(setting, setting.defaultValue);
     }
 
@@ -266,43 +253,27 @@ public class SettingsUtil {
         return setting.isJavaOnly();
     }
 
-    public static void parseAndApply(Settings settings, String settingName, String settingValue)
-            throws IllegalStateException, NumberFormatException {
+    public static void parseAndApply(Settings settings, String settingName, String settingValue) throws IllegalStateException, NumberFormatException {
         Settings.Setting setting = settings.byLowerName.get(settingName);
         if (setting == null) {
             throw new IllegalStateException("No setting by that name");
         }
         Class intendedType = setting.getValueClass();
         ISettingParser ioMethod = Parser.getParser(setting.getType());
-        Object parsed = ioMethod.parse(new ParserContext(setting), settingValue);
+        Object parsed = ioMethod.parse(setting.getType(), settingValue);
         if (!intendedType.isInstance(parsed)) {
-            throw new IllegalStateException(ioMethod + " parser returned incorrect type, expected " + intendedType
-                    + " got " + parsed + " which is " + parsed.getClass());
+            throw new IllegalStateException(ioMethod + " parser returned incorrect type, expected " + intendedType + " got " + parsed + " which is " + parsed.getClass());
         }
         setting.value = parsed;
-        BaritoneParkourSettingsHelper.onSettingApplied(settingName, settingValue);
     }
 
     private interface ISettingParser<T> {
 
-        T parse(ParserContext context, String raw);
+        T parse(Type type, String raw);
 
-        String toString(ParserContext context, T value);
+        String toString(Type type, T value);
 
         boolean accepts(Type type);
-    }
-
-    private static class ParserContext {
-
-        private final Settings.Setting<?> setting;
-
-        private ParserContext(Settings.Setting<?> setting) {
-            this.setting = setting;
-        }
-
-        private Settings.Setting<?> getSetting() {
-            return this.setting;
-        }
     }
 
     private enum Parser implements ISettingParser {
@@ -313,74 +284,48 @@ public class SettingsUtil {
         FLOAT(Float.class, Float::parseFloat),
         LONG(Long.class, Long::parseLong),
         STRING(String.class, String::new),
-        ENUMFACING(EnumFacing.class, EnumFacing::byName),
-        ENUM() {
-            @Override
-            public Object parse(ParserContext context, String raw) {
-                Class<?> enumClass = TypeUtils.resolveBaseClass(context.getSetting().getType());
-                if (enumClass == null || !Enum.class.isAssignableFrom(enumClass)) {
-                    throw new IllegalStateException("Setting is not an enum: " + context.getSetting().getName());
-                }
-                String normalized = raw == null ? "" : raw.trim();
-                for (Object constant : enumClass.getEnumConstants()) {
-                    Enum<?> enumValue = (Enum<?>) constant;
-                    if (enumValue.name().equalsIgnoreCase(normalized)) {
-                        return enumValue;
-                    }
-                }
-                throw new IllegalArgumentException(
-                        "Unknown enum value '" + raw + "' for setting " + context.getSetting().getName());
-            }
-
-            @Override
-            public String toString(ParserContext context, Object value) {
-                return ((Enum<?>) value).name();
-            }
-
-            @Override
-            public boolean accepts(Type type) {
-                return type instanceof Class && Enum.class.isAssignableFrom((Class<?>) type);
-            }
-        },
+        MIRROR(Mirror.class, Mirror::valueOf, Mirror::name),
+        ROTATION(Rotation.class, Rotation::valueOf, Rotation::name),
         COLOR(
                 Color.class,
-                str -> new Color(Integer.parseInt(str.split(",")[0]), Integer.parseInt(str.split(",")[1]),
-                        Integer.parseInt(str.split(",")[2])),
-                color -> color.getRed() + "," + color.getGreen() + "," + color.getBlue()),
+                str -> new Color(Integer.parseInt(str.split(",")[0]), Integer.parseInt(str.split(",")[1]), Integer.parseInt(str.split(",")[2])),
+                color -> color.getRed() + "," + color.getGreen() + "," + color.getBlue()
+        ),
         VEC3I(
                 Vec3i.class,
-                str -> new Vec3i(Integer.parseInt(str.split(",")[0]), Integer.parseInt(str.split(",")[1]),
-                        Integer.parseInt(str.split(",")[2])),
-                vec -> vec.getX() + "," + vec.getY() + "," + vec.getZ()),
+                str -> new Vec3i(Integer.parseInt(str.split(",")[0]), Integer.parseInt(str.split(",")[1]), Integer.parseInt(str.split(",")[2])),
+                vec -> vec.getX() + "," + vec.getY() + "," + vec.getZ()
+        ),
         BLOCK(
                 Block.class,
                 str -> BlockUtils.stringToBlockRequired(str.trim()),
-                BlockUtils::blockToString),
+                BlockUtils::blockToString
+        ),
         ITEM(
                 Item.class,
-                str -> Item.getByNameOrId(str.trim()),
-                item -> Item.REGISTRY.getNameForObject(item).toString()),
+                str -> BuiltInRegistries.ITEM.get(new ResourceLocation(str.trim())), // TODO this now returns AIR on failure instead of null, is that an issue?
+                item -> {
+                    ResourceLocation key = item == null ? null : BuiltInRegistries.ITEM.getKey(item);
+                    return key == null ? "minecraft:air" : key.toString();
+                }
+        ),
         LIST() {
             @Override
-            public Object parse(ParserContext context, String raw) {
-                if (raw == null || raw.trim().isEmpty()) {
-                    return new ArrayList<>();
-                }
-                Type type = ((ParameterizedType) context.getSetting().getType()).getActualTypeArguments()[0];
-                Parser parser = Parser.getParser(type);
-
+            public Object parse(Type type, String raw) {
+                Type elementType = ((ParameterizedType) type).getActualTypeArguments()[0];
+                Parser parser = Parser.getParser(elementType);
                 return Stream.of(raw.split(","))
-                        .map(s -> parser.parse(context, s))
+                        .map(s -> parser.parse(elementType, s))
                         .collect(Collectors.toList());
             }
 
             @Override
-            public String toString(ParserContext context, Object value) {
-                Type type = ((ParameterizedType) context.getSetting().getType()).getActualTypeArguments()[0];
-                Parser parser = Parser.getParser(type);
+            public String toString(Type type, Object value) {
+                Type elementType = ((ParameterizedType) type).getActualTypeArguments()[0];
+                Parser parser = Parser.getParser(elementType);
 
                 return ((List<?>) value).stream()
-                        .map(o -> parser.toString(context, o))
+                        .map(o -> parser.toString(elementType, o))
                         .collect(Collectors.joining(","));
             }
 
@@ -391,31 +336,26 @@ public class SettingsUtil {
         },
         MAPPING() {
             @Override
-            public Object parse(ParserContext context, String raw) {
-                if (raw == null || raw.trim().isEmpty()) {
-                    return new java.util.HashMap<>();
-                }
-                Type keyType = ((ParameterizedType) context.getSetting().getType()).getActualTypeArguments()[0];
-                Type valueType = ((ParameterizedType) context.getSetting().getType()).getActualTypeArguments()[1];
+            public Object parse(Type type, String raw) {
+                Type keyType = ((ParameterizedType) type).getActualTypeArguments()[0];
+                Type valueType = ((ParameterizedType) type).getActualTypeArguments()[1];
                 Parser keyParser = Parser.getParser(keyType);
                 Parser valueParser = Parser.getParser(valueType);
 
                 return Stream.of(raw.split(",(?=[^,]*->)"))
                         .map(s -> s.split("->"))
-                        .collect(Collectors.toMap(s -> keyParser.parse(context, s[0]),
-                                s -> valueParser.parse(context, s[1])));
+                        .collect(Collectors.toMap(s -> keyParser.parse(keyType, s[0]), s -> valueParser.parse(valueType, s[1])));
             }
 
             @Override
-            public String toString(ParserContext context, Object value) {
-                Type keyType = ((ParameterizedType) context.getSetting().getType()).getActualTypeArguments()[0];
-                Type valueType = ((ParameterizedType) context.getSetting().getType()).getActualTypeArguments()[1];
+            public String toString(Type type, Object value) {
+                Type keyType = ((ParameterizedType) type).getActualTypeArguments()[0];
+                Type valueType = ((ParameterizedType) type).getActualTypeArguments()[1];
                 Parser keyParser = Parser.getParser(keyType);
                 Parser valueParser = Parser.getParser(valueType);
 
                 return ((Map<?, ?>) value).entrySet().stream()
-                        .map(o -> keyParser.toString(context, o.getKey()) + "->"
-                                + valueParser.toString(context, o.getValue()))
+                        .map(o -> keyParser.toString(keyType, o.getKey()) + "->" + valueParser.toString(valueType, o.getValue()))
                         .collect(Collectors.joining(","));
             }
 
@@ -446,14 +386,14 @@ public class SettingsUtil {
         }
 
         @Override
-        public Object parse(ParserContext context, String raw) {
+        public Object parse(Type type, String raw) {
             Object parsed = this.parser.apply(raw);
             Objects.requireNonNull(parsed);
             return parsed;
         }
 
         @Override
-        public String toString(ParserContext context, Object value) {
+        public String toString(Type type, Object value) {
             return this.toString.apply(value);
         }
 

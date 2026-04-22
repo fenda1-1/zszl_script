@@ -20,8 +20,7 @@ package com.zszl.zszlScriptMod.shadowbaritone.utils.pathing;
 import com.zszl.zszlScriptMod.shadowbaritone.api.pathing.movement.ActionCosts;
 
 /**
- * The result of a calculated movement, with destination x, y, z, and the cost
- * of performing the movement
+ * The result of a calculated movement, with destination x, y, z, and the cost of performing the movement
  *
  * @author leijurv
  */
@@ -43,3 +42,4 @@ public final class MutableMoveResult {
         cost = ActionCosts.COST_INF;
     }
 }
+

@@ -2,19 +2,20 @@
 // Supports {id} placeholder
 package com.zszl.zszlScriptMod.gui.packet;
 
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiCompatContext;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
 import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
 import com.zszl.zszlScriptMod.gui.components.ThemedButton;
 import com.zszl.zszlScriptMod.gui.components.GuiTheme;
 import com.zszl.zszlScriptMod.gui.components.GuiTheme.UiState;
-import net.minecraft.client.gui.GuiTextField;
-import net.minecraft.client.resources.I18n;
-import net.minecraft.client.renderer.GlStateManager;
-import net.minecraft.util.text.TextComponentString;
-import net.minecraft.util.text.TextFormatting;
-import org.lwjgl.input.Keyboard;
-import org.lwjgl.input.Mouse;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiTextField;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
+import com.mojang.blaze3d.platform.GlStateManager;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.util.text.TextComponentString;
+import net.minecraft.ChatFormatting;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Keyboard;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Mouse;
 import org.lwjgl.opengl.GL11;
 
 import com.zszl.zszlScriptMod.utils.PacketCaptureHandler;
@@ -226,11 +227,13 @@ public class GuiPacketSequenceEditor extends ThemedGuiScreen {
         if (mc.player == null)
             return;
 
-        mc.player.sendMessage(
-                new TextComponentString(TextFormatting.AQUA + I18n.format("msg.packet.seq_editor.send_start",
+        mc.player.sendSystemMessage(
+                new TextComponentString(ChatFormatting.AQUA + I18n.format("msg.packet.seq_editor.send_start",
                         sequence.packets.size())));
-        mc.displayGuiScreen(null);
+        mc.setScreen(null);
 
+        ModUtils.DelayScheduler.init();
+        final ModUtils.DelayScheduler scheduler = ModUtils.DelayScheduler.instance;
         AtomicInteger totalDelay = new AtomicInteger(0);
         for (int i = 0; i < sequence.packets.size(); i++) {
             final PacketSequence.PacketToSend packetToSend = sequence.packets.get(i);
@@ -238,26 +241,34 @@ public class GuiPacketSequenceEditor extends ThemedGuiScreen {
 
             totalDelay.addAndGet(packetToSend.delayTicks);
 
-            ModUtils.DelayScheduler.instance.schedule(() -> {
+            Runnable sendTask = () -> {
                 try {
                     sendSinglePacket(packetToSend);
                     String idString = packetToSend.isFmlPacket ? packetToSend.channel
                             : String.format("ID 0x%02X", packetToSend.packetId);
                     String dirString = "C2S".equalsIgnoreCase(packetToSend.direction) ? "C->S" : "S->C";
                     if (mc.player != null) {
-                        mc.player.sendMessage(new TextComponentString(TextFormatting.GREEN
+                        mc.player.sendSystemMessage(new TextComponentString(ChatFormatting.GREEN
                                 + I18n.format("msg.packet.seq_editor.sent", packetIndex, sequence.packets.size(),
                                         idString + " " + dirString)));
                     }
                 } catch (Exception e) {
                     if (mc.player != null) {
-                        mc.player.sendMessage(new TextComponentString(TextFormatting.RED
+                        mc.player.sendSystemMessage(new TextComponentString(ChatFormatting.RED
                                 + I18n.format("msg.packet.seq_editor.send_failed", packetIndex,
                                         sequence.packets.size(), e.getMessage())));
                         zszlScriptMod.LOGGER.error("Failed to send packet", e);
                     }
                 }
-            }, totalDelay.get());
+            };
+
+            if (scheduler != null) {
+                scheduler.schedule(sendTask, totalDelay.get());
+            } else {
+                zszlScriptMod.LOGGER.warn("DelayScheduler 未初始化成功，数据包序列将立即发送: packetIndex={}/{}",
+                        packetIndex, sequence.packets.size());
+                mc.execute(sendTask);
+            }
         }
     }
 
@@ -346,12 +357,12 @@ public class GuiPacketSequenceEditor extends ThemedGuiScreen {
         GuiTheme.drawPanel(leftPanelX, leftPanelY, leftPanelWidth, leftPanelHeight);
 
         GL11.glEnable(GL11.GL_SCISSOR_TEST);
-        int scaleFactor = new net.minecraft.client.gui.ScaledResolution(mc).getScaleFactor();
-        GL11.glScissor(leftPanelX * scaleFactor, mc.displayHeight - ((leftPanelY + leftPanelHeight) * scaleFactor),
+        int scaleFactor = new com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.ScaledResolution(mc).getScaleFactor();
+        GL11.glScissor(leftPanelX * scaleFactor, mc.getWindow().getScreenHeight() - ((leftPanelY + leftPanelHeight) * scaleFactor),
                 leftPanelWidth * scaleFactor, leftPanelHeight * scaleFactor);
 
-        GlStateManager.pushMatrix();
-        GlStateManager.translate(leftPanelX, leftPanelY - leftPanelScrollOffset, 0);
+        GuiCompatContext.current().pose().pushPose();
+        GuiCompatContext.current().pose().translate(leftPanelX, leftPanelY - leftPanelScrollOffset, 0.0F);
 
         drawString(fontRenderer, "§l" + I18n.format("gui.packet.seq_editor.operations"), 10, 0, 0xFFFFFF);
         drawString(fontRenderer, I18n.format("gui.packet.seq_editor.default_delay"), 10, defaultDelayField.y + 4,
@@ -365,7 +376,7 @@ public class GuiPacketSequenceEditor extends ThemedGuiScreen {
             drawThemedTextField(tf);
         }
 
-        GlStateManager.popMatrix();
+        GuiCompatContext.current().pose().popPose();
         GL11.glDisable(GL11.GL_SCISSOR_TEST);
 
         GuiTheme.drawPanel(rightPanelX, rightPanelY, rightPanelWidth, rightPanelHeight);
@@ -464,31 +475,31 @@ public class GuiPacketSequenceEditor extends ThemedGuiScreen {
             int translatedY = mouseY - (leftPanelY - leftPanelScrollOffset);
             for (GuiButton btn : scrolledButtons) {
                 if (btn.mousePressed(mc, mouseX - leftPanelX, translatedY)) {
-                    btn.playPressSound(mc.getSoundHandler());
+                    btn.playPressSound(mc.getSoundManager());
                     if (btn.id == 100) {
                         sendSequence();
                     } else if (btn.id == 101) {
-                        mc.displayGuiScreen(new GuiTextInput(this, I18n.format("gui.packet.seq_editor.input_name"),
+                        mc.setScreen(new GuiTextInput(this, I18n.format("gui.packet.seq_editor.input_name"),
                                 sequence.name, (newName) -> {
                                     if (newName != null && !newName.trim().isEmpty()) {
                                         sequence.name = newName.trim();
                                         if (PacketSequenceManager.saveSequence(sequence))
-                                            mc.player.sendMessage(new TextComponentString(
-                                                    TextFormatting.GREEN + I18n.format("msg.packet.seq_editor.saved",
+                                            mc.player.sendSystemMessage(new TextComponentString(
+                                                    ChatFormatting.GREEN + I18n.format("msg.packet.seq_editor.saved",
                                                             sequence.name)));
                                         else
-                                            mc.player.sendMessage(new TextComponentString(
-                                                    TextFormatting.RED
+                                            mc.player.sendSystemMessage(new TextComponentString(
+                                                    ChatFormatting.RED
                                                             + I18n.format("msg.packet.seq_editor.save_failed")));
                                     }
-                                    mc.displayGuiScreen(this);
+                                    mc.setScreen(this);
                                 }));
                     } else if (btn.id == 102) {
                         sequence.packets.clear();
                         initGui();
                         return;
                     } else if (btn.id == 103) {
-                        mc.displayGuiScreen(parentScreen);
+                        mc.setScreen(parentScreen);
                     } else if (btn.id == 104) { // add by ID
                         int defaultDelay;
                         try {
@@ -563,8 +574,8 @@ public class GuiPacketSequenceEditor extends ThemedGuiScreen {
         super.handleMouseInput();
         int dWheel = Mouse.getDWheel();
         if (dWheel != 0) {
-            int mouseX = Mouse.getX() * this.width / this.mc.displayWidth;
-            int mouseY = this.height - Mouse.getY() * this.height / this.mc.displayHeight - 1;
+            int mouseX = Mouse.getX() * this.width / Math.max(1, this.mc.getWindow().getScreenWidth());
+            int mouseY = this.height - Mouse.getY() * this.height / Math.max(1, this.mc.getWindow().getScreenHeight()) - 1;
 
             if (mouseX >= leftPanelX && mouseX < leftPanelX + leftPanelWidth) {
                 if (dWheel > 0)
@@ -782,4 +793,6 @@ public class GuiPacketSequenceEditor extends ThemedGuiScreen {
         drawSimpleTooltip(tooltip, mouseX, mouseY);
     }
 }
+
+
 

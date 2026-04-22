@@ -30,7 +30,6 @@ import com.zszl.zszlScriptMod.shadowbaritone.api.pathing.goals.Goal;
 import com.zszl.zszlScriptMod.shadowbaritone.api.process.PathingCommandType;
 import com.zszl.zszlScriptMod.shadowbaritone.api.utils.BetterBlockPos;
 import com.zszl.zszlScriptMod.shadowbaritone.api.utils.BlockOptionalMeta;
-import com.zszl.zszlScriptMod.shadowbaritone.api.utils.ShadowBaritoneI18n;
 import com.zszl.zszlScriptMod.shadowbaritone.utils.GoalTargetNormalizer;
 
 import java.util.Arrays;
@@ -58,9 +57,7 @@ public class GotoCommand extends Command {
             if (goal != rawGoal) {
                 logGotoDebug(String.format("[normalize] adjusted coordinate goal from %s to %s", rawGoal, goal));
             }
-            logDirect(ShadowBaritoneI18n.trKey(
-                    "shadowbaritone.command.goto.status.going_to",
-                    goal.toString()));
+            logDirect(String.format("Going to: %s", goal.toString()));
             baritone.getCustomGoalProcess().setGoal(goal);
             baritone.getCustomGoalProcess().path();
             logPathingSnapshot("after-goto-coord", goal);
@@ -82,12 +79,12 @@ public class GotoCommand extends Command {
                         .map(process -> "Pause/Resume Commands".equals(process.displayName()))
                         .orElse(false);
         if (pausedByPauseCommand) {
-            logGotoDebug("Detected paused state from Pause/Resume Commands, auto resume now");
-            baritone.getCommandManager().execute("resume");
+            boolean resumed = baritone.getCommandManager().execute("resume");
+            logGotoDebug("Detected paused state from Pause/Resume Commands, auto resume now: " + resumed);
         }
     }
 
-    private void logPathingSnapshot(String stage, Goal goal) {
+    private void logPathingSnapshot(String stage, Goal inputGoal) {
         String inControl = baritone.getPathingControlManager().mostRecentInControl()
                 .map(proc -> {
                     try {
@@ -107,7 +104,7 @@ public class GotoCommand extends Command {
         logGotoDebug(String.format(
                 "[%s] inputGoal=%s activeGoal=%s inControl=%s lastCommand=%s isPathing=%s hasCurrentPath=%s hasCalc=%s",
                 stage,
-                goal,
+                inputGoal,
                 activeGoal,
                 inControl,
                 lastCommand,
@@ -117,15 +114,12 @@ public class GotoCommand extends Command {
     }
 
     private void logGotoDebug(String message) {
-        if (ModConfig.isDebugFlagEnabled(DebugModule.BARITONE)) {
-            logDirect("[DBG][goto] " + message);
-        }
+        ModConfig.debugLog(DebugModule.BARITONE, "[DBG][goto] " + message);
     }
 
     @Override
     public Stream<String> tabComplete(String label, IArgConsumer args) throws CommandException {
-        // since it's either a goal or a block, I don't think we can tab complete
-        // properly?
+        // since it's either a goal or a block, I don't think we can tab complete properly?
         // so just tab complete for the block variant
         args.requireMax(1);
         return args.tabCompleteDatatype(ForBlockOptionalMeta.INSTANCE);
@@ -133,28 +127,22 @@ public class GotoCommand extends Command {
 
     @Override
     public String getShortDesc() {
-        return ShadowBaritoneI18n.trKey(
-                "shadowbaritone.command.goto.short_desc");
+        return "Go to a coordinate or block";
     }
 
     @Override
     public List<String> getLongDesc() {
         return Arrays.asList(
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.goto.long_desc.1"),
+                "The goto command tells Baritone to head towards a given goal or block.",
                 "",
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.goto.long_desc.2"),
+                "Wherever a coordinate is expected, you can use ~ just like in regular Minecraft commands. Or, you can just use regular numbers.",
                 "",
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.goto.long_desc.usage"),
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.goto.long_desc.example.block"),
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.goto.long_desc.example.y"),
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.goto.long_desc.example.xz"),
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.goto.long_desc.example.xyz"));
+                "Usage:",
+                "> goto <block> - Go to a block, wherever it is in the world",
+                "> goto <y> - Go to a Y level",
+                "> goto <x> <z> - Go to an X,Z position",
+                "> goto <x> <y> <z> - Go to an X,Y,Z position"
+        );
     }
 }
+

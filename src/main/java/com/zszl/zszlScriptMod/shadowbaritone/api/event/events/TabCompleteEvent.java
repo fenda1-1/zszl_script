@@ -22,7 +22,7 @@ import com.zszl.zszlScriptMod.shadowbaritone.api.event.events.type.Cancellable;
 /**
  * @author LoganDark
  */
-public class TabCompleteEvent extends Cancellable {
+public final class TabCompleteEvent extends Cancellable {
 
     public final String prefix;
     public String[] completions;
@@ -32,3 +32,4 @@ public class TabCompleteEvent extends Cancellable {
         this.completions = null;
     }
 }
+

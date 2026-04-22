@@ -4,10 +4,10 @@ import com.zszl.zszlScriptMod.gui.components.GuiTheme;
 import com.zszl.zszlScriptMod.gui.components.ThemedButton;
 import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
 import com.zszl.zszlScriptMod.system.ProfileShareCodeManager;
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiScreen;
-import org.lwjgl.input.Keyboard;
-import org.lwjgl.input.Mouse;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Keyboard;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Mouse;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -76,7 +76,7 @@ public class GuiProfileConfigEditor extends ThemedGuiScreen {
                 setStatus("§a已复制当前配置全文到剪贴板", 0xFF8CFF9E);
                 break;
             case 3:
-                this.mc.displayGuiScreen(parentScreen);
+                this.mc.setScreen(parentScreen);
                 break;
             default:
                 break;
@@ -88,8 +88,8 @@ public class GuiProfileConfigEditor extends ThemedGuiScreen {
         super.handleMouseInput();
         int wheel = Mouse.getEventDWheel();
         if (wheel != 0) {
-            int mouseX = Mouse.getEventX() * this.width / this.mc.displayWidth;
-            int mouseY = this.height - Mouse.getEventY() * this.height / this.mc.displayHeight - 1;
+            int mouseX = Mouse.getEventX() * this.width / this.mc.getWindow().getWidth();
+            int mouseY = this.height - Mouse.getEventY() * this.height / this.mc.getWindow().getHeight() - 1;
             if (isInsideEditor(mouseX, mouseY)) {
                 if (wheel > 0) {
                     scrollOffset = Math.max(0, scrollOffset - 3);
@@ -137,7 +137,7 @@ public class GuiProfileConfigEditor extends ThemedGuiScreen {
 
         switch (keyCode) {
             case Keyboard.KEY_ESCAPE:
-                this.mc.displayGuiScreen(parentScreen);
+                this.mc.setScreen(parentScreen);
                 return;
             case Keyboard.KEY_BACK:
                 backspace();
@@ -537,3 +537,8 @@ public class GuiProfileConfigEditor extends ThemedGuiScreen {
         return 10;
     }
 }
+
+
+
+
+

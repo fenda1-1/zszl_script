@@ -1,6 +1,6 @@
 package com.zszl.zszlScriptMod.otherfeatures.gui.movement;
 
-import net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
 
 public final class MovementFeatureGuiFactory {
 
@@ -25,7 +25,7 @@ public final class MovementFeatureGuiFactory {
         case "block_phase":
             return new GuiBlockPhaseConfig(parent);
         case "no_collision":
-            return new GuiNoCollisionConfig(parent);
+            return new GuiNoEntityPushConfig(parent);
         case "long_jump":
             return new GuiLongJumpConfig(parent);
         case "timer_accel":
@@ -57,3 +57,6 @@ public final class MovementFeatureGuiFactory {
         }
     }
 }
+
+
+

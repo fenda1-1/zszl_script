@@ -344,3 +344,4 @@ public final class LegacyActionTemplateManager {
         return value == null ? "" : value;
     }
 }
+

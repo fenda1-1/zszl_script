@@ -1,6 +1,6 @@
 package com.zszl.zszlScriptMod.otherfeatures.gui.movement;
 
-import net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
 
 public class GuiBlockPhaseConfig extends SingleMovementFeatureConfigScreen {
 
@@ -8,3 +8,6 @@ public class GuiBlockPhaseConfig extends SingleMovementFeatureConfigScreen {
         super(parentScreen, "block_phase", "方块穿透设置");
     }
 }
+
+
+

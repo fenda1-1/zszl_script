@@ -27,5 +27,5 @@ import com.zszl.zszlScriptMod.shadowbaritone.api.event.listener.IGameEventListen
  * @see IGameEventListener
  * @since 9/23/2018
  */
-public interface IBehavior extends AbstractGameEventListener {
-}
+public interface IBehavior extends AbstractGameEventListener {}
+

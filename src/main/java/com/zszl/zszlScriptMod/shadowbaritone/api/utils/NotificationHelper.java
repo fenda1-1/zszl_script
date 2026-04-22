@@ -55,8 +55,7 @@ public class NotificationHelper {
                     tray.add(trayIcon);
                 }
 
-                trayIcon.displayMessage("Baritone", text,
-                        error ? TrayIcon.MessageType.ERROR : TrayIcon.MessageType.INFO);
+                trayIcon.displayMessage("Baritone", text, error ? TrayIcon.MessageType.ERROR : TrayIcon.MessageType.INFO);
             } catch (Exception e) {
                 e.printStackTrace();
             }
@@ -75,12 +74,9 @@ public class NotificationHelper {
         }
     }
 
-    // The only way to display notifications on linux is to use the java-gnome
-    // library,
-    // or send notify-send to shell with a ProcessBuilder. Unfortunately the
-    // java-gnome
-    // library is licenced under the GPL, see
-    // (https://en.wikipedia.org/wiki/Java-gnome)
+    // The only way to display notifications on linux is to use the java-gnome library,
+    // or send notify-send to shell with a ProcessBuilder. Unfortunately the java-gnome
+    // library is licenced under the GPL, see (https://en.wikipedia.org/wiki/Java-gnome)
     private static void linux(String text) {
         ProcessBuilder processBuilder = new ProcessBuilder();
         processBuilder.command("notify-send", "-a", "Baritone", text);
@@ -91,3 +87,4 @@ public class NotificationHelper {
         }
     }
 }
+

@@ -41,3 +41,4 @@ public final class ChatEvent extends Cancellable {
         return this.message;
     }
 }
+

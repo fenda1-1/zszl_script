@@ -6,56 +6,40 @@ import com.zszl.zszlScriptMod.otherfeatures.handler.movement.MovementFeatureMana
 import com.zszl.zszlScriptMod.system.ProfileManager;
 import com.zszl.zszlScriptMod.zszlScriptMod;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.entity.EntityPlayerSP;
-import net.minecraft.client.multiplayer.WorldClient;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.MathHelper;
-import net.minecraft.world.World;
-import net.minecraft.world.biome.Biome;
-import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
-import net.minecraftforge.fml.common.gameevent.TickEvent;
+import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.core.BlockPos;
+import net.minecraft.util.Mth;
+import net.minecraft.world.level.Level;
 
-import java.io.File;
-import java.io.FileReader;
-import java.io.FileWriter;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
-public class WorldFeatureManager {
+public final class WorldFeatureManager {
 
     public static final WorldFeatureManager INSTANCE = new WorldFeatureManager();
 
-    private static final String CONFIG_FILE_NAME = "other_features_world.json";
     private static final Map<String, FeatureState> FEATURES = new LinkedHashMap<>();
+    private static long visualWorldTime = 6000L;
 
-    private long customWorldTime = 6000L;
     private long cachedNaturalWorldTime = 6000L;
-    private float customRainStrength = 0.0F;
-    private float customThunderStrength = 0.0F;
     private float cachedNaturalRainStrength = 0.0F;
     private float cachedNaturalThunderStrength = 0.0F;
-    private boolean naturalTimeCaptured = false;
-    private boolean timeOverrideActive = false;
-    private boolean naturalWeatherCaptured = false;
-    private boolean weatherOverrideActive = false;
-    private BlockPos lastPlayerPos = BlockPos.ORIGIN;
-    private String lastBiomeName = "";
-    private List<StructureInfo> nearbyStructures = new ArrayList<>();
-    private int structureScanCooldown = 0;
+    private boolean timeOverrideActive;
+    private boolean weatherOverrideActive;
+    private BlockPos lastPlayerPos = BlockPos.ZERO;
+    private String lastBiomeName = "unknown";
+    private final List<StructureInfo> nearbyStructures = new ArrayList<>();
 
     static {
-        register(new FeatureState("time_modifier", "时间修改",
-                "自定义世界时间，可设置为白天、黑夜或任意时刻。左键快速开关，右键打开世界设置。",
-                "时间值", 6000.0F, 0.0F, 24000.0F, true));
-        register(new FeatureState("weather_control", "天气控制",
-                "控制雨雪天气强度，可完全关闭或自定义。左键快速开关，右键打开世界设置。",
-                "雨强度", 0.0F, 0.0F, 1.0F, true));
-        register(new FeatureState("coord_display", "坐标显示",
-                "增强版坐标HUD，显示XYZ坐标、朝向、生物群系等信息。左键快速开关，右键打开世界设置。",
-                null, 0.0F, 0.0F, 0.0F, true));
+        register(new FeatureState("time_modifier", "时间修改", "自定义世界时间。", "时间值", 6000.0F, 0.0F, 24000.0F));
+        register(new FeatureState("weather_control", "天气控制", "控制雨雪天气强度。", "雨强度", 0.0F, 0.0F, 1.0F));
+        register(new FeatureState("coord_display", "坐标显示", "增强版坐标HUD。", "", 0.0F, 0.0F, 0.0F));
         loadConfig();
     }
 
@@ -70,14 +54,14 @@ public class WorldFeatureManager {
         public final float defaultValue;
         public final float minValue;
         public final float maxValue;
-        public final boolean behaviorImplemented;
+        public final boolean behaviorImplemented = true;
 
         private boolean enabled;
         private float value;
-        private boolean statusHudEnabled;
+        private boolean statusHudEnabled = true;
 
         private FeatureState(String id, String name, String description, String valueLabel,
-                float defaultValue, float minValue, float maxValue, boolean behaviorImplemented) {
+                float defaultValue, float minValue, float maxValue) {
             this.id = safe(id);
             this.name = safe(name);
             this.description = safe(description);
@@ -85,10 +69,7 @@ public class WorldFeatureManager {
             this.defaultValue = defaultValue;
             this.minValue = minValue;
             this.maxValue = maxValue;
-            this.behaviorImplemented = behaviorImplemented;
-            this.enabled = false;
             this.value = defaultValue;
-            this.statusHudEnabled = true;
         }
 
         public boolean supportsValue() {
@@ -106,28 +87,6 @@ public class WorldFeatureManager {
         public boolean isStatusHudEnabled() {
             return statusHudEnabled;
         }
-
-        private void setEnabledInternal(boolean enabled) {
-            this.enabled = enabled;
-        }
-
-        private void setValueInternal(float value) {
-            if (!supportsValue()) {
-                this.value = defaultValue;
-                return;
-            }
-            this.value = MathHelper.clamp(value, minValue, maxValue);
-        }
-
-        private void setStatusHudEnabledInternal(boolean statusHudEnabled) {
-            this.statusHudEnabled = statusHudEnabled;
-        }
-
-        private void resetToDefaultInternal() {
-            this.enabled = false;
-            this.value = defaultValue;
-            this.statusHudEnabled = true;
-        }
     }
 
     public static final class StructureInfo {
@@ -136,26 +95,10 @@ public class WorldFeatureManager {
         public final double distance;
 
         public StructureInfo(String type, BlockPos position, double distance) {
-            this.type = type;
-            this.position = position;
+            this.type = safe(type);
+            this.position = position == null ? BlockPos.ZERO : position;
             this.distance = distance;
         }
-    }
-
-    private static void register(FeatureState state) {
-        FEATURES.put(state.id, state);
-    }
-
-    private static String safe(String text) {
-        return text == null ? "" : text.trim();
-    }
-
-    private static String normalizeId(String featureId) {
-        return safe(featureId).toLowerCase(Locale.ROOT);
-    }
-
-    private static File getConfigFile() {
-        return ProfileManager.getCurrentProfileDir().resolve(CONFIG_FILE_NAME).toFile();
     }
 
     public static List<FeatureState> getFeatures() {
@@ -172,19 +115,11 @@ public class WorldFeatureManager {
 
     public static boolean isEnabled(String featureId) {
         FeatureState state = getFeature(featureId);
-        return state != null && state.isEnabled();
+        return state != null && state.enabled;
     }
 
     public static void toggleFeature(String featureId) {
-        FeatureState state = getFeature(featureId);
-        if (state == null) {
-            return;
-        }
-        boolean wasEnabled = state.isEnabled();
-        boolean enabled = !wasEnabled;
-        state.setEnabledInternal(enabled);
-        INSTANCE.handleRuntimeSideEffectsAfterToggle(featureId, wasEnabled, enabled);
-        saveConfig();
+        setEnabled(featureId, !isEnabled(featureId));
     }
 
     public static void setEnabled(String featureId, boolean enabled) {
@@ -192,9 +127,10 @@ public class WorldFeatureManager {
         if (state == null) {
             return;
         }
-        boolean wasEnabled = state.isEnabled();
-        state.setEnabledInternal(enabled);
-        INSTANCE.handleRuntimeSideEffectsAfterToggle(featureId, wasEnabled, enabled);
+        state.enabled = enabled;
+        if ("time_modifier".equals(state.id)) {
+            visualWorldTime = (long) state.value;
+        }
         saveConfig();
     }
 
@@ -203,25 +139,11 @@ public class WorldFeatureManager {
         if (state == null) {
             return;
         }
-        state.setValueInternal(value);
+        state.value = clamp(value, state.minValue, state.maxValue);
+        if ("time_modifier".equals(state.id)) {
+            visualWorldTime = (long) state.value;
+        }
         saveConfig();
-    }
-
-    public static boolean isFeatureStatusHudEnabled(String featureId) {
-        FeatureState state = getFeature(featureId);
-        return state != null && state.isStatusHudEnabled();
-    }
-
-    public static boolean shouldDisplayFeatureStatusHud(String featureId) {
-        return MovementFeatureManager.isMasterStatusHudEnabled() && isFeatureStatusHudEnabled(featureId);
-    }
-
-    public static boolean shouldOverrideVisualTime(World world) {
-        return world instanceof WorldClient && isEnabled("time_modifier");
-    }
-
-    public static long getVisualWorldTime() {
-        return Math.round(getConfiguredValue("time_modifier", 6000.0F));
     }
 
     public static void setFeatureStatusHudEnabled(String featureId, boolean enabled) {
@@ -229,7 +151,7 @@ public class WorldFeatureManager {
         if (state == null) {
             return;
         }
-        state.setStatusHudEnabledInternal(enabled);
+        state.statusHudEnabled = enabled;
         saveConfig();
     }
 
@@ -238,29 +160,36 @@ public class WorldFeatureManager {
         if (state == null) {
             return;
         }
-        boolean wasEnabled = state.isEnabled();
-        state.resetToDefaultInternal();
-        INSTANCE.handleRuntimeSideEffectsAfterToggle(featureId, wasEnabled, false);
-        saveConfig();
-    }
-
-    public static void resetAllToDefaults() {
-        boolean hadWeatherOverride = INSTANCE.isWeatherOverrideEnabled();
-        for (FeatureState state : FEATURES.values()) {
-            state.resetToDefaultInternal();
-        }
-        if (hadWeatherOverride) {
-            INSTANCE.restoreNaturalWeather(Minecraft.getMinecraft());
+        state.enabled = false;
+        state.value = state.defaultValue;
+        state.statusHudEnabled = true;
+        if ("time_modifier".equals(state.id)) {
+            visualWorldTime = (long) state.defaultValue;
         }
         saveConfig();
     }
 
-    public static float getConfiguredValue(String featureId, float fallback) {
-        FeatureState state = getFeature(featureId);
-        if (state == null || !state.supportsValue()) {
-            return fallback;
+    public static boolean shouldOverrideVisualTime(Level world) {
+        return world instanceof ClientLevel && isEnabled("time_modifier");
+    }
+
+    public static long getVisualWorldTime() {
+        return visualWorldTime;
+    }
+
+    public void tick(Minecraft mc) {
+        if (mc == null || mc.level == null || mc.player == null) {
+            resetRuntimeState();
+            return;
         }
-        return MathHelper.clamp(state.getValue(), state.minValue, state.maxValue);
+
+        updateCoordinateCache(mc);
+        applyTimeModifier(mc);
+        applyWeatherControl(mc);
+    }
+
+    public static String getFeatureRuntimeSummary(String featureId) {
+        return INSTANCE.buildFeatureRuntimeSummary(normalizeId(featureId));
     }
 
     public static List<String> getStatusLines() {
@@ -274,7 +203,7 @@ public class WorldFeatureManager {
 
         List<String> activeNames = new ArrayList<>();
         for (FeatureState state : FEATURES.values()) {
-            if (state != null && state.isEnabled() && state.isStatusHudEnabled()) {
+            if (state != null && state.enabled && state.statusHudEnabled) {
                 activeNames.add(state.name);
             }
         }
@@ -304,42 +233,74 @@ public class WorldFeatureManager {
         return lines;
     }
 
-    public static String getFeatureRuntimeSummary(String featureId) {
-        return INSTANCE.buildFeatureRuntimeSummary(normalizeId(featureId));
+    public static String getCoordInfo() {
+        if (!isEnabled("coord_display")) {
+            return "";
+        }
+        BlockPos pos = INSTANCE.lastPlayerPos;
+        if (pos == null) {
+            pos = BlockPos.ZERO;
+        }
+        StringBuilder builder = new StringBuilder();
+        builder.append("§fXYZ: §a")
+                .append(pos.getX()).append(" §f/ §a")
+                .append(pos.getY()).append(" §f/ §a")
+                .append(pos.getZ());
+        if (!INSTANCE.lastBiomeName.isEmpty()) {
+            builder.append(" §7生物群系: §b").append(INSTANCE.lastBiomeName);
+        }
+        return builder.toString();
+    }
+
+    public static List<StructureInfo> getNearbyStructures() {
+        return new ArrayList<>(INSTANCE.nearbyStructures);
+    }
+
+    public static String getFeatureRuntimeSummaryLegacy(String featureId) {
+        FeatureState state = getFeature(featureId);
+        if (state == null) {
+            return "未注册";
+        }
+        if (!state.enabled) {
+            return "未启用";
+        }
+        if ("coord_display".equals(state.id)) {
+            return "已启用 / " + INSTANCE.lastPlayerPos.getX() + ", " + INSTANCE.lastPlayerPos.getY() + ", "
+                    + INSTANCE.lastPlayerPos.getZ();
+        }
+        if ("weather_control".equals(state.id)) {
+            return "已启用 / 雨强度 " + formatFloat(state.value);
+        }
+        return state.supportsValue() ? "已启用 / " + formatFloat(state.value) : "已启用";
     }
 
     public static void loadConfig() {
-        for (FeatureState state : FEATURES.values()) {
-            state.resetToDefaultInternal();
-        }
-
         try {
-            File configFile = getConfigFile();
-            if (!configFile.exists()) {
-                saveConfig();
+            Path file = ProfileManager.getCurrentProfileDir().resolve("other_features_world.json");
+            if (!Files.exists(file)) {
                 return;
             }
-
-            JsonObject root = new JsonParser().parse(new FileReader(configFile)).getAsJsonObject();
-            JsonObject featuresObject = root.has("features") && root.get("features").isJsonObject()
+            JsonObject root = JsonParser.parseString(Files.readString(file, StandardCharsets.UTF_8)).getAsJsonObject();
+            JsonObject features = root.has("features") && root.get("features").isJsonObject()
                     ? root.getAsJsonObject("features")
-                    : new JsonObject();
-
-            for (Map.Entry<String, FeatureState> entry : FEATURES.entrySet()) {
-                if (!featuresObject.has(entry.getKey()) || !featuresObject.get(entry.getKey()).isJsonObject()) {
-                    continue;
+                    : root;
+            for (FeatureState state : FEATURES.values()) {
+                if (features.has(state.id) && features.get(state.id).isJsonObject()) {
+                    JsonObject json = features.getAsJsonObject(state.id);
+                    if (json.has("enabled")) {
+                        state.enabled = json.get("enabled").getAsBoolean();
+                    }
+                    if (json.has("value")) {
+                        state.value = clamp(json.get("value").getAsFloat(), state.minValue, state.maxValue);
+                    }
+                    if (json.has("statusHudEnabled")) {
+                        state.statusHudEnabled = json.get("statusHudEnabled").getAsBoolean();
+                    }
                 }
-                JsonObject item = featuresObject.getAsJsonObject(entry.getKey());
-                FeatureState state = entry.getValue();
-                if (item.has("enabled")) {
-                    state.setEnabledInternal(item.get("enabled").getAsBoolean());
-                }
-                if (item.has("statusHudEnabled")) {
-                    state.setStatusHudEnabledInternal(item.get("statusHudEnabled").getAsBoolean());
-                }
-                if (item.has("value")) {
-                    state.setValueInternal(item.get("value").getAsFloat());
-                }
+            }
+            FeatureState timeState = getFeature("time_modifier");
+            if (timeState != null) {
+                visualWorldTime = (long) timeState.value;
             }
         } catch (Exception e) {
             zszlScriptMod.LOGGER.error("加载世界功能配置失败", e);
@@ -348,27 +309,19 @@ public class WorldFeatureManager {
 
     public static void saveConfig() {
         try {
-            File configFile = getConfigFile();
-            if (!configFile.getParentFile().exists()) {
-                configFile.getParentFile().mkdirs();
-            }
-
+            Path file = ProfileManager.getCurrentProfileDir().resolve("other_features_world.json");
+            Files.createDirectories(file.getParent());
             JsonObject root = new JsonObject();
-            JsonObject featuresObject = new JsonObject();
+            JsonObject features = new JsonObject();
             for (FeatureState state : FEATURES.values()) {
-                JsonObject item = new JsonObject();
-                item.addProperty("enabled", state.isEnabled());
-                item.addProperty("statusHudEnabled", state.isStatusHudEnabled());
-                if (state.supportsValue()) {
-                    item.addProperty("value", state.getValue());
-                }
-                featuresObject.add(state.id, item);
+                JsonObject json = new JsonObject();
+                json.addProperty("enabled", state.enabled);
+                json.addProperty("value", state.value);
+                json.addProperty("statusHudEnabled", state.statusHudEnabled);
+                features.add(state.id, json);
             }
-            root.add("features", featuresObject);
-
-            try (FileWriter writer = new FileWriter(configFile)) {
-                writer.write(root.toString());
-            }
+            root.add("features", features);
+            Files.writeString(file, root.toString(), StandardCharsets.UTF_8);
         } catch (Exception e) {
             zszlScriptMod.LOGGER.error("保存世界功能配置失败", e);
         }
@@ -378,282 +331,72 @@ public class WorldFeatureManager {
         resetRuntimeState();
     }
 
-    @SubscribeEvent
-    public void onClientTick(TickEvent.ClientTickEvent event) {
-        if (event.phase != TickEvent.Phase.END) {
-            return;
-        }
-
-        Minecraft mc = Minecraft.getMinecraft();
-        EntityPlayerSP player = mc.player;
-        if (mc.world == null || player == null) {
-            resetRuntimeState();
-            return;
-        }
-
-        tickRuntimeState();
-
-        if (player.isDead || player.getHealth() <= 0.0F) {
-            resetRuntimeState();
-            return;
-        }
-
-        updateNaturalTimeCache(mc.world);
-        applyTimeModifier(mc);
-        updateNaturalWeatherCache(mc.world);
-        applyWeatherControl(mc);
-        updateCoordDisplay(mc, player);
-    }
-
-    private void tickRuntimeState() {
-        if (structureScanCooldown > 0) {
-            structureScanCooldown--;
-        }
-    }
-
-    private void resetRuntimeState() {
-        customWorldTime = 6000L;
-        cachedNaturalWorldTime = 6000L;
-        customRainStrength = 0.0F;
-        customThunderStrength = 0.0F;
-        cachedNaturalRainStrength = 0.0F;
-        cachedNaturalThunderStrength = 0.0F;
-        naturalTimeCaptured = false;
-        timeOverrideActive = false;
-        naturalWeatherCaptured = false;
-        weatherOverrideActive = false;
-        lastPlayerPos = BlockPos.ORIGIN;
-        lastBiomeName = "";
-        nearbyStructures.clear();
-        structureScanCooldown = 0;
-    }
-
-    // ==================== 时间修改功能 ====================
-    private void applyTimeModifier(Minecraft mc) {
-        if (!isEnabled("time_modifier") || mc.world == null) {
-            return;
-        }
-
-        long targetTime = Math.round(getConfiguredValue("time_modifier", 6000.0F));
-        customWorldTime = targetTime;
-        if (!this.timeOverrideActive) {
-            cacheNaturalWorldTime(mc.world);
-        }
+    private void updateCoordinateCache(Minecraft mc) {
+        this.lastPlayerPos = mc.player.blockPosition();
         try {
-            mc.world.setWorldTime(targetTime);
-            this.timeOverrideActive = true;
+            this.lastBiomeName = mc.level.getBiome(this.lastPlayerPos)
+                    .unwrapKey()
+                    .map(resourceKey -> resourceKey.location().toString())
+                    .orElse("unknown");
         } catch (Exception ignored) {
+            this.lastBiomeName = "unknown";
         }
     }
 
-    private void updateNaturalTimeCache(World world) {
-        if (world == null || isEnabled("time_modifier")) {
-            return;
-        }
-        cacheNaturalWorldTime(world);
-    }
-
-    private void cacheNaturalWorldTime(World world) {
-        if (world == null) {
-            return;
-        }
-        this.cachedNaturalWorldTime = world.getWorldTime();
-        this.naturalTimeCaptured = true;
-    }
-
-    private void restoreNaturalTime(Minecraft mc) {
-        if (mc == null || mc.world == null || !this.naturalTimeCaptured) {
+    private void applyTimeModifier(Minecraft mc) {
+        if (!isEnabled("time_modifier")) {
+            if (this.timeOverrideActive && mc.level != null) {
+                mc.level.setDayTime(this.cachedNaturalWorldTime);
+            }
             this.timeOverrideActive = false;
             return;
         }
-        try {
-            mc.world.setWorldTime(this.cachedNaturalWorldTime);
-        } catch (Exception ignored) {
-        }
-        this.timeOverrideActive = false;
+        this.cachedNaturalWorldTime = mc.level.getDayTime();
+        visualWorldTime = Math.round(getFeature("time_modifier").value);
+        mc.level.setDayTime(visualWorldTime);
+        this.timeOverrideActive = true;
     }
 
-    // ==================== 天气控制功能 ====================
     private void applyWeatherControl(Minecraft mc) {
-        if (!isEnabled("weather_control") || mc.world == null) {
-            return;
-        }
-
-        if (!this.weatherOverrideActive) {
-            cacheNaturalWeather(mc.world);
-        }
-        float rainStrength = getConfiguredValue("weather_control", 0.0F);
-        customRainStrength = rainStrength;
-        customThunderStrength = rainStrength * 0.5F;
-        
-        try {
-            mc.world.setRainStrength(rainStrength);
-            mc.world.setThunderStrength(customThunderStrength);
-            this.weatherOverrideActive = true;
-        } catch (Exception e) {
-            // 忽略错误
-        }
-    }
-
-    private void updateNaturalWeatherCache(World world) {
-        if (world == null || isWeatherOverrideEnabled()) {
-            return;
-        }
-        cacheNaturalWeather(world);
-    }
-
-    private void cacheNaturalWeather(World world) {
-        if (world == null) {
-            return;
-        }
-        this.cachedNaturalRainStrength = world.getRainStrength(1.0F);
-        this.cachedNaturalThunderStrength = world.getThunderStrength(1.0F);
-        this.naturalWeatherCaptured = true;
-    }
-
-    private boolean isWeatherOverrideEnabled() {
-        return isEnabled("weather_control");
-    }
-
-    private void restoreNaturalWeather(Minecraft mc) {
-        if (mc == null || mc.world == null || !this.naturalWeatherCaptured) {
+        if (!isEnabled("weather_control")) {
+            if (this.weatherOverrideActive && mc.level != null) {
+                mc.level.setRainLevel(this.cachedNaturalRainStrength);
+                mc.level.setThunderLevel(this.cachedNaturalThunderStrength);
+            }
             this.weatherOverrideActive = false;
             return;
         }
-        try {
-            mc.world.setRainStrength(this.cachedNaturalRainStrength);
-            mc.world.setThunderStrength(this.cachedNaturalThunderStrength);
-        } catch (Exception ignored) {
-        }
+        this.cachedNaturalRainStrength = mc.level.getRainLevel(1.0F);
+        this.cachedNaturalThunderStrength = mc.level.getThunderLevel(1.0F);
+        float strength = clamp(getFeature("weather_control").value, 0.0F, 1.0F);
+        mc.level.setRainLevel(strength);
+        mc.level.setThunderLevel(strength);
+        this.weatherOverrideActive = true;
+    }
+
+    private void resetRuntimeState() {
+        this.timeOverrideActive = false;
         this.weatherOverrideActive = false;
-    }
-
-    private void handleRuntimeSideEffectsAfterToggle(String featureId, boolean wasEnabled, boolean enabled) {
-        String normalizedId = normalizeId(featureId);
-        Minecraft mc = Minecraft.getMinecraft();
-        if (mc == null || mc.world == null) {
-            return;
-        }
-
-        if ("time_modifier".equals(normalizedId)) {
-            if (!wasEnabled && enabled) {
-                if (!this.timeOverrideActive) {
-                    cacheNaturalWorldTime(mc.world);
-                }
-                applyTimeModifier(mc);
-                return;
-            }
-
-            if (wasEnabled && !enabled) {
-                restoreNaturalTime(mc);
-            }
-            return;
-        }
-
-        if (!"weather_control".equals(normalizedId)) {
-            return;
-        }
-
-        if (!wasEnabled && enabled) {
-            if (!this.weatherOverrideActive) {
-                cacheNaturalWeather(mc.world);
-            }
-            applyWeatherControl(mc);
-            return;
-        }
-
-        if (wasEnabled && !enabled) {
-            if (isWeatherOverrideEnabled()) {
-                applyWeatherControl(mc);
-            } else {
-                restoreNaturalWeather(mc);
-            }
-        }
-    }
-
-    // ==================== 坐标显示功能 ====================
-    private void updateCoordDisplay(Minecraft mc, EntityPlayerSP player) {
-        if (!isEnabled("coord_display")) {
-            return;
-        }
-
-        BlockPos pos = player.getPosition();
-        lastPlayerPos = pos;
-        
-        try {
-            Biome biome = mc.world.getBiome(pos);
-            if (biome != null) {
-                lastBiomeName = biome.getBiomeName();
-            }
-        } catch (Exception e) {
-            lastBiomeName = "未知";
-        }
-    }
-
-    // ==================== 获取坐标信息 ====================
-    public static String getCoordInfo() {
-        if (!isEnabled("coord_display")) {
-            return "";
-        }
-
-        Minecraft mc = Minecraft.getMinecraft();
-        EntityPlayerSP player = mc.player;
-        if (player == null) {
-            return "";
-        }
-
-        BlockPos pos = INSTANCE.lastPlayerPos;
-        String facing = getCardinalDirection(player.rotationYaw);
-        
-        StringBuilder info = new StringBuilder();
-        info.append(String.format("§fXYZ: §a%d §f/ §a%d §f/ §a%d", pos.getX(), pos.getY(), pos.getZ()));
-        info.append(String.format(" §7[§f%s§7]", facing));
-        
-        if (!INSTANCE.lastBiomeName.isEmpty()) {
-            info.append(String.format(" §7生物群系: §b%s", INSTANCE.lastBiomeName));
-        }
-        
-        return info.toString();
-    }
-
-    private static String getCardinalDirection(float yaw) {
-        yaw = MathHelper.wrapDegrees(yaw);
-        if (yaw < -157.5F) return "北";
-        if (yaw < -112.5F) return "东北";
-        if (yaw < -67.5F) return "东";
-        if (yaw < -22.5F) return "东南";
-        if (yaw < 22.5F) return "南";
-        if (yaw < 67.5F) return "西南";
-        if (yaw < 112.5F) return "西";
-        if (yaw < 157.5F) return "西北";
-        return "北";
-    }
-
-    // ==================== 获取结构信息 ====================
-    public static List<StructureInfo> getNearbyStructures() {
-        return new ArrayList<>(INSTANCE.nearbyStructures);
+        this.lastPlayerPos = BlockPos.ZERO;
+        this.lastBiomeName = "unknown";
+        this.nearbyStructures.clear();
     }
 
     private String getRuntimeHudLine() {
         List<String> parts = new ArrayList<>();
-        
-        if (isEnabled("time_modifier") && shouldDisplayFeatureStatusHud("time_modifier")) {
-            String timeStr = formatWorldTime(customWorldTime);
-            parts.add("§e时间: " + timeStr);
+        if (isEnabled("time_modifier") && getFeature("time_modifier").statusHudEnabled) {
+            parts.add("§e时间: " + formatWorldTime(visualWorldTime));
         }
-        
-        if (isEnabled("weather_control") && shouldDisplayFeatureStatusHud("weather_control")) {
-            parts.add(String.format("§b雨强: %.1f", customRainStrength));
+        if (isEnabled("weather_control") && getFeature("weather_control").statusHudEnabled) {
+            parts.add("§b雨强: " + formatFloat(getFeature("weather_control").value));
         }
-
-        if (isEnabled("coord_display") && shouldDisplayFeatureStatusHud("coord_display")) {
-            parts.add(String.format("§f%d,%d,%d", lastPlayerPos.getX(), lastPlayerPos.getY(), lastPlayerPos.getZ()));
+        if (isEnabled("coord_display") && getFeature("coord_display").statusHudEnabled) {
+            parts.add(String.format(Locale.ROOT, "§f%d,%d,%d",
+                    lastPlayerPos.getX(), lastPlayerPos.getY(), lastPlayerPos.getZ()));
         }
-        
         if (parts.isEmpty()) {
             return "";
         }
-
         StringBuilder builder = new StringBuilder("§7");
         for (int i = 0; i < parts.size(); i++) {
             if (i > 0) {
@@ -668,41 +411,50 @@ public class WorldFeatureManager {
         if (featureId == null || featureId.isEmpty()) {
             return "待机";
         }
-
+        FeatureState state = getFeature(featureId);
+        if (state == null) {
+            return "未找到功能";
+        }
+        if (!state.enabled) {
+            return "未启用";
+        }
         switch (featureId) {
         case "time_modifier":
-            if (!isEnabled(featureId)) {
-                return "未启用";
-            }
-            return "当前时间: " + formatWorldTime(customWorldTime);
+            return "当前时间 " + formatWorldTime(visualWorldTime);
         case "weather_control":
-            if (!isEnabled(featureId)) {
-                return "未启用";
-            }
-            return String.format("雨强度: %.2f", customRainStrength);
+            return "当前雨强 " + formatFloat(state.value);
         case "coord_display":
-            if (!isEnabled(featureId)) {
-                return "未启用";
-            }
-            return String.format("位置: %s, 生物群系: %s", 
-                    formatBlockPos(lastPlayerPos), lastBiomeName);
+            return lastPlayerPos.getX() + ", " + lastPlayerPos.getY() + ", " + lastPlayerPos.getZ()
+                    + (lastBiomeName.isEmpty() ? "" : " / " + lastBiomeName);
         default:
-            FeatureState state = getFeature(featureId);
-            if (state == null) {
-                return "未找到功能";
-            }
-            return state.behaviorImplemented ? "基础逻辑已接入" : "仅配置占位";
+            return state.supportsValue() ? "已启用 / " + formatFloat(state.value) : "已启用";
         }
     }
 
     private String formatWorldTime(long time) {
-        time = time % 24000L;
-        int hours = (int) ((time / 1000L + 6L) % 24L);
-        int minutes = (int) ((time % 1000L) * 60L / 1000L);
-        return String.format("%02d:%02d", hours, minutes);
+        long wrapped = ((time % 24000L) + 24000L) % 24000L;
+        int hours = (int) ((wrapped / 1000L + 6L) % 24L);
+        int minutes = (int) ((wrapped % 1000L) * 60L / 1000L);
+        return String.format(Locale.ROOT, "%02d:%02d", hours, minutes);
     }
 
-    private String formatBlockPos(BlockPos pos) {
-        return pos == null ? "-" : pos.getX() + "," + pos.getY() + "," + pos.getZ();
+    private static void register(FeatureState state) {
+        FEATURES.put(state.id, state);
+    }
+
+    private static String safe(String text) {
+        return text == null ? "" : text.trim();
+    }
+
+    private static String normalizeId(String featureId) {
+        return safe(featureId).toLowerCase(Locale.ROOT);
+    }
+
+    private static float clamp(float value, float min, float max) {
+        return Math.max(min, Math.min(max, value));
+    }
+
+    private static String formatFloat(float value) {
+        return String.format(Locale.ROOT, "%.2f", value);
     }
 }

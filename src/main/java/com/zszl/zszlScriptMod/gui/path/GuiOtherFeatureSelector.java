@@ -6,11 +6,11 @@ import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
 import com.zszl.zszlScriptMod.otherfeatures.OtherFeatureGroupManager;
 import com.zszl.zszlScriptMod.otherfeatures.OtherFeatureGroupManager.FeatureDef;
 import com.zszl.zszlScriptMod.otherfeatures.OtherFeatureGroupManager.GroupDef;
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiScreen;
-import net.minecraft.client.resources.I18n;
-import org.lwjgl.input.Keyboard;
-import org.lwjgl.input.Mouse;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Keyboard;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Mouse;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -145,8 +145,8 @@ public class GuiOtherFeatureSelector extends ThemedGuiScreen {
         if (onSelect != null) {
             onSelect.accept(feature);
         }
-        if (mc.currentScreen == this) {
-            mc.displayGuiScreen(parentScreen);
+        if (mc.screen == this) {
+            mc.setScreen(parentScreen);
         }
     }
 
@@ -259,8 +259,8 @@ public class GuiOtherFeatureSelector extends ThemedGuiScreen {
             return;
         }
 
-        int mouseX = Mouse.getEventX() * this.width / this.mc.displayWidth;
-        int mouseY = this.height - Mouse.getEventY() * this.height / this.mc.displayHeight - 1;
+        int mouseX = Mouse.getEventX() * this.width / this.mc.getWindow().getWidth();
+        int mouseY = this.height - Mouse.getEventY() * this.height / this.mc.getWindow().getHeight() - 1;
 
         if (isInside(mouseX, mouseY, groupListX, listY, groupListWidth, listHeight)) {
             groupScrollOffset = dWheel > 0
@@ -292,3 +292,11 @@ public class GuiOtherFeatureSelector extends ThemedGuiScreen {
         return false;
     }
 }
+
+
+
+
+
+
+
+

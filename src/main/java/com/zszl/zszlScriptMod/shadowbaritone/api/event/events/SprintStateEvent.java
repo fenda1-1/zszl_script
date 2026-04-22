@@ -33,3 +33,4 @@ public final class SprintStateEvent {
         return this.state;
     }
 }
+

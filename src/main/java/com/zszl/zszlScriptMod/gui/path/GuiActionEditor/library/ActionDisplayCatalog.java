@@ -79,7 +79,6 @@ public final class ActionDisplayCatalog {
                 "gui.path.action_editor.type.move_inventory_item_to_hotbar");
         ACTION_DISPLAY_KEYS.put("switch_hotbar_slot", "gui.path.action_editor.type.switch_hotbar_slot");
         ACTION_DISPLAY_KEYS.put("silentuse", "gui.path.action_editor.type.silentuse");
-        ACTION_DISPLAY_KEYS.put("runlastsequence", "gui.path.action_editor.type.runlastsequence");
         ACTION_DISPLAY_KEYS.put("send_packet", "gui.path.action_editor.type.send_packet");
         ACTION_DISPLAY_KEYS.put("run_sequence", "gui.path.action_editor.type.run_sequence");
         ACTION_DISPLAY_KEYS.put("stop_current_sequence", "gui.path.action_editor.type.stop_current_sequence");

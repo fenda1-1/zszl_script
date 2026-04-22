@@ -1,10 +1,18 @@
 package com.zszl.zszlScriptMod.gui.config;
-import net.minecraft.client.gui.GuiButton;
+
+import net.minecraft.client.Minecraft;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
 import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
-import net.minecraft.client.gui.GuiTextField;
-import net.minecraft.client.resources.I18n;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiTextField;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
+import com.mojang.blaze3d.platform.GlStateManager; // 导入 GlStateManager
 
 import java.io.IOException;
+import java.util.Timer;
+import java.util.TimerTask;
+
+import com.zszl.zszlScriptMod.config.ModConfig;
 import com.zszl.zszlScriptMod.utils.CapturingFontRenderer;
 import com.zszl.zszlScriptMod.gui.components.GuiTheme;
 
@@ -55,9 +63,9 @@ public class GuiResolutionConfig extends ThemedGuiScreen {
     }
 
     private void updateFieldsWithCurrentConfig() {
-        int currentWidth = mc.displayWidth;
-        int currentHeight = mc.displayHeight;
-        net.minecraft.client.gui.ScaledResolution scaledResolution = new net.minecraft.client.gui.ScaledResolution(mc);
+        int currentWidth = mc.getWindow().getWidth();
+        int currentHeight = mc.getWindow().getHeight();
+        com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.ScaledResolution scaledResolution = new com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.ScaledResolution(mc);
         int currentGuiScale = scaledResolution.getScaleFactor();
 
         widthField.setText(String.valueOf(currentWidth));
@@ -74,14 +82,14 @@ public class GuiResolutionConfig extends ThemedGuiScreen {
         if (button.id == 0) { // 刷新按钮
             updateFieldsWithCurrentConfig();
         } else if (button.id == 1) { // 完成按钮
-            mc.displayGuiScreen(null); // 关闭GUI
+            mc.setScreen(null); // 关闭GUI
         }
     }
 
     @Override
     public void drawScreen(int mouseX, int mouseY, float partialTicks) {
-        if (mc.fontRenderer instanceof CapturingFontRenderer) {
-            ((CapturingFontRenderer) mc.fontRenderer).disableCapture();
+        if (new com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.FontRenderer(mc.font) instanceof CapturingFontRenderer) {
+            ((CapturingFontRenderer) new com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.FontRenderer(mc.font)).disableCapture();
         }
 
         try {
@@ -118,8 +126,8 @@ public class GuiResolutionConfig extends ThemedGuiScreen {
             super.drawScreen(mouseX, mouseY, partialTicks);
         } finally {
             // !! 关键：绘制完成后，无论是否发生异常，都要重新启用文本捕获 !!
-            if (mc.fontRenderer instanceof CapturingFontRenderer) {
-                ((CapturingFontRenderer) mc.fontRenderer).enableCapture();
+            if (new com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.FontRenderer(mc.font) instanceof CapturingFontRenderer) {
+                ((CapturingFontRenderer) new com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.FontRenderer(mc.font)).enableCapture();
             }
         }
     }
@@ -128,7 +136,7 @@ public class GuiResolutionConfig extends ThemedGuiScreen {
     protected void keyTyped(char typedChar, int keyCode) throws IOException {
         // 允许按ESC关闭
         if (keyCode == 1) {
-            this.mc.displayGuiScreen(null);
+            this.mc.setScreen(null);
         }
     }
 
@@ -149,4 +157,11 @@ public class GuiResolutionConfig extends ThemedGuiScreen {
         }
     }
 }
+
+
+
+
+
+
+
 

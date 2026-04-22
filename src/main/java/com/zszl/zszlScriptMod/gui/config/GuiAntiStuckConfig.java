@@ -1,12 +1,12 @@
 // [V4.7] 新增超时重载UI
 package com.zszl.zszlScriptMod.gui.config;
 
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
 import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
-import net.minecraft.client.gui.GuiTextField;
-import net.minecraft.client.resources.I18n;
-import net.minecraft.util.text.TextComponentString;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiTextField;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.util.text.TextComponentString;
 
 import java.io.IOException;
 import java.text.DecimalFormat;
@@ -111,12 +111,12 @@ public class GuiAntiStuckConfig extends ThemedGuiScreen {
 
                 AutoFollowHandler.saveFollowConfig();
                 if (mc.player != null) {
-                    mc.player.sendMessage(new TextComponentString(I18n.format("msg.antistuck.saved")));
+                    mc.player.sendSystemMessage(new TextComponentString(I18n.format("msg.antistuck.saved")));
                 }
-                mc.displayGuiScreen(parentScreen);
+                mc.setScreen(parentScreen);
             } catch (NumberFormatException e) {
                 if (mc.player != null) {
-                    mc.player.sendMessage(new TextComponentString(I18n.format("msg.common.invalid_number")));
+                    mc.player.sendSystemMessage(new TextComponentString(I18n.format("msg.common.invalid_number")));
                 }
             }
         } else if (button.id == 101) { // 重置
@@ -129,7 +129,7 @@ public class GuiAntiStuckConfig extends ThemedGuiScreen {
             initGui();
         } else if (button.id == 102) { // 取消
             AutoFollowHandler.loadFollowConfig();
-            mc.displayGuiScreen(parentScreen);
+            mc.setScreen(parentScreen);
         }
     }
 
@@ -182,3 +182,8 @@ public class GuiAntiStuckConfig extends ThemedGuiScreen {
         timeoutSecondsField.mouseClicked(mouseX, mouseY, mouseButton);
     }
 }
+
+
+
+
+

@@ -26,18 +26,16 @@ import com.zszl.zszlScriptMod.shadowbaritone.pathing.movement.MovementHelper;
 import com.zszl.zszlScriptMod.shadowbaritone.pathing.movement.MovementState;
 import com.zszl.zszlScriptMod.shadowbaritone.pathing.path.PathExecutor;
 import com.zszl.zszlScriptMod.shadowbaritone.utils.BaritoneProcessHelper;
-import net.minecraft.block.state.IBlockState;
-import net.minecraft.init.Blocks;
-import net.minecraft.util.EnumFacing;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.world.chunk.EmptyChunk;
-
 import java.util.*;
 import java.util.stream.Collectors;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.chunk.EmptyLevelChunk;
 
 public final class BackfillProcess extends BaritoneProcessHelper {
 
-    public HashMap<BlockPos, IBlockState> blocksToReplace = new HashMap<>();
+    public HashMap<BlockPos, BlockState> blocksToReplace = new HashMap<>();
 
     public BackfillProcess(Baritone baritone) {
         super(baritone);
@@ -51,19 +49,13 @@ public final class BackfillProcess extends BaritoneProcessHelper {
         if (!Baritone.settings().backfill.value) {
             return false;
         }
-        if (Baritone.settings().parkourMode.value) {
-            logDirect("Backfill is disabled while parkourMode is enabled");
-            Baritone.settings().backfill.value = false;
-            return false;
-        }
         if (Baritone.settings().allowParkour.value) {
             logDirect("Backfill cannot be used with allowParkour true");
             Baritone.settings().backfill.value = false;
             return false;
         }
         for (BlockPos pos : new ArrayList<>(blocksToReplace.keySet())) {
-            if (ctx.world().getChunkFromBlockCoords(pos) instanceof EmptyChunk
-                    || ctx.world().getBlockState(pos).getBlock() != Blocks.AIR) {
+            if (ctx.world().getChunk(pos) instanceof EmptyLevelChunk || ctx.world().getBlockState(pos).getBlock() != Blocks.AIR) {
                 blocksToReplace.remove(pos);
             }
         }
@@ -110,9 +102,9 @@ public final class BackfillProcess extends BaritoneProcessHelper {
                 .keySet()
                 .stream()
                 .filter(pos -> ctx.world().getBlockState(pos).getBlock() == Blocks.AIR)
-                .filter(pos -> ctx.world().mayPlace(Blocks.DIRT, pos, false, EnumFacing.UP, null))
+                .filter(pos -> baritone.getBuilderProcess().placementPlausible(pos, Blocks.DIRT.defaultBlockState()))
                 .filter(pos -> !partOfCurrentMovement(pos))
-                .sorted(Comparator.<BlockPos>comparingDouble(ctx.player()::getDistanceSq).reversed())
+                .sorted(Comparator.<BlockPos>comparingDouble(ctx.playerFeet()::distSqr).reversed())
                 .collect(Collectors.toList());
     }
 
@@ -147,3 +139,4 @@ public final class BackfillProcess extends BaritoneProcessHelper {
         return 5;
     }
 }
+

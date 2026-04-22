@@ -47,3 +47,4 @@ public abstract class AbstractMask implements Mask {
         return this.lengthZ;
     }
 }
+

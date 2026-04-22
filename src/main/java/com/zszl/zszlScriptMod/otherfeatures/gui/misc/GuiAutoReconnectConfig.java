@@ -1,6 +1,6 @@
 package com.zszl.zszlScriptMod.otherfeatures.gui.misc;
 
-import net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
 
 public class GuiAutoReconnectConfig extends SingleMiscFeatureConfigScreen {
 
@@ -8,3 +8,6 @@ public class GuiAutoReconnectConfig extends SingleMiscFeatureConfigScreen {
         super(parentScreen, "auto_reconnect", "自动重连设置");
     }
 }
+
+
+

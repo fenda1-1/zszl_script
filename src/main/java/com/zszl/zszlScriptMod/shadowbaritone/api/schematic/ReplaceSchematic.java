@@ -18,7 +18,7 @@
 package com.zszl.zszlScriptMod.shadowbaritone.api.schematic;
 
 import com.zszl.zszlScriptMod.shadowbaritone.api.utils.BlockOptionalMetaLookup;
-import net.minecraft.block.state.IBlockState;
+import net.minecraft.world.level.block.state.BlockState;
 
 public class ReplaceSchematic extends MaskSchematic {
 
@@ -33,8 +33,7 @@ public class ReplaceSchematic extends MaskSchematic {
 
     @Override
     public void reset() {
-        // it's final, can't use this.cache = new
-        // Boolean[widthX()][heightY()][lengthZ()]
+        // it's final, can't use this.cache = new Boolean[widthX()][heightY()][lengthZ()]
         for (int x = 0; x < cache.length; x++) {
             for (int y = 0; y < cache[0].length; y++) {
                 for (int z = 0; z < cache[0][0].length; z++) {
@@ -45,10 +44,11 @@ public class ReplaceSchematic extends MaskSchematic {
     }
 
     @Override
-    protected boolean partOfMask(int x, int y, int z, IBlockState currentState) {
+    protected boolean partOfMask(int x, int y, int z, BlockState currentState) {
         if (cache[x][y][z] == null) {
             cache[x][y][z] = filter.has(currentState);
         }
         return cache[x][y][z];
     }
 }
+

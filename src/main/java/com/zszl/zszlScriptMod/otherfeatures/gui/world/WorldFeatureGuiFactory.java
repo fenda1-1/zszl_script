@@ -1,7 +1,7 @@
 package com.zszl.zszlScriptMod.otherfeatures.gui.world;
 
 import com.zszl.zszlScriptMod.otherfeatures.handler.world.WorldFeatureManager;
-import net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
 
 public final class WorldFeatureGuiFactory {
 
@@ -16,3 +16,6 @@ public final class WorldFeatureGuiFactory {
         return new SingleWorldFeatureConfigScreen(parent, feature.id, feature.name + "设置");
     }
 }
+
+
+

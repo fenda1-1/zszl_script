@@ -17,32 +17,19 @@
 
 package com.zszl.zszlScriptMod.shadowbaritone.behavior;
 
-import com.zszl.zszlScriptMod.handlers.KillAuraHandler;
 import com.zszl.zszlScriptMod.shadowbaritone.Baritone;
 import com.zszl.zszlScriptMod.shadowbaritone.api.Settings;
 import com.zszl.zszlScriptMod.shadowbaritone.api.behavior.ILookBehavior;
 import com.zszl.zszlScriptMod.shadowbaritone.api.behavior.look.IAimProcessor;
 import com.zszl.zszlScriptMod.shadowbaritone.api.behavior.look.ITickableAimProcessor;
 import com.zszl.zszlScriptMod.shadowbaritone.api.event.events.*;
-import com.zszl.zszlScriptMod.shadowbaritone.api.pathing.goals.Goal;
-import com.zszl.zszlScriptMod.shadowbaritone.api.pathing.path.IPathExecutor;
-import com.zszl.zszlScriptMod.shadowbaritone.api.utils.BetterBlockPos;
 import com.zszl.zszlScriptMod.shadowbaritone.api.utils.IPlayerContext;
 import com.zszl.zszlScriptMod.shadowbaritone.api.utils.Rotation;
-import com.zszl.zszlScriptMod.shadowbaritone.api.utils.RotationUtils;
-import com.zszl.zszlScriptMod.shadowbaritone.api.utils.interfaces.IGoalRenderPos;
 import com.zszl.zszlScriptMod.shadowbaritone.behavior.look.ForkableRandom;
-import com.zszl.zszlScriptMod.shadowbaritone.pathing.movement.MovementHelper;
-import com.zszl.zszlScriptMod.shadowbaritone.pathing.movement.parkour.ParkourRuntimeHelper;
-import com.zszl.zszlScriptMod.shadowbaritone.utils.HumanLikeMovementController;
-import net.minecraft.network.play.client.CPacketPlayer;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.MathHelper;
-import net.minecraft.util.math.Vec3d;
+import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
-import java.util.List;
 import java.util.Optional;
 
 public final class LookBehavior extends Behavior implements ILookBehavior {
@@ -53,52 +40,37 @@ public final class LookBehavior extends Behavior implements ILookBehavior {
     private Target target;
 
     /**
-     * The rotation known to the server. Returned by {@link #getEffectiveRotation()}
-     * for use in {@link IPlayerContext}.
+     * The rotation known to the server. Returned by {@link #getEffectiveRotation()} for use in {@link IPlayerContext}.
      */
     private Rotation serverRotation;
 
     /**
-     * The rotation Baritone wants movement/pathing math to use.
-     *
-     * This must stay independent from the player's visual camera direction, otherwise
-     * movement input selection (W/A/S/D) will drift as soon as the player turns the
-     * screen away from the planned path.
+     * Dedicated movement frame used for input remapping while free look is active.
      */
     private Rotation movementRotation;
 
     /**
-     * The last player rotation. Used to restore the player's angle when using free
-     * look.
+     * The last player rotation. Used to restore the player's angle when using free look.
      *
      * @see Settings#freeLook
      */
     private Rotation prevRotation;
-    private Rotation visualTargetThisTick;
-    private boolean killAuraVisualControlThisTick;
 
     private final AimProcessor processor;
 
     private final Deque<Float> smoothYawBuffer;
     private final Deque<Float> smoothPitchBuffer;
-    private int junctionGlanceTicksRemaining;
-    private float junctionGlanceYawOffset;
-    private long lastJunctionGlanceKey;
 
     public LookBehavior(Baritone baritone) {
         super(baritone);
         this.processor = new AimProcessor(baritone.getPlayerContext());
         this.smoothYawBuffer = new ArrayDeque<>();
         this.smoothPitchBuffer = new ArrayDeque<>();
-        this.junctionGlanceTicksRemaining = 0;
-        this.junctionGlanceYawOffset = 0.0F;
-        this.lastJunctionGlanceKey = Long.MIN_VALUE;
     }
 
     @Override
     public void updateTarget(Rotation rotation, boolean blockInteract) {
-        Target.Mode resolvedMode = Target.Mode.resolve(ctx, blockInteract);
-        this.target = new Target(rotation, resolvedMode, blockInteract);
+        this.target = new Target(rotation, Target.Mode.resolve(ctx, blockInteract), blockInteract);
         this.movementRotation = rotation;
     }
 
@@ -109,15 +81,7 @@ public final class LookBehavior extends Behavior implements ILookBehavior {
 
     @Override
     public boolean shouldDecoupleMovementFromVisualYaw() {
-        if (ctx.player() == null || ctx.player().isElytraFlying()) {
-            return false;
-        }
-        if (!baritone.getPathingBehavior().isPathing() || !Baritone.settings().freeLook.value) {
-            return false;
-        }
-        if (ParkourRuntimeHelper.isPrecisionCriticalParkourPhase(baritone)) {
-            // Precision parkour relies on the physics yaw override, so free-look input
-            // remapping must stay out of the way for this window.
+        if (!shouldUseMovementRotationForGroundMovement()) {
             return false;
         }
         if (this.target != null) {
@@ -128,6 +92,7 @@ public final class LookBehavior extends Behavior implements ILookBehavior {
 
     @Override
     public void onTick(TickEvent event) {
+        clearMovementRotationIfDetachedFromPathing();
         if (event.getType() == TickEvent.Type.IN) {
             this.processor.tick();
         }
@@ -135,86 +100,52 @@ public final class LookBehavior extends Behavior implements ILookBehavior {
 
     @Override
     public void onPlayerUpdate(PlayerUpdateEvent event) {
+        clearMovementRotationIfDetachedFromPathing();
+
         if (this.target == null) {
             return;
         }
+
         switch (event.getState()) {
             case PRE: {
-                Optional<Rotation> killAuraVisualTarget = getKillAuraVisualTarget();
-                this.killAuraVisualControlThisTick = killAuraVisualTarget.isPresent();
-                boolean precisionCriticalParkour = ParkourRuntimeHelper.isPrecisionCriticalParkourPhase(baritone);
-                boolean humanLikeVisualControl = !this.killAuraVisualControlThisTick
-                        && HumanLikeMovementController.INSTANCE.isEnabled()
-                        && baritone.getPathingBehavior().isPathing()
-                        && !precisionCriticalParkour;
-
-                if (this.target.mode == Target.Mode.NONE && !humanLikeVisualControl && !this.killAuraVisualControlThisTick) {
+                if (this.target.mode == Target.Mode.NONE) {
                     // Just return for PRE, we still want to set target to null on POST
                     return;
                 }
 
-                if (this.target.mode == Target.Mode.CLIENT || humanLikeVisualControl || this.killAuraVisualControlThisTick) {
-                    this.prevRotation = new Rotation(ctx.player().rotationYaw, ctx.player().rotationPitch);
-                    this.visualTargetThisTick = this.killAuraVisualControlThisTick
-                            ? killAuraVisualTarget.orElse(this.target.rotation)
-                            : getHumanLikeVisualTarget(this.target.rotation);
-                    final Rotation actual = this.processor.peekRotation(this.visualTargetThisTick);
-                    HumanLikeMovementController.RotationState smoothed = HumanLikeMovementController.INSTANCE
-                            .smoothRotation(
-                                    this.prevRotation.getYaw(),
-                                    this.prevRotation.getPitch(),
-                                    actual.getYaw(),
-                                    actual.getPitch());
-                    ctx.player().rotationYaw = smoothed.yaw;
-                    ctx.player().rotationPitch = smoothed.pitch;
-                }
+                this.prevRotation = new Rotation(ctx.player().getYRot(), ctx.player().getXRot());
+                final Rotation actual = this.processor.peekRotation(this.target.rotation);
+                ctx.player().setYRot(actual.getYaw());
+                ctx.player().setXRot(actual.getPitch());
                 break;
             }
             case POST: {
                 // Reset the player's rotations back to their original values
                 if (this.prevRotation != null) {
-                    boolean precisionCriticalParkour = ParkourRuntimeHelper.isPrecisionCriticalParkourPhase(baritone);
-                    boolean humanLikeVisualControl = !this.killAuraVisualControlThisTick
-                            && HumanLikeMovementController.INSTANCE.isEnabled()
-                            && baritone.getPathingBehavior().isPathing()
-                            && !precisionCriticalParkour;
-
-                    Rotation visualTarget = this.visualTargetThisTick != null ? this.visualTargetThisTick
-                            : this.target.rotation;
-                    this.smoothYawBuffer.addLast(visualTarget.getYaw());
+                    this.smoothYawBuffer.addLast(this.target.rotation.getYaw());
                     while (this.smoothYawBuffer.size() > Baritone.settings().smoothLookTicks.value) {
                         this.smoothYawBuffer.removeFirst();
                     }
-                    this.smoothPitchBuffer.addLast(visualTarget.getPitch());
+                    this.smoothPitchBuffer.addLast(this.target.rotation.getPitch());
                     while (this.smoothPitchBuffer.size() > Baritone.settings().smoothLookTicks.value) {
                         this.smoothPitchBuffer.removeFirst();
                     }
-                    if (humanLikeVisualControl || this.killAuraVisualControlThisTick) {
-                        // PRE 阶段已经把本地视角平滑到当前拟真目标，这里不要再用另一套
-                        // “目标平均值”覆盖一次，否则会出现同一 tick 内来回改角度的抖动感。
-                    } else if (this.target.mode == Target.Mode.SERVER) {
-                        ctx.player().rotationYaw = this.prevRotation.getYaw();
-                        ctx.player().rotationPitch = this.prevRotation.getPitch();
-                    } else if (ctx.player().isElytraFlying() ? Baritone.settings().elytraSmoothLook.value
-                            : Baritone.settings().smoothLook.value) {
-                        ctx.player().rotationYaw = (float) this.smoothYawBuffer.stream().mapToDouble(d -> d).average()
-                                .orElse(this.prevRotation.getYaw());
-                        ctx.player().rotationPitch = (float) this.smoothPitchBuffer.stream().mapToDouble(d -> d)
-                                .average().orElse(this.prevRotation.getPitch());
+                    if (this.target.mode == Target.Mode.SERVER) {
+                        ctx.player().setYRot(this.prevRotation.getYaw());
+                        ctx.player().setXRot(this.prevRotation.getPitch());
+                    } else if (ctx.player().isFallFlying() ? Baritone.settings().elytraSmoothLook.value : Baritone.settings().smoothLook.value) {
+                        ctx.player().setYRot((float) this.smoothYawBuffer.stream().mapToDouble(d -> d).average().orElse(this.prevRotation.getYaw()));
+                        if (ctx.player().isFallFlying()) {
+                            ctx.player().setXRot((float) this.smoothPitchBuffer.stream().mapToDouble(d -> d).average().orElse(this.prevRotation.getPitch()));
+                        }
                     }
-
+                    //ctx.player().xRotO = prevRotation.getPitch();
+                    //ctx.player().yRotO = prevRotation.getYaw();
                     this.prevRotation = null;
-                    this.visualTargetThisTick = null;
-                    this.killAuraVisualControlThisTick = false;
                 }
-                // The target is done being used for this game tick, so it can be invalidated.
-                // Keep movementRotation while pathing so movement stays decoupled from the
-                // camera even between look updates. When Baritone is idle, clear it to avoid
-                // leaking a stale steering frame into normal player control.
+                // The target is done being used for this game tick, so it can be invalidated
                 this.target = null;
-                if (!baritone.getPathingBehavior().isPathing()) {
-                    this.movementRotation = null;
-                }
+                clearMovementRotationIfDetachedFromPathing();
                 break;
             }
             default:
@@ -224,13 +155,13 @@ public final class LookBehavior extends Behavior implements ILookBehavior {
 
     @Override
     public void onSendPacket(PacketEvent event) {
-        if (!(event.getPacket() instanceof CPacketPlayer)) {
+        if (!(event.getPacket() instanceof ServerboundMovePlayerPacket)) {
             return;
         }
 
-        final CPacketPlayer packet = (CPacketPlayer) event.getPacket();
-        if (packet instanceof CPacketPlayer.Rotation || packet instanceof CPacketPlayer.PositionRotation) {
-            this.serverRotation = new Rotation(packet.getYaw(0.0f), packet.getPitch(0.0f));
+        final ServerboundMovePlayerPacket packet = (ServerboundMovePlayerPacket) event.getPacket();
+        if (packet instanceof ServerboundMovePlayerPacket.Rot || packet instanceof ServerboundMovePlayerPacket.PosRot) {
+            this.serverRotation = new Rotation(packet.getYRot(0.0f), packet.getXRot(0.0f));
         }
     }
 
@@ -239,63 +170,53 @@ public final class LookBehavior extends Behavior implements ILookBehavior {
         this.serverRotation = null;
         this.movementRotation = null;
         this.target = null;
-        this.visualTargetThisTick = null;
-        this.killAuraVisualControlThisTick = false;
-        this.junctionGlanceTicksRemaining = 0;
-        this.junctionGlanceYawOffset = 0.0F;
-        this.lastJunctionGlanceKey = Long.MIN_VALUE;
     }
 
     public void pig() {
         if (this.target != null) {
             final Rotation actual = this.processor.peekRotation(this.target.rotation);
-            ctx.player().rotationYaw = actual.getYaw();
+            ctx.player().setYRot(actual.getYaw());
         }
-    }
-
-    public void clearPathingRotationState() {
-        this.target = null;
-        this.serverRotation = null;
-        this.movementRotation = null;
-        this.prevRotation = null;
-        this.visualTargetThisTick = null;
-        this.killAuraVisualControlThisTick = false;
-        this.smoothYawBuffer.clear();
-        this.smoothPitchBuffer.clear();
     }
 
     public Optional<Rotation> getEffectiveRotation() {
-        // Pathing math must prefer the dedicated movement frame of reference.
-        // serverRotation can be overwritten by normal outgoing player packets that still
-        // reflect the user's camera, which would re-couple movement to the screen
-        // direction and make pathing immediately drift when the player looks elsewhere.
         if (this.movementRotation != null) {
             return Optional.of(this.movementRotation);
         }
-        return Optional.ofNullable(this.serverRotation);
+        if (Baritone.settings().freeLook.value) {
+            return Optional.ofNullable(this.serverRotation);
+        }
+        // If freeLook isn't on, just defer to the player's actual rotations
+        return Optional.empty();
     }
 
     @Override
     public void onPlayerRotationMove(RotationMoveEvent event) {
+        clearMovementRotationIfDetachedFromPathing();
         final Rotation movement = this.target != null ? this.target.rotation : this.movementRotation;
         if (movement != null) {
-            // Pathing math keeps a dedicated movement frame, but when freeLook is active the
-            // actual physics/moveRelative code must not apply another yaw override on top of the
-            // input remapping. Otherwise the same steering frame gets compensated twice.
             event.setYaw(movement.getYaw());
             event.setPitch(movement.getPitch());
-
-            // Keep all pathing math in the same frame of reference for the rest of the tick.
             this.movementRotation = movement;
             this.serverRotation = movement;
         }
     }
 
-    private Optional<Rotation> getKillAuraVisualTarget() {
-        if (ctx == null || ctx.player() == null) {
-            return Optional.empty();
+    private boolean shouldUseMovementRotationForGroundMovement() {
+        if (!hasActivePathingMovementControl()) {
+            return false;
         }
-        return KillAuraHandler.INSTANCE.getVisualTargetRotation(ctx.player());
+        return !ctx.player().isFallFlying() && Baritone.settings().freeLook.value;
+    }
+
+    private boolean hasActivePathingMovementControl() {
+        return ctx.player() != null && baritone.getPathingBehavior().isPathing();
+    }
+
+    private void clearMovementRotationIfDetachedFromPathing() {
+        if (this.target == null && !hasActivePathingMovementControl()) {
+            this.movementRotation = null;
+        }
     }
 
     private static boolean shouldDecoupleMovementFromVisualYaw(Target.Mode mode, boolean blockInteract) {
@@ -303,333 +224,6 @@ public final class LookBehavior extends Behavior implements ILookBehavior {
             return false;
         }
         return mode != Target.Mode.CLIENT;
-    }
-
-    private Rotation getHumanLikeVisualTarget(Rotation baseTarget) {
-        if (!HumanLikeMovementController.INSTANCE.isEnabled()
-                || ctx.player() == null
-                || !baritone.getPathingBehavior().isPathing()) {
-            return baseTarget;
-        }
-
-        Rotation adjusted = baseTarget;
-        float finalApproachProgress = computeFinalApproachProgress();
-
-        UpcomingTurnLook turnLook = findUpcomingTurnLook();
-        if (turnLook != null) {
-            adjusted = blendRotation(adjusted, turnLook.rotation,
-                    turnLook.weight * (1.0F - finalApproachProgress * 0.55F));
-        } else {
-            IPathExecutor current = baritone.getPathingBehavior().getCurrent();
-            if (countStraightStepsAhead(current) >= 3 && finalApproachProgress < 0.7F) {
-                adjusted = new Rotation(
-                        adjusted.getYaw() + computeSweepYawOffset(finalApproachProgress),
-                        adjusted.getPitch());
-            }
-        }
-
-        Rotation goalLook = computeGoalLookRotation();
-        if (goalLook != null && finalApproachProgress > 0.35F) {
-            adjusted = blendRotation(adjusted, goalLook, 0.20F + finalApproachProgress * 0.45F);
-        }
-
-        adjusted = applyObstacleAwareLook(adjusted, finalApproachProgress);
-        adjusted = applyJunctionGlance(adjusted, finalApproachProgress);
-        adjusted = stabilizeVisualPitch(adjusted, finalApproachProgress);
-        return adjusted.normalizeAndClamp();
-    }
-
-    private Rotation computeGoalLookRotation() {
-        Goal goal = baritone.getPathingBehavior().getGoal();
-        if (!(goal instanceof IGoalRenderPos) || ctx.player() == null) {
-            return null;
-        }
-
-        BlockPos goalPos = ((IGoalRenderPos) goal).getGoalPos();
-        if (goalPos == null) {
-            return null;
-        }
-
-        Vec3d eyePos = ctx.player().getPositionEyes(1.0F);
-        Vec3d lookPos = new Vec3d(goalPos.getX() + 0.5D, goalPos.getY() + 0.85D, goalPos.getZ() + 0.5D);
-        return RotationUtils.calcRotationFromVec3d(eyePos, lookPos, ctx.playerRotations());
-    }
-
-    private UpcomingTurnLook findUpcomingTurnLook() {
-        IPathExecutor current = baritone.getPathingBehavior().getCurrent();
-        if (current == null || current.getPath() == null) {
-            return null;
-        }
-
-        List<BetterBlockPos> positions = current.getPath().positions();
-        int index = current.getPosition();
-        if (index < 0 || index + 2 >= positions.size()) {
-            return null;
-        }
-
-        int baseDirX = directionX(positions.get(index), positions.get(index + 1));
-        int baseDirZ = directionZ(positions.get(index), positions.get(index + 1));
-        if (baseDirX == 0 && baseDirZ == 0) {
-            return null;
-        }
-
-        int maxLookahead = Math.min(positions.size() - 2, index + 6);
-        for (int i = index + 1; i <= maxLookahead; i++) {
-            int nextDirX = directionX(positions.get(i), positions.get(i + 1));
-            int nextDirZ = directionZ(positions.get(i), positions.get(i + 1));
-            if (nextDirX == 0 && nextDirZ == 0) {
-                continue;
-            }
-            if (nextDirX != baseDirX || nextDirZ != baseDirZ) {
-                Rotation rotation = computeLookRotation(positions.get(i + 1));
-                int stepsAhead = i - index;
-                float weight = MathHelper.clamp(0.58F - (stepsAhead - 1) * 0.10F, 0.20F, 0.58F);
-                return new UpcomingTurnLook(rotation, weight);
-            }
-        }
-
-        return null;
-    }
-
-    private int countStraightStepsAhead(IPathExecutor current) {
-        if (current == null || current.getPath() == null) {
-            return 0;
-        }
-
-        List<BetterBlockPos> positions = current.getPath().positions();
-        int index = current.getPosition();
-        if (index < 0 || index + 1 >= positions.size()) {
-            return 0;
-        }
-
-        int baseDirX = directionX(positions.get(index), positions.get(index + 1));
-        int baseDirZ = directionZ(positions.get(index), positions.get(index + 1));
-        int count = 0;
-
-        int maxLookahead = Math.min(positions.size() - 2, index + 6);
-        for (int i = index; i <= maxLookahead; i++) {
-            int nextDirX = directionX(positions.get(i), positions.get(i + 1));
-            int nextDirZ = directionZ(positions.get(i), positions.get(i + 1));
-            if (nextDirX == baseDirX && nextDirZ == baseDirZ) {
-                count++;
-            } else {
-                break;
-            }
-        }
-
-        return count;
-    }
-
-    private Rotation computeLookRotation(BetterBlockPos pos) {
-        Vec3d eyePos = ctx.player().getPositionEyes(1.0F);
-        Vec3d lookPos = new Vec3d(pos.x + 0.5D, pos.y + 0.85D, pos.z + 0.5D);
-        return RotationUtils.calcRotationFromVec3d(eyePos, lookPos, ctx.playerRotations());
-    }
-
-    private float computeFinalApproachProgress() {
-        Goal goal = baritone.getPathingBehavior().getGoal();
-        if (!(goal instanceof IGoalRenderPos) || ctx.player() == null) {
-            return 0.0F;
-        }
-
-        BlockPos goalPos = ((IGoalRenderPos) goal).getGoalPos();
-        if (goalPos == null) {
-            return 0.0F;
-        }
-
-        double dx = ctx.player().posX - (goalPos.getX() + 0.5D);
-        double dz = ctx.player().posZ - (goalPos.getZ() + 0.5D);
-        double dy = ctx.player().posY - goalPos.getY();
-        double distance = Math.sqrt(dx * dx + dz * dz + dy * dy * 0.35D);
-        float normalized = 1.0F - (float) (distance / 2.6F);
-        return MathHelper.clamp(normalized, 0.0F, 1.0F);
-    }
-
-    private float computeSweepYawOffset(float finalApproachProgress) {
-        double phase = (ctx.player().ticksExisted % 72) / 72.0D * Math.PI * 2.0D;
-        float amplitude = 1.85F * (1.0F - finalApproachProgress);
-        return (float) Math.sin(phase) * amplitude;
-    }
-
-    private Rotation blendRotation(Rotation from, Rotation to, float weight) {
-        weight = MathHelper.clamp(weight, 0.0F, 1.0F);
-        float blendedYaw = from.getYaw() + Rotation.normalizeYaw(to.getYaw() - from.getYaw()) * weight;
-        float blendedPitch = from.getPitch() + (to.getPitch() - from.getPitch()) * weight;
-        return new Rotation(blendedYaw, blendedPitch);
-    }
-
-    private Rotation applyObstacleAwareLook(Rotation base, float finalApproachProgress) {
-        if (finalApproachProgress >= 0.82F) {
-            return base;
-        }
-
-        IPathExecutor current = baritone.getPathingBehavior().getCurrent();
-        if (current == null || current.getPath() == null) {
-            return base;
-        }
-
-        List<BetterBlockPos> positions = current.getPath().positions();
-        int index = current.getPosition();
-        if (index < 0 || index + 1 >= positions.size()) {
-            return base;
-        }
-
-        BetterBlockPos nextPos = positions.get(index + 1);
-        int dirX = directionX(positions.get(index), nextPos);
-        int dirZ = directionZ(positions.get(index), nextPos);
-        if (dirX == 0 && dirZ == 0) {
-            return base;
-        }
-
-        int leftX = dirZ;
-        int leftZ = -dirX;
-        int rightX = -dirZ;
-        int rightZ = dirX;
-
-        float leftBlocked = sampleDirectionalBlockedness(nextPos, leftX, leftZ, dirX, dirZ);
-        float rightBlocked = sampleDirectionalBlockedness(nextPos, rightX, rightZ, dirX, dirZ);
-        float blockedDelta = leftBlocked - rightBlocked;
-        if (Math.abs(blockedDelta) < 0.08F) {
-            return base;
-        }
-
-        float yawOffset = MathHelper.clamp(
-                blockedDelta * 6.0F * (1.0F - finalApproachProgress * 0.75F),
-                -7.0F,
-                7.0F);
-        return new Rotation(base.getYaw() + yawOffset, base.getPitch());
-    }
-
-    private Rotation applyJunctionGlance(Rotation base, float finalApproachProgress) {
-        if (finalApproachProgress >= 0.7F || ctx.player() == null) {
-            junctionGlanceTicksRemaining = 0;
-            return base;
-        }
-
-        if (junctionGlanceTicksRemaining <= 0) {
-            tryStartJunctionGlance();
-        }
-
-        if (junctionGlanceTicksRemaining <= 0) {
-            return base;
-        }
-
-        float weight = MathHelper.clamp(junctionGlanceTicksRemaining / 9.0F, 0.0F, 1.0F)
-                * (1.0F - finalApproachProgress * 0.65F);
-        junctionGlanceTicksRemaining--;
-        return new Rotation(base.getYaw() + junctionGlanceYawOffset * weight, base.getPitch());
-    }
-
-    private Rotation stabilizeVisualPitch(Rotation base, float finalApproachProgress) {
-        float preferredPitch = 6.0F + finalApproachProgress * 3.0F;
-        float maxComfortPitch = 12.0F + finalApproachProgress * 2.0F;
-
-        float pitch = base.getPitch();
-        if (pitch > preferredPitch) {
-            pitch = preferredPitch + (pitch - preferredPitch) * 0.18F;
-        } else if (pitch < -18.0F) {
-            pitch = -18.0F + (pitch + 18.0F) * 0.25F;
-        }
-
-        pitch = MathHelper.clamp(pitch, -18.0F, maxComfortPitch);
-        return new Rotation(base.getYaw(), pitch);
-    }
-
-    private void tryStartJunctionGlance() {
-        IPathExecutor current = baritone.getPathingBehavior().getCurrent();
-        if (current == null || current.getPath() == null) {
-            return;
-        }
-
-        List<BetterBlockPos> positions = current.getPath().positions();
-        int index = current.getPosition();
-        if (index < 0 || index + 1 >= positions.size()) {
-            return;
-        }
-
-        BetterBlockPos currentPos = positions.get(index);
-        BetterBlockPos nextPos = positions.get(index + 1);
-        int dirX = directionX(currentPos, nextPos);
-        int dirZ = directionZ(currentPos, nextPos);
-        if (dirX == 0 && dirZ == 0) {
-            return;
-        }
-
-        int leftX = dirZ;
-        int leftZ = -dirX;
-        int rightX = -dirZ;
-        int rightZ = dirX;
-
-        boolean leftOpen = isWalkableDirection(nextPos, leftX, leftZ);
-        boolean rightOpen = isWalkableDirection(nextPos, rightX, rightZ);
-        if (!leftOpen && !rightOpen) {
-            return;
-        }
-
-        long junctionKey = toJunctionKey(nextPos);
-        if (junctionKey == lastJunctionGlanceKey) {
-            return;
-        }
-
-        float offset;
-        if (leftOpen && rightOpen) {
-            offset = ctx.player().ticksExisted % 2 == 0 ? -13.0F : 13.0F;
-        } else if (leftOpen) {
-            offset = -13.0F;
-        } else {
-            offset = 13.0F;
-        }
-
-        junctionGlanceYawOffset = offset;
-        junctionGlanceTicksRemaining = 6;
-        lastJunctionGlanceKey = junctionKey;
-    }
-
-    private float sampleDirectionalBlockedness(BetterBlockPos origin, int sideX, int sideZ, int forwardX, int forwardZ) {
-        float blocked = 0.0F;
-        if (!isWalkableColumn(origin.x + sideX, origin.y, origin.z + sideZ)) {
-            blocked += 0.65F;
-        }
-        if (!isWalkableColumn(origin.x + sideX + forwardX, origin.y, origin.z + sideZ + forwardZ)) {
-            blocked += 0.35F;
-        }
-        return blocked;
-    }
-
-    private boolean isWalkableDirection(BetterBlockPos origin, int dirX, int dirZ) {
-        if (dirX == 0 && dirZ == 0) {
-            return false;
-        }
-
-        return isWalkableColumn(origin.x + dirX, origin.y, origin.z + dirZ);
-    }
-
-    private boolean isWalkableColumn(int x, int y, int z) {
-        return MovementHelper.canWalkOn(ctx, new BlockPos(x, y - 1, z))
-                && MovementHelper.canWalkThrough(ctx, new BetterBlockPos(x, y, z))
-                && MovementHelper.canWalkThrough(ctx, new BetterBlockPos(x, y + 1, z));
-    }
-
-    private long toJunctionKey(BetterBlockPos pos) {
-        return (((long) pos.x) << 38) ^ (((long) pos.y) << 26) ^ (pos.z & 0x3FFFFFFL);
-    }
-
-    private int directionX(BetterBlockPos from, BetterBlockPos to) {
-        return Integer.compare(to.x - from.x, 0);
-    }
-
-    private int directionZ(BetterBlockPos from, BetterBlockPos to) {
-        return Integer.compare(to.z - from.z, 0);
-    }
-
-    private static final class UpcomingTurnLook {
-        private final Rotation rotation;
-        private final float weight;
-
-        private UpcomingTurnLook(Rotation rotation, float weight) {
-            this.rotation = rotation;
-            this.weight = weight;
-        }
     }
 
     private static final class AimProcessor extends AbstractAimProcessor {
@@ -640,7 +234,7 @@ public final class LookBehavior extends Behavior implements ILookBehavior {
 
         @Override
         protected Rotation getPrevRotation() {
-            // Implementation will use LookBehavior.serverRotation / movementRotation
+            // Implementation will use LookBehavior.serverRotation
             return ctx.playerRotations();
         }
     }
@@ -671,8 +265,7 @@ public final class LookBehavior extends Behavior implements ILookBehavior {
             float desiredYaw = rotation.getYaw();
             float desiredPitch = rotation.getPitch();
 
-            // In other words, the target doesn't care about the pitch, so it used
-            // playerRotations().getPitch()
+            // In other words, the target doesn't care about the pitch, so it used playerRotations().getPitch()
             // and it's safe to adjust it to a normal level
             if (desiredPitch == prev.getPitch()) {
                 desiredPitch = nudgeToLevel(desiredPitch);
@@ -683,13 +276,22 @@ public final class LookBehavior extends Behavior implements ILookBehavior {
 
             return new Rotation(
                     this.calculateMouseMove(prev.getYaw(), desiredYaw),
-                    this.calculateMouseMove(prev.getPitch(), desiredPitch)).clamp();
+                    this.calculateMouseMove(prev.getPitch(), desiredPitch)
+            ).clamp();
         }
 
         @Override
         public final void tick() {
+            // randomLooking
             this.randomYawOffset = (this.rand.nextDouble() - 0.5) * Baritone.settings().randomLooking.value;
             this.randomPitchOffset = (this.rand.nextDouble() - 0.5) * Baritone.settings().randomLooking.value;
+
+            // randomLooking113
+            double random = this.rand.nextDouble() - 0.5;
+            if (Math.abs(random) < 0.1) {
+                random *= 4;
+            }
+            this.randomYawOffset += random * Baritone.settings().randomLooking113.value;
         }
 
         @Override
@@ -727,8 +329,7 @@ public final class LookBehavior extends Behavior implements ILookBehavior {
         protected abstract Rotation getPrevRotation();
 
         /**
-         * Nudges the player's pitch to a regular level. (Between {@code -20} and
-         * {@code 10}, increments are by {@code 1})
+         * Nudges the player's pitch to a regular level. (Between {@code -20} and {@code 10}, increments are by {@code 1})
          */
         private float nudgeToLevel(float pitch) {
             if (pitch < -20) {
@@ -741,18 +342,19 @@ public final class LookBehavior extends Behavior implements ILookBehavior {
 
         private float calculateMouseMove(float current, float target) {
             final float delta = target - current;
-            final int deltaPx = angleToMouse(delta);
+            final double deltaPx = angleToMouse(delta); // yes, even the mouse movements use double
             return current + mouseToAngle(deltaPx);
         }
 
-        private int angleToMouse(float angleDelta) {
+        private double angleToMouse(float angleDelta) {
             final float minAngleChange = mouseToAngle(1);
             return Math.round(angleDelta / minAngleChange);
         }
 
-        private float mouseToAngle(int mouseDelta) {
-            final float f = ctx.minecraft().gameSettings.mouseSensitivity * 0.6f + 0.2f;
-            return mouseDelta * f * f * f * 8.0f * 0.15f;
+        private float mouseToAngle(double mouseDelta) {
+            // casting float literals to double gets us the precise values used by mc
+            final double f = ctx.minecraft().options.sensitivity().get() * (double) 0.6f + (double) 0.2f;
+            return (float) (mouseDelta * f * f * f * 8.0d) * 0.15f; // yes, one double and one float scaling factor
         }
     }
 
@@ -788,36 +390,24 @@ public final class LookBehavior extends Behavior implements ILookBehavior {
                 final Settings settings = Baritone.settings();
                 final boolean antiCheat = settings.antiCheatCompatibility.value;
                 final boolean blockFreeLook = settings.blockFreeLook.value;
-                final boolean killAuraOwnsLook = ctx != null
-                        && ctx.player() != null
-                        && KillAuraHandler.INSTANCE.getVisualTargetRotation(ctx.player()).isPresent();
-                final Mode resolvedMode;
 
-                if (ctx.player().isElytraFlying()) {
+                if (ctx.player().isFallFlying()) {
                     // always need to set angles while flying
-                    resolvedMode = settings.elytraFreeLook.value ? SERVER : CLIENT;
+                    return settings.elytraFreeLook.value ? SERVER : CLIENT;
                 } else if (settings.freeLook.value) {
-                    // Regardless of if antiCheatCompatibility is enabled, if a blockInteract is
-                    // requested then the player
-                    // rotation needs to be set somehow, otherwise Baritone will halt since
-                    // objectMouseOver() will just be
-                    // whatever the player is mousing over visually. Let's just settle for setting
-                    // it silently.
+                    // Regardless of if antiCheatCompatibility is enabled, if a blockInteract is requested then the player
+                    // rotation needs to be set somehow, otherwise Baritone will halt since objectMouseOver() will just be
+                    // whatever the player is mousing over visually. Let's just settle for setting it silently.
                     if (blockInteract) {
-                        resolvedMode = blockFreeLook ? SERVER : CLIENT;
-                    } else {
-                        resolvedMode = antiCheat ? SERVER : NONE;
+                        return blockFreeLook ? SERVER : CLIENT;
                     }
-                } else {
-                    // all freeLook settings are disabled so set the angles
-                    resolvedMode = CLIENT;
+                    return antiCheat ? SERVER : NONE;
                 }
 
-                if (killAuraOwnsLook && resolvedMode == CLIENT) {
-                    return SERVER;
-                }
-                return resolvedMode;
+                // all freeLook settings are disabled so set the angles
+                return CLIENT;
             }
         }
     }
 }
+

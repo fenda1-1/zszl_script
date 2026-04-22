@@ -23,7 +23,6 @@ import com.zszl.zszlScriptMod.shadowbaritone.api.command.argument.IArgConsumer;
 import com.zszl.zszlScriptMod.shadowbaritone.api.command.datatypes.RelativeGoalXZ;
 import com.zszl.zszlScriptMod.shadowbaritone.api.command.exception.CommandException;
 import com.zszl.zszlScriptMod.shadowbaritone.api.pathing.goals.GoalXZ;
-import com.zszl.zszlScriptMod.shadowbaritone.api.utils.ShadowBaritoneI18n;
 
 import java.util.Arrays;
 import java.util.List;
@@ -46,9 +45,7 @@ public class ExploreCommand extends Command {
                 ? args.getDatatypePost(RelativeGoalXZ.INSTANCE, ctx.playerFeet())
                 : new GoalXZ(ctx.playerFeet());
         baritone.getExploreProcess().explore(goal.getX(), goal.getZ());
-        logDirect(ShadowBaritoneI18n.trKey(
-                "shadowbaritone.command.explore.status.exploring_from",
-                goal.toString()));
+        logDirect(String.format("Exploring from %s", goal.toString()));
     }
 
     @Override
@@ -61,21 +58,18 @@ public class ExploreCommand extends Command {
 
     @Override
     public String getShortDesc() {
-        return ShadowBaritoneI18n.trKey(
-                "shadowbaritone.command.explore.short_desc");
+        return "Explore things";
     }
 
     @Override
     public List<String> getLongDesc() {
         return Arrays.asList(
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.explore.long_desc.1"),
+                "Tell Baritone to explore randomly. If you used explorefilter before this, it will be applied.",
                 "",
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.explore.long_desc.usage"),
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.explore.long_desc.example.default"),
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.explore.long_desc.example.xz"));
+                "Usage:",
+                "> explore - Explore from your current position.",
+                "> explore <x> <z> - Explore from the specified X and Z position."
+        );
     }
 }
+

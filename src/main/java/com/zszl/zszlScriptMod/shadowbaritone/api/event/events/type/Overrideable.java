@@ -47,6 +47,8 @@ public class Overrideable<T> {
         return String.format(
                 "Overrideable{modified=%b,value=%s}",
                 modified,
-                value.toString());
+                value.toString()
+        );
     }
 }
+

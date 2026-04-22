@@ -28,27 +28,20 @@ import com.zszl.zszlScriptMod.shadowbaritone.api.utils.Rotation;
 public interface ILookBehavior extends IBehavior {
 
     /**
-     * Updates the current {@link ILookBehavior} target to target the specified
-     * rotations on the next tick. If any sort
-     * of block interaction is required, {@code blockInteract} should be
-     * {@code true}. It is not guaranteed that the
-     * rotations set by the caller will be the exact rotations expressed by the
-     * client (This is due to settings like
-     * {@link Settings#randomLooking}). If the rotations produced by this behavior
-     * are required, then the
+     * Updates the current {@link ILookBehavior} target to target the specified rotations on the next tick. If any sort
+     * of block interaction is required, {@code blockInteract} should be {@code true}. It is not guaranteed that the
+     * rotations set by the caller will be the exact rotations expressed by the client (This is due to settings like
+     * {@link Settings#randomLooking}). If the rotations produced by this behavior are required, then the
      * {@link #getAimProcessor() aim processor} should be used.
      *
      * @param rotation      The target rotations
-     * @param blockInteract Whether the target rotations are needed for a block
-     *                      interaction
+     * @param blockInteract Whether the target rotations are needed for a block interaction
      */
     void updateTarget(Rotation rotation, boolean blockInteract);
 
     /**
-     * The aim processor instance for this {@link ILookBehavior}, which is
-     * responsible for applying additional,
-     * deterministic transformations to the target rotation set by
-     * {@link #updateTarget}.
+     * The aim processor instance for this {@link ILookBehavior}, which is responsible for applying additional,
+     * deterministic transformations to the target rotation set by {@link #updateTarget}.
      *
      * @return The aim processor
      * @see IAimProcessor#fork
@@ -56,14 +49,8 @@ public interface ILookBehavior extends IBehavior {
     IAimProcessor getAimProcessor();
 
     /**
-     * Returns whether movement should stay decoupled from the player's current
-     * visual camera yaw.
-     * <p>
-     * When this is {@code true}, free-look style input remapping is responsible for
-     * keeping the player on-path, so physics/movement code must not apply an
-     * additional yaw override.
-     *
-     * @return {@code true} when movement and visual camera yaw must stay decoupled
+     * Whether movement input should stay locked to Baritone's pathing yaw instead of the player's visible camera yaw.
      */
     boolean shouldDecoupleMovementFromVisualYaw();
 }
+

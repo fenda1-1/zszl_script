@@ -1,11 +1,11 @@
 package com.zszl.zszlScriptMod.gui.path;
 
-import net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
 import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
-import net.minecraft.client.resources.I18n;
-import net.minecraft.util.text.TextComponentString;
-import net.minecraft.util.text.TextFormatting;
-import com.zszl.zszlScriptMod.shadowbaritone.utils.GuiPathingPolicy;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.util.text.TextComponentString;
+import net.minecraft.ChatFormatting;
 
 import java.io.IOException;
 import java.util.List;
@@ -76,10 +76,10 @@ public class GuiCustomPathCreator extends ThemedGuiScreen {
         switch (button.id) {
             case 0:
                 PathRecordingManager.startRecording();
-                mc.displayGuiScreen(null);
+                mc.setScreen(null);
                 if (mc.player != null) {
-                    mc.player.sendMessage(
-                            new TextComponentString(TextFormatting.GREEN + I18n.format("msg.path.record_started")));
+                    mc.player.sendSystemMessage(
+                            new TextComponentString(ChatFormatting.GREEN + I18n.format("msg.path.record_started")));
                 }
                 break;
             case 1:
@@ -87,37 +87,43 @@ public class GuiCustomPathCreator extends ThemedGuiScreen {
                     statusMessage = I18n.format("gui.path.creator.error.no_steps");
                     return;
                 }
-                mc.displayGuiScreen(new GuiTextInput(this, I18n.format("gui.path.creator.input_name"), (pathName) -> {
+                mc.setScreen(new GuiTextInput(this, I18n.format("gui.path.creator.input_name"), (pathName) -> {
                     if (pathName != null && !pathName.trim().isEmpty()) {
-                        mc.displayGuiScreen(new GuiCategorySelect(this, null, category -> {
+                        mc.setScreen(new GuiCategorySelect(this, null, category -> {
                             PathSequenceManager.createSequenceFromRecording(pathName.trim(),
                                     PathRecordingManager.getRecordedSteps(), category);
                             PathRecordingManager.stopAndClearRecording();
                             if (mc.player != null) {
-                                mc.player.sendMessage(new TextComponentString(
-                                        TextFormatting.AQUA + I18n.format("msg.path.saved_to_category", pathName.trim(),
+                                mc.player.sendSystemMessage(new TextComponentString(
+                                        ChatFormatting.AQUA + I18n.format("msg.path.saved_to_category", pathName.trim(),
                                                 category)));
                             }
-                            mc.displayGuiScreen(new GuiPathManager());
+                            mc.setScreen(new GuiPathManager());
                         }));
                     } else {
-                        mc.displayGuiScreen(this);
+                        mc.setScreen(this);
                     }
                 }));
                 break;
             case 2:
                 PathRecordingManager.stopAndClearRecording();
-                mc.displayGuiScreen(new GuiPathManager());
+                mc.setScreen(new GuiPathManager());
                 break;
             case 3:
-                mc.displayGuiScreen(new GuiPathManager());
+                mc.setScreen(new GuiPathManager());
                 break;
         }
     }
 
     @Override
     public boolean doesGuiPauseGame() {
-        return !GuiPathingPolicy.shouldKeepPathingDuringGui(this.mc);
+        return true;
     }
 }
+
+
+
+
+
+
 

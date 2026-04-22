@@ -6,10 +6,10 @@ import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
 import com.zszl.zszlScriptMod.system.ServerFeatureVisibilityManager;
 import com.zszl.zszlScriptMod.system.ServerFeatureVisibilityManager.ServerFeatureRule;
 
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiScreen;
-import net.minecraft.client.resources.I18n;
-import org.lwjgl.input.Mouse;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Mouse;
 
 import java.io.IOException;
 
@@ -65,7 +65,7 @@ public class GuiServerFeatureVisibilityConfig extends ThemedGuiScreen {
             }
         } else if (button.id == 2) {
             ServerFeatureVisibilityManager.saveConfig();
-            this.mc.displayGuiScreen(parentScreen);
+            this.mc.setScreen(parentScreen);
         }
     }
 
@@ -148,3 +148,9 @@ public class GuiServerFeatureVisibilityConfig extends ThemedGuiScreen {
         }
     }
 }
+
+
+
+
+
+

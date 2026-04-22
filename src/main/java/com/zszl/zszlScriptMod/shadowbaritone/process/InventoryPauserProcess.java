@@ -41,7 +41,7 @@ public class InventoryPauserProcess extends BaritoneProcessHelper {
     }
 
     private double motion() {
-        return Math.sqrt(ctx.player().motionX * ctx.player().motionX + ctx.player().motionZ * ctx.player().motionZ);
+        return ctx.player().getDeltaMovement().multiply(1, 0, 1).length();
     }
 
     private boolean stationaryNow() {
@@ -55,8 +55,7 @@ public class InventoryPauserProcess extends BaritoneProcessHelper {
 
     @Override
     public PathingCommand onTick(boolean calcFailed, boolean isSafeToCancel) {
-        // logDebug(pauseRequestedLastTick + " " + safeToCancelLastTick + " " +
-        // ticksOfStationary);
+        //logDebug(pauseRequestedLastTick + " " + safeToCancelLastTick + " " + ticksOfStationary);
         safeToCancelLastTick = isSafeToCancel;
         if (pauseRequestedLastTick) {
             pauseRequestedLastTick = false;
@@ -89,3 +88,4 @@ public class InventoryPauserProcess extends BaritoneProcessHelper {
         return true;
     }
 }
+

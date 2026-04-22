@@ -3,10 +3,10 @@ package com.zszl.zszlScriptMod.gui.config;
 import com.zszl.zszlScriptMod.gui.components.ThemedButton;
 import com.zszl.zszlScriptMod.handlers.AutoUseItemHandler;
 import com.zszl.zszlScriptMod.system.AutoUseItemRule;
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiScreen;
-import net.minecraft.client.gui.GuiTextField;
-import net.minecraft.client.resources.I18n;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiTextField;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -93,12 +93,6 @@ public class GuiAutoUseItemConfig extends AbstractThreePaneRuleManager<AutoUseIt
     @Override
     protected boolean deleteCategoryInSource(String category) {
         return AutoUseItemHandler.deleteCategory(category);
-    }
-
-    @Override
-    protected boolean replaceCategoryOrderInSource(List<String> orderedCategories) {
-        AutoUseItemHandler.replaceCategoryOrder(orderedCategories);
-        return true;
     }
 
     @Override
@@ -341,12 +335,10 @@ public class GuiAutoUseItemConfig extends AbstractThreePaneRuleManager<AutoUseIt
                 trimToWidth("使用: " + useModeText(item.useMode) + "  匹配: " + matchModeText(item.matchMode)
                         + "  本地槽: " + onOff(item.changeLocalSlot), width - 12),
                 x + 6, y + 31, 0xFFBDBDBD);
-        drawString(fontRenderer,
-                trimToWidth("间隔: " + Math.max(10, item.intervalMs) + " ms  切物: "
+        drawString(fontRenderer, trimToWidth("间隔: " + Math.max(10, item.intervalMs) + " ms  切物: "
                         + Math.max(0, item.switchItemDelayTicks) + "t  切后: "
                         + Math.max(0, item.switchDelayTicks) + "t  切回: "
-                        + Math.max(0, item.restoreDelayTicks) + "t",
-                        width - 12),
+                        + Math.max(0, item.restoreDelayTicks) + "t", width - 12),
                 x + 6, y + 44, 0xFFB8C7D9);
     }
 
@@ -464,3 +456,6 @@ public class GuiAutoUseItemConfig extends AbstractThreePaneRuleManager<AutoUseIt
                 : I18n.format("gui.autouseitem.match.contains");
     }
 }
+
+
+

@@ -7,11 +7,11 @@ import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
 import com.zszl.zszlScriptMod.gui.components.ToggleGuiButton;
 import com.zszl.zszlScriptMod.otherfeatures.handler.render.RenderFeatureManager;
 import com.zszl.zszlScriptMod.otherfeatures.handler.render.RenderFeatureManager.FeatureState;
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiScreen;
-import net.minecraft.client.gui.ScaledResolution;
-import org.lwjgl.input.Keyboard;
-import org.lwjgl.input.Mouse;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.ScaledResolution;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Keyboard;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Mouse;
 import org.lwjgl.opengl.GL11;
 
 import java.io.IOException;
@@ -287,7 +287,7 @@ public class GuiRenderFeatureConfig extends ThemedGuiScreen {
         } else if (button.id == BTN_SAVE) {
             RenderFeatureManager.setEnabledTransient(this.featureId, this.draftEnabled);
             RenderFeatureManager.saveConfig();
-            this.mc.displayGuiScreen(this.parentScreen);
+            this.mc.setScreen(this.parentScreen);
             return;
         } else if (button.id == BTN_DEFAULT) {
             this.draftEnabled = false;
@@ -295,7 +295,7 @@ public class GuiRenderFeatureConfig extends ThemedGuiScreen {
             RenderFeatureManager.applyFeatureDefaultsWithoutSave(this.featureId);
         } else if (button.id == BTN_CANCEL) {
             RenderFeatureManager.loadConfig();
-            this.mc.displayGuiScreen(this.parentScreen);
+            this.mc.setScreen(this.parentScreen);
             return;
         } else {
             handleOptionButton(button.id - OPTION_BUTTON_START);
@@ -315,7 +315,7 @@ public class GuiRenderFeatureConfig extends ThemedGuiScreen {
             openFloatInput("输入 Gamma 值 (1.0 - 16.0)", RenderFeatureManager.brightnessGamma, 1.0F, 16.0F,
                     value -> RenderFeatureManager.brightnessGamma = value);
         } else if ("edit_blocks".equals(key)) {
-            this.mc.displayGuiScreen(new GuiXrayBlockEditor(this));
+            this.mc.setScreen(new GuiXrayBlockEditor(this));
         } else if ("max_distance".equals(key)) {
             openDistanceInput();
         } else if ("line_width".equals(key)) {
@@ -476,6 +476,8 @@ public class GuiRenderFeatureConfig extends ThemedGuiScreen {
         switch (key) {
         case "gamma":
             return "Gamma : " + formatFloat(RenderFeatureManager.brightnessGamma);
+        case "edit_blocks":
+            return "透视方块 : " + RenderFeatureManager.getXrayVisibleBlockIds().size() + " 项";
         case "max_distance":
             return "最大范围 : " + formatFloat(getDistanceValue()) + " 格";
         case "line_width":
@@ -484,8 +486,6 @@ public class GuiRenderFeatureConfig extends ThemedGuiScreen {
                     + " : " + formatFloat(getLineWidthValue());
         case "max_steps":
             return "轨迹步数 : " + RenderFeatureManager.trajectoryMaxSteps;
-        case "edit_blocks":
-            return "编辑透视方块 : 已选 " + RenderFeatureManager.getXrayVisibleBlockIds().size() + " 项";
         case "color":
             return "准星颜色 : #" + String.format(Locale.ROOT, "%06X", RenderFeatureManager.crosshairColorRgb & 0xFFFFFF);
         case "size":
@@ -518,8 +518,6 @@ public class GuiRenderFeatureConfig extends ThemedGuiScreen {
             return "穿墙显示";
         case "filled_box":
             return "填充方框";
-        case "edit_blocks":
-            return "透视方块编辑";
         case "show_health":
             return "显示血量";
         case "show_distance":
@@ -532,6 +530,8 @@ public class GuiRenderFeatureConfig extends ThemedGuiScreen {
             return "高亮刷怪笼";
         case "ores":
             return "高亮矿石";
+        case "edit_blocks":
+            return "编辑透视方块";
         case "show_name":
             return "显示名称";
         case "bows":
@@ -636,8 +636,6 @@ public class GuiRenderFeatureConfig extends ThemedGuiScreen {
             if ("filled_box".equals(key)) {
                 return RenderFeatureManager.blockHighlightFilledBox;
             }
-            return false;
-        case "xray":
             return false;
         case "item_esp":
             if ("show_name".equals(key)) {
@@ -777,8 +775,6 @@ public class GuiRenderFeatureConfig extends ThemedGuiScreen {
                 RenderFeatureManager.blockHighlightFilledBox = !RenderFeatureManager.blockHighlightFilledBox;
             }
             break;
-        case "xray":
-            break;
         case "item_esp":
             if ("show_name".equals(key)) {
                 RenderFeatureManager.itemEspShowName = !RenderFeatureManager.itemEspShowName;
@@ -849,7 +845,7 @@ public class GuiRenderFeatureConfig extends ThemedGuiScreen {
     }
 
     private void openFloatInput(String title, float currentValue, float minValue, float maxValue, Consumer<Float> setter) {
-        this.mc.displayGuiScreen(new GuiTextInput(this, title, formatFloat(currentValue), value -> {
+        this.mc.setScreen(new GuiTextInput(this, title, formatFloat(currentValue), value -> {
             float parsed = currentValue;
             try {
                 parsed = Float.parseFloat(value.trim());
@@ -857,12 +853,12 @@ public class GuiRenderFeatureConfig extends ThemedGuiScreen {
             }
             setter.accept(clampFloat(parsed, minValue, maxValue));
             refreshButtonTexts();
-            this.mc.displayGuiScreen(this);
+            this.mc.setScreen(this);
         }));
     }
 
     private void openIntInput(String title, int currentValue, int minValue, int maxValue, Consumer<Integer> setter) {
-        this.mc.displayGuiScreen(new GuiTextInput(this, title, String.valueOf(currentValue), value -> {
+        this.mc.setScreen(new GuiTextInput(this, title, String.valueOf(currentValue), value -> {
             int parsed = currentValue;
             try {
                 parsed = Integer.parseInt(value.trim());
@@ -870,7 +866,7 @@ public class GuiRenderFeatureConfig extends ThemedGuiScreen {
             }
             setter.accept(clampInt(parsed, minValue, maxValue));
             refreshButtonTexts();
-            this.mc.displayGuiScreen(this);
+            this.mc.setScreen(this);
         }));
     }
 
@@ -893,7 +889,7 @@ public class GuiRenderFeatureConfig extends ThemedGuiScreen {
 
     private void openColorInput() {
         String initial = "#" + String.format(Locale.ROOT, "%06X", RenderFeatureManager.crosshairColorRgb & 0xFFFFFF);
-        this.mc.displayGuiScreen(new GuiTextInput(this, "输入十字准星颜色 (#RRGGBB)", initial, value -> {
+        this.mc.setScreen(new GuiTextInput(this, "输入十字准星颜色 (#RRGGBB)", initial, value -> {
             int parsed = RenderFeatureManager.crosshairColorRgb & 0xFFFFFF;
             try {
                 String normalized = value == null ? "" : value.trim();
@@ -907,7 +903,7 @@ public class GuiRenderFeatureConfig extends ThemedGuiScreen {
             }
             RenderFeatureManager.crosshairColorRgb = parsed;
             refreshButtonTexts();
-            this.mc.displayGuiScreen(this);
+            this.mc.setScreen(this);
         }));
     }
 
@@ -1034,7 +1030,7 @@ public class GuiRenderFeatureConfig extends ThemedGuiScreen {
     protected void keyTyped(char typedChar, int keyCode) throws IOException {
         if (keyCode == Keyboard.KEY_ESCAPE) {
             RenderFeatureManager.loadConfig();
-            this.mc.displayGuiScreen(this.parentScreen);
+            this.mc.setScreen(this.parentScreen);
             return;
         }
         super.keyTyped(typedChar, keyCode);
@@ -1047,8 +1043,8 @@ public class GuiRenderFeatureConfig extends ThemedGuiScreen {
 
     @Override
     public void handleMouseInput() throws IOException {
-        int mouseX = Mouse.getEventX() * this.width / this.mc.displayWidth;
-        int mouseY = this.height - Mouse.getEventY() * this.height / this.mc.displayHeight - 1;
+        int mouseX = Mouse.getEventX() * this.width / this.mc.getWindow().getWidth();
+        int mouseY = this.height - Mouse.getEventY() * this.height / this.mc.getWindow().getHeight() - 1;
 
         int dWheel = Mouse.getEventDWheel();
         if (dWheel != 0) {
@@ -1297,7 +1293,7 @@ public class GuiRenderFeatureConfig extends ThemedGuiScreen {
             if (!isPointInsideButtonArea(button, mouseX, mouseY)) {
                 continue;
             }
-            button.playPressSound(this.mc.getSoundHandler());
+            button.playPressSound(this.mc.getSoundManager());
             actionPerformed(button);
             return true;
         }
@@ -1453,3 +1449,10 @@ public class GuiRenderFeatureConfig extends ThemedGuiScreen {
         return false;
     }
 }
+
+
+
+
+
+
+

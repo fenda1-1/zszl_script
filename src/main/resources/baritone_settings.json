@@ -140,34 +140,16 @@
       "desc": "允许在下半砖行走"
     },
     {
-      "key": "parkourMode",
-      "defaultValue": "false",
-      "type": "boolean",
-      "desc": "启用独立跑酷模式（会自动压制 Backfill、跑酷放块和模拟真人路线扰动）"
-    },
-    {
-      "key": "parkourProfile",
-      "defaultValue": "STABLE",
-      "type": "string",
-      "desc": "跑酷模式策略档位（默认 STABLE，优先稳定通关）"
-    },
-    {
-      "key": "parkourDebugRender",
-      "defaultValue": "false",
-      "type": "boolean",
-      "desc": "显示跑酷调试渲染（起跳窗口、落点窗口、阶段与失败原因）"
-    },
-    {
       "key": "allowParkour",
       "defaultValue": "false",
       "type": "boolean",
-      "desc": "允许低层跑酷跳跃"
+      "desc": "允许跑酷"
     },
     {
       "key": "allowParkourPlace",
       "defaultValue": "false",
       "type": "boolean",
-      "desc": "允许跑酷放方块（启用 parkourMode 时会被自动忽略）"
+      "desc": "允许跑酷放方块"
     },
     {
       "key": "considerPotionEffects",
@@ -804,24 +786,6 @@
       "defaultValue": "[]",
       "type": "list",
       "desc": "需要避开的方块列表"
-    },
-    {
-      "key": "blockingBlocks",
-      "defaultValue": "[tripwire,cocoa,skull,end_rod,ladder,vine,snow_layer,cauldron,iron_door,iron_trapdoor]",
-      "type": "list",
-      "desc": "阻挡方块列表（会按不可通过处理）"
-    },
-    {
-      "key": "interactionBlocks",
-      "defaultValue": "[oak_door,spruce_door,birch_door,jungle_door,acacia_door,dark_oak_door,oak_fence_gate,spruce_fence_gate,birch_fence_gate,jungle_fence_gate,acacia_fence_gate,dark_oak_fence_gate,trapdoor]",
-      "type": "list",
-      "desc": "需要交互方块列表（会尝试右键交互后通过）"
-    },
-    {
-      "key": "dangerousBlocks",
-      "defaultValue": "[flowing_water,water,flowing_lava,lava,magma,cactus,fire,end_portal,web]",
-      "type": "list",
-      "desc": "危险方块列表（会影响危险地形判定与部分移动规划）"
     },
     {
       "key": "blocksToDisallowBreaking",

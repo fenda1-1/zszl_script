@@ -17,7 +17,6 @@
 
 package com.zszl.zszlScriptMod.shadowbaritone.event;
 
-import com.zszl.zszlScriptMod.zszlScriptMod;
 import com.zszl.zszlScriptMod.shadowbaritone.Baritone;
 import com.zszl.zszlScriptMod.shadowbaritone.api.event.events.*;
 import com.zszl.zszlScriptMod.shadowbaritone.api.event.events.type.EventState;
@@ -28,14 +27,12 @@ import com.zszl.zszlScriptMod.shadowbaritone.api.utils.Pair;
 import com.zszl.zszlScriptMod.shadowbaritone.cache.CachedChunk;
 import com.zszl.zszlScriptMod.shadowbaritone.cache.WorldProvider;
 import com.zszl.zszlScriptMod.shadowbaritone.utils.BlockStateInterface;
-import net.minecraft.block.state.IBlockState;
-import net.minecraft.util.math.ChunkPos;
-import net.minecraft.world.World;
-import net.minecraft.world.chunk.Chunk;
+import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.chunk.LevelChunk;
 
 import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
@@ -44,13 +41,9 @@ import java.util.concurrent.CopyOnWriteArrayList;
  */
 public final class GameEventHandler implements IEventBus, Helper {
 
-    private static final long LISTENER_FAILURE_LOG_INTERVAL_MS = 5000L;
-
     private final Baritone baritone;
 
     private final List<IGameEventListener> listeners = new CopyOnWriteArrayList<>();
-    private final Map<String, Long> lastListenerFailureLogTimes = new ConcurrentHashMap<>();
-    private final Map<String, Integer> suppressedListenerFailureCounts = new ConcurrentHashMap<>();
 
     public GameEventHandler(Baritone baritone) {
         this.baritone = baritone;
@@ -62,58 +55,18 @@ public final class GameEventHandler implements IEventBus, Helper {
             try {
                 baritone.bsi = new BlockStateInterface(baritone.getPlayerContext(), true);
             } catch (Exception ex) {
+                ex.printStackTrace();
                 baritone.bsi = null;
             }
         } else {
             baritone.bsi = null;
         }
-        for (IGameEventListener l : listeners) {
-            try {
-                l.onTick(event);
-            } catch (Throwable t) {
-                logListenerFailure("onTick", l, t);
-            }
-        }
+        listeners.forEach(l -> l.onTick(event));
     }
 
     @Override
     public void onPostTick(TickEvent event) {
-        for (IGameEventListener l : listeners) {
-            try {
-                l.onPostTick(event);
-            } catch (Throwable t) {
-                logListenerFailure("onPostTick", l, t);
-            }
-        }
-    }
-
-    private void logListenerFailure(String phase, IGameEventListener listener, Throwable throwable) {
-        String listenerName = listener.getClass().getName();
-        String exceptionType = throwable.getClass().getName();
-        String exceptionMessage = String.valueOf(throwable.getMessage());
-        String throttleKey = phase + "|" + listenerName + "|" + exceptionType + "|" + exceptionMessage;
-        long now = System.currentTimeMillis();
-
-        Long lastLoggedAt = lastListenerFailureLogTimes.get(throttleKey);
-        if (lastLoggedAt != null && now - lastLoggedAt < LISTENER_FAILURE_LOG_INTERVAL_MS) {
-            suppressedListenerFailureCounts.merge(throttleKey, 1, Integer::sum);
-            return;
-        }
-
-        lastListenerFailureLogTimes.put(throttleKey, now);
-        int suppressedCount = suppressedListenerFailureCounts.getOrDefault(throttleKey, 0);
-        suppressedListenerFailureCounts.remove(throttleKey);
-
-        StringBuilder message = new StringBuilder()
-                .append("[ShadowBaritone/EventBus] ")
-                .append(phase)
-                .append(" listener failed: ")
-                .append(listenerName);
-        if (suppressedCount > 0) {
-            message.append(" (suppressed ").append(suppressedCount).append(" repeats)");
-        }
-
-        zszlScriptMod.LOGGER.warn(message.toString(), throwable);
+        listeners.forEach(l -> l.onPostTick(event));
     }
 
     @Override
@@ -136,21 +89,22 @@ public final class GameEventHandler implements IEventBus, Helper {
         EventState state = event.getState();
         ChunkEvent.Type type = event.getType();
 
-        World world = baritone.getPlayerContext().world();
+        Level world = baritone.getPlayerContext().world();
 
         // Whenever the server sends us to another dimension, chunks are unloaded
         // technically after the new world has been loaded, so we perform a check
         // to make sure the chunk being unloaded is already loaded.
         boolean isPreUnload = state == EventState.PRE
                 && type == ChunkEvent.Type.UNLOAD
-                && world.getChunkProvider().isChunkGeneratedAt(event.getX(), event.getZ());
+                && world.getChunkSource().getChunk(event.getX(), event.getZ(), null, false) != null;
 
         if (event.isPostPopulate() || isPreUnload) {
             baritone.getWorldProvider().ifWorldLoaded(worldData -> {
-                Chunk chunk = world.getChunkFromChunkCoords(event.getX(), event.getZ());
+                LevelChunk chunk = world.getChunk(event.getX(), event.getZ());
                 worldData.getCachedWorld().queueForPacking(chunk);
             });
         }
+
 
         listeners.forEach(l -> l.onChunkEvent(event));
     }
@@ -159,14 +113,14 @@ public final class GameEventHandler implements IEventBus, Helper {
     public void onBlockChange(BlockChangeEvent event) {
         if (Baritone.settings().repackOnAnyBlockChange.value) {
             final boolean keepingTrackOf = event.getBlocks().stream()
-                    .map(Pair::second).map(IBlockState::getBlock)
+                    .map(Pair::second).map(BlockState::getBlock)
                     .anyMatch(CachedChunk.BLOCKS_TO_KEEP_TRACK_OF::contains);
 
             if (keepingTrackOf) {
                 baritone.getWorldProvider().ifWorldLoaded(worldData -> {
-                    final World world = baritone.getPlayerContext().world();
+                    final Level world = baritone.getPlayerContext().world();
                     ChunkPos pos = event.getChunkPos();
-                    worldData.getCachedWorld().queueForPacking(world.getChunkFromChunkCoords(pos.x, pos.z));
+                    worldData.getCachedWorld().queueForPacking(world.getChunk(pos.x, pos.z));
                 });
             }
         }
@@ -233,3 +187,4 @@ public final class GameEventHandler implements IEventBus, Helper {
         this.listeners.add(listener);
     }
 }
+

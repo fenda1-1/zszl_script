@@ -17,6 +17,7 @@
 
 package com.zszl.zszlScriptMod.shadowbaritone.command.defaults;
 
+import com.zszl.zszlScriptMod.system.ProfileManager;
 import com.zszl.zszlScriptMod.shadowbaritone.Baritone;
 import com.zszl.zszlScriptMod.shadowbaritone.api.IBaritone;
 import com.zszl.zszlScriptMod.shadowbaritone.api.Settings;
@@ -29,13 +30,12 @@ import com.zszl.zszlScriptMod.shadowbaritone.api.command.exception.CommandInvali
 import com.zszl.zszlScriptMod.shadowbaritone.api.command.helpers.Paginator;
 import com.zszl.zszlScriptMod.shadowbaritone.api.command.helpers.TabCompleteHelper;
 import com.zszl.zszlScriptMod.shadowbaritone.api.utils.SettingsUtil;
-import com.zszl.zszlScriptMod.shadowbaritone.api.utils.ShadowBaritoneI18n;
-import com.zszl.zszlScriptMod.system.ProfileManager;
-import net.minecraft.util.text.ITextComponent;
-import net.minecraft.util.text.TextComponentString;
-import net.minecraft.util.text.TextFormatting;
-import net.minecraft.util.text.event.ClickEvent;
-import net.minecraft.util.text.event.HoverEvent;
+import net.minecraft.ChatFormatting;
+import net.minecraft.client.Minecraft;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.ClickEvent;
+import net.minecraft.network.chat.HoverEvent;
+import net.minecraft.network.chat.MutableComponent;
 
 import java.util.Arrays;
 import java.util.List;
@@ -57,8 +57,7 @@ public class SetCommand extends Command {
         String arg = args.hasAny() ? args.getString().toLowerCase(Locale.US) : "list";
         if (Arrays.asList("s", "save").contains(arg)) {
             SettingsUtil.save(Baritone.settings());
-            logDirect(ShadowBaritoneI18n.trKey(
-                    "shadowbaritone.command.set.status.saved"));
+            logDirect("Settings saved");
             return;
         }
         if (Arrays.asList("load", "ld").contains(arg)) {
@@ -70,9 +69,7 @@ public class SetCommand extends Command {
             SettingsUtil.modifiedSettings(Baritone.settings()).forEach(Settings.Setting::reset);
             // then load from disk
             SettingsUtil.readAndApply(Baritone.settings(), file);
-            logDirect(ShadowBaritoneI18n.trKey(
-                    "shadowbaritone.command.set.status.reloaded_from",
-                    file));
+            logDirect("Settings reloaded from " + file);
             return;
         }
         boolean viewModified = Arrays.asList("m", "mod", "modified").contains(arg);
@@ -81,59 +78,43 @@ public class SetCommand extends Command {
         if (paginate) {
             String search = args.hasAny() && args.peekAsOrNull(Integer.class) == null ? args.getString() : "";
             args.requireMax(1);
-            List<? extends Settings.Setting> toPaginate = (viewModified
-                    ? SettingsUtil.modifiedSettings(Baritone.settings())
-                    : Baritone.settings().allSettings).stream()
-                    .filter(s -> !s.isJavaOnly())
-                    .filter(s -> s.getName().toLowerCase(Locale.US).contains(search.toLowerCase(Locale.US)))
-                    .sorted((s1, s2) -> String.CASE_INSENSITIVE_ORDER.compare(s1.getName(), s2.getName()))
-                    .collect(Collectors.toList());
+            List<? extends Settings.Setting> toPaginate =
+                    (viewModified ? SettingsUtil.modifiedSettings(Baritone.settings()) : Baritone.settings().allSettings).stream()
+                            .filter(s -> !s.isJavaOnly())
+                            .filter(s -> s.getName().toLowerCase(Locale.US).contains(search.toLowerCase(Locale.US)))
+                            .sorted((s1, s2) -> String.CASE_INSENSITIVE_ORDER.compare(s1.getName(), s2.getName()))
+                            .collect(Collectors.toList());
             Paginator.paginate(
                     args,
                     new Paginator<>(toPaginate),
                     () -> logDirect(
                             !search.isEmpty()
-                                    ? ShadowBaritoneI18n.trKey(
-                                            "shadowbaritone.command.set.header.search",
-                                            viewModified
-                                                    ? ShadowBaritoneI18n.trKey(
-                                                            "shadowbaritone.command.set.value.modified_prefix")
-                                                    : "",
-                                            search)
-                                    : ShadowBaritoneI18n.trKey(
-                                            "shadowbaritone.command.set.header.list",
-                                            viewModified
-                                                    ? ShadowBaritoneI18n.trKey(
-                                                            "shadowbaritone.command.set.value.modified_prefix")
-                                                    : "")),
+                                    ? String.format("All %ssettings containing the string '%s':", viewModified ? "modified " : "", search)
+                                    : String.format("All %ssettings:", viewModified ? "modified " : "")
+                    ),
                     setting -> {
-                        ITextComponent typeComponent = new TextComponentString(String.format(
+                        MutableComponent typeComponent = Component.literal(String.format(
                                 " (%s)",
-                                settingTypeToString(setting)));
-                        typeComponent.getStyle().setColor(TextFormatting.DARK_GRAY);
-                        ITextComponent hoverComponent = new TextComponentString("");
-                        hoverComponent.getStyle().setColor(TextFormatting.GRAY);
-                        hoverComponent.appendText(setting.getName());
-                        hoverComponent.appendText(ShadowBaritoneI18n.trKey(
-                                "shadowbaritone.command.set.hover.type",
-                                settingTypeToString(setting)));
-                        hoverComponent.appendText(ShadowBaritoneI18n.trKey(
-                                "shadowbaritone.command.set.hover.value",
-                                settingValueToString(setting)));
-                        hoverComponent.appendText(ShadowBaritoneI18n.trKey(
-                                "shadowbaritone.command.set.hover.default_value",
-                                settingDefaultToString(setting)));
-                        String commandSuggestion = Baritone.settings().prefix.value
-                                + String.format("set %s ", setting.getName());
-                        ITextComponent component = new TextComponentString(setting.getName());
-                        component.getStyle().setColor(TextFormatting.GRAY);
-                        component.appendSibling(typeComponent);
-                        component.getStyle()
-                                .setHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, hoverComponent))
-                                .setClickEvent(new ClickEvent(ClickEvent.Action.SUGGEST_COMMAND, commandSuggestion));
+                                settingTypeToString(setting)
+                        ));
+                        typeComponent.setStyle(typeComponent.getStyle().withColor(ChatFormatting.DARK_GRAY));
+                        MutableComponent hoverComponent = Component.literal("");
+                        hoverComponent.setStyle(hoverComponent.getStyle().withColor(ChatFormatting.GRAY));
+                        hoverComponent.append(setting.getName());
+                        hoverComponent.append(String.format("\nType: %s", settingTypeToString(setting)));
+                        hoverComponent.append(String.format("\n\nValue:\n%s", settingValueToString(setting)));
+                        hoverComponent.append(String.format("\n\nDefault Value:\n%s", settingDefaultToString(setting)));
+                        String commandSuggestion = Baritone.settings().prefix.value + String.format("set %s ", setting.getName());
+                        MutableComponent component = Component.literal(setting.getName());
+                        component.setStyle(component.getStyle().withColor(ChatFormatting.GRAY));
+                        component.append(typeComponent);
+                        component.setStyle(component.getStyle()
+                                .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, hoverComponent))
+                                .withClickEvent(new ClickEvent(ClickEvent.Action.SUGGEST_COMMAND, commandSuggestion)));
                         return component;
                     },
-                    FORCE_COMMAND_PREFIX + "set " + arg + " " + search);
+                    FORCE_COMMAND_PREFIX + "set " + arg + " " + search
+            );
             return;
         }
         args.requireMax(1);
@@ -142,16 +123,12 @@ public class SetCommand extends Command {
         boolean doingSomething = resetting || toggling;
         if (resetting) {
             if (!args.hasAny()) {
-                logDirect(ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.set.reset.confirm_all"));
-                logDirect(ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.set.reset.warning_all"));
-                logDirect(ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.set.reset.specify_one"));
+                logDirect("Please specify 'all' as an argument to reset to confirm you'd really like to do this");
+                logDirect("ALL settings will be reset. Use the 'set modified' or 'modified' commands to see what will be reset.");
+                logDirect("Specify a setting name instead of 'all' to only reset one setting");
             } else if (args.peekString().equalsIgnoreCase("all")) {
                 SettingsUtil.modifiedSettings(Baritone.settings()).forEach(Settings.Setting::reset);
-                logDirect(ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.set.reset.done_all"));
+                logDirect("All settings have been reset to their default values");
                 SettingsUtil.save(Baritone.settings());
                 return;
             }
@@ -165,23 +142,16 @@ public class SetCommand extends Command {
                 .findFirst()
                 .orElse(null);
         if (setting == null) {
-            throw new CommandInvalidTypeException(
-                    args.consumed(),
-                    ShadowBaritoneI18n.trKey(
-                            "shadowbaritone.command.set.error.valid_setting"));
+            throw new CommandInvalidTypeException(args.consumed(), "a valid setting");
         }
         if (setting.isJavaOnly()) {
             // ideally it would act as if the setting didn't exist
             // but users will see it in Settings.java or its javadoc
             // so at some point we have to tell them or they will see it as a bug
-            throw new CommandInvalidStateException(ShadowBaritoneI18n.trKey(
-                    "shadowbaritone.command.set.error.java_only",
-                    setting.getName()));
+            throw new CommandInvalidStateException(String.format("Setting %s can only be used via the api.", setting.getName()));
         }
         if (!doingSomething && !args.hasAny()) {
-            logDirect(ShadowBaritoneI18n.trKey(
-                    "shadowbaritone.command.set.status.value_of",
-                    setting.getName()));
+            logDirect(String.format("Value of setting %s:", setting.getName()));
             logDirect(settingValueToString(setting));
         } else {
             String oldValue = settingValueToString(setting);
@@ -189,70 +159,50 @@ public class SetCommand extends Command {
                 setting.reset();
             } else if (toggling) {
                 if (setting.getValueClass() != Boolean.class) {
-                    throw new CommandInvalidTypeException(
-                            args.consumed(),
-                            ShadowBaritoneI18n.trKey(
-                                    "shadowbaritone.command.set.error.toggleable_setting"),
-                            ShadowBaritoneI18n.trKey(
-                                    "shadowbaritone.command.set.error.some_other_setting"));
+                    throw new CommandInvalidTypeException(args.consumed(), "a toggleable setting", "some other setting");
                 }
-                // noinspection unchecked
+                //noinspection unchecked
                 Settings.Setting<Boolean> asBoolSetting = (Settings.Setting<Boolean>) setting;
                 asBoolSetting.value ^= true;
-                logDirect(ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.set.status.toggled",
+                logDirect(String.format(
+                        "Toggled setting %s to %s",
                         setting.getName(),
-                        Boolean.toString((Boolean) setting.value)));
+                        Boolean.toString((Boolean) setting.value)
+                ));
             } else {
                 String newValue = args.getString();
                 try {
                     SettingsUtil.parseAndApply(Baritone.settings(), arg, newValue);
                 } catch (Throwable t) {
                     t.printStackTrace();
-                    throw new CommandInvalidTypeException(
-                            args.consumed(),
-                            ShadowBaritoneI18n.trKey(
-                                    "shadowbaritone.command.set.error.valid_value"),
-                            t);
+                    throw new CommandInvalidTypeException(args.consumed(), "a valid value", t);
                 }
             }
             if (!toggling) {
-                logDirect(ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.set.status.success",
-                        resetting
-                                ? ShadowBaritoneI18n.trKey(
-                                        "shadowbaritone.command.set.value.action_reset")
-                                : ShadowBaritoneI18n.trKey(
-                                        "shadowbaritone.command.set.value.action_set"),
+                logDirect(String.format(
+                        "Successfully %s %s to %s",
+                        resetting ? "reset" : "set",
                         setting.getName(),
-                        settingValueToString(setting)));
+                        settingValueToString(setting)
+                ));
             }
-            ITextComponent oldValueComponent = new TextComponentString(ShadowBaritoneI18n.trKey(
-                    "shadowbaritone.command.set.status.old_value",
-                    oldValue));
-            oldValueComponent.getStyle()
-                    .setColor(TextFormatting.GRAY)
-                    .setHoverEvent(new HoverEvent(
+            MutableComponent oldValueComponent = Component.literal(String.format("Old value: %s", oldValue));
+            oldValueComponent.setStyle(oldValueComponent.getStyle()
+                    .withColor(ChatFormatting.GRAY)
+                    .withHoverEvent(new HoverEvent(
                             HoverEvent.Action.SHOW_TEXT,
-                            new TextComponentString(ShadowBaritoneI18n.trKey(
-                                    "shadowbaritone.command.set.hover.restore_old_value"))))
-                    .setClickEvent(new ClickEvent(
+                            Component.literal("Click to set the setting back to this value")
+                    ))
+                    .withClickEvent(new ClickEvent(
                             ClickEvent.Action.RUN_COMMAND,
-                            FORCE_COMMAND_PREFIX + String.format("set %s %s", setting.getName(), oldValue)));
+                            FORCE_COMMAND_PREFIX + String.format("set %s %s", setting.getName(), oldValue)
+                    )));
             logDirect(oldValueComponent);
-            if ((setting.getName().equals("chatControl") && !(Boolean) setting.value
-                    && !Baritone.settings().chatControlAnyway.value) ||
-                    setting.getName().equals("chatControlAnyway") && !(Boolean) setting.value
-                            && !Baritone.settings().chatControl.value) {
-                logDirect(
-                        ShadowBaritoneI18n.trKey(
-                                "shadowbaritone.command.set.warning.chat_commands_disabled"),
-                        TextFormatting.RED);
+            if ((setting.getName().equals("chatControl") && !(Boolean) setting.value && !Baritone.settings().chatControlAnyway.value) ||
+                    setting.getName().equals("chatControlAnyway") && !(Boolean) setting.value && !Baritone.settings().chatControl.value) {
+                logDirect("Warning: Chat commands will no longer work. If you want to revert this change, use prefix control (if enabled) or click the old value listed above.", ChatFormatting.RED);
             } else if (setting.getName().equals("prefixControl") && !(Boolean) setting.value) {
-                logDirect(
-                        ShadowBaritoneI18n.trKey(
-                                "shadowbaritone.command.set.warning.prefixed_commands_disabled"),
-                        TextFormatting.RED);
+                logDirect("Warning: Prefixed commands will no longer work. If you want to revert this change, use chat control (if enabled) or click the old value listed above.", ChatFormatting.RED);
             }
         }
         SettingsUtil.save(Baritone.settings());
@@ -262,8 +212,7 @@ public class SetCommand extends Command {
     public Stream<String> tabComplete(String label, IArgConsumer args) throws CommandException {
         if (args.hasAny()) {
             String arg = args.getString();
-            if (args.hasExactlyOne()
-                    && !Arrays.asList("s", "save").contains(args.peekString().toLowerCase(Locale.US))) {
+            if (args.hasExactlyOne() && !Arrays.asList("s", "save").contains(args.peekString().toLowerCase(Locale.US))) {
                 if (arg.equalsIgnoreCase("reset")) {
                     return new TabCompleteHelper()
                             .addModifiedSettings()
@@ -276,9 +225,7 @@ public class SetCommand extends Command {
                             .filterPrefix(args.getString())
                             .stream();
                 } else if (Arrays.asList("ld", "load").contains(arg.toLowerCase(Locale.US))) {
-                    // settings use current profile directory
-                    return RelativeFile.tabComplete(args,
-                            ProfileManager.getCurrentProfileDir().resolve("shadowbaritone").toFile());
+                    return RelativeFile.tabComplete(args, ProfileManager.getCurrentProfileDir().resolve("shadowbaritone").toFile());
                 }
                 Settings.Setting setting = Baritone.settings().byLowerName.get(arg.toLowerCase(Locale.US));
                 if (setting != null) {
@@ -308,39 +255,27 @@ public class SetCommand extends Command {
 
     @Override
     public String getShortDesc() {
-        return ShadowBaritoneI18n.trKey(
-                "shadowbaritone.command.set.short_desc");
+        return "View or change settings";
     }
 
     @Override
     public List<String> getLongDesc() {
         return Arrays.asList(
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.set.long_desc.1"),
+                "Using the set command, you can manage all of Baritone's settings. Almost every aspect is controlled by these settings - go wild!",
                 "",
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.set.long_desc.usage"),
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.set.long_desc.example.default"),
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.set.long_desc.example.list"),
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.set.long_desc.example.modified"),
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.set.long_desc.example.view"),
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.set.long_desc.example.set"),
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.set.long_desc.example.reset_all"),
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.set.long_desc.example.reset_one"),
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.set.long_desc.example.toggle"),
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.set.long_desc.example.save"),
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.set.long_desc.example.load"),
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.set.long_desc.example.load_file"));
+                "Usage:",
+                "> set - Same as `set list`",
+                "> set list [page] - View all settings",
+                "> set modified [page] - View modified settings",
+                "> set <setting> - View the current value of a setting",
+                "> set <setting> <value> - Set the value of a setting",
+                "> set reset all - Reset ALL SETTINGS to their defaults",
+                "> set reset <setting> - Reset a setting to its default",
+                "> set toggle <setting> - Toggle a boolean setting",
+                "> set save - Save all settings (this is automatic tho)",
+                "> set load - Load settings from setting.json",
+                "> set load [filename] - Load settings from another file in your profile/shadowbaritone"
+        );
     }
 }
+

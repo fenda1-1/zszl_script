@@ -18,9 +18,12 @@ import java.util.Random;
 public final class ThemeConfigManager {
     private static final String BUILTIN_SCHEME = "builtin:";
     private static final String BUILTIN_SEASIDE_ID = "seaside";
-    private static final String BUILTIN_PANEL_IMAGE = BUILTIN_SCHEME + "img/海边少女.jpg";
-    private static final String BUILTIN_BUTTON_IMAGE = BUILTIN_SCHEME + "img/海边猫咪.jpg";
-    private static final String BUILTIN_INPUT_IMAGE = BUILTIN_SCHEME + "img/星光.jpg";
+    private static final String BUILTIN_PANEL_IMAGE = BUILTIN_SCHEME + "img/seaside-girl.jpg";
+    private static final String BUILTIN_BUTTON_IMAGE = BUILTIN_SCHEME + "img/seaside-cat.jpg";
+    private static final String BUILTIN_INPUT_IMAGE = BUILTIN_SCHEME + "img/starlight.jpg";
+    private static final String LEGACY_BUILTIN_PANEL_IMAGE = BUILTIN_SCHEME + "img/海边少女.jpg";
+    private static final String LEGACY_BUILTIN_BUTTON_IMAGE = BUILTIN_SCHEME + "img/海边猫咪.jpg";
+    private static final String LEGACY_BUILTIN_INPUT_IMAGE = BUILTIN_SCHEME + "img/星光.jpg";
 
     private ThemeConfigManager() {
     }
@@ -555,6 +558,9 @@ public final class ThemeConfigManager {
                 changed = true;
                 continue;
             }
+            if (normalizeLegacyBuiltinImagePaths(profile)) {
+                changed = true;
+            }
             if (isSeasideBuiltinCandidate(profile)) {
                 if (!foundSeaside && !sameProfile(profile, seaside)) {
                     changed = true;
@@ -621,9 +627,46 @@ public final class ThemeConfigManager {
     }
 
     private static boolean hasBuiltInSeasideImages(ThemeProfile profile) {
-        return BUILTIN_PANEL_IMAGE.equals(safeTrim(profile.panelImagePath))
-                || BUILTIN_BUTTON_IMAGE.equals(safeTrim(profile.buttonImagePath))
-                || BUILTIN_INPUT_IMAGE.equals(safeTrim(profile.inputImagePath));
+        return isBuiltInSeasideImage(profile.panelImagePath, BUILTIN_PANEL_IMAGE, LEGACY_BUILTIN_PANEL_IMAGE)
+                || isBuiltInSeasideImage(profile.buttonImagePath, BUILTIN_BUTTON_IMAGE, LEGACY_BUILTIN_BUTTON_IMAGE)
+                || isBuiltInSeasideImage(profile.inputImagePath, BUILTIN_INPUT_IMAGE, LEGACY_BUILTIN_INPUT_IMAGE);
+    }
+
+    private static boolean normalizeLegacyBuiltinImagePaths(ThemeProfile profile) {
+        if (profile == null) {
+            return false;
+        }
+
+        boolean changed = false;
+        String normalizedPanel = normalizeBuiltInSeasideImage(profile.panelImagePath, BUILTIN_PANEL_IMAGE, LEGACY_BUILTIN_PANEL_IMAGE);
+        if (!safeTrim(profile.panelImagePath).equals(normalizedPanel)) {
+            profile.panelImagePath = normalizedPanel;
+            changed = true;
+        }
+
+        String normalizedButton = normalizeBuiltInSeasideImage(profile.buttonImagePath, BUILTIN_BUTTON_IMAGE, LEGACY_BUILTIN_BUTTON_IMAGE);
+        if (!safeTrim(profile.buttonImagePath).equals(normalizedButton)) {
+            profile.buttonImagePath = normalizedButton;
+            changed = true;
+        }
+
+        String normalizedInput = normalizeBuiltInSeasideImage(profile.inputImagePath, BUILTIN_INPUT_IMAGE, LEGACY_BUILTIN_INPUT_IMAGE);
+        if (!safeTrim(profile.inputImagePath).equals(normalizedInput)) {
+            profile.inputImagePath = normalizedInput;
+            changed = true;
+        }
+
+        return changed;
+    }
+
+    private static boolean isBuiltInSeasideImage(String value, String currentPath, String legacyPath) {
+        String trimmed = safeTrim(value);
+        return currentPath.equals(trimmed) || legacyPath.equals(trimmed);
+    }
+
+    private static String normalizeBuiltInSeasideImage(String value, String currentPath, String legacyPath) {
+        String trimmed = safeTrim(value);
+        return legacyPath.equals(trimmed) ? currentPath : trimmed;
     }
 
     private static String safeTrim(String value) {
@@ -638,3 +681,4 @@ public final class ThemeConfigManager {
         return (a & 0xFF) << 24 | (rgb & 0x00FFFFFF);
     }
 }
+

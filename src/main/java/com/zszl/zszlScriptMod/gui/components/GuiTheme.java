@@ -1,14 +1,15 @@
 package com.zszl.zszlScriptMod.gui.components;
 
 import com.zszl.zszlScriptMod.config.ChatOptimizationConfig.ImageQuality;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiCompatContext;
 import com.zszl.zszlScriptMod.gui.theme.ThemeConfigManager;
 import com.zszl.zszlScriptMod.gui.theme.ThemeConfigManager.ThemeProfile;
 import com.zszl.zszlScriptMod.utils.TextureManagerHelper;
-import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.FontRenderer;
-import net.minecraft.client.gui.Gui;
-import net.minecraft.client.renderer.GlStateManager;
-import net.minecraft.util.ResourceLocation;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.FontRenderer;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.Gui;
+import com.mojang.blaze3d.systems.RenderSystem;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.resources.ResourceLocation;
 
 public final class GuiTheme {
 
@@ -354,32 +355,32 @@ public final class GuiTheme {
         if (tex == null) {
             return false;
         }
-        Minecraft.getMinecraft().getTextureManager().bindTexture(tex);
-        float alpha = clampPercent(opacityPercent) / 100.0F;
-        GlStateManager.enableBlend();
-        GlStateManager.tryBlendFuncSeparate(770, 771, 1, 0);
-        GlStateManager.color(1.0F, 1.0F, 1.0F, alpha);
+
+        RenderSystem.setShaderTexture(0, tex);
+        RenderSystem.enableBlend();
+        RenderSystem.defaultBlendFunc();
+        RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, clampPercent(opacityPercent) / 100.0F);
 
         int safeScale = Math.max(10, Math.min(300, scale));
         float scaleFactor = 100.0F / safeScale;
-        int[] texSize = TextureManagerHelper.getTextureSizeForPath(path, quality);
-        int texW = (texSize != null) ? texSize[0] : width;
-        int texH = (texSize != null) ? texSize[1] : height;
+        int[] textureSize = TextureManagerHelper.getTextureSizeForPath(path, quality);
+        int textureWidth = textureSize != null ? textureSize[0] : Math.max(1, width);
+        int textureHeight = textureSize != null ? textureSize[1] : Math.max(1, height);
 
-        int sampleW = Math.max(1, Math.min(texW, (int) (width * scaleFactor)));
-        int sampleH = Math.max(1, Math.min(texH, (int) (height * scaleFactor)));
-        int u = Math.max(0, cropX);
-        int v = Math.max(0, cropY);
-        if (u + sampleW > texW) {
-            u = Math.max(0, texW - sampleW);
+        int sampleWidth = Math.max(1, Math.min(textureWidth, Math.round(width * scaleFactor)));
+        int sampleHeight = Math.max(1, Math.min(textureHeight, Math.round(height * scaleFactor)));
+        int sampleU = Math.max(0, cropX);
+        int sampleV = Math.max(0, cropY);
+        if (sampleU + sampleWidth > textureWidth) {
+            sampleU = Math.max(0, textureWidth - sampleWidth);
         }
-        if (v + sampleH > texH) {
-            v = Math.max(0, texH - sampleH);
+        if (sampleV + sampleHeight > textureHeight) {
+            sampleV = Math.max(0, textureHeight - sampleHeight);
         }
 
-        Gui.drawScaledCustomSizeModalRect(x, y, u, v, sampleW, sampleH, width,
-                height, texW, texH);
-        GlStateManager.color(1.0F, 1.0F, 1.0F, 1.0F);
+        Gui.drawScaledCustomSizeModalRect(x, y, sampleU, sampleV, sampleWidth, sampleHeight, width, height,
+                textureWidth, textureHeight);
+        RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
         return true;
     }
 
@@ -394,55 +395,53 @@ public final class GuiTheme {
         if (path == null || path.trim().isEmpty()) {
             return false;
         }
-        ImageQuality quality = parseQuality(qualityName);
-        ResourceLocation tex = TextureManagerHelper.getResourceLocationForPath(path, quality);
-        if (tex == null) {
+        if (width <= 0 || height <= 0 || groupWidth <= 0 || groupHeight <= 0) {
             return false;
         }
-        Minecraft.getMinecraft().getTextureManager().bindTexture(tex);
-        float alpha = clampPercent(opacityPercent) / 100.0F;
-        GlStateManager.enableBlend();
-        GlStateManager.tryBlendFuncSeparate(770, 771, 1, 0);
-        GlStateManager.color(1.0F, 1.0F, 1.0F, alpha);
+        ImageQuality quality = parseQuality(qualityName);
+        ResourceLocation tex = TextureManagerHelper.getResourceLocationForPath(path, quality);
+        int[] textureSize = TextureManagerHelper.getTextureSizeForPath(path, quality);
+        if (tex == null || textureSize == null || textureSize.length < 2) {
+            return false;
+        }
 
+        int textureWidth = Math.max(1, textureSize[0]);
+        int textureHeight = Math.max(1, textureSize[1]);
         int safeScale = Math.max(10, Math.min(300, scale));
         float scaleFactor = 100.0F / safeScale;
-        int[] texSize = TextureManagerHelper.getTextureSizeForPath(path, quality);
-        int texW = (texSize != null) ? texSize[0] : Math.max(1, groupWidth);
-        int texH = (texSize != null) ? texSize[1] : Math.max(1, groupHeight);
+        int groupSampleWidth = Math.max(1, Math.min(textureWidth, Math.round(groupWidth * scaleFactor)));
+        int groupSampleHeight = Math.max(1, Math.min(textureHeight, Math.round(groupHeight * scaleFactor)));
 
-        int fullSampleW = Math.max(1, Math.min(texW, Math.round(groupWidth * scaleFactor)));
-        int fullSampleH = Math.max(1, Math.min(texH, Math.round(groupHeight * scaleFactor)));
+        int segmentOffsetX = Math.max(0, Math.round((x - groupX) * scaleFactor));
+        int segmentOffsetY = Math.max(0, Math.round((y - groupY) * scaleFactor));
+        int segmentSampleWidth = Math.max(1, Math.round(width * scaleFactor));
+        int segmentSampleHeight = Math.max(1, Math.round(height * scaleFactor));
 
-        int segOffsetX = Math.max(0, Math.round((x - groupX) * scaleFactor));
-        int segOffsetY = Math.max(0, Math.round((y - groupY) * scaleFactor));
-        int segSampleW = Math.max(1, Math.round(width * scaleFactor));
-        int segSampleH = Math.max(1, Math.round(height * scaleFactor));
-
-        int uBase = Math.max(0, cropX);
-        int vBase = Math.max(0, cropY);
-
-        if (uBase + fullSampleW > texW) {
-            uBase = Math.max(0, texW - fullSampleW);
+        int baseU = Math.max(0, cropX);
+        int baseV = Math.max(0, cropY);
+        if (baseU + groupSampleWidth > textureWidth) {
+            baseU = Math.max(0, textureWidth - groupSampleWidth);
         }
-        if (vBase + fullSampleH > texH) {
-            vBase = Math.max(0, texH - fullSampleH);
+        if (baseV + groupSampleHeight > textureHeight) {
+            baseV = Math.max(0, textureHeight - groupSampleHeight);
         }
 
-        int u = uBase + segOffsetX;
-        int v = vBase + segOffsetY;
-
-        // 保证分片采样范围不越界
-        if (u + segSampleW > texW) {
-            segSampleW = Math.max(1, texW - u);
+        int sampleU = baseU + segmentOffsetX;
+        int sampleV = baseV + segmentOffsetY;
+        if (sampleU + segmentSampleWidth > textureWidth) {
+            segmentSampleWidth = Math.max(1, textureWidth - sampleU);
         }
-        if (v + segSampleH > texH) {
-            segSampleH = Math.max(1, texH - v);
+        if (sampleV + segmentSampleHeight > textureHeight) {
+            segmentSampleHeight = Math.max(1, textureHeight - sampleV);
         }
 
-        Gui.drawScaledCustomSizeModalRect(x, y, u, v, segSampleW, segSampleH, width,
-                height, texW, texH);
-        GlStateManager.color(1.0F, 1.0F, 1.0F, 1.0F);
+        RenderSystem.setShaderTexture(0, tex);
+        RenderSystem.enableBlend();
+        RenderSystem.defaultBlendFunc();
+        RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, clampPercent(opacityPercent) / 100.0F);
+        Gui.drawScaledCustomSizeModalRect(x, y, sampleU, sampleV, segmentSampleWidth, segmentSampleHeight, width,
+                height, textureWidth, textureHeight);
+        RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
         return true;
     }
 
@@ -459,6 +458,14 @@ public final class GuiTheme {
 
     private static int clampPercent(int p) {
         return Math.max(10, Math.min(100, p));
+    }
+
+    private static int clamp(int value, int min, int max) {
+        return Math.max(min, Math.min(max, value));
+    }
+
+    private static double clamp(double value, double min, double max) {
+        return Math.max(min, Math.min(max, value));
     }
 
     private static int applyOpacity(int color, int percent) {
@@ -507,3 +514,7 @@ public final class GuiTheme {
         return (a & 0xFF) << 24 | (r & 0xFF) << 16 | (g & 0xFF) << 8 | (b & 0xFF);
     }
 }
+
+
+
+

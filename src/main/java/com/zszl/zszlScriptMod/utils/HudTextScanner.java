@@ -1,7 +1,7 @@
 package com.zszl.zszlScriptMod.utils;
 
-import net.minecraftforge.client.event.RenderGameOverlayEvent;
-import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraftforge.client.event.RenderGameOverlayEvent;
+import net.minecraftforge.eventbus.api.SubscribeEvent;
 
 import java.util.*;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -183,3 +183,6 @@ public class HudTextScanner {
         return blocks;
     }
 }
+
+
+

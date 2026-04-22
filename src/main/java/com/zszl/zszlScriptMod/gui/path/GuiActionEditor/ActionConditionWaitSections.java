@@ -1,10 +1,7 @@
 package com.zszl.zszlScriptMod.gui.path.GuiActionEditor;
 
 import com.zszl.zszlScriptMod.gui.components.ThemedButton;
-import com.zszl.zszlScriptMod.handlers.ItemFilterHandler;
-
-import net.minecraft.client.gui.GuiTextField;
-import net.minecraft.client.resources.I18n;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
 
 import static com.zszl.zszlScriptMod.gui.path.GuiActionEditor.util.ActionEditorDisplayConverters.*;
 
@@ -15,56 +12,15 @@ final class ActionConditionWaitSections {
     static void buildInventoryConditionSection(GuiActionEditor editor, String selectedType, int x, int currentY,
             int fieldWidth) {
         editor.initializeConditionInventoryNbtState();
-        editor.addSectionTitle("§b§l━━━ 基础条件 ━━━", x, currentY);
+        editor.initializeInventoryItemFilterExpressionEditorState();
+        editor.addSectionTitle("§b§l━━━ 物品过滤表达式 ━━━", x, currentY);
         currentY += 25;
-        editor.addTextField(I18n.format("gui.path.action_editor.label.item_name"), "itemName",
-                I18n.format("gui.path.action_editor.help.item_name"), fieldWidth, x, currentY);
-        currentY += 40;
-        editor.addDropdown(I18n.format("gui.path.action_editor.label.match_mode"), "matchMode",
-                I18n.format("gui.path.action_editor.help.match_mode"), fieldWidth, x, currentY,
-                new String[] {
-                        I18n.format("gui.autouseitem.match.contains"),
-                        I18n.format("gui.autouseitem.match.exact")
-                },
-                matchModeToDisplay(editor.currentParams.has("matchMode")
-                        ? editor.currentParams.get("matchMode").getAsString()
-                        : "CONTAINS"));
+        currentY += editor.addInventoryItemFilterExpressionCardEditor(fieldWidth, x, currentY);
+        editor.addSectionTitle("§b§l━━━ 计数条件 ━━━", x, currentY);
         currentY += 40;
         editor.addTextField(I18n.format("gui.path.action_editor.label.condition_item_count"), "count",
                 I18n.format("gui.path.action_editor.help.condition_item_count"), fieldWidth, x, currentY, "1");
         currentY += 40;
-        if (editor.shouldShowAdvancedWaitOptions(selectedType)) {
-            editor.addSectionTitle("§b§l━━━ NBT 过滤 ━━━", x, currentY);
-            currentY += 25;
-            editor.addDropdown(I18n.format("gui.path.action_editor.label.required_nbt_tags_mode"),
-                    "requiredNbtTagsMode",
-                    I18n.format("gui.path.action_editor.help.required_nbt_tags_mode"),
-                    fieldWidth, x, currentY,
-                    new String[] {
-                            I18n.format("gui.path.action_editor.option.nbt_tag_mode.contains"),
-                            I18n.format("gui.path.action_editor.option.nbt_tag_mode.not_contains")
-                    },
-                    moveChestNbtModeToDisplay(editor.currentParams.has("requiredNbtTagsMode")
-                            ? editor.currentParams.get("requiredNbtTagsMode").getAsString()
-                            : ItemFilterHandler.NBT_TAG_MATCH_MODE_CONTAINS));
-            currentY += 40;
-            editor.conditionInventoryNbtTagInputBaseY = currentY + 18;
-            editor.conditionInventoryNbtTagInputField = new GuiTextField(951, editor.getEditorFontRenderer(), x, currentY + 18,
-                    editor.shouldWrapTagInputRow(fieldWidth) ? fieldWidth : Math.max(80, fieldWidth - 88), 20);
-            editor.conditionInventoryNbtTagInputField.setMaxStringLength(256);
-            editor.conditionInventoryNbtTagInputField.setEnableBackgroundDrawing(false);
-            int conditionInventoryButtonY = editor.getTagButtonBaseY(editor.conditionInventoryNbtTagInputBaseY, fieldWidth);
-            int conditionInventoryButtonWidth = editor.shouldWrapTagInputRow(fieldWidth) ? fieldWidth : 80;
-            int conditionInventoryButtonX = editor.shouldWrapTagInputRow(fieldWidth)
-                    ? x
-                    : x + fieldWidth - conditionInventoryButtonWidth;
-            editor.btnAddConditionInventoryNbtTag = new ThemedButton(GuiActionEditor.BTN_ID_ADD_CONDITION_INV_NBT_TAG,
-                    conditionInventoryButtonX, conditionInventoryButtonY, conditionInventoryButtonWidth, 20,
-                    "添加NBT");
-            editor.addEditorButton(editor.btnAddConditionInventoryNbtTag);
-            editor.registerScrollableButton(editor.btnAddConditionInventoryNbtTag, conditionInventoryButtonY);
-            currentY += editor.getTagListOffset(fieldWidth) + editor.getConditionInventoryNbtListHeight() + 18;
-        }
         editor.addSectionTitle("§b§l━━━ 动作结果 ━━━", x, currentY);
         currentY += 25;
         if ("condition_inventory_item".equalsIgnoreCase(selectedType)) {
@@ -328,3 +284,4 @@ final class ActionConditionWaitSections {
         }
     }
 }
+

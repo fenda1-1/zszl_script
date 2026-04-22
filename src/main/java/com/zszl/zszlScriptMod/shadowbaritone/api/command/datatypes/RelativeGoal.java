@@ -62,3 +62,4 @@ public enum RelativeGoal implements IDatatypePost<Goal, BetterBlockPos> {
         return ctx.getConsumer().tabCompleteDatatype(RelativeCoordinate.INSTANCE);
     }
 }
+

@@ -20,9 +20,9 @@ package com.zszl.zszlScriptMod.shadowbaritone.utils.schematic;
 import com.zszl.zszlScriptMod.shadowbaritone.api.schematic.ISchematic;
 import com.zszl.zszlScriptMod.shadowbaritone.api.schematic.MaskSchematic;
 import com.zszl.zszlScriptMod.shadowbaritone.api.selection.ISelection;
-import net.minecraft.block.state.IBlockState;
-import net.minecraft.util.EnumFacing;
-import net.minecraft.util.math.Vec3i;
+import net.minecraft.core.Direction;
+import net.minecraft.core.Vec3i;
+import net.minecraft.world.level.block.state.BlockState;
 
 import java.util.stream.Stream;
 
@@ -33,15 +33,15 @@ public class SelectionSchematic extends MaskSchematic {
     public SelectionSchematic(ISchematic schematic, Vec3i origin, ISelection[] selections) {
         super(schematic);
         this.selections = Stream.of(selections).map(
-                sel -> sel
-                        .shift(EnumFacing.WEST, origin.getX())
-                        .shift(EnumFacing.DOWN, origin.getY())
-                        .shift(EnumFacing.NORTH, origin.getZ()))
+                        sel -> sel
+                                .shift(Direction.WEST, origin.getX())
+                                .shift(Direction.DOWN, origin.getY())
+                                .shift(Direction.NORTH, origin.getZ()))
                 .toArray(ISelection[]::new);
     }
 
     @Override
-    protected boolean partOfMask(int x, int y, int z, IBlockState currentState) {
+    protected boolean partOfMask(int x, int y, int z, BlockState currentState) {
         for (ISelection selection : selections) {
             if (x >= selection.min().x && y >= selection.min().y && z >= selection.min().z
                     && x <= selection.max().x && y <= selection.max().y && z <= selection.max().z) {
@@ -51,3 +51,4 @@ public class SelectionSchematic extends MaskSchematic {
         return false;
     }
 }
+

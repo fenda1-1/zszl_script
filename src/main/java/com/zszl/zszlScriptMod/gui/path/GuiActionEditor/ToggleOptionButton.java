@@ -4,6 +4,7 @@ import com.zszl.zszlScriptMod.gui.components.GuiTheme;
 import com.zszl.zszlScriptMod.gui.components.ThemedButton;
 
 import net.minecraft.client.Minecraft;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.FontRenderer;
 
 class ToggleOptionButton extends ThemedButton {
     final String key;
@@ -59,7 +60,7 @@ class ToggleOptionButton extends ThemedButton {
 
         GuiTheme.drawButtonFrame(this.x, this.y, this.width, this.height, state);
         int textColor = GuiTheme.resolveTextColor(this.displayString, GuiTheme.getStateTextColor(state));
-        drawCenteredString(mc.fontRenderer, this.displayString, this.x + this.width / 2,
+        drawCenteredString(new FontRenderer(mc.font), this.displayString, this.x + this.width / 2,
                 this.y + (this.height - 8) / 2, textColor);
     }
 }

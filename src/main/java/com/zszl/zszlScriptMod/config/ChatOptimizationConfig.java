@@ -56,8 +56,6 @@ public class ChatOptimizationConfig {
     }
 
     // --- 功能开关 ---
-    public boolean enableSmartCopy = true;
-    public boolean copyWithFormatting = false;
     public boolean enableAntiSpam = true;
     public boolean enableTimestamp = false;
     public boolean enableBlacklist = false;
@@ -162,3 +160,4 @@ public class ChatOptimizationConfig {
         }
     }
 }
+

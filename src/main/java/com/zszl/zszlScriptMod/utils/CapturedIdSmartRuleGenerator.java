@@ -457,3 +457,4 @@ public final class CapturedIdSmartRuleGenerator {
         return text == null ? "" : text;
     }
 }
+

@@ -32,8 +32,6 @@ import java.util.Locale;
 import java.util.Objects;
 import java.util.stream.Stream;
 
-import static com.zszl.zszlScriptMod.shadowbaritone.api.utils.Helper.HELPER;
-
 public enum RelativeFile implements IDatatypePost<File, File> {
     INSTANCE;
 
@@ -74,8 +72,7 @@ public enum RelativeFile implements IDatatypePost<File, File> {
 
     public static Stream<String> tabComplete(IArgConsumer consumer, File base0) throws CommandException {
         // I will not make the caller deal with this, seriously
-        // Tab complete code is beautiful and I'm not going to bloat it with dumb ass
-        // checked exception bullshit -LoganDark
+        // Tab complete code is beautiful and I'm not going to bloat it with dumb ass checked exception bullshit -LoganDark
 
         // lol owned -Brady
 
@@ -86,10 +83,10 @@ public enum RelativeFile implements IDatatypePost<File, File> {
         boolean useParent = !currentPathStringThing.isEmpty() && !currentPathStringThing.endsWith(File.separator);
         File currentFile = currentPath.isAbsolute() ? currentPath.toFile() : new File(base, currentPathStringThing);
         return Stream.of(Objects.requireNonNull(getCanonicalFileUnchecked(
-                useParent
-                        ? currentFile.getParentFile()
-                        : currentFile)
-                .listFiles()))
+                        useParent
+                                ? currentFile.getParentFile()
+                                : currentFile
+                ).listFiles()))
                 .map(f -> (currentPath.isAbsolute() ? f : basePath.relativize(f.toPath()).toString()) +
                         (f.isDirectory() ? File.separator : ""))
                 .filter(s -> s.toLowerCase(Locale.US).startsWith(currentPathStringThing.toLowerCase(Locale.US)))
@@ -102,10 +99,11 @@ public enum RelativeFile implements IDatatypePost<File, File> {
     }
 
     public static File gameDir(Minecraft mc) {
-        File gameDir = mc.mcDataDir.getAbsoluteFile();
+        File gameDir = mc.gameDirectory.getAbsoluteFile();
         if (gameDir.getName().equals(".")) {
             return gameDir.getParentFile();
         }
         return gameDir;
     }
 }
+

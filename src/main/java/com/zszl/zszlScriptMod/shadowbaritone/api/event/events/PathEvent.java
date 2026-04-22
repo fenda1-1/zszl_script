@@ -31,3 +31,4 @@ public enum PathEvent {
     DISCARD_NEXT,
     CANCELED;
 }
+

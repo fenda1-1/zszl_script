@@ -22,7 +22,6 @@ import com.zszl.zszlScriptMod.shadowbaritone.api.command.Command;
 import com.zszl.zszlScriptMod.shadowbaritone.api.command.argument.IArgConsumer;
 import com.zszl.zszlScriptMod.shadowbaritone.api.command.exception.CommandException;
 import com.zszl.zszlScriptMod.shadowbaritone.api.pathing.goals.GoalBlock;
-import com.zszl.zszlScriptMod.shadowbaritone.api.utils.ShadowBaritoneI18n;
 
 import java.util.Arrays;
 import java.util.List;
@@ -38,8 +37,7 @@ public class ComeCommand extends Command {
     public void execute(String label, IArgConsumer args) throws CommandException {
         args.requireMax(0);
         baritone.getCustomGoalProcess().setGoalAndPath(new GoalBlock(ctx.viewerPos()));
-        logDirect(ShadowBaritoneI18n.trKey(
-                "shadowbaritone.command.come.status.coming"));
+        logDirect("Coming");
     }
 
     @Override
@@ -49,22 +47,19 @@ public class ComeCommand extends Command {
 
     @Override
     public String getShortDesc() {
-        return ShadowBaritoneI18n.trKey(
-                "shadowbaritone.command.come.short_desc");
+        return "Start heading towards your camera";
     }
 
     @Override
     public List<String> getLongDesc() {
         return Arrays.asList(
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.come.long_desc.1"),
+                "The come command tells Baritone to head towards your camera.",
                 "",
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.come.long_desc.2"),
+                "This can be useful in hacked clients where freecam doesn't move your player position.",
                 "",
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.come.long_desc.usage"),
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.come.long_desc.example.default"));
+                "Usage:",
+                "> come"
+        );
     }
 }
+

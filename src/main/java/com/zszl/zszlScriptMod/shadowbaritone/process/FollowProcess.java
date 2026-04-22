@@ -19,20 +19,23 @@ package com.zszl.zszlScriptMod.shadowbaritone.process;
 
 import com.zszl.zszlScriptMod.shadowbaritone.Baritone;
 import com.zszl.zszlScriptMod.shadowbaritone.api.pathing.goals.Goal;
+import com.zszl.zszlScriptMod.shadowbaritone.api.pathing.goals.GoalBlock;
 import com.zszl.zszlScriptMod.shadowbaritone.api.pathing.goals.GoalComposite;
 import com.zszl.zszlScriptMod.shadowbaritone.api.pathing.goals.GoalNear;
 import com.zszl.zszlScriptMod.shadowbaritone.api.pathing.goals.GoalXZ;
 import com.zszl.zszlScriptMod.shadowbaritone.api.process.IFollowProcess;
 import com.zszl.zszlScriptMod.shadowbaritone.api.process.PathingCommand;
 import com.zszl.zszlScriptMod.shadowbaritone.api.process.PathingCommandType;
+import com.zszl.zszlScriptMod.shadowbaritone.api.utils.BetterBlockPos;
 import com.zszl.zszlScriptMod.shadowbaritone.utils.BaritoneProcessHelper;
-import net.minecraft.entity.Entity;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.item.ItemStack;
 
 import java.util.List;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 /**
  * Follow an entity
@@ -43,6 +46,7 @@ public final class FollowProcess extends BaritoneProcessHelper implements IFollo
 
     private Predicate<Entity> filter;
     private List<Entity> cache;
+    private boolean into; // walk straight into the target, regardless of settings
 
     public FollowProcess(Baritone baritone) {
         super(baritone);
@@ -57,32 +61,38 @@ public final class FollowProcess extends BaritoneProcessHelper implements IFollo
 
     private Goal towards(Entity following) {
         BlockPos pos;
-        if (Baritone.settings().followOffsetDistance.value == 0) {
-            pos = new BlockPos(following);
+        if (Baritone.settings().followOffsetDistance.value == 0 || into) {
+            pos = following.blockPosition();
         } else {
-            GoalXZ g = GoalXZ.fromDirection(following.getPositionVector(),
-                    Baritone.settings().followOffsetDirection.value, Baritone.settings().followOffsetDistance.value);
-            pos = new BlockPos(g.getX(), following.posY, g.getZ());
+            GoalXZ g = GoalXZ.fromDirection(following.position(), Baritone.settings().followOffsetDirection.value, Baritone.settings().followOffsetDistance.value);
+            pos = new BetterBlockPos(g.getX(), following.position().y, g.getZ());
+        }
+        if (into) {
+            return new GoalBlock(pos);
         }
         return new GoalNear(pos, Baritone.settings().followRadius.value);
     }
+
 
     private boolean followable(Entity entity) {
         if (entity == null) {
             return false;
         }
-        if (entity.isDead) {
+        if (!entity.isAlive()) {
             return false;
         }
         if (entity.equals(ctx.player())) {
             return false;
         }
-        return ctx.world().loadedEntityList.contains(entity);
+        int maxDist = Baritone.settings().followTargetMaxDistance.value;
+        if (maxDist != 0 && entity.distanceToSqr(ctx.player()) > maxDist * maxDist) {
+            return false;
+        }
+        return ctx.entitiesStream().anyMatch(entity::equals);
     }
 
     private void scanWorld() {
-        cache = Stream.of(ctx.world().loadedEntityList, ctx.world().playerEntities)
-                .flatMap(List::stream)
+        cache = ctx.entitiesStream()
                 .filter(this::followable)
                 .filter(this.filter)
                 .distinct()
@@ -112,6 +122,13 @@ public final class FollowProcess extends BaritoneProcessHelper implements IFollo
     @Override
     public void follow(Predicate<Entity> filter) {
         this.filter = filter;
+        this.into = false;
+    }
+
+    @Override
+    public void pickup(Predicate<ItemStack> filter) {
+        this.filter = e -> e instanceof ItemEntity && filter.test(((ItemEntity) e).getItem());
+        this.into = true;
     }
 
     @Override
@@ -124,3 +141,4 @@ public final class FollowProcess extends BaritoneProcessHelper implements IFollo
         return filter;
     }
 }
+

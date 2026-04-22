@@ -20,11 +20,10 @@ package com.zszl.zszlScriptMod.shadowbaritone.api.schematic.mask;
 import com.zszl.zszlScriptMod.shadowbaritone.api.schematic.mask.operator.BinaryOperatorMask;
 import com.zszl.zszlScriptMod.shadowbaritone.api.schematic.mask.operator.NotMask;
 import com.zszl.zszlScriptMod.shadowbaritone.api.utils.BooleanBinaryOperators;
-import net.minecraft.block.state.IBlockState;
+import net.minecraft.world.level.block.state.BlockState;
 
 /**
- * A mask that is context-free. In other words, it doesn't require the current
- * block state to determine if a relative
+ * A mask that is context-free. In other words, it doesn't require the current block state to determine if a relative
  * position is a part of the mask.
  *
  * @author Brady
@@ -32,8 +31,7 @@ import net.minecraft.block.state.IBlockState;
 public interface StaticMask extends Mask {
 
     /**
-     * Determines if a given relative coordinate is included in this mask, without
-     * the need for the current block state.
+     * Determines if a given relative coordinate is included in this mask, without the need for the current block state.
      *
      * @param x The relative x position of the block
      * @param y The relative y position of the block
@@ -43,21 +41,18 @@ public interface StaticMask extends Mask {
     boolean partOfMask(int x, int y, int z);
 
     /**
-     * Implements the parent {@link Mask#partOfMask partOfMask function} by calling
-     * the static function
-     * provided in this functional interface without needing the {@link IBlockState}
-     * argument. This {@code default}
+     * Implements the parent {@link Mask#partOfMask partOfMask function} by calling the static function
+     * provided in this functional interface without needing the {@link BlockState} argument. This {@code default}
      * implementation should <b><u>NOT</u></b> be overriden.
      *
      * @param x            The relative x position of the block
      * @param y            The relative y position of the block
      * @param z            The relative z position of the block
-     * @param currentState The current state of that block in the world, may be
-     *                     {@code null}
+     * @param currentState The current state of that block in the world, may be {@code null}
      * @return Whether the given position is included in this mask
      */
     @Override
-    default boolean partOfMask(int x, int y, int z, IBlockState currentState) {
+    default boolean partOfMask(int x, int y, int z, BlockState currentState) {
         return this.partOfMask(x, y, z);
     }
 
@@ -79,10 +74,10 @@ public interface StaticMask extends Mask {
     }
 
     /**
-     * Returns a pre-computed mask using {@code this} function, with the specified
-     * size parameters.
+     * Returns a pre-computed mask using {@code this} function, with the specified size parameters.
      */
     default StaticMask compute() {
         return new PreComputedMask(this);
     }
 }
+

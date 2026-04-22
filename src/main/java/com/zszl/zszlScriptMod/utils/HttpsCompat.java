@@ -16,10 +16,14 @@ import javax.net.ssl.X509TrustManager;
 import java.net.Socket;
 import java.net.URL;
 import java.net.URLConnection;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.security.KeyStore;
 import java.security.SecureRandom;
 import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
 import java.util.Collections;
 import java.util.Locale;
 import java.util.Set;
@@ -66,6 +70,36 @@ public final class HttpsCompat {
     public static Connection connect(String url) {
         registerHostFromUrl(url);
         return Jsoup.connect(url);
+    }
+
+    public static String readText(String url, String userAgent, int timeoutMs) throws java.io.IOException {
+        registerHostFromUrl(url);
+        URLConnection connection = openConnection(new URL(url));
+        connection.setConnectTimeout(Math.max(1000, timeoutMs));
+        connection.setReadTimeout(Math.max(1000, timeoutMs));
+        connection.setRequestProperty("User-Agent", userAgent == null || userAgent.trim().isEmpty()
+                ? SharechainPageParser.MOBILE_USER_AGENT
+                : userAgent);
+        connection.setRequestProperty("Accept",
+                "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
+        connection.setRequestProperty("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8");
+        connection.setRequestProperty("Cache-Control", "no-cache");
+        connection.setRequestProperty("Pragma", "no-cache");
+
+        if (connection instanceof java.net.HttpURLConnection http) {
+            http.setInstanceFollowRedirects(true);
+            http.setRequestMethod("GET");
+        }
+
+        try (InputStream in = connection.getInputStream()) {
+            byte[] bytes = readAllBytes(in);
+            Charset charset = resolveCharset(connection.getContentType());
+            return new String(bytes, charset);
+        } finally {
+            if (connection instanceof java.net.HttpURLConnection http) {
+                http.disconnect();
+            }
+        }
     }
 
     public static URLConnection openConnection(URL url) throws java.io.IOException {
@@ -126,6 +160,37 @@ public final class HttpsCompat {
             normalized = normalized.substring(1);
         }
         return normalized;
+    }
+
+    private static Charset resolveCharset(String contentType) {
+        if (contentType != null) {
+            String[] parts = contentType.split(";");
+            for (String part : parts) {
+                String trimmed = part == null ? "" : part.trim();
+                if (!trimmed.toLowerCase(Locale.ROOT).startsWith("charset=")) {
+                    continue;
+                }
+                String charsetName = trimmed.substring("charset=".length()).trim();
+                if (charsetName.startsWith("\"") && charsetName.endsWith("\"") && charsetName.length() > 1) {
+                    charsetName = charsetName.substring(1, charsetName.length() - 1);
+                }
+                try {
+                    return Charset.forName(charsetName);
+                } catch (Exception ignored) {
+                }
+            }
+        }
+        return StandardCharsets.UTF_8;
+    }
+
+    private static byte[] readAllBytes(InputStream in) throws java.io.IOException {
+        byte[] buffer = new byte[8192];
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        int read;
+        while ((read = in.read(buffer)) != -1) {
+            out.write(buffer, 0, read);
+        }
+        return out.toByteArray();
     }
 
     private static boolean isTrustStorePathFailure(Throwable error) {

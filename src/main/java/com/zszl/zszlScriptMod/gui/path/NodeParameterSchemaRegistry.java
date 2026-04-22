@@ -1,7 +1,6 @@
 package com.zszl.zszlScriptMod.gui.path;
 
 import com.google.gson.JsonObject;
-import com.zszl.zszlScriptMod.handlers.KillAuraHandler;
 import com.zszl.zszlScriptMod.path.node.NodeNode;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -134,7 +133,7 @@ public final class NodeParameterSchemaRegistry {
                         }
                         schemas.add(FieldSchema.field("actionType", "动作类型", FieldType.SELECT, true,
                                         "选择要执行的动作。", "必须是受支持的动作类型", actionType,
-                                        "command", "system_message", "delay", "key", "jump", "click", "window_click",
+                                        "command", "system_message", "disconnect", "delay", "key", "jump", "click", "window_click",
                                         "conditional_window_click", "setview", "rightclickblock", "rightclickentity",
                                         "takeallitems",
                                         "take_all_items_safe", "dropfiltereditems", "autochestclick",
@@ -144,7 +143,6 @@ public final class NodeParameterSchemaRegistry {
                                         "autoequip", "autopickup",
                                         "toggle_autoeat", "toggle_autofishing", "toggle_kill_aura", "toggle_fly",
                                         "runlastsequence", "run_sequence", "stop_current_sequence",
-                                        "goto_action", "skip_actions", "skip_steps", "repeat_actions",
                                         "silentuse", "switch_hotbar_slot", "use_hotbar_item",
                                         "move_inventory_item_to_hotbar", "use_held_item", "hunt", "use_skill",
                                         "send_packet"));
@@ -289,33 +287,16 @@ public final class NodeParameterSchemaRegistry {
                 } else if ("system_message".equals(normalized)) {
                         schemas.add(FieldSchema.paramsField("message", "提示文本", FieldType.TEXTAREA, true,
                                         "显示给玩家的文本内容。", "不能为空", "提示消息"));
+                } else if ("disconnect".equals(normalized)) {
                 } else if ("delay".equals(normalized)) {
                         schemas.add(FieldSchema.paramsField("ticks", "延迟 Tick", FieldType.NUMBER, true,
                                         "PathSequence 动作延迟 Tick。", ">= 0", "20"));
-                        schemas.add(FieldSchema.paramsField("normalizeDelayTo20Tps", "按20TPS基准自适应", FieldType.BOOLEAN, false,
-                                        "开启后会根据当前 Timer 倍率自动补偿 Tick 数，让延迟保持原版 20TPS 的时间基准。", "true / false", "true"));
                 } else if ("key".equals(normalized)) {
                         schemas.add(FieldSchema.paramsField("key", "按键名", FieldType.TEXT, true,
                                         "例如 W / SPACE / E。", "不能为空", "W"));
                         schemas.add(FieldSchema.paramsField("state", "按键状态", FieldType.SELECT, true,
-                                        "单击会自动按下并在 10 ticks 后抬起。", "press / down / up", "press",
+                                        "要模拟的按键状态。", "down / up / press", "press",
                                         "press", "down", "up"));
-                } else if ("goto_action".equals(normalized)) {
-                        schemas.add(FieldSchema.paramsField("targetActionIndex", "目标动作序号", FieldType.NUMBER, true,
-                                        "跳转到当前步骤内的目标动作序号，从 0 开始。", ">= 0", "0"));
-                } else if ("skip_actions".equals(normalized)) {
-                        schemas.add(FieldSchema.paramsField("count", "跳过动作数", FieldType.NUMBER, true,
-                                        "跳过当前动作后面的多少个动作。", ">= 0", "1"));
-                } else if ("skip_steps".equals(normalized)) {
-                        schemas.add(FieldSchema.paramsField("count", "跳过步骤数", FieldType.NUMBER, true,
-                                        "0 表示立即结束当前步骤并进入下一步骤；1 表示额外再跳过一个步骤。", ">= 0", "0"));
-                } else if ("repeat_actions".equals(normalized)) {
-                        schemas.add(FieldSchema.paramsField("count", "循环次数", FieldType.NUMBER, true,
-                                        "动作块总循环次数。", ">= 0", "2"));
-                        schemas.add(FieldSchema.paramsField("bodyCount", "循环体动作数", FieldType.NUMBER, true,
-                                        "从当前动作的下一个动作开始，连续多少个动作属于循环体。", ">= 1", "1"));
-                        schemas.add(FieldSchema.paramsField("loopVar", "循环变量名", FieldType.TEXT, false,
-                                        "每轮循环自动写入该变量名。", "可为空", "loop_index"));
                 } else if ("jump".equals(normalized)) {
                         schemas.add(FieldSchema.paramsField("count", "跳跃次数", FieldType.NUMBER, false,
                                         "总跳跃次数。", ">= 1", "1"));
@@ -328,6 +309,12 @@ public final class NodeParameterSchemaRegistry {
                                         "录制时参考分辨率下的 Y 坐标。", "数字", "540"));
                         schemas.add(FieldSchema.paramsField("left", "左键点击", FieldType.BOOLEAN, false,
                                         "关闭时表示右键点击。", "true / false", "true"));
+                        schemas.add(FieldSchema.paramsField("coordinateMode", "坐标模式", FieldType.SELECT, false,
+                                        "RAW=原始窗口坐标，SCALED=GUI缩放坐标。", "RAW / SCALED", "RAW",
+                                        "RAW", "SCALED"));
+                        schemas.add(FieldSchema.paramsField("mouseMoveMode", "鼠标移动模式", FieldType.SELECT, false,
+                                        "SILENT=静默点击，MOVE=先移动鼠标再点击。", "SILENT / MOVE", "SILENT",
+                                        "SILENT", "MOVE"));
                         schemas.add(FieldSchema.paramsField("originalWidth", "参考宽度", FieldType.NUMBER, false,
                                         "录制时的屏幕宽度。", ">= 1", "2560"));
                         schemas.add(FieldSchema.paramsField("originalHeight", "参考高度", FieldType.NUMBER, false,
@@ -395,8 +382,6 @@ public final class NodeParameterSchemaRegistry {
                 } else if ("move_inventory_items_to_chest_slots".equals(normalized)) {
                         schemas.add(FieldSchema.paramsField("delayTicks", "每步延迟 Tick", FieldType.NUMBER, false,
                                         "每次拾取/放置点击之间的延迟。", ">= 0", "2"));
-                        schemas.add(FieldSchema.paramsField("normalizeDelayTo20Tps", "按20TPS基准自适应", FieldType.BOOLEAN, false,
-                                        "开启后会根据当前 Timer 倍率自动补偿 Tick 数，让延迟保持原版 20TPS 的时间基准。", "true / false", "true"));
                         schemas.add(FieldSchema.paramsField("chestRows", "容器行数", FieldType.NUMBER, false,
                                         "容器槽位网格行数。", "1 ~ 12", "6"));
                         schemas.add(FieldSchema.paramsField("chestCols", "容器列数", FieldType.NUMBER, false,
@@ -412,13 +397,11 @@ public final class NodeParameterSchemaRegistry {
                         schemas.add(FieldSchema.paramsField("moveDirection", "移动方向", FieldType.SELECT, false,
                                         "选择物品移动方向。默认背包->容器，也可切换为容器->背包。", "INVENTORY_TO_CHEST / CHEST_TO_INVENTORY",
                                         "INVENTORY_TO_CHEST", "INVENTORY_TO_CHEST", "CHEST_TO_INVENTORY"));
-                        schemas.add(FieldSchema.paramsField("itemName", "物品名", FieldType.TEXT, false,
-                                        "按物品显示名称包含匹配，忽略颜色代码。与 NBT 条件至少填写一个。", "可为空", ""));
                         schemas.add(FieldSchema.paramsField("requiredNbtTagsMode", "NBT匹配模式", FieldType.SELECT, false,
                                         "包含=只移动匹配关键字的物品；不包含=排除匹配关键字的物品。", "包含 / 不包含", "CONTAINS",
                                         "CONTAINS", "NOT_CONTAINS"));
-                        schemas.add(FieldSchema.paramsField("requiredNbtTagsText", "NBT标签条件", FieldType.TEXT, false,
-                                        "输入 NBT/tooltip/附魔/物品 ID 关键字。与物品名至少填写一个。", "可为空", ""));
+                        schemas.add(FieldSchema.paramsField("requiredNbtTagsText", "NBT标签条件", FieldType.KV_LINES, false,
+                                        "每行一个NBT标签关键字；留空表示不过滤NBT。", "可为空", ""));
                 } else if ("transferitemstowarehouse".equals(normalized)) {
                 } else if ("warehouse_auto_deposit".equals(normalized)) {
                 } else if ("blocknextgui".equals(normalized)) {
@@ -543,25 +526,11 @@ public final class NodeParameterSchemaRegistry {
                         schemas.add(FieldSchema.paramsField("scanRadius", "扫描半径", FieldType.NUMBER, false,
                                         "“扫描附近实体”按钮使用的范围。", ">= 0", "10"));
                         schemas.add(FieldSchema.paramsField("attackCount", "攻击次数", FieldType.NUMBER, false,
-                                        "<= 0 表示不限攻击次数。", "整数", "0"));
-                        schemas.add(FieldSchema.paramsField("noTargetSkipCount", "无目标时跳过动作数", FieldType.NUMBER, false,
-                                        "搜不到目标时额外跳过后续几个动作。0 表示不跳过。", ">= 0", "0"));
+                                        "<= 0 表示不限攻击次数。", "整数", "1"));
                         schemas.add(FieldSchema.paramsField("autoAttack", "自动攻击", FieldType.BOOLEAN, false,
                                         "是否启用自动攻击。", "true / false", "false"));
-                        schemas.add(FieldSchema.paramsField("huntAimLockEnabled", "视角锁定目标", FieldType.BOOLEAN, false,
-                                        "开启后自动转头锁定目标再攻击；关闭后不转头也继续攻击。", "true / false", "true"));
-                        schemas.add(FieldSchema.paramsField("huntMode", "追击模式", FieldType.SELECT, false,
-                                        "固定距离或靠近目标。", "FIXED_DISTANCE / APPROACH",
-                                        KillAuraHandler.HUNT_MODE_FIXED_DISTANCE,
-                                        KillAuraHandler.HUNT_MODE_FIXED_DISTANCE, KillAuraHandler.HUNT_MODE_APPROACH));
                         schemas.add(FieldSchema.paramsField("trackingDistance", "跟踪距离", FieldType.NUMBER, false,
-                                        "固定距离模式下作为半径，靠近目标模式下作为停止追怪距离。", ">= 0", "1"));
-                        schemas.add(FieldSchema.paramsField("huntOrbitEnabled", "自动绕圈攻击", FieldType.BOOLEAN, false,
-                                        "仅固定距离模式生效。", "true / false", "false"));
-                        schemas.add(FieldSchema.paramsField("huntChaseIntervalEnabled", "启用追怪间隔", FieldType.BOOLEAN, false,
-                                        "到达追击距离后暂停追怪，等待后再继续。", "true / false", "false"));
-                        schemas.add(FieldSchema.paramsField("huntChaseIntervalSeconds", "追怪间隔秒数", FieldType.NUMBER, false,
-                                        "启用追怪间隔后生效。", ">= 0", "0"));
+                                        "目标跟踪距离。", ">= 0", "1"));
                         schemas.add(FieldSchema.paramsField("targetHostile", "敌对生物", FieldType.BOOLEAN, false,
                                         "是否匹配敌对生物。", "true / false", "true"));
                         schemas.add(FieldSchema.paramsField("targetPassive", "被动生物", FieldType.BOOLEAN, false,
@@ -576,10 +545,6 @@ public final class NodeParameterSchemaRegistry {
                                         "启用后忽略名称包含黑名单关键字的实体。", "true / false", "false"));
                         schemas.add(FieldSchema.paramsField("nameBlacklistText", "名称黑名单", FieldType.TEXTAREA, false,
                                         "每行或逗号分隔一个关键字，按包含匹配。", "可为空", ""));
-                        schemas.add(FieldSchema.paramsField("showHuntRange", "显示半径光环", FieldType.BOOLEAN, false,
-                                        "显示以中心点为圆心的半径光环。", "true / false", "false"));
-                        schemas.add(FieldSchema.paramsField("ignoreInvisible", "忽略隐身目标", FieldType.BOOLEAN, false,
-                                        "隐身目标不参与搜怪。", "true / false", "false"));
                 } else if ("use_skill".equals(normalized)) {
                         schemas.add(FieldSchema.paramsField("skill", "技能名", FieldType.TEXT, true,
                                         "要施放的技能名。", "不能为空", ""));
@@ -735,3 +700,4 @@ public final class NodeParameterSchemaRegistry {
                 return result;
         }
 }
+

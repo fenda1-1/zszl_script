@@ -7,6 +7,7 @@ import com.zszl.zszlScriptMod.gui.components.ThemedButton;
 import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
 import com.zszl.zszlScriptMod.path.PathSequenceManager;
 import com.zszl.zszlScriptMod.path.PathSequenceManager.PathSequence;
+import com.zszl.zszlScriptMod.utils.PinyinSearchHelper;
 import java.awt.Rectangle;
 import java.io.IOException;
 import java.util.ArrayList;
@@ -19,13 +20,13 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiScreen;
-import net.minecraft.client.gui.GuiTextField;
-import net.minecraft.client.resources.I18n;
-import net.minecraft.util.math.MathHelper;
-import org.lwjgl.input.Keyboard;
-import org.lwjgl.input.Mouse;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiTextField;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.util.math.MathHelper;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Keyboard;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Mouse;
 
 public class GuiSequenceSelector extends ThemedGuiScreen {
     private static final int BTN_CANCEL = 0;
@@ -290,21 +291,15 @@ public class GuiSequenceSelector extends ThemedGuiScreen {
         if (normalizedQuery.isEmpty()) {
             return true;
         }
-
-        String lowerQuery = normalizedQuery.toLowerCase(Locale.ROOT);
-        String name = normalize(sequence.getName()).toLowerCase(Locale.ROOT);
-        String displayName = getSequenceDisplayName(sequence).toLowerCase(Locale.ROOT);
-        String category = normalize(sequence.getCategory()).toLowerCase(Locale.ROOT);
-        String subCategory = normalize(sequence.getSubCategory()).toLowerCase(Locale.ROOT);
-
-        return name.contains(lowerQuery)
-                || displayName.contains(lowerQuery)
-                || category.contains(lowerQuery)
-                || subCategory.contains(lowerQuery);
+        String searchText = normalize(sequence.getName()) + " "
+                + getSequenceDisplayName(sequence) + " "
+                + normalize(sequence.getCategory()) + " "
+                + normalize(sequence.getSubCategory());
+        return PinyinSearchHelper.matchesNormalized(searchText, normalizedQuery);
     }
 
     private List<PathSequence> applySearchFilter(List<PathSequence> sequences) {
-        String normalizedQuery = normalize(searchQuery);
+        String normalizedQuery = PinyinSearchHelper.normalizeQuery(searchQuery);
         if (normalizedQuery.isEmpty()) {
             return new ArrayList<>(sequences);
         }
@@ -474,8 +469,8 @@ public class GuiSequenceSelector extends ThemedGuiScreen {
         if (onSelect != null) {
             onSelect.accept(finalSequenceName);
         }
-        if (mc.currentScreen == this) {
-            mc.displayGuiScreen(parentScreen);
+        if (mc.screen == this) {
+            mc.setScreen(parentScreen);
         }
     }
 
@@ -732,8 +727,8 @@ public class GuiSequenceSelector extends ThemedGuiScreen {
             return;
         }
 
-        int mouseX = Mouse.getEventX() * this.width / this.mc.displayWidth;
-        int mouseY = this.height - Mouse.getEventY() * this.height / this.mc.displayHeight - 1;
+        int mouseX = Mouse.getEventX() * this.width / this.mc.getWindow().getWidth();
+        int mouseY = this.height - Mouse.getEventY() * this.height / this.mc.getWindow().getHeight() - 1;
 
         if (isInside(mouseX, mouseY, categoryListX, listY, categoryListWidth, listHeight)) {
             categoryScrollOffset = dWheel > 0
@@ -754,3 +749,10 @@ public class GuiSequenceSelector extends ThemedGuiScreen {
         return false;
     }
 }
+
+
+
+
+
+
+

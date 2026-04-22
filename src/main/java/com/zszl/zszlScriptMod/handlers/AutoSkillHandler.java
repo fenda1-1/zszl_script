@@ -3,6 +3,7 @@ package com.zszl.zszlScriptMod.handlers;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.reflect.TypeToken;
 import com.zszl.zszlScriptMod.zszlScriptMod;
 import com.zszl.zszlScriptMod.config.DebugModule;
 import com.zszl.zszlScriptMod.config.ModConfig;
@@ -10,11 +11,12 @@ import com.zszl.zszlScriptMod.system.ProfileManager;
 import com.zszl.zszlScriptMod.utils.ModUtils;
 import com.zszl.zszlScriptMod.utils.PacketCaptureHandler; // 导入PacketCaptureHandler
 import net.minecraft.client.Minecraft;
-import net.minecraft.util.text.TextComponentString;
-import net.minecraft.util.text.TextFormatting;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.util.text.TextComponentString;
+import net.minecraft.ChatFormatting;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
+import java.lang.reflect.Type;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -24,7 +26,7 @@ import java.util.List;
 
 public class AutoSkillHandler {
 
-    private static final Minecraft mc = Minecraft.getMinecraft();
+    private static final Minecraft mc = Minecraft.getInstance();
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final String PACKET_CHANNEL = "OwlControlChannel";
 
@@ -175,8 +177,8 @@ public class AutoSkillHandler {
                 // --- 核心修改：在尝试发送前检查会话ID ---
                 if (PacketCaptureHandler.getOwlViewSessionID() == null) {
                     if (idMissingMessageCooldown <= 0) {
-                        mc.player.sendMessage(
-                                new TextComponentString(TextFormatting.RED + "[自动技能] 未获取到当前会话ID，请打开一次背包(默认E键)以捕获ID。"));
+                        mc.player.sendSystemMessage(
+                                new TextComponentString(ChatFormatting.RED + "[自动技能] 未获取到当前会话ID，请打开一次背包(默认E键)以捕获ID。"));
                         idMissingMessageCooldown = 100; // 5秒冷却 (5 * 20 ticks)
                     }
                     return; // 阻止技能触发
@@ -221,4 +223,8 @@ public class AutoSkillHandler {
         }
     }
 }
+
+
+
+
 

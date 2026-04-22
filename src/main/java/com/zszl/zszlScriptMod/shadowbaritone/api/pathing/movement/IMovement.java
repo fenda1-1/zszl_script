@@ -18,7 +18,7 @@
 package com.zszl.zszlScriptMod.shadowbaritone.api.pathing.movement;
 
 import com.zszl.zszlScriptMod.shadowbaritone.api.utils.BetterBlockPos;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.core.BlockPos;
 
 /**
  * @author Brady
@@ -53,3 +53,4 @@ public interface IMovement {
 
     BlockPos getDirection();
 }
+

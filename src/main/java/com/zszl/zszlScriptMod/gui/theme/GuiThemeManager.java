@@ -6,20 +6,20 @@ import com.zszl.zszlScriptMod.gui.GuiInventory;
 import com.zszl.zszlScriptMod.gui.components.GuiTheme;
 import com.zszl.zszlScriptMod.gui.components.ThemedButton;
 import com.zszl.zszlScriptMod.gui.theme.ThemeConfigManager.ThemeProfile;
+import com.zszl.zszlScriptMod.utils.ExternalLinkOpener;
 import com.zszl.zszlScriptMod.utils.TextureManagerHelper;
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.zszlScriptMod;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
 import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
-import net.minecraft.client.gui.GuiTextField;
-import net.minecraft.client.gui.ScaledResolution;
-import net.minecraft.client.resources.I18n;
-import net.minecraftforge.fml.client.config.GuiUtils;
-import net.minecraftforge.fml.client.config.GuiSlider;
-import org.lwjgl.input.Keyboard;
-import org.lwjgl.input.Mouse;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiTextField;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.ScaledResolution;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraftforge.fml.client.config.GuiUtils;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraftforge.fml.client.config.GuiSlider;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Keyboard;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Mouse;
 import org.lwjgl.opengl.GL11;
-import java.awt.Desktop;
-import java.net.URI;
 
 import javax.swing.JFileChooser;
 import javax.swing.filechooser.FileNameExtensionFilter;
@@ -94,7 +94,7 @@ public class GuiThemeManager extends ThemedGuiScreen {
 
     private void returnToMainMenuOverlay() {
         if (parent != null) {
-            mc.displayGuiScreen(parent);
+            mc.setScreen(parent);
             return;
         }
         ThemeConfigManager.save();
@@ -588,12 +588,7 @@ public class GuiThemeManager extends ThemedGuiScreen {
                 TextureManagerHelper.clearCache();
                 return;
             case 1204:
-                try {
-                    if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
-                        Desktop.getDesktop().browse(new URI("https://haowallpaper.com/homeView"));
-                    }
-                } catch (Exception ignored) {
-                }
+                ExternalLinkOpener.open("https://haowallpaper.com/homeView", "theme-wallpaper");
                 return;
             default:
                 super.actionPerformed(button);
@@ -779,8 +774,8 @@ public class GuiThemeManager extends ThemedGuiScreen {
             return;
         }
 
-        int mx = Mouse.getEventX() * this.width / this.mc.displayWidth;
-        int my = this.height - Mouse.getEventY() * this.height / this.mc.displayHeight - 1;
+        int mx = Mouse.getEventX() * this.width / this.mc.getWindow().getWidth();
+        int my = this.height - Mouse.getEventY() * this.height / this.mc.getWindow().getHeight() - 1;
 
         if (mx >= editorX && mx <= editorX + editorW && my >= editorY && my <= editorY + editorH) {
             int step = 36;
@@ -1261,4 +1256,10 @@ public class GuiThemeManager extends ThemedGuiScreen {
         return clamp(v, 10, 100);
     }
 }
+
+
+
+
+
+
 

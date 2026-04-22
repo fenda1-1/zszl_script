@@ -2,23 +2,23 @@ package com.zszl.zszlScriptMod.gui.config;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonSyntaxException;
-import com.zszl.zszlScriptMod.config.BaritoneParkourConflictHelper;
-import com.zszl.zszlScriptMod.config.BaritoneParkourSettingsHelper;
 import com.zszl.zszlScriptMod.shadowbaritone.api.BaritoneAPI;
 import com.zszl.zszlScriptMod.shadowbaritone.api.Settings;
 import com.zszl.zszlScriptMod.shadowbaritone.api.utils.SettingsUtil;
+import com.zszl.zszlScriptMod.config.BaritoneParkourSettingsHelper;
 import com.zszl.zszlScriptMod.gui.components.GuiTheme;
 import com.zszl.zszlScriptMod.gui.components.ThemedButton;
 import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
+import com.zszl.zszlScriptMod.utils.PinyinSearchHelper;
 
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiScreen;
-import net.minecraft.client.gui.GuiTextField;
-import net.minecraft.client.resources.I18n;
-import net.minecraft.util.math.MathHelper;
-import net.minecraftforge.fml.client.config.GuiUtils;
-import org.lwjgl.input.Keyboard;
-import org.lwjgl.input.Mouse;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiTextField;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.util.math.MathHelper;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraftforge.fml.client.config.GuiUtils;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Keyboard;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Mouse;
 
 import java.awt.Color;
 import java.io.BufferedReader;
@@ -62,13 +62,7 @@ public class GuiBaritoneSettings extends ThemedGuiScreen {
 
     private final List<GuiTextField> valueFields = new ArrayList<>();
     private final List<GuiButton> boolButtons = new ArrayList<>();
-    private final List<GuiButton> choiceButtons = new ArrayList<>();
     private final Map<GuiButton, String> buttonToKey = new HashMap<>();
-    private final Map<GuiButton, String> choiceButtonToKey = new HashMap<>();
-    private final Map<String, List<String>> choiceOptions = new HashMap<>();
-    private String openChoiceKey;
-    private boolean typeDropdownOpen;
-    private boolean modifiedDropdownOpen;
 
     private int page = 0;
     private int totalPages = 1;
@@ -94,8 +88,6 @@ public class GuiBaritoneSettings extends ThemedGuiScreen {
     private String hoverTooltip;
     private int hoverX;
     private int hoverY;
-    private String footerStatusMessage = "";
-    private int footerStatusColor = 0xFFBBBBBB;
 
     public GuiBaritoneSettings(GuiScreen parent) {
         this(parent, false);
@@ -112,13 +104,7 @@ public class GuiBaritoneSettings extends ThemedGuiScreen {
         this.buttonList.clear();
         this.valueFields.clear();
         this.boolButtons.clear();
-        this.choiceButtons.clear();
         this.buttonToKey.clear();
-        this.choiceButtonToKey.clear();
-        this.choiceOptions.clear();
-        this.openChoiceKey = null;
-        this.typeDropdownOpen = false;
-        this.modifiedDropdownOpen = false;
 
         buildDefsIfNeeded();
         if (editingValues.isEmpty()) {
@@ -129,85 +115,52 @@ public class GuiBaritoneSettings extends ThemedGuiScreen {
 
         updateResponsiveLayout();
         contentX = panelX + 10;
-        contentY = parkourOnly ? panelY + 56 : panelY + 84;
+        contentY = panelY + 60;
         contentW = panelW - 20;
 
-        if (!parkourOnly) {
-            int searchW = Math.max(180, Math.min(360, panelW / 3));
-            int searchX = panelX + panelW - searchW - 10;
-            int searchY = panelY + 34;
-            searchField = new GuiTextField(9000, this.fontRenderer, searchX, searchY, searchW, 18);
-            searchField.setMaxStringLength(128);
-            searchField.setText(searchText == null ? "" : searchText);
+        int searchW = Math.max(180, Math.min(360, panelW / 3));
+        int searchX = panelX + panelW - searchW - 10;
+        int searchY = panelY + 10;
+        searchField = new GuiTextField(9000, this.fontRenderer, searchX, searchY, searchW, 18);
+        searchField.setMaxStringLength(128);
+        searchField.setText(searchText == null ? "" : searchText);
 
-            int filterBtnY = panelY + 34;
-            int filterBtnX = panelX + 10;
-            int typeBtnW = Math.max(90, Math.min(140, panelW / 7));
-            int modifiedBtnW = Math.max(96, Math.min(130, panelW / 7));
-            int clearBtnW = 84;
+        int filterBtnY = panelY + 10;
+        int filterBtnX = panelX + 10;
+        int typeBtnW = Math.max(90, Math.min(140, panelW / 7));
+        int modifiedBtnW = Math.max(96, Math.min(130, panelW / 7));
+        int clearBtnW = 84;
 
-            this.buttonList.add(new ThemedButton(BTN_TYPE_FILTER, filterBtnX, filterBtnY, typeBtnW, 20,
-                    buildTypeFilterLabel()));
-            this.buttonList.add(new ThemedButton(BTN_MODIFIED_ONLY, filterBtnX + typeBtnW + 6, filterBtnY,
-                    modifiedBtnW, 20, buildModifiedFilterLabel()));
-            this.buttonList.add(new ThemedButton(BTN_CLEAR_FILTER, filterBtnX + typeBtnW + modifiedBtnW + 12, filterBtnY,
-                    clearBtnW, 20, "§f清空"));
-            applyFilter(searchField.getText());
-        } else {
-            searchField = null;
-            searchText = "";
-            typeFilter = "all";
-            modifiedOnly = false;
-            applyFilter("");
-        }
+        this.buttonList.add(new ThemedButton(BTN_TYPE_FILTER, filterBtnX, filterBtnY, typeBtnW, 20,
+                buildTypeFilterLabel()));
+        this.buttonList.add(new ThemedButton(BTN_MODIFIED_ONLY, filterBtnX + typeBtnW + 6, filterBtnY,
+                modifiedBtnW, 20, buildModifiedFilterLabel()));
+        this.buttonList.add(new ThemedButton(BTN_CLEAR_FILTER, filterBtnX + typeBtnW + modifiedBtnW + 12, filterBtnY,
+                clearBtnW, 20, "§f清空"));
+
+        applyFilter(searchField.getText());
         recalcPaging();
         this.page = MathHelper.clamp(this.page, 0, this.totalPages - 1);
 
         int bottomY = panelY + panelH - 24;
+        int navW = 54;
+        int smallW = Math.max(68, Math.min(110, (panelW - 220) / 4));
         int leftX = panelX + 10;
         int rightX = panelX + panelW - 10;
 
-        if (this.parkourOnly) {
-            int gap = panelW >= 520 ? 6 : 4;
-            int buttonCount = 6;
-            int totalW = panelW - 20;
-            int buttonW = Math.max(40, (totalW - gap * (buttonCount - 1)) / buttonCount);
-            int buttonX = leftX;
+        this.buttonList
+                .add(new ThemedButton(BTN_PREV_PAGE, leftX, bottomY, navW, 20, I18n.format("gui.inventory.prev_page")));
+        this.buttonList.add(new ThemedButton(BTN_NEXT_PAGE, leftX + navW + 6, bottomY, navW, 20,
+                I18n.format("gui.inventory.next_page")));
 
-            this.buttonList.add(new ThemedButton(BTN_PREV_PAGE, buttonX, bottomY, buttonW, 20,
-                    I18n.format("gui.inventory.prev_page")));
-            buttonX += buttonW + gap;
-            this.buttonList.add(new ThemedButton(BTN_NEXT_PAGE, buttonX, bottomY, buttonW, 20,
-                    I18n.format("gui.inventory.next_page")));
-            buttonX += buttonW + gap;
-            this.buttonList.add(new ThemedButton(BTN_RESET_PAGE, buttonX, bottomY, buttonW, 20,
-                    "§e" + I18n.format("gui.common.reset_default")));
-            buttonX += buttonW + gap;
-            this.buttonList.add(new ThemedButton(BTN_APPLY_PAGE, buttonX, bottomY, buttonW, 20,
-                    "§b应用本页"));
-            buttonX += buttonW + gap;
-            this.buttonList.add(new ThemedButton(BTN_CANCEL, buttonX, bottomY, buttonW, 20,
-                    I18n.format("gui.common.cancel")));
-            buttonX += buttonW + gap;
-            this.buttonList.add(new ThemedButton(BTN_SAVE_CLOSE, buttonX, bottomY, buttonW, 20,
-                    "§a" + I18n.format("gui.common.save_and_close")));
-        } else {
-            int navW = 54;
-            int smallW = Math.max(68, Math.min(110, (panelW - 220) / 4));
-
-            this.buttonList.add(new ThemedButton(BTN_PREV_PAGE, leftX, bottomY, navW, 20,
-                    I18n.format("gui.inventory.prev_page")));
-            this.buttonList.add(new ThemedButton(BTN_NEXT_PAGE, leftX + navW + 6, bottomY, navW, 20,
-                    I18n.format("gui.inventory.next_page")));
-            this.buttonList.add(new ThemedButton(BTN_SAVE_CLOSE, rightX - smallW, bottomY, smallW, 20,
-                    "§a" + I18n.format("gui.common.save_and_close")));
-            this.buttonList.add(new ThemedButton(BTN_CANCEL, rightX - smallW * 2 - 6, bottomY, smallW, 20,
-                    I18n.format("gui.common.cancel")));
-            this.buttonList.add(new ThemedButton(BTN_RESET_PAGE, rightX - smallW * 3 - 12, bottomY, smallW, 20,
-                    "§e" + I18n.format("gui.common.reset_default")));
-            this.buttonList.add(new ThemedButton(BTN_APPLY_PAGE, rightX - smallW * 4 - 18, bottomY, smallW, 20,
-                    "§b应用本页"));
-        }
+        this.buttonList.add(new ThemedButton(BTN_SAVE_CLOSE, rightX - smallW, bottomY, smallW, 20,
+                "§a" + I18n.format("gui.common.save_and_close")));
+        this.buttonList.add(new ThemedButton(BTN_CANCEL, rightX - smallW * 2 - 6, bottomY, smallW, 20,
+                I18n.format("gui.common.cancel")));
+        this.buttonList.add(new ThemedButton(BTN_RESET_PAGE, rightX - smallW * 3 - 12, bottomY, smallW, 20,
+                "§e" + I18n.format("gui.common.reset_default")));
+        this.buttonList.add(new ThemedButton(BTN_APPLY_PAGE, rightX - smallW * 4 - 18, bottomY, smallW, 20,
+                "§b应用本页"));
 
         buildPageControls();
     }
@@ -217,6 +170,7 @@ public class GuiBaritoneSettings extends ThemedGuiScreen {
             return;
         }
         if (loadBuiltInDefinitions()) {
+            appendMissingDefinitionsFromRuntime();
             return;
         }
         buildFallbackDefinitionsFromRuntime();
@@ -271,13 +225,47 @@ public class GuiBaritoneSettings extends ThemedGuiScreen {
         }
     }
 
+    private void appendMissingDefinitionsFromRuntime() {
+        Map<String, SettingDef> existing = new HashMap<>();
+        for (SettingDef def : allDefs) {
+            if (def == null || def.key == null) {
+                continue;
+            }
+            existing.put(def.key.trim().toLowerCase(Locale.ROOT), def);
+        }
+
+        for (Settings.Setting<?> setting : BaritoneAPI.getSettings().allSettings) {
+            if (setting == null || setting.isJavaOnly()) {
+                continue;
+            }
+            String key = setting.getName();
+            if (key == null || existing.containsKey(key.toLowerCase(Locale.ROOT))) {
+                continue;
+            }
+
+            String defaultValue;
+            try {
+                defaultValue = SettingsUtil.settingDefaultToString(setting);
+            } catch (Exception ignored) {
+                defaultValue = "";
+            }
+
+            String type;
+            try {
+                type = SettingsUtil.settingTypeToString(setting).toLowerCase(Locale.ROOT);
+            } catch (Exception ignored) {
+                type = "string";
+            }
+
+            allDefs.add(new SettingDef(key, defaultValue, type, key));
+            existing.put(key.toLowerCase(Locale.ROOT), new SettingDef(key, defaultValue, type, key));
+        }
+    }
+
     private void buildPageControls() {
         valueFields.clear();
         boolButtons.clear();
-        choiceButtons.clear();
         buttonToKey.clear();
-        choiceButtonToKey.clear();
-        choiceOptions.clear();
 
         int start = page * itemsPerPage;
         int end = Math.min(filteredDefs.size(), start + itemsPerPage);
@@ -297,15 +285,8 @@ public class GuiBaritoneSettings extends ThemedGuiScreen {
             int controlX = cardX + 6;
             int controlY = cardY + cardHeight - 22;
             int controlW = cardW - 12;
-            List<String> finiteChoices = getFiniteChoices(def);
 
-            if (shouldUseChoiceEditor(def, finiteChoices)) {
-                ThemedButton btn = new ThemedButton(idBase + local, controlX, controlY, controlW, 16,
-                        buildChoiceLabel(def, value));
-                choiceButtons.add(btn);
-                choiceButtonToKey.put(btn, def.key);
-                choiceOptions.put(def.key, finiteChoices);
-            } else if ("boolean".equals(def.type)) {
+            if ("boolean".equals(def.type)) {
                 boolean on = parseBoolean(value, def.defaultValue);
                 ThemedButton btn = new ThemedButton(idBase + local, controlX, controlY, controlW, 16,
                         buildBoolLabel(on));
@@ -332,15 +313,14 @@ public class GuiBaritoneSettings extends ThemedGuiScreen {
 
     private void applyFilter(String query) {
         searchText = query == null ? "" : query.trim();
-        String q = searchText.toLowerCase(Locale.ROOT);
+        String q = PinyinSearchHelper.normalizeQuery(searchText);
         filteredDefs.clear();
         for (SettingDef def : allDefs) {
             if (!shouldDisplayDefinition(def)) {
                 continue;
             }
-            String key = def.key == null ? "" : def.key.toLowerCase(Locale.ROOT);
-            String desc = def.desc == null ? "" : def.desc.toLowerCase(Locale.ROOT);
-            boolean textMatch = q.isEmpty() || key.contains(q) || desc.contains(q);
+            String searchContent = (def.key == null ? "" : def.key) + " " + (def.desc == null ? "" : def.desc);
+            boolean textMatch = q.isEmpty() || PinyinSearchHelper.matchesNormalized(searchContent, q);
             boolean typeMatch = matchesTypeFilter(def);
             boolean modifiedMatch = !modifiedOnly || isModifiedValue(def);
             if (textMatch && typeMatch && modifiedMatch) {
@@ -376,269 +356,11 @@ public class GuiBaritoneSettings extends ThemedGuiScreen {
 
     private String buildTypeFilterLabel() {
         String label = "all".equals(typeFilter) ? "全部" : typeFilter;
-        return "§b类型: §f" + label + " §7▼";
+        return "§b类型: " + label;
     }
 
     private String buildModifiedFilterLabel() {
-        return "§b显示: §f" + (modifiedOnly ? "仅已修改" : "全部") + " §7▼";
-    }
-
-    private boolean shouldUseChoiceEditor(SettingDef def, List<String> finiteChoices) {
-        return finiteChoices != null && !finiteChoices.isEmpty() && (!"boolean".equals(def.type) || this.parkourOnly);
-    }
-
-    private boolean shouldUseChoiceEditor(SettingDef def) {
-        return shouldUseChoiceEditor(def, getFiniteChoices(def));
-    }
-
-    private List<String> getFiniteChoices(SettingDef def) {
-        if ("boolean".equals(def.type)) {
-            return Arrays.asList("true", "false");
-        }
-        Settings.Setting<?> setting = BaritoneAPI.getSettings().byLowerName.get(def.key.toLowerCase(Locale.ROOT));
-        if (setting != null && setting.getType() instanceof Class && Enum.class.isAssignableFrom((Class<?>) setting.getType())) {
-            Object[] constants = ((Class<?>) setting.getType()).getEnumConstants();
-            List<String> values = new ArrayList<>();
-            if (constants != null) {
-                for (Object constant : constants) {
-                    if (constant instanceof Enum) {
-                        values.add(((Enum<?>) constant).name());
-                    }
-                }
-            }
-            return values;
-        }
-        return null;
-    }
-
-    private String buildChoiceLabel(SettingDef def, String value) {
-        return "§b" + formatChoiceValue(def, value) + " §7▼";
-    }
-
-    private String formatChoiceValue(SettingDef def, String value) {
-        if (value == null || value.trim().isEmpty()) {
-            return "(空)";
-        }
-        if ("boolean".equals(def.type)) {
-            return parseBoolean(value, def.defaultValue) ? "开启" : "关闭";
-        }
-        if ("parkourProfile".equalsIgnoreCase(def.key)) {
-            if ("STABLE".equalsIgnoreCase(value)) {
-                return "稳定";
-            }
-            if ("BALANCED".equalsIgnoreCase(value)) {
-                return "平衡";
-            }
-            if ("EXTREME".equalsIgnoreCase(value)) {
-                return "极限";
-            }
-        }
-        return value.trim();
-    }
-
-    private boolean handleChoiceDropdownClick(int mouseX, int mouseY, int mouseButton) {
-        if (openChoiceKey == null) {
-            return false;
-        }
-        GuiButton button = findChoiceButtonByKey(openChoiceKey);
-        List<String> options = choiceOptions.get(openChoiceKey);
-        if (button == null || options == null || options.isEmpty()) {
-            openChoiceKey = null;
-            return false;
-        }
-        if (mouseX >= button.x && mouseX < button.x + button.width
-                && mouseY >= button.y && mouseY < button.y + button.height) {
-            return false;
-        }
-        int rowH = 18;
-        int dropX = button.x;
-        int dropY = button.y + button.height + 2;
-        int dropW = button.width;
-        int dropH = rowH * options.size();
-        if (mouseX >= dropX && mouseX < dropX + dropW && mouseY >= dropY && mouseY < dropY + dropH) {
-            int index = (mouseY - dropY) / rowH;
-            if (index >= 0 && index < options.size()) {
-                editingValues.put(openChoiceKey, options.get(index));
-                statusMessages.put(openChoiceKey, "待应用");
-                if (button != null) {
-                    button.displayString = buildChoiceLabel(getDefinitionByKey(openChoiceKey), options.get(index));
-                }
-            }
-            openChoiceKey = null;
-            return true;
-        }
-        openChoiceKey = null;
-        return true;
-    }
-
-    private boolean handleFilterDropdownClick(int mouseX, int mouseY) {
-        GuiButton typeButton = findButtonById(BTN_TYPE_FILTER);
-        GuiButton modifiedButton = findButtonById(BTN_MODIFIED_ONLY);
-        boolean hadOpenDropdown = this.typeDropdownOpen || this.modifiedDropdownOpen;
-
-        if (this.typeDropdownOpen && typeButton != null) {
-            if (mouseX >= typeButton.x && mouseX < typeButton.x + typeButton.width
-                    && mouseY >= typeButton.y && mouseY < typeButton.y + typeButton.height) {
-                return false;
-            }
-            for (int i = 0; i < TYPE_FILTERS.length; i++) {
-                int rowX = typeButton.x;
-                int rowY = typeButton.y + typeButton.height + i * 18;
-                int rowW = typeButton.width;
-                int rowH = 18;
-                if (mouseX >= rowX && mouseX < rowX + rowW && mouseY >= rowY && mouseY < rowY + rowH) {
-                    savePageEdits();
-                    typeFilter = TYPE_FILTERS[i];
-                    page = 0;
-                    initGui();
-                    return true;
-                }
-            }
-        }
-
-        if (this.modifiedDropdownOpen && modifiedButton != null) {
-            if (mouseX >= modifiedButton.x && mouseX < modifiedButton.x + modifiedButton.width
-                    && mouseY >= modifiedButton.y && mouseY < modifiedButton.y + modifiedButton.height) {
-                return false;
-            }
-            for (int i = 0; i < 2; i++) {
-                int rowX = modifiedButton.x;
-                int rowY = modifiedButton.y + modifiedButton.height + i * 18;
-                int rowW = modifiedButton.width;
-                int rowH = 18;
-                if (mouseX >= rowX && mouseX < rowX + rowW && mouseY >= rowY && mouseY < rowY + rowH) {
-                    savePageEdits();
-                    modifiedOnly = i == 1;
-                    page = 0;
-                    initGui();
-                    return true;
-                }
-            }
-        }
-
-        if (hadOpenDropdown) {
-            this.typeDropdownOpen = false;
-            this.modifiedDropdownOpen = false;
-            return true;
-        }
-        return false;
-    }
-
-    private void drawFilterDropdowns(int mouseX, int mouseY) {
-        drawTypeFilterDropdown(mouseX, mouseY);
-        drawModifiedFilterDropdown(mouseX, mouseY);
-    }
-
-    private void drawTypeFilterDropdown(int mouseX, int mouseY) {
-        if (!this.typeDropdownOpen) {
-            return;
-        }
-        GuiButton button = findButtonById(BTN_TYPE_FILTER);
-        if (button == null) {
-            return;
-        }
-        for (int i = 0; i < TYPE_FILTERS.length; i++) {
-            int rowX = button.x;
-            int rowY = button.y + button.height + i * 18;
-            int rowW = button.width;
-            int rowH = 18;
-            boolean hover = mouseX >= rowX && mouseX < rowX + rowW && mouseY >= rowY && mouseY < rowY + rowH;
-            boolean selected = TYPE_FILTERS[i].equals(typeFilter);
-            GuiTheme.drawButtonFrame(rowX, rowY, rowW, rowH,
-                    selected ? GuiTheme.UiState.SELECTED : (hover ? GuiTheme.UiState.HOVER : GuiTheme.UiState.NORMAL));
-            if (selected) {
-                drawRect(rowX + 1, rowY + 1, rowX + 4, rowY + rowH - 1, 0xFF7ED0FF);
-            }
-            drawString(this.fontRenderer, (selected ? "§b✔ " : "§7") + trimToWidth("all".equals(TYPE_FILTERS[i]) ? "全部" : TYPE_FILTERS[i], rowW - 16),
-                    rowX + 6, rowY + 5, 0xFFFFFFFF);
-        }
-    }
-
-    private void drawModifiedFilterDropdown(int mouseX, int mouseY) {
-        if (!this.modifiedDropdownOpen) {
-            return;
-        }
-        GuiButton button = findButtonById(BTN_MODIFIED_ONLY);
-        if (button == null) {
-            return;
-        }
-        for (int i = 0; i < 2; i++) {
-            boolean optionModifiedOnly = i == 1;
-            int rowX = button.x;
-            int rowY = button.y + button.height + i * 18;
-            int rowW = button.width;
-            int rowH = 18;
-            boolean hover = mouseX >= rowX && mouseX < rowX + rowW && mouseY >= rowY && mouseY < rowY + rowH;
-            boolean selected = this.modifiedOnly == optionModifiedOnly;
-            GuiTheme.drawButtonFrame(rowX, rowY, rowW, rowH,
-                    selected ? GuiTheme.UiState.SELECTED : (hover ? GuiTheme.UiState.HOVER : GuiTheme.UiState.NORMAL));
-            if (selected) {
-                drawRect(rowX + 1, rowY + 1, rowX + 4, rowY + rowH - 1, 0xFF7ED0FF);
-            }
-            drawString(this.fontRenderer, selected ? "§b✔ " + (optionModifiedOnly ? "仅已修改" : "全部") : "§7" + (optionModifiedOnly ? "仅已修改" : "全部"),
-                    rowX + 6, rowY + 5, 0xFFFFFFFF);
-        }
-    }
-
-    private void drawChoiceDropdown(int mouseX, int mouseY) {
-        if (openChoiceKey == null) {
-            return;
-        }
-        GuiButton button = findChoiceButtonByKey(openChoiceKey);
-        SettingDef def = getDefinitionByKey(openChoiceKey);
-        List<String> options = choiceOptions.get(openChoiceKey);
-        if (button == null || def == null || options == null || options.isEmpty()) {
-            return;
-        }
-        int rowH = 18;
-        int x = button.x;
-        int y = button.y + button.height + 2;
-        int w = button.width;
-        drawRect(x, y, x + w, y + rowH * options.size(), 0xEE1B2633);
-        for (int i = 0; i < options.size(); i++) {
-            int rowY = y + i * rowH;
-            boolean hover = mouseX >= x && mouseX < x + w && mouseY >= rowY && mouseY < rowY + rowH;
-            boolean selected = options.get(i).equalsIgnoreCase(editingValues.getOrDefault(openChoiceKey, def.defaultValue));
-            if (hover) {
-                drawRect(x + 1, rowY + 1, x + w - 1, rowY + rowH - 1, 0xAA36506A);
-            } else if (selected) {
-                drawRect(x + 1, rowY + 1, x + w - 1, rowY + rowH - 1, 0xAA27435C);
-            }
-            drawString(this.fontRenderer, trimToWidth(formatChoiceValue(def, options.get(i)), w - 8), x + 4, rowY + 5,
-                    selected ? 0xFFFFFFFF : 0xFFD7E5F3);
-        }
-    }
-
-    private GuiButton findChoiceButtonByKey(String key) {
-        for (GuiButton button : choiceButtons) {
-            if (key.equals(choiceButtonToKey.get(button))) {
-                return button;
-            }
-        }
-        return null;
-    }
-
-    private GuiButton findButtonById(int id) {
-        for (GuiButton button : this.buttonList) {
-            if (button.id == id) {
-                return button;
-            }
-        }
-        return null;
-    }
-
-    private SettingDef getDefinitionByKey(String key) {
-        for (SettingDef def : filteredDefs) {
-            if (def.key.equalsIgnoreCase(key)) {
-                return def;
-            }
-        }
-        for (SettingDef def : allDefs) {
-            if (def.key.equalsIgnoreCase(key)) {
-                return def;
-            }
-        }
-        return null;
+        return modifiedOnly ? "§a仅已修改" : "§7全部";
     }
 
     @Override
@@ -658,25 +380,16 @@ public class GuiBaritoneSettings extends ThemedGuiScreen {
 
         int modifiedCount = 0;
         for (SettingDef def : allDefs) {
-            if (!shouldDisplayDefinition(def)) {
-                continue;
-            }
             String value = editingValues.getOrDefault(def.key, def.defaultValue);
             if (!isDefaultValue(def, value)) {
                 modifiedCount++;
             }
         }
 
-        int summaryY = this.parkourOnly ? panelY + 34 : panelY + 58;
         drawString(this.fontRenderer,
                 String.format(Locale.ROOT, "当前页: %d/%d   本页容量: %d   结果: %d   已修改: %d",
                         page + 1, totalPages, itemsPerPage, filteredDefs.size(), modifiedCount),
-                panelX + 10, summaryY, 0xFFCFCFCF);
-        String parkourWarning = this.parkourOnly ? BaritoneParkourConflictHelper.buildCompactWarning(editingValues) : "";
-        if (this.parkourOnly && !parkourWarning.isEmpty()) {
-            drawString(this.fontRenderer, trimToWidth(parkourWarning, panelW - 20), panelX + 10, panelY + 46,
-                    0xFFF4C16C);
-        }
+                panelX + 10, panelY + 34, 0xFFCFCFCF);
 
         int start = page * itemsPerPage;
         int end = Math.min(filteredDefs.size(), start + itemsPerPage);
@@ -695,9 +408,7 @@ public class GuiBaritoneSettings extends ThemedGuiScreen {
 
             String descText = trimToWidth(def.desc, cardW - 12);
             String keyText = trimToWidth(def.key, cardW - 12);
-            String metaText = trimToWidth(
-                    "当前: " + getCurrentDisplayValue(def) + "  默认: " + getDefaultDisplayValue(def),
-                    cardW - 12);
+            String metaText = trimToWidth("类型: " + def.type + "  默认: " + getResolvedDefaultValue(def), cardW - 12);
 
             drawString(this.fontRenderer, descText, cardX + 6, cardY + 4, 0xFFFFFFFF);
             drawString(this.fontRenderer, keyText, cardX + 6, cardY + 16, 0xFF98B9FF);
@@ -713,15 +424,7 @@ public class GuiBaritoneSettings extends ThemedGuiScreen {
                 hoverTooltip = "§e设置项: " + def.key
                         + "\n§7描述: " + def.desc
                         + "\n§7类型: " + def.type
-                        + "\n§7当前: " + getCurrentDisplayValue(def)
                         + "\n§7默认: " + getResolvedDefaultValue(def);
-                if (this.parkourOnly && "parkourMode".equalsIgnoreCase(def.key)) {
-                    hoverTooltip += "\n§6开启后会自动压制 Backfill / 跑酷放块 / 模拟真人路线扰动";
-                } else if (this.parkourOnly && "allowParkourPlace".equalsIgnoreCase(def.key)) {
-                    hoverTooltip += "\n§6若启用 parkourMode，该项会被运行时自动忽略";
-                } else if (this.parkourOnly && "backfill".equalsIgnoreCase(def.key)) {
-                    hoverTooltip += "\n§6若启用 parkourMode，该项会被自动关闭";
-                }
                 hoverX = mouseX;
                 hoverY = mouseY;
             }
@@ -730,34 +433,20 @@ public class GuiBaritoneSettings extends ThemedGuiScreen {
         for (GuiButton b : boolButtons) {
             b.drawButton(this.mc, mouseX, mouseY, partialTicks);
         }
-        for (GuiButton b : choiceButtons) {
-            b.drawButton(this.mc, mouseX, mouseY, partialTicks);
-        }
         for (GuiTextField tf : valueFields) {
             drawThemedTextField(tf);
         }
 
         super.drawScreen(mouseX, mouseY, partialTicks);
 
-        drawString(this.fontRenderer, footerStatusMessage == null ? "" : footerStatusMessage,
-                panelX + 10, panelY + panelH - 14, footerStatusColor);
-
         if (hoverTooltip != null) {
             GuiUtils.drawHoveringText(Arrays.asList(hoverTooltip.split("\\n")), hoverX, hoverY, width, height, -1,
                     this.fontRenderer);
         }
-        drawFilterDropdowns(mouseX, mouseY);
-        drawChoiceDropdown(mouseX, mouseY);
     }
 
     @Override
     protected void mouseClicked(int mouseX, int mouseY, int mouseButton) throws IOException {
-        if (handleFilterDropdownClick(mouseX, mouseY)) {
-            return;
-        }
-        if (handleChoiceDropdownClick(mouseX, mouseY, mouseButton)) {
-            return;
-        }
         super.mouseClicked(mouseX, mouseY, mouseButton);
         if (searchField != null) {
             searchField.mouseClicked(mouseX, mouseY, mouseButton);
@@ -779,28 +468,12 @@ public class GuiBaritoneSettings extends ThemedGuiScreen {
                 return;
             }
         }
-        for (GuiButton b : choiceButtons) {
-            if (b.mousePressed(this.mc, mouseX, mouseY)) {
-                String key = choiceButtonToKey.get(b);
-                this.typeDropdownOpen = false;
-                this.modifiedDropdownOpen = false;
-                openChoiceKey = key != null && key.equals(openChoiceKey) ? null : key;
-                return;
-            }
-        }
-        openChoiceKey = null;
     }
 
     @Override
     protected void keyTyped(char typedChar, int keyCode) throws IOException {
         if (keyCode == Keyboard.KEY_ESCAPE) {
-            if (this.typeDropdownOpen || this.modifiedDropdownOpen || this.openChoiceKey != null) {
-                this.typeDropdownOpen = false;
-                this.modifiedDropdownOpen = false;
-                this.openChoiceKey = null;
-                return;
-            }
-            this.mc.displayGuiScreen(parentScreen);
+            this.mc.setScreen(parentScreen);
             return;
         }
         if (searchField != null && searchField.isFocused()) {
@@ -847,8 +520,6 @@ public class GuiBaritoneSettings extends ThemedGuiScreen {
             modifiedOnly = false;
             searchText = "";
             page = 0;
-            this.typeDropdownOpen = false;
-            this.modifiedDropdownOpen = false;
             initGui();
             if (searchField != null) {
                 searchField.setText("");
@@ -857,16 +528,18 @@ public class GuiBaritoneSettings extends ThemedGuiScreen {
         }
 
         if (button.id == BTN_TYPE_FILTER) {
-            this.typeDropdownOpen = !this.typeDropdownOpen;
-            this.modifiedDropdownOpen = false;
-            this.openChoiceKey = null;
+            savePageEdits();
+            cycleTypeFilter();
+            page = 0;
+            initGui();
             return;
         }
 
         if (button.id == BTN_MODIFIED_ONLY) {
-            this.modifiedDropdownOpen = !this.modifiedDropdownOpen;
-            this.typeDropdownOpen = false;
-            this.openChoiceKey = null;
+            savePageEdits();
+            modifiedOnly = !modifiedOnly;
+            page = 0;
+            initGui();
             return;
         }
 
@@ -888,7 +561,7 @@ public class GuiBaritoneSettings extends ThemedGuiScreen {
         }
 
         if (button.id == BTN_CANCEL) {
-            this.mc.displayGuiScreen(parentScreen);
+            this.mc.setScreen(parentScreen);
             return;
         }
 
@@ -906,7 +579,7 @@ public class GuiBaritoneSettings extends ThemedGuiScreen {
         if (button.id == BTN_SAVE_CLOSE) {
             savePageEdits();
             applyAllChangedOnSaveClose();
-            this.mc.displayGuiScreen(parentScreen);
+            this.mc.setScreen(parentScreen);
         }
     }
 
@@ -916,7 +589,7 @@ public class GuiBaritoneSettings extends ThemedGuiScreen {
         int textIdx = 0;
         for (int i = start; i < end; i++) {
             SettingDef def = filteredDefs.get(i);
-            if ("boolean".equals(def.type) || shouldUseChoiceEditor(def)) {
+            if ("boolean".equals(def.type)) {
                 continue;
             }
             if (textIdx < valueFields.size()) {
@@ -953,8 +626,6 @@ public class GuiBaritoneSettings extends ThemedGuiScreen {
             }
         }
         SettingsUtil.save(BaritoneAPI.getSettings());
-        footerStatusMessage = "当前页设置已应用";
-        footerStatusColor = 0xFF73D98A;
     }
 
     private boolean isDefaultValue(SettingDef def, String value) {
@@ -1079,20 +750,18 @@ public class GuiBaritoneSettings extends ThemedGuiScreen {
         return (contentW - (columns - 1) * cardGapX) / columns;
     }
 
-    private String getCurrentDisplayValue(SettingDef def) {
-        String value = editingValues.getOrDefault(def.key, def.defaultValue);
-        if ("boolean".equals(def.type)) {
-            return parseBoolean(value, def.defaultValue) ? "开启" : "关闭";
+    private String trimToWidth(String text, int maxWidth) {
+        if (text == null) {
+            return "";
         }
-        return value == null || value.trim().isEmpty() ? "(空)" : value.trim();
-    }
-
-    private String getDefaultDisplayValue(SettingDef def) {
-        String value = getResolvedDefaultValue(def);
-        if ("boolean".equals(def.type)) {
-            return parseBoolean(value, value) ? "开启" : "关闭";
+        String value = text;
+        while (!value.isEmpty() && this.fontRenderer.getStringWidth(value) > maxWidth) {
+            value = value.substring(0, value.length() - 1);
         }
-        return value == null || value.trim().isEmpty() ? "(空)" : value.trim();
+        if (!value.equals(text) && value.length() > 2) {
+            return value.substring(0, value.length() - 2) + "..";
+        }
+        return value;
     }
 
     private boolean shouldDisplayDefinition(SettingDef def) {
@@ -1106,20 +775,6 @@ public class GuiBaritoneSettings extends ThemedGuiScreen {
 
     private String getSearchPlaceholder() {
         return this.parkourOnly ? "搜索跑酷设置（键名 / 描述）" : "搜索设置（键名 / 描述）";
-    }
-
-    private String trimToWidth(String text, int maxWidth) {
-        if (text == null) {
-            return "";
-        }
-        String value = text;
-        while (!value.isEmpty() && this.fontRenderer.getStringWidth(value) > maxWidth) {
-            value = value.substring(0, value.length() - 1);
-        }
-        if (!value.equals(text) && value.length() > 2) {
-            return value.substring(0, value.length() - 2) + "..";
-        }
-        return value;
     }
 
     @Override
@@ -1146,3 +801,9 @@ public class GuiBaritoneSettings extends ThemedGuiScreen {
         private List<SettingDef> settings;
     }
 }
+
+
+
+
+
+

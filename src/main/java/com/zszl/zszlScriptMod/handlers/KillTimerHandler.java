@@ -2,23 +2,24 @@ package com.zszl.zszlScriptMod.handlers;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.ScaledResolution;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.util.math.MathHelper;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.util.text.TextComponentString;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraftforge.client.event.RenderGameOverlayEvent;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Keyboard;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Mouse;
 import com.zszl.zszlScriptMod.config.ModConfig;
 import com.zszl.zszlScriptMod.system.ProfileManager;
 import com.zszl.zszlScriptMod.system.SimulatedKeyInputManager;
-
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.resources.I18n;
-import net.minecraft.client.gui.Gui;
-import net.minecraft.client.gui.ScaledResolution;
-import net.minecraft.entity.EntityLivingBase;
-import net.minecraft.entity.monster.IMob;
-import net.minecraft.util.math.MathHelper;
-import net.minecraft.util.text.TextComponentString;
-import net.minecraftforge.client.event.RenderGameOverlayEvent;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.monster.Enemy;
+import net.minecraftforge.client.event.InputEvent;
 import net.minecraftforge.event.entity.living.LivingDeathEvent;
-import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
-import org.lwjgl.input.Keyboard;
-import org.lwjgl.input.Mouse;
+import net.minecraftforge.eventbus.api.SubscribeEvent;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
@@ -36,21 +37,20 @@ import java.util.UUID;
 public class KillTimerHandler {
 
     public static final KillTimerHandler INSTANCE = new KillTimerHandler();
-    private static final Minecraft mc = Minecraft.getMinecraft();
+    private static final Minecraft mc = Minecraft.getInstance();
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 
     public static boolean isEnabled = false;
 
-    // 你的新默认与最小要求
     public static int panelX = 0;
     public static int panelY = 22;
     public static int panelWidth = 219;
     public static int panelHeight = 100;
-    public static int panelAlpha = 100; // 30-240
+    public static int panelAlpha = 100;
 
-    public static int combatTimeoutSeconds = 3; // 脱战判定秒数
-    public static int disengageRemoveSeconds = 3; // 脱战后保留秒数（倒计时后删除）
-    public static int stableDpsIntervalSeconds = 2; // 固定DPS刷新秒数
+    public static int combatTimeoutSeconds = 3;
+    public static int disengageRemoveSeconds = 3;
+    public static int stableDpsIntervalSeconds = 2;
     public static final int DEATH_MODE_CHAT = 0;
     public static final int DEATH_MODE_PANEL_HOLD = 1;
     public static int deathDataMode = DEATH_MODE_CHAT;
@@ -100,11 +100,11 @@ public class KillTimerHandler {
         long deathAtMs;
         long deathFreezeUntilMs;
 
-        TrackInfo(EntityLivingBase e) {
-            this.id = e.getUniqueID();
-            this.name = e.getName();
-            this.maxHealth = Math.max(1.0F, e.getMaxHealth());
-            this.currentHealth = Math.max(0.0F, e.getHealth());
+        TrackInfo(LivingEntity entity) {
+            this.id = entity.getUUID();
+            this.name = entity.getName().getString();
+            this.maxHealth = Math.max(1.0F, entity.getMaxHealth());
+            this.currentHealth = Math.max(0.0F, entity.getHealth());
             this.minHealth = this.currentHealth;
             long now = System.currentTimeMillis();
             this.combatStartMs = now;
@@ -148,24 +148,26 @@ public class KillTimerHandler {
 
     public static void loadConfig() {
         Path file = ProfileManager.getCurrentProfileDir().resolve("kill_timer_config.json");
-        if (!Files.exists(file))
+        if (!Files.exists(file)) {
             return;
-        try (BufferedReader r = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
-            ConfigData d = GSON.fromJson(r, ConfigData.class);
-            if (d == null)
+        }
+        try (BufferedReader reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
+            ConfigData data = GSON.fromJson(reader, ConfigData.class);
+            if (data == null) {
                 return;
-            isEnabled = d.enabled;
-            panelX = Math.max(0, d.panelX);
-            panelY = Math.max(0, d.panelY);
-            panelWidth = Math.max(MIN_W, d.panelWidth);
-            panelHeight = Math.max(MIN_H, d.panelHeight);
-            panelAlpha = MathHelper.clamp(d.panelAlpha, 30, 240);
-            combatTimeoutSeconds = Math.max(1, d.combatTimeoutSeconds);
-            disengageRemoveSeconds = Math.max(1, d.disengageRemoveSeconds);
-            stableDpsIntervalSeconds = Math.max(1, d.stableDpsIntervalSeconds);
-            deathDataMode = (d.deathDataMode == DEATH_MODE_PANEL_HOLD) ? DEATH_MODE_PANEL_HOLD : DEATH_MODE_CHAT;
-            deathPanelHoldSeconds = Math.max(1, d.deathPanelHoldSeconds);
-        } catch (Exception ignore) {
+            }
+            isEnabled = data.enabled;
+            panelX = Math.max(0, data.panelX);
+            panelY = Math.max(0, data.panelY);
+            panelWidth = Math.max(MIN_W, data.panelWidth);
+            panelHeight = Math.max(MIN_H, data.panelHeight);
+            panelAlpha = MathHelper.clamp(data.panelAlpha, 30, 240);
+            combatTimeoutSeconds = Math.max(1, data.combatTimeoutSeconds);
+            disengageRemoveSeconds = Math.max(1, data.disengageRemoveSeconds);
+            stableDpsIntervalSeconds = Math.max(1, data.stableDpsIntervalSeconds);
+            deathDataMode = data.deathDataMode == DEATH_MODE_PANEL_HOLD ? DEATH_MODE_PANEL_HOLD : DEATH_MODE_CHAT;
+            deathPanelHoldSeconds = Math.max(1, data.deathPanelHoldSeconds);
+        } catch (Exception ignored) {
         }
     }
 
@@ -173,31 +175,32 @@ public class KillTimerHandler {
         Path file = ProfileManager.getCurrentProfileDir().resolve("kill_timer_config.json");
         try {
             Files.createDirectories(file.getParent());
-            try (BufferedWriter w = Files.newBufferedWriter(file, StandardCharsets.UTF_8)) {
-                ConfigData d = new ConfigData();
-                d.enabled = isEnabled;
-                d.panelX = panelX;
-                d.panelY = panelY;
-                d.panelWidth = panelWidth;
-                d.panelHeight = panelHeight;
-                d.panelAlpha = panelAlpha;
-                d.combatTimeoutSeconds = combatTimeoutSeconds;
-                d.disengageRemoveSeconds = disengageRemoveSeconds;
-                d.stableDpsIntervalSeconds = stableDpsIntervalSeconds;
-                d.deathDataMode = deathDataMode;
-                d.deathPanelHoldSeconds = deathPanelHoldSeconds;
-                GSON.toJson(d, w);
+            try (BufferedWriter writer = Files.newBufferedWriter(file, StandardCharsets.UTF_8)) {
+                ConfigData data = new ConfigData();
+                data.enabled = isEnabled;
+                data.panelX = panelX;
+                data.panelY = panelY;
+                data.panelWidth = panelWidth;
+                data.panelHeight = panelHeight;
+                data.panelAlpha = panelAlpha;
+                data.combatTimeoutSeconds = combatTimeoutSeconds;
+                data.disengageRemoveSeconds = disengageRemoveSeconds;
+                data.stableDpsIntervalSeconds = stableDpsIntervalSeconds;
+                data.deathDataMode = deathDataMode;
+                data.deathPanelHoldSeconds = deathPanelHoldSeconds;
+                GSON.toJson(data, writer);
             }
-        } catch (Exception ignore) {
+        } catch (Exception ignored) {
         }
     }
 
     public static void toggleEnabled() {
         isEnabled = !isEnabled;
-        if (!isEnabled)
+        if (!isEnabled) {
             clearRuntimeState();
+        }
         if (mc.player != null) {
-            mc.player.sendMessage(new TextComponentString(I18n.format("msg.kill_timer.toggle",
+            mc.player.sendSystemMessage(new TextComponentString(I18n.format("msg.kill_timer.toggle",
                     isEnabled ? I18n.format("msg.kill_timer.state_on") : I18n.format("msg.kill_timer.state_off"))));
         }
         saveConfig();
@@ -219,45 +222,49 @@ public class KillTimerHandler {
         ModConfig.isMouseDetached = true;
         pendingMouseGrabAfterEdit = false;
         escKeyWasDown = false;
-        // 预埋一次 GUI 拦截：用于拦截用户按 ESC 可能触发的菜单
+        if (mc.mouseHandler != null && mc.mouseHandler.isMouseGrabbed()) {
+            mc.mouseHandler.releaseMouse();
+        }
         GuiBlockerHandler.blockNextGui(1);
     }
 
     public static void exitFreeEditMode() {
-        if (!freeEditMode)
+        if (!freeEditMode) {
             return;
+        }
         freeEditMode = false;
         dragging = false;
         resizing = false;
         ModConfig.isMouseDetached = false;
-        if (mc.currentScreen == null) {
-            mc.mouseHelper.grabMouseCursor();
+        if (mc.screen == null) {
+            mc.mouseHandler.grabMouse();
             pendingMouseGrabAfterEdit = false;
         } else {
             pendingMouseGrabAfterEdit = true;
         }
         saveConfig();
         if (mc.player != null) {
-            mc.player.sendMessage(new TextComponentString(I18n.format("msg.kill_timer.exit_free_edit")));
+            mc.player.sendSystemMessage(new TextComponentString(I18n.format("msg.kill_timer.exit_free_edit")));
         }
     }
 
     @SubscribeEvent
     public void onMonsterDeath(LivingDeathEvent event) {
-        if (!isEnabled || mc.world == null || !mc.world.isRemote)
+        if (!isEnabled || mc.level == null || event == null) {
             return;
-        EntityLivingBase dead = event.getEntityLiving();
-        if (dead == null)
+        }
+        LivingEntity dead = event.getEntity();
+        if (dead == null || !dead.level().isClientSide()) {
             return;
+        }
 
-        TrackInfo info = tracked.get(dead.getUniqueID());
+        TrackInfo info = tracked.get(dead.getUUID());
         if (info != null && mc.player != null) {
             long now = System.currentTimeMillis();
             info.currentHealth = 0.0F;
             info.dead = true;
             info.deathAtMs = now;
             info.deathFreezeUntilMs = now + Math.max(1, deathPanelHoldSeconds) * 1000L;
-            // 死亡定格：冻结时长与DPS计算基准
             if (!info.paused) {
                 info.paused = true;
                 info.pausedStartMs = now;
@@ -268,25 +275,53 @@ public class KillTimerHandler {
             double dps = totalDmg / Math.max(0.001, sec);
 
             if (deathDataMode == DEATH_MODE_CHAT) {
-                tracked.remove(dead.getUniqueID());
-                mc.player.sendMessage(new TextComponentString(I18n.format(
-                        "msg.kill_timer.kill_summary",
+                tracked.remove(dead.getUUID());
+                mc.player.sendSystemMessage(new TextComponentString(I18n.format("msg.kill_timer.kill_summary",
                         info.name, sec, formatCompactNumber(totalDmg), formatCompactNumber(dps))));
             }
         }
     }
 
     @SubscribeEvent
+    public void onMouseScroll(InputEvent.MouseScrollingEvent event) {
+        if (!isEnabled || event == null || mc.screen != null || mc.player == null || mc.level == null) {
+            return;
+        }
+        int listHeight = Math.max(0, panelHeight - HEADER_H - FOOTER_H - 6);
+        int totalRowsHeight = tracked.size() * (CARD_H + CARD_GAP);
+        int maxScroll = Math.max(0, totalRowsHeight - listHeight);
+        if (maxScroll <= 0) {
+            return;
+        }
+
+        int mouseX = getScaledMouseX();
+        int mouseY = getScaledMouseY();
+        int listX = panelX + PADDING;
+        int listY = panelY + HEADER_H + 4;
+        int listW = panelWidth - PADDING * 2 - 6;
+        if (!inside(mouseX, mouseY, listX, listY, listW, listHeight)) {
+            return;
+        }
+
+        double delta = event.getScrollDelta();
+        if (Math.abs(delta) < 0.0001D) {
+            return;
+        }
+
+        scrollOffset = MathHelper.clamp(scrollOffset - (int) Math.round(delta) * (CARD_H + CARD_GAP), 0, maxScroll);
+        event.setCanceled(true);
+    }
+
+    @SubscribeEvent
     public void onRenderOverlay(RenderGameOverlayEvent.Post event) {
         if (!isEnabled || event.getType() != RenderGameOverlayEvent.ElementType.ALL || mc.player == null
-                || mc.world == null) {
+                || mc.level == null) {
             return;
         }
 
         if (freeEditMode) {
             boolean escDown = SimulatedKeyInputManager.isKeyDown(Keyboard.KEY_ESCAPE);
             if (escDown && !escKeyWasDown) {
-                // 自由编辑模式下，ESC 用于退出编辑，并回归鼠标
                 exitFreeEditMode();
             }
             escKeyWasDown = escDown;
@@ -294,12 +329,12 @@ public class KillTimerHandler {
             escKeyWasDown = false;
         }
 
-        if (pendingMouseGrabAfterEdit && mc.currentScreen == null && !ModConfig.isMouseDetached) {
-            mc.mouseHelper.grabMouseCursor();
+        if (pendingMouseGrabAfterEdit && mc.screen == null && !ModConfig.isMouseDetached) {
+            mc.mouseHandler.grabMouse();
             pendingMouseGrabAfterEdit = false;
         }
 
-        if (freeEditMode && mc.currentScreen != null) {
+        if (freeEditMode && mc.screen != null) {
             exitFreeEditMode();
         }
 
@@ -310,99 +345,97 @@ public class KillTimerHandler {
 
     private static void updateFromWorld() {
         long now = System.currentTimeMillis();
+        List<Entity> entities = new ArrayList<>();
+        for (Entity entity : mc.level.entitiesForRendering()) {
+            entities.add(entity);
+        }
 
-        for (Object obj : new ArrayList<>(mc.world.loadedEntityList)) {
-            if (!(obj instanceof EntityLivingBase))
+        for (Entity entity : entities) {
+            if (!(entity instanceof LivingEntity living)) {
                 continue;
-            EntityLivingBase e = (EntityLivingBase) obj;
-            if (!(e instanceof IMob))
+            }
+            if (!(living instanceof Enemy)) {
                 continue;
-            UUID id = e.getUniqueID();
+            }
+            UUID id = living.getUUID();
 
-            if (!e.isEntityAlive()) {
-                TrackInfo t = tracked.get(id);
-                if (t != null && t.dead && now <= t.deathFreezeUntilMs) {
-                    t.currentHealth = 0.0F;
+            if (!living.isAlive()) {
+                TrackInfo track = tracked.get(id);
+                if (track != null && track.dead && now <= track.deathFreezeUntilMs) {
+                    track.currentHealth = 0.0F;
                 } else {
                     tracked.remove(id);
                 }
                 continue;
             }
 
-            float maxHp = Math.max(1.0F, e.getMaxHealth());
-            float hp = Math.max(0.0F, e.getHealth());
-            TrackInfo t = tracked.get(id);
-            if (t == null) {
-                // 首次进入追踪：需要已受伤，避免把满血路过怪物都加进面板
+            float maxHp = Math.max(1.0F, living.getMaxHealth());
+            float hp = Math.max(0.0F, living.getHealth());
+            TrackInfo track = tracked.get(id);
+            if (track == null) {
                 if (hp < maxHp) {
-                    t = new TrackInfo(e);
-                    tracked.put(id, t);
+                    tracked.put(id, new TrackInfo(living));
                 }
                 continue;
             }
 
-            t.dead = false;
-            t.deathAtMs = 0L;
-            t.deathFreezeUntilMs = 0L;
-            t.name = e.getName();
-            t.maxHealth = Math.max(t.maxHealth, maxHp);
+            track.dead = false;
+            track.deathAtMs = 0L;
+            track.deathFreezeUntilMs = 0L;
+            track.name = living.getName().getString();
+            track.maxHealth = Math.max(track.maxHealth, maxHp);
 
-            float prevHp = t.currentHealth;
-            boolean tookDamageNow = hp < prevHp - 0.0001F;
+            float previousHp = track.currentHealth;
+            boolean tookDamageNow = hp < previousHp - 0.0001F;
 
-            t.currentHealth = hp;
-            t.minHealth = Math.min(t.minHealth, hp);
+            track.currentHealth = hp;
+            track.minHealth = Math.min(track.minHealth, hp);
 
-            // 只在“真实掉血”时刷新战斗时间；仅受击动画但不掉血不算战斗中
             if (tookDamageNow) {
-                t.lastDamageLikeMs = now;
-                if (t.paused) {
-                    t.pausedAccumulatedMs += Math.max(0L, now - t.pausedStartMs);
-                    t.pausedStartMs = 0L;
-                    t.paused = false;
+                track.lastDamageLikeMs = now;
+                if (track.paused) {
+                    track.pausedAccumulatedMs += Math.max(0L, now - track.pausedStartMs);
+                    track.pausedStartMs = 0L;
+                    track.paused = false;
                 }
             } else {
-                if (!t.paused && now - t.lastDamageLikeMs >= combatTimeoutSeconds * 1000L) {
-                    t.paused = true;
-                    t.pausedStartMs = now;
+                if (!track.paused && now - track.lastDamageLikeMs >= combatTimeoutSeconds * 1000L) {
+                    track.paused = true;
+                    track.pausedStartMs = now;
                 }
-                if (now - t.lastDamageLikeMs >= (combatTimeoutSeconds + disengageRemoveSeconds) * 1000L) {
+                if (now - track.lastDamageLikeMs >= (combatTimeoutSeconds + disengageRemoveSeconds) * 1000L) {
                     tracked.remove(id);
                 }
             }
         }
 
-        // 清理死亡后定格超时的数据
         tracked.entrySet().removeIf(entry -> {
-            TrackInfo t = entry.getValue();
-            return t != null && t.dead && now > t.deathFreezeUntilMs;
+            TrackInfo track = entry.getValue();
+            return track != null && track.dead && now > track.deathFreezeUntilMs;
         });
 
-        // 稳定DPS刷新
-        for (TrackInfo t : tracked.values()) {
-            if (t.paused || t.dead)
+        for (TrackInfo track : tracked.values()) {
+            if (track.paused || track.dead) {
                 continue;
-            if (now - t.lastStableDpsUpdateMs >= stableDpsIntervalSeconds * 1000L) {
-                double sec = t.getActiveSeconds(now);
-                double totalDmg = Math.max(0.0, t.maxHealth - t.currentHealth);
-                t.stableDps = totalDmg / Math.max(0.001, sec);
-                t.lastStableDpsUpdateMs = now;
+            }
+            if (now - track.lastStableDpsUpdateMs >= stableDpsIntervalSeconds * 1000L) {
+                double sec = track.getActiveSeconds(now);
+                double totalDmg = Math.max(0.0, track.maxHealth - track.currentHealth);
+                track.stableDps = totalDmg / Math.max(0.001, sec);
+                track.lastStableDpsUpdateMs = now;
             }
         }
     }
 
     private static void handleMouseInteractions() {
-        if (mc.currentScreen != null) {
+        if (mc.screen != null) {
             dragging = false;
             resizing = false;
             return;
         }
 
-        ScaledResolution sr = new ScaledResolution(mc);
-        int sw = sr.getScaledWidth();
-        int sh = sr.getScaledHeight();
-        int mouseX = Mouse.getX() * sw / mc.displayWidth;
-        int mouseY = sh - Mouse.getY() * sh / mc.displayHeight - 1;
+        int mouseX = getScaledMouseX();
+        int mouseY = getScaledMouseY();
         boolean left = Mouse.isButtonDown(0);
 
         boolean inPanel = inside(mouseX, mouseY, panelX, panelY, panelWidth, panelHeight);
@@ -451,17 +484,17 @@ public class KillTimerHandler {
         int w = panelWidth;
         int h = panelHeight;
 
+        GuiGraphics graphics = new GuiGraphics(mc, mc.renderBuffers().bufferSource());
         int bg = ((panelAlpha & 0xFF) << 24) | 0x101820;
-        Gui.drawRect(x, y, x + w, y + h, bg);
-        Gui.drawRect(x, y, x + w, y + HEADER_H, 0xCC1E4A69);
-        Gui.drawRect(x, y, x + w, y + 1, 0xFF80D4FF);
-        Gui.drawRect(x, y + h - 1, x + w, y + h, 0xFF304050);
-        Gui.drawRect(x, y, x + 1, y + h, 0xFF304050);
-        Gui.drawRect(x + w - 1, y, x + w, y + h, 0xFF304050);
+        graphics.fill(x, y, x + w, y + h, bg);
+        graphics.fill(x, y, x + w, y + HEADER_H, 0xCC1E4A69);
+        graphics.fill(x, y, x + w, y + 1, 0xFF80D4FF);
+        graphics.fill(x, y + h - 1, x + w, y + h, 0xFF304050);
+        graphics.fill(x, y, x + 1, y + h, 0xFF304050);
+        graphics.fill(x + w - 1, y, x + w, y + h, 0xFF304050);
 
-        mc.fontRenderer.drawStringWithShadow(I18n.format("gui.kill_timer.panel_title"), x + 6, y + 5, 0xFFFFFF);
-        mc.fontRenderer.drawStringWithShadow(I18n.format("gui.kill_timer.target_count", tracked.size()), x + w - 68,
-                y + 5, 0xFFFFFF);
+        drawShadow(graphics, I18n.format("gui.kill_timer.panel_title"), x + 6, y + 5, 0xFFFFFF);
+        drawShadow(graphics, I18n.format("gui.kill_timer.target_count", tracked.size()), x + w - 68, y + 5, 0xFFFFFF);
 
         List<TrackInfo> rows = new ArrayList<>(tracked.values());
         rows.sort(Comparator.comparingLong(a -> a.combatStartMs));
@@ -478,8 +511,7 @@ public class KillTimerHandler {
         int mouseX = getScaledMouseX();
         int mouseY = getScaledMouseY();
 
-        // 选择卡片
-        if (Mouse.isButtonDown(0) && mc.currentScreen == null) {
+        if (Mouse.isButtonDown(0) && mc.screen == null) {
             int localY = mouseY - listY + scrollOffset;
             if (inside(mouseX, mouseY, listX, listY, listW, listH)) {
                 int idx = localY / (CARD_H + CARD_GAP);
@@ -489,113 +521,110 @@ public class KillTimerHandler {
             }
         }
 
-        // 滚轮
-        int wheel = Mouse.getDWheel();
-        if (wheel != 0 && inside(mouseX, mouseY, listX, listY, listW, listH)) {
-            scrollOffset = MathHelper.clamp(scrollOffset - (wheel / 120) * (CARD_H + CARD_GAP), 0, maxScroll);
-        }
-
         int drawY = listY - scrollOffset;
         for (int i = 0; i < rows.size(); i++) {
-            TrackInfo t = rows.get(i);
-            int cy = drawY + i * (CARD_H + CARD_GAP);
-            if (cy + CARD_H < listY || cy > listY + listH)
+            TrackInfo track = rows.get(i);
+            int cardY = drawY + i * (CARD_H + CARD_GAP);
+            if (cardY + CARD_H < listY || cardY > listY + listH) {
                 continue;
+            }
 
-            boolean selected = (i == selectedIndex);
+            boolean selected = i == selectedIndex;
             int cardBg = selected ? 0xAA2E5F87 : 0x99304050;
-            Gui.drawRect(listX, cy, listX + listW, cy + CARD_H, cardBg);
+            graphics.fill(listX, cardY, listX + listW, cardY + CARD_H, cardBg);
 
-            long calcNow = t.dead ? t.deathAtMs : System.currentTimeMillis();
-            double sec = t.getActiveSeconds(calcNow);
-            double totalDmg = Math.max(0.0, t.maxHealth - t.currentHealth);
+            long calcNow = track.dead ? track.deathAtMs : System.currentTimeMillis();
+            double sec = track.getActiveSeconds(calcNow);
+            double totalDmg = Math.max(0.0, track.maxHealth - track.currentHealth);
             double dpsLive = totalDmg / Math.max(0.001, sec);
 
-            String name = fitText("§e" + t.name, listW - 10);
+            String name = fitText("§e" + track.name, listW - 10);
             String hpLine = String.format("§fHP: §c%s§7/§a%s",
-                    formatCompactNumber(t.currentHealth), formatCompactNumber(t.maxHealth));
+                    formatCompactNumber(track.currentHealth), formatCompactNumber(track.maxHealth));
             String dpsLine = String.format("§fDPS: §d%s §7| 固定: §b%s",
-                    formatCompactNumber(dpsLive), formatCompactNumber(t.stableDps));
-            String statusText;
-            if (t.dead) {
-                long remainMs = Math.max(0L, t.deathFreezeUntilMs - System.currentTimeMillis());
-                statusText = I18n.format("gui.kill_timer.status_killed", trimTrailingZeros(remainMs / 1000.0));
-            } else {
-                if (t.paused) {
-                    long sinceLastDamageMs = Math.max(0L, System.currentTimeMillis() - t.lastDamageLikeMs);
-                    long removeAtMs = Math.max(0L,
-                            (combatTimeoutSeconds + disengageRemoveSeconds) * 1000L - sinceLastDamageMs);
-                    statusText = I18n.format("gui.kill_timer.status_disengaged",
-                            trimTrailingZeros(removeAtMs / 1000.0));
-                } else {
-                    statusText = I18n.format("gui.kill_timer.status_fighting");
-                }
-            }
-            String tLine = I18n.format("gui.kill_timer.time_status", sec, statusText);
+                    formatCompactNumber(dpsLive), formatCompactNumber(track.stableDps));
 
-            // 文字超出时自动裁剪
+            String statusText;
+            if (track.dead) {
+                long remainMs = Math.max(0L, track.deathFreezeUntilMs - System.currentTimeMillis());
+                statusText = I18n.format("gui.kill_timer.status_killed", trimTrailingZeros(remainMs / 1000.0));
+            } else if (track.paused) {
+                long sinceLastDamageMs = Math.max(0L, System.currentTimeMillis() - track.lastDamageLikeMs);
+                long removeAtMs = Math.max(0L,
+                        (combatTimeoutSeconds + disengageRemoveSeconds) * 1000L - sinceLastDamageMs);
+                statusText = I18n.format("gui.kill_timer.status_disengaged",
+                        trimTrailingZeros(removeAtMs / 1000.0));
+            } else {
+                statusText = I18n.format("gui.kill_timer.status_fighting");
+            }
+
+            String timeLine = I18n.format("gui.kill_timer.time_status", sec, statusText);
             hpLine = fitText(hpLine, listW - 10);
             dpsLine = fitText(dpsLine, listW - 10);
-            tLine = fitText(tLine, listW - 10);
+            timeLine = fitText(timeLine, listW - 10);
 
-            mc.fontRenderer.drawStringWithShadow(name, listX + 4, cy + 2, 0xFFFFFF);
-            mc.fontRenderer.drawStringWithShadow(hpLine, listX + 4, cy + 11, 0xFFFFFF);
-            mc.fontRenderer.drawStringWithShadow(dpsLine, listX + listW / 2, cy + 2, 0xFFFFFF);
-            mc.fontRenderer.drawStringWithShadow(tLine, listX + listW / 2, cy + 11, 0xFFFFFF);
+            drawShadow(graphics, name, listX + 4, cardY + 2, 0xFFFFFF);
+            drawShadow(graphics, hpLine, listX + 4, cardY + 11, 0xFFFFFF);
+            drawShadow(graphics, dpsLine, listX + listW / 2, cardY + 2, 0xFFFFFF);
+            drawShadow(graphics, timeLine, listX + listW / 2, cardY + 11, 0xFFFFFF);
         }
 
-        // 滚动条
         if (maxScroll > 0) {
-            int sbX = x + w - 5;
-            int sbY = listY;
-            int sbH = listH;
-            Gui.drawRect(sbX, sbY, sbX + 4, sbY + sbH, 0xFF1A1A1A);
-            int thumbH = Math.max(12, (int) ((float) listH / Math.max(listH, totalRowsHeight) * sbH));
-            int thumbY = sbY + (int) ((float) scrollOffset / maxScroll * (sbH - thumbH));
-            Gui.drawRect(sbX, thumbY, sbX + 4, thumbY + thumbH, 0xFF8AAED0);
+            int scrollBarX = x + w - 5;
+            int scrollBarY = listY;
+            int scrollBarH = listH;
+            graphics.fill(scrollBarX, scrollBarY, scrollBarX + 4, scrollBarY + scrollBarH, 0xFF1A1A1A);
+            int thumbH = Math.max(12, (int) ((float) listH / Math.max(listH, totalRowsHeight) * scrollBarH));
+            int thumbY = scrollBarY + (int) ((float) scrollOffset / maxScroll * (scrollBarH - thumbH));
+            graphics.fill(scrollBarX, thumbY, scrollBarX + 4, thumbY + thumbH, 0xFF8AAED0);
         }
 
-        // 选中后底部删除按钮
         if (selectedIndex >= 0 && selectedIndex < rows.size()) {
-            int bx = x + w - 64;
-            int by = y + h - FOOTER_H + 1;
-            Gui.drawRect(bx, by, bx + 56, by + 14, 0xAA882222);
-            mc.fontRenderer.drawStringWithShadow(I18n.format("gui.kill_timer.delete"), bx + 18, by + 3, 0xFFFFFF);
+            int buttonX = x + w - 64;
+            int buttonY = y + h - FOOTER_H + 1;
+            graphics.fill(buttonX, buttonY, buttonX + 56, buttonY + 14, 0xAA882222);
+            drawShadow(graphics, I18n.format("gui.kill_timer.delete"), buttonX + 18, buttonY + 3, 0xFFFFFF);
 
-            if (Mouse.isButtonDown(0) && inside(mouseX, mouseY, bx, by, 56, 14)) {
+            if (Mouse.isButtonDown(0) && inside(mouseX, mouseY, buttonX, buttonY, 56, 14)) {
                 TrackInfo target = rows.get(selectedIndex);
                 tracked.remove(target.id);
                 selectedIndex = -1;
             }
         }
 
-        // resize 角标
-        Gui.drawRect(x + w - 8, y + h - 8, x + w - 2, y + h - 2, 0xCC66CCFF);
+        graphics.fill(x + w - 8, y + h - 8, x + w - 2, y + h - 2, 0xCC66CCFF);
+        graphics.flush();
+    }
+
+    private static void drawShadow(GuiGraphics graphics, String text, int x, int y, int color) {
+        graphics.drawString(mc.font, text == null ? "" : text, x, y, color, true);
     }
 
     private static String fitText(String text, int maxWidth) {
-        if (mc.fontRenderer.getStringWidth(text) <= maxWidth) {
+        if (mc.font.width(text) <= maxWidth) {
             return text;
         }
         String raw = text;
-        while (raw.length() > 2 && mc.fontRenderer.getStringWidth(raw + "§7…") > maxWidth) {
+        while (raw.length() > 2 && mc.font.width(raw + "§7…") > maxWidth) {
             raw = raw.substring(0, raw.length() - 1);
         }
         return raw + "§7…";
     }
 
     private static int getScaledMouseX() {
-        ScaledResolution sr = new ScaledResolution(mc);
-        return Mouse.getX() * sr.getScaledWidth() / mc.displayWidth;
+        ScaledResolution resolution = new ScaledResolution(mc);
+        return (int) Math.round(Mouse.getX() * resolution.getScaledWidth()
+                / (double) Math.max(1, mc.getWindow().getScreenWidth()));
     }
 
     private static int getScaledMouseY() {
-        ScaledResolution sr = new ScaledResolution(mc);
-        return sr.getScaledHeight() - Mouse.getY() * sr.getScaledHeight() / mc.displayHeight - 1;
+        ScaledResolution resolution = new ScaledResolution(mc);
+        return (int) Math.round(Mouse.getY() * resolution.getScaledHeight()
+                / (double) Math.max(1, mc.getWindow().getScreenHeight()));
     }
 
-    private static boolean inside(int mx, int my, int x, int y, int w, int h) {
-        return mx >= x && mx <= x + w && my >= y && my <= y + h;
+    private static boolean inside(int mouseX, int mouseY, int x, int y, int w, int h) {
+        return mouseX >= x && mouseX <= x + w && mouseY >= y && mouseY <= y + h;
     }
 
     private static String formatCompactNumber(double value) {
@@ -619,11 +648,10 @@ public class KillTimerHandler {
     }
 
     private static String trimTrailingZeros(double value) {
-        String s = String.format(Locale.US, "%.2f", value);
-        if (s.indexOf('.') >= 0) {
-            s = s.replaceAll("0+$", "").replaceAll("\\.$", "");
+        String text = String.format(Locale.US, "%.2f", value);
+        if (text.indexOf('.') >= 0) {
+            text = text.replaceAll("0+$", "").replaceAll("\\.$", "");
         }
-        return s;
+        return text;
     }
 }
-

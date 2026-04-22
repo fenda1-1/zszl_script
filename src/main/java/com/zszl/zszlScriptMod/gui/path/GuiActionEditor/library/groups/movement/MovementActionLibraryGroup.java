@@ -2,7 +2,7 @@ package com.zszl.zszlScriptMod.gui.path.GuiActionEditor.library.groups.movement;
 
 import com.zszl.zszlScriptMod.gui.path.GuiActionEditor.model.ActionLibraryNode;
 
-import net.minecraft.client.resources.I18n;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
 
 import java.util.function.Function;
 

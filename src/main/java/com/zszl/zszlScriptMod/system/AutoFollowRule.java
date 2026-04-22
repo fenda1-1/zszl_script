@@ -3,7 +3,7 @@ package com.zszl.zszlScriptMod.system;
 
 import com.zszl.zszlScriptMod.handlers.AutoFollowHandler;
 import com.zszl.zszlScriptMod.handlers.KillAuraHandler;
-import net.minecraft.client.resources.I18n;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -235,12 +235,50 @@ public class AutoFollowRule {
             return cleaned;
         }
         for (String value : values) {
-            String normalized = value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
+            String normalized = normalizeEntityTypeToken(value);
             if (!normalized.isEmpty() && KNOWN_ENTITY_TYPES.contains(normalized) && !containsIgnoreCase(cleaned, normalized)) {
                 cleaned.add(normalized);
             }
         }
         return cleaned;
+    }
+
+    private static String normalizeEntityTypeToken(String value) {
+        String normalized = value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
+        switch (normalized) {
+            case "任意":
+                return ENTITY_TYPE_ANY;
+            case "生物":
+                return ENTITY_TYPE_LIVING;
+            case "玩家":
+                return ENTITY_TYPE_PLAYER;
+            case "怪物":
+            case "mob":
+            case "hostile":
+                return ENTITY_TYPE_MONSTER;
+            case "中立":
+            case "中立生物":
+                return ENTITY_TYPE_NEUTRAL;
+            case "动物":
+            case "passive":
+                return ENTITY_TYPE_ANIMAL;
+            case "水生":
+                return ENTITY_TYPE_WATER;
+            case "环境":
+                return ENTITY_TYPE_AMBIENT;
+            case "村民":
+            case "npc":
+                return ENTITY_TYPE_VILLAGER;
+            case "傀儡":
+                return ENTITY_TYPE_GOLEM;
+            case "驯服":
+            case "宠物":
+                return ENTITY_TYPE_TAMEABLE;
+            case "首领":
+                return ENTITY_TYPE_BOSS;
+            default:
+                return normalized;
+        }
     }
 
     public boolean isPointWithinBounds(AutoFollowHandler.Point point) {

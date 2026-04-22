@@ -18,13 +18,13 @@
 package com.zszl.zszlScriptMod.shadowbaritone.api.process;
 
 import com.zszl.zszlScriptMod.shadowbaritone.api.schematic.ISchematic;
-import net.minecraft.block.state.IBlockState;
 import net.minecraft.client.Minecraft;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Vec3i;
-
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Vec3i;
+import net.minecraft.world.level.block.state.BlockState;
 import java.io.File;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * @author Brady
@@ -33,8 +33,7 @@ import java.util.List;
 public interface IBuilderProcess extends IBaritoneProcess {
 
     /**
-     * Requests a build for the specified schematic, labeled as specified, with the
-     * specified origin.
+     * Requests a build for the specified schematic, labeled as specified, with the specified origin.
      *
      * @param name      A user-friendly name for the schematic
      * @param schematic The object representation of the schematic
@@ -43,8 +42,7 @@ public interface IBuilderProcess extends IBaritoneProcess {
     void build(String name, ISchematic schematic, Vec3i origin);
 
     /**
-     * Requests a build for the specified schematic, labeled as specified, with the
-     * specified origin.
+     * Requests a build for the specified schematic, labeled as specified, with the specified origin.
      *
      * @param name      A user-friendly name for the schematic
      * @param schematic The file path of the schematic
@@ -55,7 +53,7 @@ public interface IBuilderProcess extends IBaritoneProcess {
 
     @Deprecated
     default boolean build(String schematicFile, BlockPos origin) {
-        File file = new File(new File(Minecraft.getMinecraft().mcDataDir, "schematics"), schematicFile);
+        File file = new File(new File(Minecraft.getInstance().gameDirectory, "schematics"), schematicFile);
         return build(schematicFile, file, origin);
     }
 
@@ -72,12 +70,23 @@ public interface IBuilderProcess extends IBaritoneProcess {
     void clearArea(BlockPos corner1, BlockPos corner2);
 
     /**
-     * @return A list of block states that are estimated to be placeable by this
-     *         builder process. You can use this in
-     *         schematics, for example, to pick a state that the builder process
-     *         will be happy with, because any variation will
-     *         cause it to give up. This is updated every tick, but only while the
-     *         builder process is active.
+     * @return A list of block states that are estimated to be placeable by this builder process. You can use this in
+     * schematics, for example, to pick a state that the builder process will be happy with, because any variation will
+     * cause it to give up. This is updated every tick, but only while the builder process is active.
      */
-    List<IBlockState> getApproxPlaceable();
+    List<BlockState> getApproxPlaceable();
+    /**
+     * Returns the lower bound of the current mining layer if mineInLayers is true.
+     * If mineInLayers is false, this will return an empty optional.
+     * @return The lower bound of the current mining layer
+     */
+    Optional<Integer> getMinLayer();
+
+    /**
+     * Returns the upper bound of the current mining layer if mineInLayers is true.
+     * If mineInLayers is false, this will return an empty optional.
+     * @return The upper bound of the current mining layer
+     */
+    Optional<Integer> getMaxLayer();
 }
+

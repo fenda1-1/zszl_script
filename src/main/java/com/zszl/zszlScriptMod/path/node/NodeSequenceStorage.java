@@ -24,11 +24,6 @@ public final class NodeSequenceStorage {
     private static final String FILE_NAME = "node_sequences.json";
     private static final String BACKUP_FILE_NAME = "node_sequences.json.bak";
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
-    private static Path cachedLoadPath = null;
-    private static boolean cachedLoadExists = false;
-    private static long cachedLoadLastModified = Long.MIN_VALUE;
-    private static long cachedLoadSize = Long.MIN_VALUE;
-    private static LoadResult cachedLoadResult = null;
 
     private NodeSequenceStorage() {
     }
@@ -43,25 +38,15 @@ public final class NodeSequenceStorage {
 
     public static synchronized LoadResult loadAll() {
         Path file = getStorageFile();
-        boolean exists = Files.exists(file);
-        long lastModified = exists ? getLastModifiedMillis(file) : Long.MIN_VALUE;
-        long size = exists ? getFileSize(file) : Long.MIN_VALUE;
-        if (isCacheValid(file, exists, lastModified, size)) {
-            return cachedLoadResult;
-        }
-        if (!exists) {
-            LoadResult result = LoadResult.success(CURRENT_VERSION, new ArrayList<NodeGraph>());
-            updateCache(file, false, lastModified, size, result);
-            return result;
+        if (!Files.exists(file)) {
+            return LoadResult.success(CURRENT_VERSION, new ArrayList<NodeGraph>());
         }
 
         try (BufferedReader reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
             JsonObject root = new JsonParser().parse(reader).getAsJsonObject();
             int version = root.has("version") ? root.get("version").getAsInt() : 1;
             if (!isCompatibleVersion(version)) {
-                LoadResult result = LoadResult.incompatible(version, "不支持的 node_sequences.json 版本: " + version);
-                updateCache(file, true, lastModified, size, result);
-                return result;
+                return LoadResult.incompatible(version, "不支持的 node_sequences.json 版本: " + version);
             }
 
             StorageRoot storageRoot = GSON.fromJson(root, StorageRoot.class);
@@ -78,23 +63,15 @@ public final class NodeSequenceStorage {
                         migrationResult.graphs.size(), file.getFileName(), version);
             }
 
-            LoadResult result = LoadResult.success(
+            return LoadResult.success(
                     migrationResult.migrated ? CURRENT_VERSION : version,
                     migrationResult.graphs,
                     migrationResult.migrated,
                     migrationResult.message);
-            updateCache(file, true, lastModified, size, result);
-            return result;
         } catch (Exception e) {
             zszlScriptMod.LOGGER.error("读取节点序列失败: {}", file, e);
-            LoadResult result = LoadResult.incompatible(-1, "读取 node_sequences.json 失败: " + e.getMessage());
-            updateCache(file, true, lastModified, size, result);
-            return result;
+            return LoadResult.incompatible(-1, "读取 node_sequences.json 失败: " + e.getMessage());
         }
-    }
-
-    public static synchronized LoadResult peekCachedLoadResult() {
-        return cachedLoadResult;
     }
 
     public static synchronized void saveAll(List<NodeGraph> graphs) throws IOException {
@@ -124,13 +101,11 @@ public final class NodeSequenceStorage {
                 GSON.toJson(root, writer);
             }
             Files.move(tempFile, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-            updateCache(file, true, getLastModifiedMillis(file), getFileSize(file),
-                    LoadResult.success(CURRENT_VERSION, new ArrayList<NodeGraph>(normalizedGraphs)));
+            NodeTriggerManager.invalidateCache();
             zszlScriptMod.LOGGER.info("已保存节点序列: {} ({})", root.sequences.size(), file.getFileName());
         } catch (Exception e) {
             zszlScriptMod.LOGGER.error("保存节点序列失败，尝试回滚: {}", file, e);
             rollbackFromBackup(file, backup, tempFile);
-            cachedLoadResult = null;
             if (e instanceof IOException) {
                 throw (IOException) e;
             }
@@ -194,39 +169,6 @@ public final class NodeSequenceStorage {
             graph.setGroups(new ArrayList<NodeGroupBox>());
         }
         return graph;
-    }
-
-    private static boolean isCacheValid(Path file, boolean exists, long lastModified, long size) {
-        return cachedLoadResult != null
-                && cachedLoadPath != null
-                && cachedLoadPath.equals(file)
-                && cachedLoadExists == exists
-                && cachedLoadLastModified == lastModified
-                && cachedLoadSize == size;
-    }
-
-    private static void updateCache(Path file, boolean exists, long lastModified, long size, LoadResult result) {
-        cachedLoadPath = file;
-        cachedLoadExists = exists;
-        cachedLoadLastModified = lastModified;
-        cachedLoadSize = size;
-        cachedLoadResult = result;
-    }
-
-    private static long getLastModifiedMillis(Path file) {
-        try {
-            return Files.getLastModifiedTime(file).toMillis();
-        } catch (Exception ignored) {
-            return Long.MIN_VALUE;
-        }
-    }
-
-    private static long getFileSize(Path file) {
-        try {
-            return Files.size(file);
-        } catch (Exception ignored) {
-            return Long.MIN_VALUE;
-        }
     }
 
     private static final class StorageRoot {

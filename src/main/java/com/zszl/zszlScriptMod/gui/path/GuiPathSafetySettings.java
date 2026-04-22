@@ -4,8 +4,8 @@ import com.zszl.zszlScriptMod.gui.components.GuiTheme;
 import com.zszl.zszlScriptMod.gui.components.ThemedButton;
 import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
 import com.zszl.zszlScriptMod.path.runtime.safety.PathSafetyManager;
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
 
 import java.io.IOException;
 
@@ -47,11 +47,11 @@ public class GuiPathSafetySettings extends ThemedGuiScreen {
     protected void actionPerformed(GuiButton button) throws IOException {
         switch (button.id) {
             case 0:
-                this.mc.displayGuiScreen(parentScreen);
+                this.mc.setScreen(parentScreen);
                 return;
             case 1:
                 PathSafetyManager.save(snapshot);
-                this.mc.displayGuiScreen(parentScreen);
+                this.mc.setScreen(parentScreen);
                 return;
             case 10:
                 snapshot = new PathSafetyManager.ConfigSnapshotBuilder(snapshot).setSafeModeEnabled(!snapshot.isSafeModeEnabled()).build();
@@ -127,3 +127,7 @@ public class GuiPathSafetySettings extends ThemedGuiScreen {
         super.drawScreen(mouseX, mouseY, partialTicks);
     }
 }
+
+
+
+

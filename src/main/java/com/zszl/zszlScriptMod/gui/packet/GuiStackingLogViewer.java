@@ -2,13 +2,13 @@
 package com.zszl.zszlScriptMod.gui.packet;
 
 import com.zszl.zszlScriptMod.handlers.ShulkerBoxStackingHandler.StackingLogEntry;
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
 import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
-import net.minecraft.client.resources.I18n;
-import net.minecraft.util.text.TextComponentString;
-import net.minecraft.util.text.TextFormatting;
-import org.lwjgl.input.Mouse;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.util.text.TextComponentString;
+import net.minecraft.ChatFormatting;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Mouse;
 
 import java.io.IOException;
 import java.util.List;
@@ -45,7 +45,7 @@ public class GuiStackingLogViewer extends ThemedGuiScreen {
     @Override
     protected void actionPerformed(GuiButton button) throws IOException {
         if (button.id == 0) {
-            this.mc.displayGuiScreen(parentScreen);
+            this.mc.setScreen(parentScreen);
         } else if (button.id == 1) {
             String fullLog = logs.stream()
                     .map(log -> String.format("Move From Slot %d -> To Slot %d\n  Pickup HEX: %s\n  Place HEX: %s\n",
@@ -53,8 +53,8 @@ public class GuiStackingLogViewer extends ThemedGuiScreen {
                     .collect(Collectors.joining("\n"));
             setClipboardString(fullLog);
             if (this.mc.player != null) {
-                this.mc.player.sendMessage(new TextComponentString(
-                        TextFormatting.GREEN + I18n.format("msg.packet.stacking_log.copied_all")));
+                this.mc.player.sendSystemMessage(new TextComponentString(
+                        ChatFormatting.GREEN + I18n.format("msg.packet.stacking_log.copied_all")));
             }
         }
     }
@@ -104,8 +104,8 @@ public class GuiStackingLogViewer extends ThemedGuiScreen {
 
             if (log.sessionID != null) {
                 String idHex = bytesToHex(log.sessionID);
-                pickupHex = pickupHex.replaceFirst(idHex, TextFormatting.YELLOW + idHex + TextFormatting.WHITE);
-                placeHex = placeHex.replaceFirst(idHex, TextFormatting.YELLOW + idHex + TextFormatting.WHITE);
+                pickupHex = pickupHex.replaceFirst(idHex, ChatFormatting.YELLOW + idHex + ChatFormatting.WHITE);
+                placeHex = placeHex.replaceFirst(idHex, ChatFormatting.YELLOW + idHex + ChatFormatting.WHITE);
             }
 
             fontRenderer.drawSplitString("§a" + I18n.format("gui.packet.stacking_log.pickup_hex") + ": §f" + pickupHex,
@@ -157,15 +157,15 @@ public class GuiStackingLogViewer extends ThemedGuiScreen {
                 if (yInCard >= 18 && yInCard < 31) {
                     setClipboardString(log.pickupHexPayload);
                     if (mc.player != null) {
-                        mc.player.sendMessage(new TextComponentString(
-                                TextFormatting.GREEN + I18n.format("msg.packet.stacking_log.copied_pickup",
+                        mc.player.sendSystemMessage(new TextComponentString(
+                                ChatFormatting.GREEN + I18n.format("msg.packet.stacking_log.copied_pickup",
                                         clickedIndex + 1)));
                     }
                 } else if (yInCard >= 31 && yInCard < 44) {
                     setClipboardString(log.placeHexPayload);
                     if (mc.player != null) {
-                        mc.player.sendMessage(new TextComponentString(
-                                TextFormatting.GREEN + I18n.format("msg.packet.stacking_log.copied_place",
+                        mc.player.sendSystemMessage(new TextComponentString(
+                                ChatFormatting.GREEN + I18n.format("msg.packet.stacking_log.copied_place",
                                         clickedIndex + 1)));
                     }
                 }
@@ -185,3 +185,12 @@ public class GuiStackingLogViewer extends ThemedGuiScreen {
         }
     }
 }
+
+
+
+
+
+
+
+
+

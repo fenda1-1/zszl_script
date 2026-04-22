@@ -1,21 +1,21 @@
 package com.zszl.zszlScriptMod.otherfeatures.handler.movement;
 
-import net.minecraft.client.entity.EntityPlayerSP;
+import net.minecraft.client.player.LocalPlayer;
 
 final class SafeWalkFeatureHandler {
 
     private SafeWalkFeatureHandler() {
     }
 
-    static void apply(EntityPlayerSP player) {
+    static void apply(LocalPlayer player) {
         if (!MovementFeatureManager.isEnabled("safe_walk")
                 || player == null
-                || player.world == null
-                || player.noClip
-                || player.capabilities.isFlying
-                || !player.onGround
-                || player.isRiding()
-                || (player.movementInput != null && player.movementInput.jump)) {
+                || player.level() == null
+                || player.noPhysics
+                || player.getAbilities().flying
+                || !player.onGround()
+                || player.isPassenger()
+                || (player.input != null && player.input.jumping)) {
             return;
         }
 
@@ -23,3 +23,5 @@ final class SafeWalkFeatureHandler {
         MovementFeatureSupport.clampHorizontalMotionToSafeWalk(player, edgeMargin);
     }
 }
+
+

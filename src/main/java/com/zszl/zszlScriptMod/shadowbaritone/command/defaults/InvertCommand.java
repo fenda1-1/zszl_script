@@ -25,7 +25,6 @@ import com.zszl.zszlScriptMod.shadowbaritone.api.command.exception.CommandInvali
 import com.zszl.zszlScriptMod.shadowbaritone.api.pathing.goals.Goal;
 import com.zszl.zszlScriptMod.shadowbaritone.api.pathing.goals.GoalInverted;
 import com.zszl.zszlScriptMod.shadowbaritone.api.process.ICustomGoalProcess;
-import com.zszl.zszlScriptMod.shadowbaritone.api.utils.ShadowBaritoneI18n;
 
 import java.util.Arrays;
 import java.util.List;
@@ -43,8 +42,7 @@ public class InvertCommand extends Command {
         ICustomGoalProcess customGoalProcess = baritone.getCustomGoalProcess();
         Goal goal;
         if ((goal = customGoalProcess.getGoal()) == null) {
-            throw new CommandInvalidStateException(ShadowBaritoneI18n.trKey(
-                    "shadowbaritone.command.invert.error.no_goal"));
+            throw new CommandInvalidStateException("No goal");
         }
         if (goal instanceof GoalInverted) {
             goal = ((GoalInverted) goal).origin;
@@ -52,9 +50,7 @@ public class InvertCommand extends Command {
             goal = new GoalInverted(goal);
         }
         customGoalProcess.setGoalAndPath(goal);
-        logDirect(ShadowBaritoneI18n.trKey(
-                "shadowbaritone.command.invert.status.goal",
-                goal.toString()));
+        logDirect(String.format("Goal: %s", goal.toString()));
     }
 
     @Override
@@ -64,19 +60,17 @@ public class InvertCommand extends Command {
 
     @Override
     public String getShortDesc() {
-        return ShadowBaritoneI18n.trKey(
-                "shadowbaritone.command.invert.short_desc");
+        return "Run away from the current goal";
     }
 
     @Override
     public List<String> getLongDesc() {
         return Arrays.asList(
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.invert.long_desc.1"),
+                "The invert command tells Baritone to head away from the current goal rather than towards it.",
                 "",
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.invert.long_desc.usage"),
-                ShadowBaritoneI18n.trKey(
-                        "shadowbaritone.command.invert.long_desc.example.default"));
+                "Usage:",
+                "> invert - Invert the current goal."
+        );
     }
 }
+

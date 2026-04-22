@@ -3,10 +3,11 @@ package com.zszl.zszlScriptMod.system;
 import com.zszl.zszlScriptMod.utils.ModUtils;
 import com.zszl.zszlScriptMod.zszlScriptMod;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.settings.KeyBinding;
-import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
-import net.minecraftforge.fml.common.gameevent.TickEvent;
-import org.lwjgl.input.Keyboard;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.settings.KeyBinding;
+import net.minecraftforge.eventbus.api.SubscribeEvent;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraftforge.fml.common.gameevent.TickEvent;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Keyboard;
+import org.lwjgl.glfw.GLFW;
 
 import java.util.Collections;
 import java.util.HashSet;
@@ -18,7 +19,7 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 
 public class SimulatedKeyInputManager {
     public static final SimulatedKeyInputManager INSTANCE = new SimulatedKeyInputManager();
-    private static final int PRESS_HOLD_TICKS = 10;
+    private static final int PRESS_HOLD_TICKS = 2;
 
     public static final class SimulatedPressEvent {
         private final int keyCode;
@@ -53,14 +54,14 @@ public class SimulatedKeyInputManager {
             return;
         }
 
-        simulateKeyCode(keyCode, state);
+        String normalizedState = ModUtils.normalizeSimulatedKeyState(state);
+        runOnClientThread(() -> INSTANCE.applyStateChange(keyCode, normalizedState));
     }
 
     public static void simulateKeyCode(int keyCode, String state) {
         if (keyCode == Keyboard.KEY_NONE) {
             return;
         }
-
         String normalizedState = ModUtils.normalizeSimulatedKeyState(state);
         runOnClientThread(() -> INSTANCE.applyStateChange(keyCode, normalizedState));
     }
@@ -118,7 +119,9 @@ public class SimulatedKeyInputManager {
 
         syncKeyBindingState(keyCode);
         if (!wasHeld || syntheticTap) {
-            KeyBinding.onTick(keyCode);
+            if (!dispatchGameKeyEvent(keyCode, true, snapshotActiveModifiers())) {
+                KeyBinding.onTick(keyCode);
+            }
             pendingPressEvents.add(new SimulatedPressEvent(keyCode, snapshotActiveModifiers()));
         }
     }
@@ -126,7 +129,9 @@ public class SimulatedKeyInputManager {
     private void tapKey(int keyCode) {
         if (heldKeys.contains(keyCode) && !pendingReleaseTicks.containsKey(keyCode)) {
             syncKeyBindingState(keyCode);
-            KeyBinding.onTick(keyCode);
+            if (!dispatchGameKeyEvent(keyCode, true, snapshotActiveModifiers())) {
+                KeyBinding.onTick(keyCode);
+            }
             pendingPressEvents.add(new SimulatedPressEvent(keyCode, snapshotActiveModifiers()));
             return;
         }
@@ -134,9 +139,11 @@ public class SimulatedKeyInputManager {
     }
 
     private void releaseKey(int keyCode) {
+        Set<Integer> modifiersBeforeRelease = snapshotActiveModifiers();
         heldKeys.remove(keyCode);
         pendingReleaseTicks.remove(keyCode);
         syncKeyBindingState(keyCode);
+        dispatchGameKeyEvent(keyCode, false, modifiersBeforeRelease);
     }
 
     private void syncManagedKeyStates() {
@@ -188,6 +195,46 @@ public class SimulatedKeyInputManager {
         KeyBinding.setKeyBindState(keyCode, Keyboard.isKeyDown(keyCode) || isSimulatedKeyDown(keyCode));
     }
 
+    private boolean dispatchGameKeyEvent(int keyCode, boolean pressed, Set<Integer> modifiers) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc == null || mc.keyboardHandler == null) {
+            return false;
+        }
+
+        int glfwKey = Keyboard.toGlfwKey(keyCode);
+        if (glfwKey <= GLFW.GLFW_KEY_UNKNOWN) {
+            return false;
+        }
+
+        int glfwModifiers = toGlfwModifiers(modifiers);
+        int action = pressed ? GLFW.GLFW_PRESS : GLFW.GLFW_RELEASE;
+        try {
+            mc.keyboardHandler.keyPress(mc.getWindow().getWindow(), glfwKey, 0, action, glfwModifiers);
+            return true;
+        } catch (Throwable throwable) {
+            zszlScriptMod.LOGGER.debug("Dispatching synthetic game key event failed: keyCode={} glfwKey={} pressed={}",
+                    keyCode, glfwKey, pressed, throwable);
+            return false;
+        }
+    }
+
+    private int toGlfwModifiers(Set<Integer> modifiers) {
+        if (modifiers == null || modifiers.isEmpty()) {
+            return 0;
+        }
+        int glfwModifiers = 0;
+        if (modifiers.contains(Keyboard.KEY_LCONTROL) || modifiers.contains(Keyboard.KEY_RCONTROL)) {
+            glfwModifiers |= GLFW.GLFW_MOD_CONTROL;
+        }
+        if (modifiers.contains(Keyboard.KEY_LSHIFT) || modifiers.contains(Keyboard.KEY_RSHIFT)) {
+            glfwModifiers |= GLFW.GLFW_MOD_SHIFT;
+        }
+        if (modifiers.contains(Keyboard.KEY_LMENU) || modifiers.contains(Keyboard.KEY_RMENU)) {
+            glfwModifiers |= GLFW.GLFW_MOD_ALT;
+        }
+        return glfwModifiers;
+    }
+
     private boolean isSimulatedKeyDown(int keyCode) {
         if (keyCode == Keyboard.KEY_NONE) {
             return false;
@@ -229,14 +276,19 @@ public class SimulatedKeyInputManager {
     }
 
     private static void runOnClientThread(Runnable task) {
-        Minecraft mc = Minecraft.getMinecraft();
+        Minecraft mc = Minecraft.getInstance();
         if (mc == null) {
             return;
         }
-        if (mc.isCallingFromMinecraftThread()) {
+        if (mc.isSameThread()) {
             task.run();
             return;
         }
-        mc.addScheduledTask(task);
+        mc.execute(task);
     }
 }
+
+
+
+
+

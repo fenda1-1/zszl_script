@@ -17,20 +17,28 @@
 
 package com.zszl.zszlScriptMod.shadowbaritone.api.utils;
 
-import net.minecraft.block.Block;
-import net.minecraft.util.ResourceLocation;
-
 import java.util.HashMap;
 import java.util.Map;
+import net.minecraft.core.Registry;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.Block;
 
 public class BlockUtils {
 
     private static transient Map<String, Block> resourceCache = new HashMap<>();
 
     public static String blockToString(Block block) {
-        ResourceLocation loc = Block.REGISTRY.getNameForObject(block);
-        String name = loc.getResourcePath(); // normally, only write the part after the minecraft:
-        if (!loc.getResourceDomain().equals("minecraft")) {
+        if (block == null) {
+            return "air";
+        }
+        ResourceLocation loc = BuiltInRegistries.BLOCK.getKey(block);
+        if (loc == null) {
+            return block == Blocks.AIR ? "air" : block.toString();
+        }
+        String name = loc.getPath(); // normally, only write the part after the minecraft:
+        if (!loc.getNamespace().equals("minecraft")) {
             // Baritone is running on top of forge with mods installed, perhaps?
             name = loc.toString(); // include the namespace with the colon
         }
@@ -53,16 +61,16 @@ public class BlockUtils {
         if (block != null) {
             return block;
         }
-        block = Block.getBlockFromName(name.contains(":") ? name : "minecraft:" + name);
-        if (block != null) {
-            Map<String, Block> copy = new HashMap<>(resourceCache); // read only copy is safe, wont throw
-                                                                    // concurrentmodification
-            copy.put(name, block);
-            resourceCache = copy;
+        if (resourceCache.containsKey(name)) {
+            return null; // cached as null
         }
+        block = BuiltInRegistries.BLOCK.getOptional(ResourceLocation.tryParse(name.contains(":") ? name : "minecraft:" + name)).orElse(null);
+        Map<String, Block> copy = new HashMap<>(resourceCache); // read only copy is safe, wont throw concurrentmodification
+        copy.put(name, block);
+        resourceCache = copy;
         return block;
     }
 
-    private BlockUtils() {
-    }
+    private BlockUtils() {}
 }
+

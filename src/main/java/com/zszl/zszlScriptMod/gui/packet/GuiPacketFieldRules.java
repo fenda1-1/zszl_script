@@ -5,13 +5,13 @@ import com.zszl.zszlScriptMod.gui.components.ThemedButton;
 import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
 import com.zszl.zszlScriptMod.path.runtime.ScopedRuntimeVariables;
 import com.zszl.zszlScriptMod.utils.PacketFieldRuleManager;
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiScreen;
-import net.minecraft.client.gui.GuiTextField;
-import net.minecraft.util.text.TextComponentString;
-import net.minecraft.util.text.TextFormatting;
-import org.lwjgl.input.Keyboard;
-import org.lwjgl.input.Mouse;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiTextField;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.util.text.TextComponentString;
+import net.minecraft.ChatFormatting;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Keyboard;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Mouse;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -337,21 +337,21 @@ public class GuiPacketFieldRules extends ThemedGuiScreen {
             case 4:
                 flushEditorToSelected();
                 String error = validateRules();
-                toast(error == null ? TextFormatting.GREEN + "字段提取规则校验通过"
-                        : TextFormatting.RED + "校验失败: " + error);
+                toast(error == null ? ChatFormatting.GREEN + "字段提取规则校验通过"
+                        : ChatFormatting.RED + "校验失败: " + error);
                 break;
             case 5:
                 flushEditorToSelected();
                 String validationError = validateRules();
                 if (validationError != null) {
-                    toast(TextFormatting.RED + "保存失败: " + validationError);
+                    toast(ChatFormatting.RED + "保存失败: " + validationError);
                     break;
                 }
                 PacketFieldRuleManager.saveRuleModels(rules);
-                toast(TextFormatting.GREEN + "字段提取规则已保存");
+                toast(ChatFormatting.GREEN + "字段提取规则已保存");
                 break;
             case 6:
-                mc.displayGuiScreen(parent);
+                mc.setScreen(parent);
                 break;
             case 20:
                 editingEnabled = !editingEnabled;
@@ -545,7 +545,7 @@ public class GuiPacketFieldRules extends ThemedGuiScreen {
     @Override
     protected void keyTyped(char typedChar, int keyCode) throws IOException {
         if (keyCode == Keyboard.KEY_ESCAPE) {
-            mc.displayGuiScreen(parent);
+            mc.setScreen(parent);
             return;
         }
         nameField.textboxKeyTyped(typedChar, keyCode);
@@ -587,8 +587,8 @@ public class GuiPacketFieldRules extends ThemedGuiScreen {
         if (dWheel == 0) {
             return;
         }
-        int mouseX = Mouse.getEventX() * this.width / this.mc.displayWidth;
-        int mouseY = this.height - Mouse.getEventY() * this.height / this.mc.displayHeight - 1;
+        int mouseX = Mouse.getEventX() * this.width / this.mc.getWindow().getWidth();
+        int mouseY = this.height - Mouse.getEventY() * this.height / this.mc.getWindow().getHeight() - 1;
         if (mouseX >= listX && mouseX <= listX + listW && mouseY >= listY && mouseY <= listY + listH) {
             int visible = Math.max(1, listH / ROW_H);
             int maxScroll = Math.max(0, rules.size() - visible);
@@ -617,7 +617,7 @@ public class GuiPacketFieldRules extends ThemedGuiScreen {
 
     private void toast(String text) {
         if (mc.player != null) {
-            mc.player.sendMessage(new TextComponentString(text));
+            mc.player.sendSystemMessage(new TextComponentString(text));
         }
     }
 
@@ -697,3 +697,12 @@ public class GuiPacketFieldRules extends ThemedGuiScreen {
         return value == null ? "" : value;
     }
 }
+
+
+
+
+
+
+
+
+

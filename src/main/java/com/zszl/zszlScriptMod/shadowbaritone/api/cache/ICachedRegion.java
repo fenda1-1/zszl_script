@@ -46,3 +46,4 @@ public interface ICachedRegion extends IBlockTypeAccess {
      */
     int getZ();
 }
+

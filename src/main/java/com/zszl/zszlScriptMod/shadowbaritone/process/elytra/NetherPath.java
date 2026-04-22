@@ -18,51 +18,49 @@
 package com.zszl.zszlScriptMod.shadowbaritone.process.elytra;
 
 import com.zszl.zszlScriptMod.shadowbaritone.api.utils.BetterBlockPos;
-import net.minecraft.util.math.Vec3d;
+import net.minecraft.world.phys.Vec3;
 
 import java.util.AbstractList;
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+/**
+ * @author Brady
+ */
 public final class NetherPath extends AbstractList<BetterBlockPos> {
 
-    private static final NetherPath EMPTY = new NetherPath(Collections.emptyList());
+    private static final NetherPath EMPTY_PATH = new NetherPath(Collections.emptyList());
 
-    private final List<BetterBlockPos> path;
+    private final List<BetterBlockPos> backing;
 
-    public NetherPath(List<BetterBlockPos> path) {
-        this.path = Collections.unmodifiableList(new ArrayList<>(path));
-    }
-
-    public static NetherPath emptyPath() {
-        return EMPTY;
-    }
-
-    @Override
-    public int size() {
-        return this.path.size();
-    }
-
-    public boolean isEmpty() {
-        return this.path.isEmpty();
+    NetherPath(List<BetterBlockPos> backing) {
+        this.backing = backing;
     }
 
     @Override
     public BetterBlockPos get(int index) {
-        return this.path.get(index);
+        return this.backing.get(index);
     }
 
+    @Override
+    public int size() {
+        return this.backing.size();
+    }
+
+    /**
+     * @return The last position in the path, or {@code null} if empty
+     */
     public BetterBlockPos getLast() {
-        return this.path.get(this.path.size() - 1);
+        return this.isEmpty() ? null : this.backing.get(this.backing.size() - 1);
     }
 
-    public List<BetterBlockPos> subList(int fromIndex, int toIndex) {
-        return this.path.subList(fromIndex, toIndex);
+    public Vec3 getVec(int index) {
+        final BetterBlockPos pos = this.get(index);
+        return new Vec3(pos.x, pos.y, pos.z);
     }
 
-    public Vec3d getVec(int index) {
-        BetterBlockPos pos = this.path.get(index);
-        return new Vec3d(pos.getX(), pos.getY(), pos.getZ());
+    public static NetherPath emptyPath() {
+        return EMPTY_PATH;
     }
 }
+

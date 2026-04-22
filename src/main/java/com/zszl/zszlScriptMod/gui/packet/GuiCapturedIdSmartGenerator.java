@@ -4,13 +4,13 @@ import com.zszl.zszlScriptMod.gui.components.GuiTheme;
 import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
 import com.zszl.zszlScriptMod.utils.CapturedIdRuleManager;
 import com.zszl.zszlScriptMod.utils.CapturedIdSmartRuleGenerator;
-import net.minecraft.client.gui.ScaledResolution;
-import net.minecraft.client.renderer.GlStateManager;
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiScreen;
-import net.minecraft.client.gui.GuiTextField;
-import org.lwjgl.input.Keyboard;
-import org.lwjgl.input.Mouse;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.ScaledResolution;
+import com.mojang.blaze3d.platform.GlStateManager;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiTextField;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Keyboard;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Mouse;
 import org.lwjgl.opengl.GL11;
 
 import java.awt.Rectangle;
@@ -281,7 +281,7 @@ public class GuiCapturedIdSmartGenerator extends ThemedGuiScreen {
     protected void actionPerformed(GuiButton button) throws IOException {
         switch (button.id) {
             case BTN_BACK:
-                mc.displayGuiScreen(parentScreen);
+                mc.setScreen(parentScreen);
                 return;
             case BTN_ADD_SAMPLE:
                 addSampleEntry();
@@ -382,7 +382,7 @@ public class GuiCapturedIdSmartGenerator extends ThemedGuiScreen {
     @Override
     protected void keyTyped(char typedChar, int keyCode) throws IOException {
         if (keyCode == Keyboard.KEY_ESCAPE) {
-            mc.displayGuiScreen(parentScreen);
+            mc.setScreen(parentScreen);
             return;
         }
         if (keyCode == Keyboard.KEY_RETURN || keyCode == Keyboard.KEY_NUMPADENTER) {
@@ -413,8 +413,8 @@ public class GuiCapturedIdSmartGenerator extends ThemedGuiScreen {
             return;
         }
 
-        int mouseX = Mouse.getEventX() * this.width / this.mc.displayWidth;
-        int mouseY = this.height - Mouse.getEventY() * this.height / this.mc.displayHeight - 1;
+        int mouseX = Mouse.getEventX() * this.width / Math.max(1, this.mc.getWindow().getScreenWidth());
+        int mouseY = this.height - Mouse.getEventY() * this.height / Math.max(1, this.mc.getWindow().getScreenHeight()) - 1;
 
         if (sampleListBounds.contains(mouseX, mouseY)) {
             if (wheel < 0) {
@@ -743,7 +743,7 @@ public class GuiCapturedIdSmartGenerator extends ThemedGuiScreen {
         if (parentScreen instanceof GuiCapturedIdViewer) {
             ((GuiCapturedIdViewer) parentScreen).initGui();
         }
-        mc.displayGuiScreen(parentScreen);
+        mc.setScreen(parentScreen);
     }
 
     private void importSelectedGeneratedRule() {
@@ -784,7 +784,7 @@ public class GuiCapturedIdSmartGenerator extends ThemedGuiScreen {
         if (parentScreen instanceof GuiCapturedIdViewer) {
             ((GuiCapturedIdViewer) parentScreen).initGui();
         }
-        mc.displayGuiScreen(parentScreen);
+        mc.setScreen(parentScreen);
     }
 
     private void copyAllGeneratedRules() {
@@ -912,14 +912,12 @@ public class GuiCapturedIdSmartGenerator extends ThemedGuiScreen {
         int scaleFactor = resolution.getScaleFactor();
         GL11.glEnable(GL11.GL_SCISSOR_TEST);
         GL11.glScissor(viewport.x * scaleFactor,
-                mc.displayHeight - ((viewport.y + viewport.height) * scaleFactor),
+                mc.getWindow().getScreenHeight() - ((viewport.y + viewport.height) * scaleFactor),
                 viewport.width * scaleFactor,
                 viewport.height * scaleFactor);
-        GlStateManager.pushMatrix();
     }
 
     private void endScissor() {
-        GlStateManager.popMatrix();
         GL11.glDisable(GL11.GL_SCISSOR_TEST);
     }
 
@@ -1097,3 +1095,5 @@ public class GuiCapturedIdSmartGenerator extends ThemedGuiScreen {
         return editingSampleIndex >= 0 ? "更新" : "添加";
     }
 }
+
+

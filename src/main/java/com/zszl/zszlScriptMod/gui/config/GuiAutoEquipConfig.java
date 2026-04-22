@@ -6,12 +6,12 @@ import com.zszl.zszlScriptMod.handlers.AutoEquipHandler;
 import com.zszl.zszlScriptMod.handlers.AutoEquipHandler.ArmorSlot;
 import com.zszl.zszlScriptMod.handlers.AutoEquipHandler.EquipmentSet;
 import com.zszl.zszlScriptMod.handlers.AutoEquipHandler.SlotConfig;
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
 import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
-import net.minecraft.client.gui.GuiTextField;
-import net.minecraft.client.resources.I18n;
-import org.lwjgl.input.Keyboard;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiTextField;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Keyboard;
 
 import java.io.IOException;
 import java.util.*;
@@ -134,9 +134,9 @@ public class GuiAutoEquipConfig extends ThemedGuiScreen {
                 }
                 AutoEquipHandler.saveConfig();
             }
-            mc.displayGuiScreen(parentScreen);
+            mc.setScreen(parentScreen);
         } else if (button.id == 101) { // 取消
-            mc.displayGuiScreen(parentScreen);
+            mc.setScreen(parentScreen);
         }
     }
 
@@ -171,7 +171,7 @@ public class GuiAutoEquipConfig extends ThemedGuiScreen {
     @Override
     protected void keyTyped(char typedChar, int keyCode) throws IOException {
         if (keyCode == Keyboard.KEY_ESCAPE) {
-            this.mc.displayGuiScreen(this.parentScreen);
+            this.mc.setScreen(this.parentScreen);
             return;
         }
         super.keyTyped(typedChar, keyCode);
@@ -203,3 +203,9 @@ public class GuiAutoEquipConfig extends ThemedGuiScreen {
         return I18n.format(sequential ? "gui.auto_equip_config.mode.sequential" : "gui.auto_equip_config.mode.smart");
     }
 }
+
+
+
+
+
+

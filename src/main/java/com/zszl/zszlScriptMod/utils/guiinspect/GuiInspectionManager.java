@@ -1,11 +1,10 @@
 package com.zszl.zszlScriptMod.utils.guiinspect;
 
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.entity.EntityPlayerSP;
-import net.minecraft.client.gui.GuiScreen;
-import net.minecraft.client.gui.inventory.GuiContainer;
-import net.minecraft.inventory.Container;
-import net.minecraft.inventory.Slot;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.inventory.Slot;
 
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -57,7 +56,7 @@ public final class GuiInspectionManager {
             this.totalSlots = totalSlots;
             this.containerSlots = containerSlots;
             this.playerInventorySlots = playerInventorySlots;
-            this.elements = elements == null ? Collections.<GuiElementInspector.GuiElementInfo>emptyList()
+            this.elements = elements == null ? Collections.emptyList()
                     : Collections.unmodifiableList(new ArrayList<>(elements));
             this.signature = signature == null ? "" : signature;
         }
@@ -136,8 +135,8 @@ public final class GuiInspectionManager {
             return;
         }
 
-        Minecraft mc = Minecraft.getMinecraft();
-        GuiScreen screen = mc == null ? null : mc.currentScreen;
+        Minecraft mc = Minecraft.getInstance();
+        Screen screen = mc == null ? null : mc.screen;
         if (screen == null) {
             lastSignature = "";
             return;
@@ -149,26 +148,25 @@ public final class GuiInspectionManager {
         captureCurrentGui(mc, screen);
     }
 
-    private static void captureCurrentGui(Minecraft mc, GuiScreen screen) {
+    private static void captureCurrentGui(Minecraft mc, Screen screen) {
         GuiElementInspector.GuiSnapshot snapshot = GuiElementInspector.captureCurrentSnapshot();
         int windowId = -1;
         int totalSlots = 0;
         int containerSlots = 0;
         int playerInventorySlots = 0;
 
-        EntityPlayerSP player = mc == null ? null : mc.player;
-        if (player != null && screen instanceof GuiContainer) {
-            Container container = player.openContainer;
-            if (container != null) {
-                windowId = container.windowId;
-                totalSlots = container.inventorySlots == null ? 0 : container.inventorySlots.size();
-                for (Slot slot : container.inventorySlots) {
+        if (mc != null && mc.player != null && screen instanceof AbstractContainerScreen<?>) {
+            AbstractContainerMenu menu = ((AbstractContainerScreen<?>) screen).getMenu();
+            if (menu != null) {
+                windowId = menu.containerId;
+                totalSlots = menu.slots.size();
+                for (Slot slot : menu.slots) {
                     if (slot == null) {
                         continue;
                     }
-                    if (slot.inventory == player.inventory && slot.getSlotIndex() >= 0 && slot.getSlotIndex() < 36) {
+                    if (slot.container == mc.player.getInventory()) {
                         playerInventorySlots++;
-                    } else if (slot.inventory != player.inventory) {
+                    } else {
                         containerSlots++;
                     }
                 }
@@ -202,8 +200,8 @@ public final class GuiInspectionManager {
             int totalSlots,
             int containerSlots,
             int playerInventorySlots) {
-        StringBuilder sb = new StringBuilder();
-        sb.append(snapshot.getScreenClassName()).append('|')
+        StringBuilder builder = new StringBuilder();
+        builder.append(snapshot.getScreenClassName()).append('|')
                 .append(snapshot.getTitle()).append('|')
                 .append(windowId).append('|')
                 .append(totalSlots).append('|')
@@ -213,13 +211,13 @@ public final class GuiInspectionManager {
             if (element == null) {
                 continue;
             }
-            sb.append('\n')
-                    .append(element.getType().name())
-                    .append('|').append(element.getPath())
-                    .append('|').append(element.getText())
-                    .append('|').append(element.getButtonId())
-                    .append('|').append(element.getSlotIndex());
+            builder.append('\n')
+                    .append(element.getType().name()).append('|')
+                    .append(element.getPath()).append('|')
+                    .append(element.getText()).append('|')
+                    .append(element.getButtonId()).append('|')
+                    .append(element.getSlotIndex());
         }
-        return sb.toString();
+        return builder.toString();
     }
 }

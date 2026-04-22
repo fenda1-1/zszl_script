@@ -2,15 +2,16 @@ package com.zszl.zszlScriptMod.path.node;
 
 import com.google.gson.JsonObject;
 import com.zszl.zszlScriptMod.zszlScriptMod;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.entity.EntityPlayerSP;
+import net.minecraft.client.player.LocalPlayer;
 
 public final class NodeTriggerManager {
 
@@ -27,9 +28,14 @@ public final class NodeTriggerManager {
     public static final String TRIGGER_ENTITY_NEARBY = "onentitynearby";
 
     private static final int DEFAULT_MAX_CONCURRENT_RUNS = 8;
+    private static final long STORAGE_REFRESH_CHECK_INTERVAL_MS = 3000L;
     private static final Map<String, Long> lastTriggerTimeByKey = new LinkedHashMap<>();
     private static final List<ActiveRun> activeRuns = new ArrayList<>();
-    private static TriggerIndex cachedTriggerIndex = null;
+    private static final Map<String, Boolean> cachedTriggerAvailability = new LinkedHashMap<>();
+    private static volatile long cachedTriggerFileTimestamp = Long.MIN_VALUE;
+    private static volatile long nextStorageRefreshCheckAt = 0L;
+    private static volatile NodeSequenceStorage.LoadResult cachedLoadResult = NodeSequenceStorage.LoadResult
+            .success(NodeSequenceStorage.CURRENT_VERSION, new ArrayList<NodeGraph>());
 
     private NodeTriggerManager() {
     }
@@ -39,7 +45,7 @@ public final class NodeTriggerManager {
             return;
         }
 
-        EntityPlayerSP player = Minecraft.getMinecraft().player;
+        LocalPlayer player = Minecraft.getInstance().player;
         if (player == null) {
             activeRuns.clear();
             return;
@@ -68,33 +74,27 @@ public final class NodeTriggerManager {
             return TriggerResult.ignored("triggerType 为空");
         }
 
-        TriggerIndex triggerIndex = getTriggerIndex();
-        if (!triggerIndex.compatible) {
-            return TriggerResult.failed("节点图存储不兼容: " + triggerIndex.message);
+        NodeSequenceStorage.LoadResult loadResult = getCachedLoadResult();
+        if (!loadResult.isCompatible()) {
+            return TriggerResult.failed("节点图存储不兼容: " + loadResult.getMessage());
         }
 
-        List<TriggerBinding> bindings = triggerIndex.bindingsByType.get(normalizedType);
-        if (bindings == null || bindings.isEmpty()) {
+        List<NodeGraph> matchedGraphs = findTriggeredGraphs(loadResult.getSequences(), normalizedType, eventData);
+        if (matchedGraphs.isEmpty()) {
             return TriggerResult.ignored("无匹配触发图: " + normalizedType);
         }
 
-        EntityPlayerSP player = Minecraft.getMinecraft().player;
+        LocalPlayer player = Minecraft.getInstance().player;
         if (player == null) {
             return TriggerResult.failed("当前无玩家实例");
         }
 
-        String searchText = buildSearchText(eventData);
-        int matched = 0;
         int started = 0;
-        for (TriggerBinding binding : bindings) {
-            if (binding == null || !binding.matches(eventData, searchText)) {
-                continue;
-            }
-            matched++;
+        for (NodeGraph graph : matchedGraphs) {
             if (activeRuns.size() >= DEFAULT_MAX_CONCURRENT_RUNS) {
                 break;
             }
-            if (!allowTrigger(binding)) {
+            if (!allowTrigger(graph, normalizedType, eventData)) {
                 continue;
             }
 
@@ -105,19 +105,16 @@ public final class NodeTriggerManager {
             context.setVariable("triggerType", normalizedType);
             context.setVariable("triggerSource", buildTriggerSource(normalizedType, eventData));
 
-            NodeSequenceRunner runner = new NodeSequenceRunner(binding.graph, context);
-            activeRuns.add(new ActiveRun(binding.graph.getName(), normalizedType, runner));
-            rememberTrigger(binding.graph, normalizedType);
+            NodeSequenceRunner runner = new NodeSequenceRunner(graph, context);
+            activeRuns.add(new ActiveRun(graph.getName(), normalizedType, runner));
+            rememberTrigger(graph, normalizedType);
             started++;
         }
 
-        if (matched <= 0) {
-            return TriggerResult.ignored("无匹配触发图: " + normalizedType);
-        }
         if (started <= 0) {
             return TriggerResult.ignored("触发被节流或并发上限阻止");
         }
-        return TriggerResult.started(started, matched);
+        return TriggerResult.started(started, matchedGraphs.size());
     }
 
     public static synchronized boolean hasGraphsForTrigger(String triggerType) {
@@ -125,12 +122,21 @@ public final class NodeTriggerManager {
         if (normalizedType.isEmpty()) {
             return false;
         }
-        TriggerIndex triggerIndex = getTriggerIndex();
-        if (!triggerIndex.compatible) {
-            return false;
-        }
-        List<TriggerBinding> bindings = triggerIndex.bindingsByType.get(normalizedType);
-        return bindings != null && !bindings.isEmpty();
+        refreshCachedLoadResultIfNeeded();
+        return cachedTriggerAvailability.getOrDefault(normalizedType, Boolean.FALSE);
+    }
+
+    public static synchronized void preload() {
+        nextStorageRefreshCheckAt = 0L;
+        refreshCachedLoadResultIfNeeded();
+    }
+
+    public static synchronized void invalidateCache() {
+        cachedTriggerAvailability.clear();
+        cachedTriggerFileTimestamp = Long.MIN_VALUE;
+        nextStorageRefreshCheckAt = 0L;
+        cachedLoadResult = NodeSequenceStorage.LoadResult.success(NodeSequenceStorage.CURRENT_VERSION,
+                new ArrayList<NodeGraph>());
     }
 
     public static synchronized List<String> getActiveRunSummaries() {
@@ -145,15 +151,128 @@ public final class NodeTriggerManager {
         return lines;
     }
 
-    private static boolean allowTrigger(TriggerBinding binding) {
-        if (binding == null || binding.graph == null) {
+    private static List<NodeGraph> findTriggeredGraphs(List<NodeGraph> graphs, String triggerType, JsonObject eventData) {
+        List<NodeGraph> result = new ArrayList<>();
+        for (NodeGraph graph : graphs) {
+            if (graph == null || graph.getNodes() == null) {
+                continue;
+            }
+            for (NodeNode node : graph.getNodes()) {
+                if (node == null || !NodeNode.TYPE_TRIGGER.equals(node.getNormalizedType())) {
+                    continue;
+                }
+                JsonObject data = node.getData() == null ? new JsonObject() : node.getData();
+                String nodeTriggerType = normalize(readString(data, "triggerType", "event", "type"));
+                if (!triggerType.equals(nodeTriggerType)) {
+                    continue;
+                }
+                if (!matchesFilter(data, eventData)) {
+                    continue;
+                }
+                result.add(graph);
+                break;
+            }
+        }
+        return result;
+    }
+
+    private static NodeSequenceStorage.LoadResult getCachedLoadResult() {
+        refreshCachedLoadResultIfNeeded();
+        return cachedLoadResult;
+    }
+
+    private static void refreshCachedLoadResultIfNeeded() {
+        long now = System.currentTimeMillis();
+        if (cachedLoadResult != null && now < nextStorageRefreshCheckAt) {
+            return;
+        }
+        nextStorageRefreshCheckAt = now + STORAGE_REFRESH_CHECK_INTERVAL_MS;
+
+        long currentTimestamp = resolveStorageTimestamp();
+        if (currentTimestamp == cachedTriggerFileTimestamp && cachedLoadResult != null) {
+            return;
+        }
+
+        NodeSequenceStorage.LoadResult loadResult = NodeSequenceStorage.loadAll();
+        cachedLoadResult = loadResult;
+        cachedTriggerFileTimestamp = currentTimestamp;
+        rebuildTriggerAvailability(loadResult);
+    }
+
+    private static long resolveStorageTimestamp() {
+        Path storageFile = NodeSequenceStorage.getStorageFile();
+        try {
+            return Files.exists(storageFile) ? Files.getLastModifiedTime(storageFile).toMillis() : -1L;
+        } catch (Exception ignored) {
+            return Long.MIN_VALUE + 1L;
+        }
+    }
+
+    private static void rebuildTriggerAvailability(NodeSequenceStorage.LoadResult loadResult) {
+        cachedTriggerAvailability.clear();
+        if (loadResult == null || !loadResult.isCompatible()) {
+            return;
+        }
+
+        for (NodeGraph graph : loadResult.getSequences()) {
+            if (graph == null || graph.getNodes() == null) {
+                continue;
+            }
+            for (NodeNode node : graph.getNodes()) {
+                if (node == null || !NodeNode.TYPE_TRIGGER.equals(node.getNormalizedType())) {
+                    continue;
+                }
+                JsonObject data = node.getData() == null ? new JsonObject() : node.getData();
+                String nodeTriggerType = normalize(readString(data, "triggerType", "event", "type"));
+                if (!nodeTriggerType.isEmpty()) {
+                    cachedTriggerAvailability.put(nodeTriggerType, Boolean.TRUE);
+                }
+            }
+        }
+    }
+
+    private static boolean matchesFilter(JsonObject triggerData, JsonObject eventData) {
+        if (triggerData == null) {
+            return true;
+        }
+        String contains = readString(triggerData, "contains", "filter", "keyword");
+        if (contains.isEmpty()) {
+            return true;
+        }
+        if (eventData == null) {
             return false;
         }
+        String text = readString(eventData, "message", "packet", "gui", "text");
+        return !text.isEmpty() && text.toLowerCase(Locale.ROOT).contains(contains.toLowerCase(Locale.ROOT));
+    }
+
+    private static boolean allowTrigger(NodeGraph graph, String triggerType, JsonObject eventData) {
         long now = System.currentTimeMillis();
-        String key = buildTriggerKey(binding.graph, binding.triggerType);
-        long throttleMs = binding.throttleMs;
+        String key = buildTriggerKey(graph, triggerType);
+        long throttleMs = resolveThrottleMs(graph, triggerType);
         Long last = lastTriggerTimeByKey.get(key);
         return last == null || throttleMs <= 0L || now - last.longValue() >= throttleMs;
+    }
+
+    private static long resolveThrottleMs(NodeGraph graph, String triggerType) {
+        if (graph == null || graph.getNodes() == null) {
+            return 0L;
+        }
+        for (NodeNode node : graph.getNodes()) {
+            if (node == null || !NodeNode.TYPE_TRIGGER.equals(node.getNormalizedType())) {
+                continue;
+            }
+            JsonObject data = node.getData() == null ? new JsonObject() : node.getData();
+            String nodeTriggerType = normalize(readString(data, "triggerType", "event", "type"));
+            if (!triggerType.equals(nodeTriggerType)) {
+                continue;
+            }
+            if (data.has("throttleMs") && data.get("throttleMs").isJsonPrimitive()
+                    && data.get("throttleMs").getAsJsonPrimitive().isNumber()) {
+                return Math.max(0L, data.get("throttleMs").getAsLong());
+            }
+        }
+        return 0L;
     }
 
     private static void rememberTrigger(NodeGraph graph, String triggerType) {
@@ -196,60 +315,6 @@ public final class NodeTriggerManager {
         return value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
     }
 
-    private static TriggerIndex getTriggerIndex() {
-        NodeSequenceStorage.LoadResult loadResult = NodeSequenceStorage.peekCachedLoadResult();
-        if (loadResult == null) {
-            loadResult = NodeSequenceStorage.loadAll();
-        }
-        if (cachedTriggerIndex != null && cachedTriggerIndex.loadResult == loadResult) {
-            return cachedTriggerIndex;
-        }
-
-        if (!loadResult.isCompatible()) {
-            cachedTriggerIndex = new TriggerIndex(loadResult, Collections.<String, List<TriggerBinding>>emptyMap(),
-                    false, loadResult.getMessage());
-            return cachedTriggerIndex;
-        }
-
-        Map<String, List<TriggerBinding>> bindingsByType = new HashMap<>();
-        for (NodeGraph graph : loadResult.getSequences()) {
-            if (graph == null || graph.getNodes() == null) {
-                continue;
-            }
-            for (NodeNode node : graph.getNodes()) {
-                if (node == null || !NodeNode.TYPE_TRIGGER.equals(node.getNormalizedType())) {
-                    continue;
-                }
-                JsonObject data = node.getData() == null ? new JsonObject() : node.getData();
-                String nodeTriggerType = normalize(readString(data, "triggerType", "event", "type"));
-                if (nodeTriggerType.isEmpty()) {
-                    continue;
-                }
-                bindingsByType.computeIfAbsent(nodeTriggerType, key -> new ArrayList<>())
-                        .add(new TriggerBinding(graph, nodeTriggerType, data));
-            }
-        }
-        for (Map.Entry<String, List<TriggerBinding>> entry : bindingsByType.entrySet()) {
-            entry.setValue(Collections.unmodifiableList(entry.getValue()));
-        }
-        cachedTriggerIndex = new TriggerIndex(loadResult, Collections.unmodifiableMap(bindingsByType), true, "");
-        return cachedTriggerIndex;
-    }
-
-    private static String buildSearchText(JsonObject eventData) {
-        if (eventData == null || eventData.entrySet().isEmpty()) {
-            return "";
-        }
-        StringBuilder builder = new StringBuilder();
-        for (Map.Entry<String, com.google.gson.JsonElement> entry : eventData.entrySet()) {
-            if (builder.length() > 0) {
-                builder.append(" | ");
-            }
-            builder.append(entry.getKey()).append('=').append(entry.getValue());
-        }
-        return builder.toString();
-    }
-
     private static final class ActiveRun {
         private final String graphName;
         private final String triggerType;
@@ -259,50 +324,6 @@ public final class NodeTriggerManager {
             this.graphName = graphName == null ? "" : graphName;
             this.triggerType = triggerType == null ? "" : triggerType;
             this.runner = runner;
-        }
-    }
-
-    private static final class TriggerBinding {
-        private final NodeGraph graph;
-        private final String triggerType;
-        private final String containsLower;
-        private final long throttleMs;
-
-        private TriggerBinding(NodeGraph graph, String triggerType, JsonObject data) {
-            this.graph = graph;
-            this.triggerType = triggerType == null ? "" : triggerType;
-            this.containsLower = readString(data, "contains", "filter", "keyword").trim().toLowerCase(Locale.ROOT);
-            this.throttleMs = data != null
-                    && data.has("throttleMs")
-                    && data.get("throttleMs").isJsonPrimitive()
-                    && data.get("throttleMs").getAsJsonPrimitive().isNumber()
-                            ? Math.max(0L, data.get("throttleMs").getAsLong())
-                            : 0L;
-        }
-
-        private boolean matches(JsonObject eventData, String searchText) {
-            if (this.containsLower.isEmpty()) {
-                return true;
-            }
-            String text = searchText == null ? buildSearchText(eventData) : searchText;
-            return !text.isEmpty() && text.toLowerCase(Locale.ROOT).contains(this.containsLower);
-        }
-    }
-
-    private static final class TriggerIndex {
-        private final NodeSequenceStorage.LoadResult loadResult;
-        private final Map<String, List<TriggerBinding>> bindingsByType;
-        private final boolean compatible;
-        private final String message;
-
-        private TriggerIndex(NodeSequenceStorage.LoadResult loadResult, Map<String, List<TriggerBinding>> bindingsByType,
-                boolean compatible, String message) {
-            this.loadResult = loadResult;
-            this.bindingsByType = bindingsByType == null
-                    ? Collections.<String, List<TriggerBinding>>emptyMap()
-                    : bindingsByType;
-            this.compatible = compatible;
-            this.message = message == null ? "" : message;
         }
     }
 
@@ -348,3 +369,6 @@ public final class NodeTriggerManager {
         }
     }
 }
+
+
+

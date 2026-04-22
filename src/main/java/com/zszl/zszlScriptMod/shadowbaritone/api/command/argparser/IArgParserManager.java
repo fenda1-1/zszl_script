@@ -22,10 +22,8 @@ import com.zszl.zszlScriptMod.shadowbaritone.api.command.exception.CommandInvali
 import com.zszl.zszlScriptMod.shadowbaritone.api.command.registry.Registry;
 
 /**
- * Used to retrieve {@link IArgParser} instances from the registry, by their
- * target class.
- * It can be assumed that a {@link IArgParser} exists for {@link Integer},
- * {@link Long},
+ * Used to retrieve {@link IArgParser} instances from the registry, by their target class.
+ * It can be assumed that a {@link IArgParser} exists for {@link Integer}, {@link Long},
  * {@link Float}, {@link Double} and {@link Boolean}.
  *
  * @author Brady
@@ -46,8 +44,7 @@ public interface IArgParserManager {
     <T, S> IArgParser.Stated<T, S> getParserStated(Class<T> type, Class<S> stateKlass);
 
     /**
-     * Attempt to parse the specified argument with a stateless {@link IArgParser}
-     * that outputs the specified class.
+     * Attempt to parse the specified argument with a stateless {@link IArgParser} that outputs the specified class.
      *
      * @param type The type to try and parse the argument into.
      * @param arg  The argument to parse.
@@ -57,8 +54,7 @@ public interface IArgParserManager {
     <T> T parseStateless(Class<T> type, ICommandArgument arg) throws CommandInvalidTypeException;
 
     /**
-     * Attempt to parse the specified argument with a stated {@link IArgParser} that
-     * outputs the specified class.
+     * Attempt to parse the specified argument with a stated {@link IArgParser} that outputs the specified class.
      *
      * @param type  The type to try and parse the argument into.
      * @param arg   The argument to parse.
@@ -67,8 +63,8 @@ public interface IArgParserManager {
      * @throws CommandInvalidTypeException If the parsing failed
      * @see IArgParser.Stated
      */
-    <T, S> T parseStated(Class<T> type, Class<S> stateKlass, ICommandArgument arg, S state)
-            throws CommandInvalidTypeException;
+    <T, S> T parseStated(Class<T> type, Class<S> stateKlass, ICommandArgument arg, S state) throws CommandInvalidTypeException;
 
     Registry<IArgParser> getRegistry();
 }
+

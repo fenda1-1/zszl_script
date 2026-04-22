@@ -2,7 +2,7 @@ package com.zszl.zszlScriptMod.otherfeatures.gui.world;
 
 import com.zszl.zszlScriptMod.gui.components.GuiTheme;
 import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
-import net.minecraft.client.gui.Gui;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.Gui;
 
 final class ConfigDropdown {
 
@@ -74,10 +74,10 @@ final class ConfigDropdown {
             state = GuiTheme.UiState.NORMAL;
         }
         GuiTheme.drawButtonFrameSafe(this.x, this.y, this.width, this.height, state);
-        this.owner.drawString(this.owner.mc.fontRenderer,
-                this.owner.mc.fontRenderer.trimStringToWidth(this.label + ": " + getSelectedText(), Math.max(10, this.width - 18)),
+        this.owner.drawString(new com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.FontRenderer(net.minecraft.client.Minecraft.getInstance().font),
+                new com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.FontRenderer(net.minecraft.client.Minecraft.getInstance().font).trimStringToWidth(this.label + ": " + getSelectedText(), Math.max(10, this.width - 18)),
                 this.x + 6, this.y + 6, 0xFFFFFFFF);
-        this.owner.drawString(this.owner.mc.fontRenderer, this.expanded ? "▲" : "▼", this.x + this.width - 10, this.y + 6,
+        this.owner.drawString(new com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.FontRenderer(net.minecraft.client.Minecraft.getInstance().font), this.expanded ? "▲" : "▼", this.x + this.width - 10, this.y + 6,
                 0xFF9FDFFF);
 
         if (!this.expanded) {
@@ -100,7 +100,7 @@ final class ConfigDropdown {
                 Gui.drawRect(this.x + 1, itemY, this.x + this.width - 1, itemY + ITEM_HEIGHT,
                         selected ? 0xCC2B5A7C : 0xAA2E4258);
             }
-            this.owner.drawString(this.owner.mc.fontRenderer, this.options[i], this.x + 6, itemY + 5, 0xFFFFFFFF);
+            this.owner.drawString(new com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.FontRenderer(net.minecraft.client.Minecraft.getInstance().font), this.options[i], this.x + 6, itemY + 5, 0xFFFFFFFF);
         }
     }
 
@@ -146,3 +146,8 @@ final class ConfigDropdown {
         return mouseX >= x && mouseX <= x + width && mouseY >= y && mouseY <= y + height;
     }
 }
+
+
+
+
+

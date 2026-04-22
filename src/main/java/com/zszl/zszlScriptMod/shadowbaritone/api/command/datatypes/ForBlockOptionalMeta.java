@@ -20,9 +20,10 @@ package com.zszl.zszlScriptMod.shadowbaritone.api.command.datatypes;
 import com.zszl.zszlScriptMod.shadowbaritone.api.command.exception.CommandException;
 import com.zszl.zszlScriptMod.shadowbaritone.api.command.helpers.TabCompleteHelper;
 import com.zszl.zszlScriptMod.shadowbaritone.api.utils.BlockOptionalMeta;
-import net.minecraft.block.Block;
-import net.minecraft.block.properties.IProperty;
-import net.minecraft.util.ResourceLocation;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.state.properties.Property;
 
 import java.util.Set;
 import java.util.regex.Pattern;
@@ -33,15 +34,12 @@ public enum ForBlockOptionalMeta implements IDatatypeFor<BlockOptionalMeta> {
     INSTANCE;
 
     /**
-     * Matches (domain:)?name([(property=value)*])? but the input can be truncated
-     * at any position.
-     * domain and name are [a-z0-9_.-]+ and [a-z0-9/_.-]+ because that's what mc
-     * 1.13+ accepts.
+     * Matches (domain:)?name([(property=value)*])? but the input can be truncated at any position.
+     * domain and name are [a-z0-9_.-]+ and [a-z0-9/_.-]+ because that's what mc 1.13+ accepts.
      * property and value use the same format as domain.
      */
     // Good luck reading this.
-    private static Pattern PATTERN = Pattern.compile(
-            "(?:[a-z0-9_.-]+:)?(?:[a-z0-9/_.-]+(?:\\[(?:(?:[a-z0-9_.-]+=[a-z0-9_.-]+,)*(?:[a-z0-9_.-]+(?:=(?:[a-z0-9_.-]+(?:\\])?)?)?)?|\\])?)?)?");
+    private static Pattern PATTERN = Pattern.compile("(?:[a-z0-9_.-]+:)?(?:[a-z0-9/_.-]+(?:\\[(?:(?:[a-z0-9_.-]+=[a-z0-9_.-]+,)*(?:[a-z0-9_.-]+(?:=(?:[a-z0-9_.-]+(?:\\])?)?)?)?|\\])?)?)?");
 
     @Override
     public BlockOptionalMeta get(IDatatypeContext ctx) throws CommandException {
@@ -79,7 +77,7 @@ public enum ForBlockOptionalMeta implements IDatatypeFor<BlockOptionalMeta> {
             properties = parts[1];
         }
 
-        Block block = Block.REGISTRY.getObject(new ResourceLocation(blockId));
+        Block block = BuiltInRegistries.BLOCK.getOptional(new ResourceLocation(blockId)).orElse(null);
         if (block == null) {
             // This block doesn't exist so there's no properties to complete.
             return Stream.empty();
@@ -93,8 +91,7 @@ public enum ForBlockOptionalMeta implements IDatatypeFor<BlockOptionalMeta> {
         }
 
         if (!lastProperty.contains("=")) {
-            // The last property-value pair doesn't have a value yet so we are completing
-            // its name
+            // The last property-value pair doesn't have a value yet so we are completing its name
             Set<String> usedProps = Stream.of(leadingProperties.split(","))
                     .map(pair -> pair.split("=")[0])
                     .collect(Collectors.toSet());
@@ -102,10 +99,11 @@ public enum ForBlockOptionalMeta implements IDatatypeFor<BlockOptionalMeta> {
             String prefix = arg.substring(0, arg.length() - lastProperty.length());
             return new TabCompleteHelper()
                     .append(
-                            block.getBlockState()
+                            block.getStateDefinition()
                                     .getProperties()
                                     .stream()
-                                    .map(IProperty::getName))
+                                    .map(Property::getName)
+                    )
                     .filter(prop -> !usedProps.contains(prop))
                     .filterPrefix(lastProperty)
                     .sortAlphabetically()
@@ -123,7 +121,7 @@ public enum ForBlockOptionalMeta implements IDatatypeFor<BlockOptionalMeta> {
         // We are completing the value of a property
         String prefix = arg.substring(0, arg.length() - lastValue.length());
 
-        IProperty<?> property = block.getBlockState().getProperty(lastName);
+        Property<?> property = block.getStateDefinition().getProperty(lastName);
         if (property == null) {
             // The property does not exist so there's no values to complete
             return Stream.empty();
@@ -144,13 +142,14 @@ public enum ForBlockOptionalMeta implements IDatatypeFor<BlockOptionalMeta> {
     private static String[] splitLast(String string, char chr) {
         int idx = string.lastIndexOf(chr);
         if (idx == -1) {
-            return new String[] { "", string };
+            return new String[]{"", string};
         }
-        return new String[] { string.substring(0, idx), string.substring(idx + 1) };
+        return new String[]{string.substring(0, idx), string.substring(idx + 1)};
     }
 
     // this shouldn't need to be a separate method?
-    private static <T extends Comparable<T>> Stream<String> getValues(IProperty<T> property) {
-        return property.getAllowedValues().stream().map(property::getName);
+    private static <T extends Comparable<T>> Stream<String> getValues(Property<T> property) {
+        return property.getPossibleValues().stream().map(property::getName);
     }
 }
+

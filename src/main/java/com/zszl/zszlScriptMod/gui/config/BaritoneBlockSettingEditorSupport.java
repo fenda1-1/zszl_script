@@ -1,10 +1,10 @@
 package com.zszl.zszlScriptMod.gui.config;
 
-import com.zszl.zszlScriptMod.shadowbaritone.api.utils.BlockUtils;
-import com.zszl.zszlScriptMod.shadowbaritone.api.utils.BlockDisplayLookup;
-import net.minecraft.block.Block;
-import net.minecraft.init.Blocks;
-import net.minecraft.item.ItemStack;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -24,7 +24,7 @@ final class BaritoneBlockSettingEditorSupport {
         if (token.isEmpty()) {
             return "";
         }
-        Block block = BlockDisplayLookup.findBlockByUserInput(token);
+        Block block = findBlockByUserInput(token);
         return block == null ? "" : BlockUtils.blockToString(block);
     }
 
@@ -122,13 +122,14 @@ final class BaritoneBlockSettingEditorSupport {
         Block block = resolveBlock(blockId);
         ItemStack stack = getBlockStack(block);
         if (!stack.isEmpty()) {
-            return stack.getDisplayName();
+            return stack.getHoverName().getString();
         }
         return blockId == null ? "" : blockId;
     }
 
     static Block resolveBlock(String blockId) {
-        return normalizeBlockId(blockId).isEmpty() ? null : BlockUtils.stringToBlockNullable(normalizeBlockId(blockId));
+        String normalized = normalizeBlockId(blockId);
+        return normalized.isEmpty() ? null : findBlockByUserInput(normalized);
     }
 
     private static String unwrapCollection(String raw) {
@@ -138,5 +139,84 @@ final class BaritoneBlockSettingEditorSupport {
             normalized = normalized.substring(1, normalized.length() - 1).trim();
         }
         return normalized;
+    }
+
+    private static Block findBlockByUserInput(String raw) {
+        String normalized = raw == null ? "" : raw.trim().toLowerCase(Locale.ROOT);
+        if (normalized.isEmpty()) {
+            return null;
+        }
+
+        Block byId = resolveById(normalized);
+        if (byId != null) {
+            return byId;
+        }
+
+        String normalizedDisplay = normalizeDisplayLookup(raw);
+        if (normalizedDisplay.isEmpty()) {
+            return null;
+        }
+
+        Block fuzzyMatch = null;
+        boolean fuzzyAmbiguous = false;
+        for (Block candidate : BuiltInRegistries.BLOCK) {
+            if (candidate == null || candidate == Blocks.AIR) {
+                continue;
+            }
+            String displayName = normalizeDisplayLookup(getDisplayName(candidate));
+            if (displayName.isEmpty()) {
+                continue;
+            }
+            if (displayName.equals(normalizedDisplay)) {
+                return candidate;
+            }
+            if (displayName.contains(normalizedDisplay) || normalizedDisplay.contains(displayName)) {
+                if (fuzzyMatch == null) {
+                    fuzzyMatch = candidate;
+                } else if (fuzzyMatch != candidate) {
+                    fuzzyAmbiguous = true;
+                }
+            }
+        }
+        return fuzzyAmbiguous ? null : fuzzyMatch;
+    }
+
+    private static Block resolveById(String normalized) {
+        try {
+            String candidateId = normalized.contains(":") ? normalized : "minecraft:" + normalized;
+            ResourceLocation id = ResourceLocation.tryParse(candidateId);
+            if (id == null) {
+                return null;
+            }
+            return BuiltInRegistries.BLOCK.getOptional(id).orElse(null);
+        } catch (RuntimeException ignored) {
+            return null;
+        }
+    }
+
+    private static String getDisplayName(Block block) {
+        ItemStack stack = new ItemStack(block);
+        return stack.isEmpty() ? "" : stack.getHoverName().getString();
+    }
+
+    private static String normalizeDisplayLookup(String raw) {
+        return (raw == null ? "" : raw.trim().toLowerCase(Locale.ROOT))
+                .replace(" ", "")
+                .replace("_", "")
+                .replace("-", "")
+                .replace(":", "");
+    }
+
+    private static final class BlockUtils {
+        private BlockUtils() {
+        }
+
+        private static String blockToString(Block block) {
+            ResourceLocation id = BuiltInRegistries.BLOCK.getKey(block);
+            if (id == null) {
+                return "";
+            }
+            return "minecraft".equals(id.getNamespace()) ? id.getPath() : id.toString();
+        }
     }
 }

@@ -19,25 +19,26 @@ package com.zszl.zszlScriptMod.shadowbaritone.api.command.datatypes;
 
 import com.zszl.zszlScriptMod.shadowbaritone.api.command.exception.CommandException;
 import com.zszl.zszlScriptMod.shadowbaritone.api.command.helpers.TabCompleteHelper;
-import net.minecraft.util.EnumFacing;
+import net.minecraft.core.Direction;
 
 import java.util.Locale;
 import java.util.stream.Stream;
 
-public enum ForAxis implements IDatatypeFor<EnumFacing.Axis> {
+public enum ForAxis implements IDatatypeFor<Direction.Axis> {
     INSTANCE;
 
     @Override
-    public EnumFacing.Axis get(IDatatypeContext ctx) throws CommandException {
-        return EnumFacing.Axis.valueOf(ctx.getConsumer().getString().toUpperCase(Locale.US));
+    public Direction.Axis get(IDatatypeContext ctx) throws CommandException {
+        return Direction.Axis.valueOf(ctx.getConsumer().getString().toUpperCase(Locale.US));
     }
 
     @Override
     public Stream<String> tabComplete(IDatatypeContext ctx) throws CommandException {
         return new TabCompleteHelper()
-                .append(Stream.of(EnumFacing.Axis.values())
-                        .map(EnumFacing.Axis::getName).map(String::toLowerCase))
+                .append(Stream.of(Direction.Axis.values())
+                        .map(Direction.Axis::getName).map(String::toLowerCase))
                 .filterPrefix(ctx.getConsumer().getString())
                 .stream();
     }
 }
+

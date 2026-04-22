@@ -86,16 +86,16 @@ public final class ActionVariableRegistry {
             return variableName;
         }
 
-        public List<VariableSource> getSources() {
-            return new ArrayList<>(sources);
-        }
-
         public String getScopeKey() {
             return extractScopeKey(variableName);
         }
 
         public String getBaseVariableName() {
             return extractBaseName(variableName);
+        }
+
+        public List<VariableSource> getSources() {
+            return new ArrayList<>(sources);
         }
 
         public int getCustomSourceCount() {
@@ -188,6 +188,74 @@ public final class ActionVariableRegistry {
         return updated;
     }
 
+    public static int clearVariables(List<PathSequenceManager.PathSequence> sequences, List<String> variableNames) {
+        if (sequences == null || variableNames == null || variableNames.isEmpty()) {
+            return 0;
+        }
+        List<String> normalizedTargets = new ArrayList<>();
+        for (String variableName : variableNames) {
+            String normalized = safe(variableName).trim();
+            if (!normalized.isEmpty()) {
+                normalizedTargets.add(normalized);
+            }
+        }
+        if (normalizedTargets.isEmpty()) {
+            return 0;
+        }
+
+        int updated = 0;
+        for (PathSequenceManager.PathSequence sequence : sequences) {
+            if (sequence == null || !sequence.isCustom() || sequence.getSteps() == null) {
+                continue;
+            }
+            for (PathSequenceManager.PathStep step : sequence.getSteps()) {
+                if (step == null || step.getActions() == null) {
+                    continue;
+                }
+                for (PathSequenceManager.ActionData action : step.getActions()) {
+                    String paramKey = resolveVariableParamKey(action);
+                    if (paramKey == null || action.params == null || !action.params.has(paramKey)) {
+                        continue;
+                    }
+                    String current = safe(action.params.get(paramKey).getAsString()).trim();
+                    if (!normalizedTargets.contains(current)) {
+                        continue;
+                    }
+                    action.params.addProperty(paramKey, "");
+                    updated++;
+                }
+            }
+        }
+        return updated;
+    }
+
+    public static String resolveVariableParamKey(PathSequenceManager.ActionData action) {
+        return action == null ? null : resolveVariableParamKey(action.type);
+    }
+
+    public static String resolveVariableParamKey(String actionType) {
+        if (actionType == null) {
+            return null;
+        }
+        String type = actionType.trim().toLowerCase(Locale.ROOT);
+        if ("set_var".equals(type)) {
+            return "name";
+        }
+        if ("capture_nearby_entity".equals(type)
+                || "capture_gui_title".equals(type)
+                || "capture_inventory_slot".equals(type)
+                || "capture_hotbar".equals(type)
+                || "capture_entity_list".equals(type)
+                || "capture_packet_field".equals(type)
+                || "capture_gui_element".equals(type)
+                || "capture_scoreboard".equals(type)
+                || "capture_screen_region".equals(type)
+                || "capture_block_at".equals(type)) {
+            return "varName";
+        }
+        return null;
+    }
+
     public static String normalizeScopeKey(String rawScope) {
         String normalized = safe(rawScope).trim().toLowerCase(Locale.ROOT);
         if ("global".equals(normalized)) {
@@ -212,9 +280,9 @@ public final class ActionVariableRegistry {
         }
         int colonIndex = text.indexOf(':');
         if (colonIndex > 0) {
-            String scope = normalizeScopeKey(text.substring(0, colonIndex));
-            if (scope != null) {
-                return scope;
+            String scope = text.substring(0, colonIndex).trim();
+            if (isExplicitScopeToken(scope)) {
+                return normalizeScopeKey(scope);
             }
         }
         int dotIndex = text.indexOf('.');
@@ -263,17 +331,16 @@ public final class ActionVariableRegistry {
     }
 
     public static String scopeKeyToDisplay(String scopeKey) {
-        String normalized = normalizeScopeKey(scopeKey);
-        if ("global".equals(normalized)) {
-            return "全局变量(global)";
+        switch (normalizeScopeKey(scopeKey)) {
+            case "global":
+                return "全局变量(global)";
+            case "local":
+                return "局部变量(local)";
+            case "temp":
+                return "临时变量(temp)";
+            default:
+                return "序列变量(sequence)";
         }
-        if ("local".equals(normalized)) {
-            return "局部变量(local)";
-        }
-        if ("temp".equals(normalized)) {
-            return "临时变量(temp)";
-        }
-        return "序列变量(sequence)";
     }
 
     public static ScopedRuntimeVariables.Scope scopeKeyToRuntimeScope(String scopeKey) {
@@ -295,53 +362,12 @@ public final class ActionVariableRegistry {
             return false;
         }
         for (VariableSource source : entry.sources) {
-            if (source != null && source.getActionType() != null
-                    && source.getActionType().trim().toLowerCase(Locale.ROOT).startsWith("capture_")) {
+            if (source != null && source.actionType != null
+                    && source.actionType.toLowerCase(Locale.ROOT).startsWith("capture_")) {
                 return true;
             }
         }
         return false;
-    }
-
-    public static int clearVariables(List<PathSequenceManager.PathSequence> sequences, List<String> variableNames) {
-        if (sequences == null || variableNames == null || variableNames.isEmpty()) {
-            return 0;
-        }
-        List<String> normalizedTargets = new ArrayList<>();
-        for (String variableName : variableNames) {
-            String normalized = safe(variableName).trim();
-            if (!normalized.isEmpty()) {
-                normalizedTargets.add(normalized);
-            }
-        }
-        if (normalizedTargets.isEmpty()) {
-            return 0;
-        }
-
-        int updated = 0;
-        for (PathSequenceManager.PathSequence sequence : sequences) {
-            if (sequence == null || !sequence.isCustom() || sequence.getSteps() == null) {
-                continue;
-            }
-            for (PathSequenceManager.PathStep step : sequence.getSteps()) {
-                if (step == null || step.getActions() == null) {
-                    continue;
-                }
-                for (PathSequenceManager.ActionData action : step.getActions()) {
-                    String paramKey = resolveVariableParamKey(action);
-                    if (paramKey == null || action.params == null || !action.params.has(paramKey)) {
-                        continue;
-                    }
-                    String current = safe(action.params.get(paramKey).getAsString()).trim();
-                    if (!normalizedTargets.contains(current)) {
-                        continue;
-                    }
-                    action.params.addProperty(paramKey, "");
-                    updated++;
-                }
-            }
-        }
-        return updated;
     }
 
     public static List<String> collectProducedVariableNames(VariableSource source) {
@@ -425,53 +451,32 @@ public final class ActionVariableRegistry {
         return new ArrayList<>(names);
     }
 
-    public static String resolveVariableParamKey(PathSequenceManager.ActionData action) {
-        if (action == null || action.type == null) {
-            return null;
-        }
-        String type = action.type.trim().toLowerCase(Locale.ROOT);
-        if ("set_var".equals(type)) {
-            return "name";
-        }
-        if ("capture_nearby_entity".equals(type)
-                || "capture_gui_title".equals(type)
-                || "capture_inventory_slot".equals(type)
-                || "capture_hotbar".equals(type)
-                || "capture_entity_list".equals(type)
-                || "capture_packet_field".equals(type)
-                || "capture_gui_element".equals(type)
-                || "capture_scoreboard".equals(type)
-                || "capture_screen_region".equals(type)
-                || "capture_block_at".equals(type)) {
-            return "varName";
-        }
-        return null;
-    }
-
-    private static String safe(String value) {
-        return value == null ? "" : value;
-    }
-
     private static void addCapturedStackVariables(Set<String> names, String prefix) {
-        addSuffixes(names, prefix, "_found", "_name", "_count", "_registry", "_damage", "_has_nbt", "_nbt");
+        addSuffixes(names, prefix,
+                "_found", "_name", "_count", "_registry", "_nbt");
     }
 
     private static void addSuffixes(Set<String> names, String prefix, String... suffixes) {
-        if (names == null || suffixes == null || prefix == null || prefix.trim().isEmpty()) {
+        if (names == null || prefix == null || prefix.trim().isEmpty() || suffixes == null) {
             return;
         }
         for (String suffix : suffixes) {
-            names.add(prefix + safe(suffix));
+            if (suffix == null || suffix.isEmpty()) {
+                names.add(prefix);
+            } else {
+                names.add(prefix + suffix);
+            }
         }
     }
 
     private static boolean isExplicitScopeToken(String token) {
         String normalized = safe(token).trim().toLowerCase(Locale.ROOT);
-        return "global".equals(normalized)
-                || "sequence".equals(normalized)
-                || "seq".equals(normalized)
-                || "local".equals(normalized)
-                || "temp".equals(normalized)
-                || "tmp".equals(normalized);
+        return "global".equals(normalized) || "sequence".equals(normalized) || "seq".equals(normalized)
+                || "local".equals(normalized) || "temp".equals(normalized) || "tmp".equals(normalized);
+    }
+
+    private static String safe(String value) {
+        return value == null ? "" : value;
     }
 }
+

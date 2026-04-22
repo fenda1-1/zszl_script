@@ -5,14 +5,14 @@ import com.zszl.zszlScriptMod.gui.components.GuiTheme;
 import com.zszl.zszlScriptMod.gui.components.ThemedButton;
 import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
 import com.zszl.zszlScriptMod.gui.components.ToggleGuiButton;
-import com.zszl.zszlScriptMod.shadowbaritone.utils.HumanLikeMovementController;
-import net.minecraft.client.gui.Gui;
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiScreen;
-import net.minecraft.client.gui.GuiTextField;
-import net.minecraft.util.math.MathHelper;
-import org.lwjgl.input.Keyboard;
-import org.lwjgl.input.Mouse;
+import com.zszl.zszlScriptMod.baritone.compat.HumanLikeMovementController;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.Gui;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiTextField;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.util.math.MathHelper;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Keyboard;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Mouse;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -256,7 +256,7 @@ public class GuiHumanLikeMovementSettings extends ThemedGuiScreen {
 
         if (button.id == BTN_SAVE) {
             saveValues();
-            this.mc.displayGuiScreen(parentScreen);
+            this.mc.setScreen(parentScreen);
             return;
         }
 
@@ -280,7 +280,7 @@ public class GuiHumanLikeMovementSettings extends ThemedGuiScreen {
         if (button.id == BTN_CANCEL) {
             HumanLikeMovementConfig.load();
             HumanLikeMovementController.INSTANCE.reset();
-            this.mc.displayGuiScreen(parentScreen);
+            this.mc.setScreen(parentScreen);
         }
     }
 
@@ -449,8 +449,8 @@ public class GuiHumanLikeMovementSettings extends ThemedGuiScreen {
             return;
         }
 
-        int mouseX = Mouse.getEventX() * this.width / this.mc.displayWidth;
-        int mouseY = this.height - Mouse.getEventY() * this.height / this.mc.displayHeight - 1;
+        int mouseX = Mouse.getEventX() * this.width / this.mc.getWindow().getWidth();
+        int mouseY = this.height - Mouse.getEventY() * this.height / this.mc.getWindow().getHeight() - 1;
         if (mouseX >= this.contentViewportX - 4 && mouseX <= this.contentViewportX + this.contentViewportW + 10
                 && mouseY >= this.contentViewportY - 4 && mouseY <= this.contentViewportY + this.contentViewportH + 4) {
             if (wheel < 0) {
@@ -564,3 +564,9 @@ public class GuiHumanLikeMovementSettings extends ThemedGuiScreen {
         }
     }
 }
+
+
+
+
+
+

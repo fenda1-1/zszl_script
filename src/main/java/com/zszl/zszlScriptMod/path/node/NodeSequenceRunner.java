@@ -13,7 +13,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.function.Consumer;
-import net.minecraft.client.entity.EntityPlayerSP;
+import net.minecraft.client.player.LocalPlayer;
 
 public class NodeSequenceRunner {
 
@@ -64,7 +64,7 @@ public class NodeSequenceRunner {
         return context.isCompleted() || context.hasError();
     }
 
-    public boolean run(EntityPlayerSP player) {
+    public boolean run(LocalPlayer player) {
         List<String> stack = RUN_CALL_STACK.get();
         boolean isRootCall = false;
         if (stack == null) {
@@ -109,7 +109,7 @@ public class NodeSequenceRunner {
         }
     }
 
-    public void tick(EntityPlayerSP player) {
+    public void tick(LocalPlayer player) {
         if (isFinished() || context.isPaused()) {
             return;
         }
@@ -175,7 +175,7 @@ public class NodeSequenceRunner {
         }
     }
 
-    private void executeNode(EntityPlayerSP player, NodeNode currentNode) {
+    private void executeNode(LocalPlayer player, NodeNode currentNode) {
         String type = currentNode.getNormalizedType();
 
         if (NodeNode.TYPE_START.equals(type) || NodeNode.TYPE_TRIGGER.equals(type)) {
@@ -234,7 +234,7 @@ public class NodeSequenceRunner {
         fail("不支持的节点类型: " + currentNode.getType());
     }
 
-    private void handleRunSequenceNode(EntityPlayerSP player, NodeNode node) {
+    private void handleRunSequenceNode(LocalPlayer player, NodeNode node) {
         JsonObject data = safeData(node);
         String graphName = readString(data, "sequenceName", "graphName", "target");
         if (graphName.isEmpty()) {
@@ -353,7 +353,7 @@ public class NodeSequenceRunner {
         jumpToPreferredPort(node, PORT_FALSE, PORT_NEXT);
     }
 
-    private void handleParallel(EntityPlayerSP player, NodeNode node) {
+    private void handleParallel(LocalPlayer player, NodeNode node) {
         JsonObject data = safeData(node);
         JsonObject branches = readObject(data, "branches");
         int started = 0;
@@ -503,7 +503,7 @@ public class NodeSequenceRunner {
         }
     }
 
-    private void handleAction(EntityPlayerSP player, NodeNode node) {
+    private void handleAction(LocalPlayer player, NodeNode node) {
         JsonObject data = safeData(node);
         String actionType = readString(data, "actionType", "type", "action");
         if (actionType.isEmpty()) {
@@ -512,7 +512,7 @@ public class NodeSequenceRunner {
         }
 
         JsonObject params = readObject(data, "params");
-        Consumer<EntityPlayerSP> action = PathSequenceManager.parseAction(actionType, params);
+        Consumer<LocalPlayer> action = PathSequenceManager.parseAction(actionType, params);
         if (action == null) {
             handleNodeFailure(node, "动作节点解析失败", null);
             return;
@@ -532,8 +532,8 @@ public class NodeSequenceRunner {
         }
     }
 
-    private boolean handleAsyncAction(EntityPlayerSP player, NodeNode node, String actionType,
-            Consumer<EntityPlayerSP> action) {
+    private boolean handleAsyncAction(LocalPlayer player, NodeNode node, String actionType,
+            Consumer<LocalPlayer> action) {
         String normalized = normalize(actionType);
         if (!"transferitemstowarehouse".equals(normalized)
                 && !"move_inventory_items_to_chest_slots".equals(normalized)
@@ -625,7 +625,7 @@ public class NodeSequenceRunner {
         }
     }
 
-    private void handleWaitUntil(EntityPlayerSP player, NodeNode node) {
+    private void handleWaitUntil(LocalPlayer player, NodeNode node) {
         JsonObject data = safeData(node);
         long now = System.currentTimeMillis();
         if (!context.isWaiting()) {
@@ -1208,3 +1208,5 @@ public class NodeSequenceRunner {
         }
     }
 }
+
+
