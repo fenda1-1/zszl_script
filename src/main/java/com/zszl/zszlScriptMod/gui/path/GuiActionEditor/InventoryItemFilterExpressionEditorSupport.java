@@ -77,7 +77,7 @@ final class InventoryItemFilterExpressionEditorSupport {
     }
 
     static void updateControlLayout(GuiActionEditor editor) {
-        if (!editor.isConditionInventoryActionSelected() || editor.inventoryItemFilterExpressionToolbarBaseY < 0) {
+        if (!editor.supportsInventoryItemFilterExpressionEditor() || editor.inventoryItemFilterExpressionToolbarBaseY < 0) {
             return;
         }
         int x = editor.getParamContentX();
@@ -119,7 +119,7 @@ final class InventoryItemFilterExpressionEditorSupport {
     }
 
     static int getCustomBottomBaseY(GuiActionEditor editor) {
-        if (!editor.isConditionInventoryActionSelected() || editor.inventoryItemFilterExpressionCardListBaseY < 0) {
+        if (!editor.supportsInventoryItemFilterExpressionEditor() || editor.inventoryItemFilterExpressionCardListBaseY < 0) {
             return 0;
         }
         return editor.inventoryItemFilterExpressionCardListBaseY + GuiActionEditor.BOOLEAN_EXPRESSION_CARD_LIST_HEIGHT + 8;
@@ -127,7 +127,7 @@ final class InventoryItemFilterExpressionEditorSupport {
 
     static void drawCustomSection(GuiActionEditor editor, int mouseX, int mouseY) {
         editor.inventoryItemFilterExpressionCardRegions.clear();
-        if (!editor.isConditionInventoryActionSelected() || editor.inventoryItemFilterExpressionCardListBaseY < 0) {
+        if (!editor.supportsInventoryItemFilterExpressionEditor() || editor.inventoryItemFilterExpressionCardListBaseY < 0) {
             return;
         }
 
@@ -269,7 +269,7 @@ final class InventoryItemFilterExpressionEditorSupport {
     }
 
     static boolean handleCustomClick(GuiActionEditor editor, int mouseX, int mouseY) {
-        if (!editor.isConditionInventoryActionSelected() || editor.inventoryItemFilterExpressionCardListBaseY < 0) {
+        if (!editor.supportsInventoryItemFilterExpressionEditor() || editor.inventoryItemFilterExpressionCardListBaseY < 0) {
             return false;
         }
         int x = editor.getParamContentX();
@@ -292,7 +292,7 @@ final class InventoryItemFilterExpressionEditorSupport {
 
     static boolean handleCustomWheel(GuiActionEditor editor, int mouseX, int mouseY, int dWheel) {
         List<String> expressions = getExpressionList(editor);
-        if (!editor.isConditionInventoryActionSelected() || expressions.isEmpty() || dWheel == 0) {
+        if (!editor.supportsInventoryItemFilterExpressionEditor() || expressions.isEmpty() || dWheel == 0) {
             return false;
         }
         int x = editor.getParamContentX();
@@ -325,6 +325,7 @@ final class InventoryItemFilterExpressionEditorSupport {
         target.remove("requiredNbtTags");
         target.remove("requiredNbtTagsText");
         target.remove("requiredNbtTagsMode");
+        target.remove("moveChestRules");
     }
 
     private static String buildLegacyCompatibleExpression(JsonObject params) {

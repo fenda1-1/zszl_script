@@ -700,10 +700,8 @@ public class PathSequenceManager {
                     case "move_inventory_items_to_chest_slots":
                         int chestSlotCount = countIntListParam(params, "chestSlots", "chestSlotsText");
                         int inventorySlotCount = countIntListParam(params, "inventorySlots", "inventorySlotsText");
-                        int nbtTagCount = countStringListParam(params, "requiredNbtTags", "requiredNbtTagsText");
-                        String nbtTagMode = params.has("requiredNbtTagsMode")
-                                ? params.get("requiredNbtTagsMode").getAsString()
-                                : "CONTAINS";
+                        int expressionCount = InventoryItemFilterExpressionEngine.readExpressions(params).size();
+                        int legacyRuleCount = ItemFilterHandler.readMoveChestFilterRules(params).size();
                         int moveChestDelayTicks = params.has("delayTicks")
                                 ? Math.max(0, params.get("delayTicks").getAsInt())
                                 : 2;
@@ -720,11 +718,10 @@ public class PathSequenceManager {
                                 + "格 -> "
                                 + targetLabel
                                 + targetSlotCount
-                                + "格 / NBT标签"
-                                + nbtTagCount
-                                + "项("
-                                + ("NOT_CONTAINS".equalsIgnoreCase(nbtTagMode) ? "不包含" : "包含")
-                                + ")"
+                                + "格 / 过滤"
+                                + (expressionCount > 0
+                                        ? ("表达式" + expressionCount + "条")
+                                        : ("旧规则" + legacyRuleCount + "条"))
                                 + " / 延迟"
                                 + moveChestDelayTicks
                                 + " tick";

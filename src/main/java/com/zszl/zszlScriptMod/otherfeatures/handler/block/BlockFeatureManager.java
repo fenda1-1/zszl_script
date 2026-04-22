@@ -192,10 +192,28 @@ public final class BlockFeatureManager {
 
     @SubscribeEvent
     public void onClientTick(TickEvent.ClientTickEvent event) {
-        if (event == null || event.phase != TickEvent.Phase.END) {
+        if (event == null) {
             return;
         }
-        runClientTick(Minecraft.getInstance());
+        Minecraft mc = Minecraft.getInstance();
+        if (event.phase == TickEvent.Phase.START) {
+            runPreClientTick(mc);
+            return;
+        }
+        if (event.phase == TickEvent.Phase.END) {
+            runClientTick(mc);
+        }
+    }
+
+    private void runPreClientTick(Minecraft mc) {
+        if (mc == null || mc.player == null || mc.level == null || mc.gameMode == null) {
+            return;
+        }
+        if (mc.player.isDeadOrDying() || mc.player.getHealth() <= 0.0F) {
+            return;
+        }
+        handleFastBreak(mc);
+        handleFastPlace(mc);
     }
 
     private void runClientTick(Minecraft mc) {
@@ -211,8 +229,6 @@ public final class BlockFeatureManager {
         tickCooldowns();
         handleBlockSwapLock(mc.player);
         handleAutoTool(mc);
-        handleFastBreak(mc);
-        handleFastPlace(mc);
         handlePlaceAssist(mc);
         handleAutoLight(mc);
         handleBlockRefill(mc);
@@ -403,8 +419,7 @@ public final class BlockFeatureManager {
         if (!isEnabled("fast_place")
                 || mc.screen != null
                 || mc.player == null
-                || !isHoldingPlaceableBlock(mc.player)
-                || !mc.options.keyUse.isDown()) {
+                || !isHoldingPlaceableBlock(mc.player)) {
             return;
         }
         Field field = resolveRightClickDelayField();
