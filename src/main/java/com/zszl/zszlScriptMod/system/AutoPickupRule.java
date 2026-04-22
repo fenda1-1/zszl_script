@@ -10,6 +10,9 @@ import java.util.List;
 public class AutoPickupRule {
     public static final double DEFAULT_TARGET_REACH_DISTANCE = 0.5D;
     public static final int DEFAULT_MAX_PICKUP_ATTEMPTS = 3;
+    public static final int INVENTORY_SLOT_COUNT = 36;
+    public static final int INVENTORY_SLOT_COLUMNS = 9;
+    public static final int INVENTORY_SLOT_ROWS = 4;
 
     public static class ItemMatchEntry {
         public String keyword;
@@ -73,6 +76,7 @@ public class AutoPickupRule {
     public List<ItemMatchEntry> itemWhitelistEntries;
     public List<ItemMatchEntry> itemBlacklistEntries;
     public List<PickupActionEntry> pickupActionEntries;
+    public List<Integer> inventoryDetectionSlots;
     public String postPickupSequence; // 拾取完毕后执行的序列名称
     public int postPickupDelaySeconds; // 拾取完毕后的延迟时间（秒）
     public boolean stopOnExit; // 离开区域后是否停止后续序列
@@ -99,6 +103,7 @@ public class AutoPickupRule {
         this.itemWhitelistEntries = new ArrayList<>();
         this.itemBlacklistEntries = new ArrayList<>();
         this.pickupActionEntries = new ArrayList<>();
+        this.inventoryDetectionSlots = new ArrayList<>();
         this.postPickupSequence = "";
         this.postPickupDelaySeconds = 10;
         this.stopOnExit = true;

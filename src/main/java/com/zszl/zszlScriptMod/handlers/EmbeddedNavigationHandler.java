@@ -104,7 +104,7 @@ public class EmbeddedNavigationHandler {
         }
 
         boolean executed = builtinRoute
-                ? executeBuiltinNavigationCommand(rawCommand, effectiveOwner, normalizedReason)
+                ? executeBuiltinNavigationCommand(rawCommand, bypassGotoThrottle, effectiveOwner, normalizedReason)
                 : InternalBaritoneBridge.executeRawChatLikeCommand(rawCommand);
         logBaritoneDebug(String.format(
                 "[dispatch][%s] route=%s command=%s bypassGotoThrottle=%s throttled=false executed=%s reason=%s",
@@ -121,7 +121,8 @@ public class EmbeddedNavigationHandler {
         rememberCommand(rawCommand, effectiveOwner, normalizedReason);
     }
 
-    private boolean executeBuiltinNavigationCommand(String rawCommand, NavigationOwner owner, String reason) {
+    private boolean executeBuiltinNavigationCommand(String rawCommand, boolean bypassGotoThrottle,
+            NavigationOwner owner, String reason) {
         String normalized = normalizeCommand(rawCommand);
 
         try {
@@ -134,7 +135,7 @@ public class EmbeddedNavigationHandler {
             }
 
             if (normalized.startsWith("!goto ") || normalized.startsWith(".goto ")) {
-                return executeBuiltinGotoCommand(normalized, owner, reason);
+                return executeBuiltinGotoCommand(normalized, bypassGotoThrottle, owner, reason);
             }
         } catch (Throwable t) {
             logBaritoneDebug(String.format("[builtin][%s] command=%s failed: %s",
@@ -147,7 +148,8 @@ public class EmbeddedNavigationHandler {
         return false;
     }
 
-    private boolean executeBuiltinGotoCommand(String normalizedCommand, NavigationOwner owner, String reason) {
+    private boolean executeBuiltinGotoCommand(String normalizedCommand, boolean forceRestart, NavigationOwner owner,
+            String reason) {
         String[] parts = normalizedCommand.split("\\s+");
         if (parts.length == 0) {
             return false;
@@ -157,13 +159,13 @@ public class EmbeddedNavigationHandler {
             if (parts.length == 3) {
                 double x = Double.parseDouble(parts[1]);
                 double z = Double.parseDouble(parts[2]);
-                return executeBuiltinGoto(x, Double.NaN, z, owner, reason);
+                return executeBuiltinGoto(x, Double.NaN, z, forceRestart, owner, reason);
             }
             if (parts.length == 4) {
                 double x = Double.parseDouble(parts[1]);
                 double y = Double.parseDouble(parts[2]);
                 double z = Double.parseDouble(parts[3]);
-                return executeBuiltinGoto(x, y, z, owner, reason);
+                return executeBuiltinGoto(x, y, z, forceRestart, owner, reason);
             }
             return false;
         }
@@ -172,13 +174,13 @@ public class EmbeddedNavigationHandler {
             if (parts.length == 3) {
                 double x = Double.parseDouble(parts[1]);
                 double z = Double.parseDouble(parts[2]);
-                return executeBuiltinGoto(x, Double.NaN, z, owner, reason);
+                return executeBuiltinGoto(x, Double.NaN, z, forceRestart, owner, reason);
             }
             if (parts.length == 4) {
                 double x = Double.parseDouble(parts[1]);
                 double z = Double.parseDouble(parts[2]);
                 double y = Double.parseDouble(parts[3]);
-                return executeBuiltinGoto(x, y, z, owner, reason);
+                return executeBuiltinGoto(x, y, z, forceRestart, owner, reason);
             }
             return false;
         }
@@ -186,16 +188,20 @@ public class EmbeddedNavigationHandler {
         return false;
     }
 
-    private boolean executeBuiltinGoto(double x, double y, double z, NavigationOwner owner, String reason) {
+    private boolean executeBuiltinGoto(double x, double y, double z, boolean forceRestart, NavigationOwner owner,
+            String reason) {
         Goal rawGoal = Double.isNaN(y)
                 ? new GoalXZ(Mth.floor(x), Mth.floor(z))
                 : new GoalBlock(Mth.floor(x), Mth.floor(y), Mth.floor(z));
-        return executeBuiltinGoto(rawGoal, owner, reason);
+        return executeBuiltinGoto(rawGoal, forceRestart, owner, reason);
     }
 
-    private boolean executeBuiltinGoto(Goal rawGoal, NavigationOwner owner, String reason) {
+    private boolean executeBuiltinGoto(Goal rawGoal, boolean forceRestart, NavigationOwner owner, String reason) {
         IBaritone baritone = getPrimaryBaritone();
         resumeIfPaused(baritone, owner, reason);
+        if (forceRestart && baritone.getPathingBehavior() != null) {
+            baritone.getPathingBehavior().cancelEverything();
+        }
         Goal goal = GoalTargetNormalizer.normalize(baritone, rawGoal);
         if (goal != rawGoal) {
             logBaritoneDebug(String.format("[goto][%s] normalized goal from %s to %s reason=%s",

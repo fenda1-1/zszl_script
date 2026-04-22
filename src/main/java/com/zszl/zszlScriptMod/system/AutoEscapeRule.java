@@ -26,6 +26,7 @@ public class AutoEscapeRule {
     public boolean restartEnabled;
     public int restartDelaySeconds;
     public String restartSequenceName;
+    public boolean ignoreTargetsUntilRestartComplete;
 
     // 运行时状态（不持久化）
     public transient boolean triggerLatched = false;
@@ -52,6 +53,7 @@ public class AutoEscapeRule {
         this.restartEnabled = false;
         this.restartDelaySeconds = DEFAULT_RESTART_DELAY_SECONDS;
         this.restartSequenceName = "";
+        this.ignoreTargetsUntilRestartComplete = false;
     }
 
     public void ensureLists() {
@@ -105,6 +107,7 @@ public class AutoEscapeRule {
         copy.restartEnabled = this.restartEnabled;
         copy.restartDelaySeconds = this.restartDelaySeconds;
         copy.restartSequenceName = this.restartSequenceName;
+        copy.ignoreTargetsUntilRestartComplete = this.ignoreTargetsUntilRestartComplete;
         copy.triggerLatched = this.triggerLatched;
         copy.normalize();
         return copy;

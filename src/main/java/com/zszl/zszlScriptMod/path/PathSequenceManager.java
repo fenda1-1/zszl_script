@@ -2942,7 +2942,7 @@ public class PathSequenceManager {
 
         if (!Double.isNaN(firstTarget[0])) {
             EmbeddedNavigationHandler.INSTANCE.startGoto(EmbeddedNavigationHandler.NavigationOwner.PATH_SEQUENCE,
-                    firstTarget[0], firstTarget[1], firstTarget[2], false, "路径序列开始时前往首个步骤目标");
+                    firstTarget[0], firstTarget[1], firstTarget[2], true, "路径序列开始时前往首个步骤目标");
         } else if (firstStep != null && firstStep.getActions() != null && !firstStep.getActions().isEmpty()) {
             zszlScriptMod.LOGGER.info("[路径序列] 首步无 goto，按纯动作步启动 {}", buildSequenceStartDiagnostics(sequence));
         } else {

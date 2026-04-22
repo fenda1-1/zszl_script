@@ -21,10 +21,15 @@ import com.zszl.zszlScriptMod.shadowbaritone.api.cache.IWorldData;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.util.Mth;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.LiquidBlock;
 import net.minecraft.world.level.block.SlabBlock;
+import net.minecraft.world.level.block.StairBlock;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
@@ -63,6 +68,15 @@ public interface IPlayerContext {
     default BetterBlockPos playerFeet() {
         // TODO find a better way to deal with soul sand!!!!!
         BetterBlockPos feet = new BetterBlockPos(player().position().x, player().position().y + 0.1251, player().position().z);
+        BetterBlockPos liquidFeet = resolveLiquidFootprintPos();
+        if (liquidFeet != null) {
+            feet = liquidFeet;
+        } else {
+            BetterBlockPos footprintFeet = resolveFootprintStandingPos(feet);
+            if (footprintFeet != null) {
+                feet = footprintFeet;
+            }
+        }
 
         // sometimes when calling this from another thread or while world is null, it'll throw a NullPointerException
         // that causes the game to immediately crash
@@ -79,6 +93,177 @@ public interface IPlayerContext {
         } catch (NullPointerException ignored) {}
 
         return feet;
+    }
+
+    default BetterBlockPos resolveLiquidFootprintPos() {
+        if (player() == null || world() == null) {
+            return null;
+        }
+        AABB boundingBox = player().getBoundingBox();
+        if (boundingBox == null) {
+            return null;
+        }
+
+        double epsilon = 1.0E-4D;
+        double minX = boundingBox.minX + epsilon;
+        double maxX = boundingBox.maxX - epsilon;
+        double minZ = boundingBox.minZ + epsilon;
+        double maxZ = boundingBox.maxZ - epsilon;
+        if (maxX < minX) {
+            minX = maxX = player().position().x;
+        }
+        if (maxZ < minZ) {
+            minZ = maxZ = player().position().z;
+        }
+
+        int minBlockX = Mth.floor(minX);
+        int maxBlockX = Mth.floor(maxX);
+        int minBlockZ = Mth.floor(minZ);
+        int maxBlockZ = Mth.floor(maxZ);
+        int liquidY = Mth.floor(boundingBox.minY + epsilon);
+
+        BetterBlockPos best = null;
+        double bestOverlap = -1.0D;
+        double bestDistanceSq = Double.POSITIVE_INFINITY;
+
+        for (int x = minBlockX; x <= maxBlockX; x++) {
+            for (int z = minBlockZ; z <= maxBlockZ; z++) {
+                BetterBlockPos candidate = new BetterBlockPos(x, liquidY, z);
+                if (!isLiquidFootCandidate(candidate)) {
+                    continue;
+                }
+
+                double overlapX = overlapLength(minX, maxX, x, x + 1.0D);
+                double overlapZ = overlapLength(minZ, maxZ, z, z + 1.0D);
+                double overlapArea = overlapX * overlapZ;
+                double dx = (candidate.x + 0.5D) - player().position().x;
+                double dz = (candidate.z + 0.5D) - player().position().z;
+                double distanceSq = dx * dx + dz * dz;
+
+                if (best == null
+                        || overlapArea > bestOverlap + 1.0E-6D
+                        || (Math.abs(overlapArea - bestOverlap) <= 1.0E-6D
+                                && distanceSq < bestDistanceSq - 1.0E-6D)) {
+                    best = candidate;
+                    bestOverlap = overlapArea;
+                    bestDistanceSq = distanceSq;
+                }
+            }
+        }
+
+        return best;
+    }
+
+    default BetterBlockPos resolveFootprintStandingPos(BetterBlockPos defaultFeet) {
+        if (player() == null) {
+            return defaultFeet;
+        }
+        AABB boundingBox = player().getBoundingBox();
+        if (boundingBox == null) {
+            return defaultFeet;
+        }
+
+        double epsilon = 1.0E-4D;
+        double minX = boundingBox.minX + epsilon;
+        double maxX = boundingBox.maxX - epsilon;
+        double minZ = boundingBox.minZ + epsilon;
+        double maxZ = boundingBox.maxZ - epsilon;
+        if (maxX < minX) {
+            minX = maxX = player().position().x;
+        }
+        if (maxZ < minZ) {
+            minZ = maxZ = player().position().z;
+        }
+
+        int minBlockX = Mth.floor(minX);
+        int maxBlockX = Mth.floor(maxX);
+        int minBlockZ = Mth.floor(minZ);
+        int maxBlockZ = Mth.floor(maxZ);
+
+        BetterBlockPos best = null;
+        double bestOverlap = -1.0D;
+        double bestDistanceSq = Double.POSITIVE_INFINITY;
+        boolean bestMatchesDefault = false;
+
+        for (int x = minBlockX; x <= maxBlockX; x++) {
+            for (int z = minBlockZ; z <= maxBlockZ; z++) {
+                BetterBlockPos candidate = adjustStandingCandidate(new BetterBlockPos(x, defaultFeet.y, z));
+                if (!isUsableStandingCandidate(candidate)) {
+                    continue;
+                }
+
+                double overlapX = overlapLength(minX, maxX, x, x + 1.0D);
+                double overlapZ = overlapLength(minZ, maxZ, z, z + 1.0D);
+                double overlapArea = overlapX * overlapZ;
+                double dx = (candidate.x + 0.5D) - player().position().x;
+                double dz = (candidate.z + 0.5D) - player().position().z;
+                double distanceSq = dx * dx + dz * dz;
+                boolean matchesDefault = candidate.equals(defaultFeet);
+
+                if (best == null
+                        || overlapArea > bestOverlap + 1.0E-6D
+                        || (Math.abs(overlapArea - bestOverlap) <= 1.0E-6D
+                                && (matchesDefault && !bestMatchesDefault
+                                        || (matchesDefault == bestMatchesDefault
+                                                && distanceSq < bestDistanceSq - 1.0E-6D)))) {
+                    best = candidate;
+                    bestOverlap = overlapArea;
+                    bestDistanceSq = distanceSq;
+                    bestMatchesDefault = matchesDefault;
+                }
+            }
+        }
+
+        return best;
+    }
+
+    static double overlapLength(double minA, double maxA, double minB, double maxB) {
+        return Math.max(0.0D, Math.min(maxA, maxB) - Math.max(minA, minB));
+    }
+
+    default BetterBlockPos adjustStandingCandidate(BetterBlockPos candidate) {
+        if (candidate == null) {
+            return null;
+        }
+        try {
+            BlockState standingState = world().getBlockState(candidate);
+            if (standingState.getBlock() instanceof SlabBlock
+                    || standingState.getBlock() instanceof StairBlock) {
+                return candidate.above();
+            }
+        } catch (NullPointerException ignored) {
+        }
+        return candidate;
+    }
+
+    default boolean isUsableStandingCandidate(BetterBlockPos candidate) {
+        if (candidate == null) {
+            return false;
+        }
+        try {
+            BlockState feetState = world().getBlockState(candidate);
+            BlockState headState = world().getBlockState(candidate.above());
+            BlockState groundState = world().getBlockState(candidate.below());
+            boolean feetPassable = !feetState.blocksMotion();
+            boolean headPassable = !headState.blocksMotion();
+            boolean hasGround = groundState.blocksMotion()
+                    || groundState.getBlock() instanceof SlabBlock
+                    || groundState.getBlock() instanceof StairBlock;
+            return feetPassable && headPassable && hasGround;
+        } catch (NullPointerException ignored) {
+            return false;
+        }
+    }
+
+    default boolean isLiquidFootCandidate(BetterBlockPos candidate) {
+        if (candidate == null) {
+            return false;
+        }
+        try {
+            return world().getBlockState(candidate).getBlock() instanceof LiquidBlock;
+        } catch (NullPointerException ignored) {
+            return false;
+        }
     }
 
     default Vec3 playerFeetAsVec() {

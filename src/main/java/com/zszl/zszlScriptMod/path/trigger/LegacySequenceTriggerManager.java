@@ -30,6 +30,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.regex.Pattern;
 
 public final class LegacySequenceTriggerManager {
+    public static final String CATEGORY_UNGROUPED = "未分组";
 
     public static final String TRIGGER_GUI_OPEN = "gui_open";
     public static final String TRIGGER_GUI_CLOSE = "gui_close";
@@ -59,6 +60,7 @@ public final class LegacySequenceTriggerManager {
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final List<TriggerRule> RULES = new CopyOnWriteArrayList<>();
+    private static final List<String> CATEGORIES = new CopyOnWriteArrayList<>();
     private static final Map<String, Long> LAST_TRIGGER_TIMES = new ConcurrentHashMap<>();
     private static final Map<String, Integer> ENABLED_RULE_COUNT_BY_TRIGGER = new ConcurrentHashMap<>();
     private static final Map<String, String> LAST_DEBUG_EVENT_STATE = new ConcurrentHashMap<>();
@@ -67,6 +69,7 @@ public final class LegacySequenceTriggerManager {
 
     public static final class RuleEditModel {
         public String name = "";
+        public String category = CATEGORY_UNGROUPED;
         public boolean enabled = true;
         public String triggerType = TRIGGER_GUI_OPEN;
         public String contains = "";
@@ -78,11 +81,13 @@ public final class LegacySequenceTriggerManager {
     }
 
     private static final class ConfigRoot {
+        private List<String> categories = new ArrayList<>();
         private List<TriggerRule> rules = new ArrayList<>();
     }
 
     private static final class TriggerRule {
         private String name = "";
+        private String category = CATEGORY_UNGROUPED;
         private boolean enabled = true;
         private String triggerType = TRIGGER_GUI_OPEN;
         private String contains = "";
@@ -106,6 +111,7 @@ public final class LegacySequenceTriggerManager {
 
     public static synchronized void reloadRules() {
         RULES.clear();
+        CATEGORIES.clear();
         LAST_TRIGGER_TIMES.clear();
         ENABLED_RULE_COUNT_BY_TRIGGER.clear();
         LAST_DEBUG_EVENT_STATE.clear();
@@ -116,12 +122,19 @@ public final class LegacySequenceTriggerManager {
         try (Reader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
             ConfigRoot root = GSON.fromJson(reader, ConfigRoot.class);
             if (root == null || root.rules == null) {
+                ensureCategoriesSynced();
                 return;
+            }
+            if (root.categories != null) {
+                for (String category : root.categories) {
+                    CATEGORIES.add(normalizeCategory(category));
+                }
             }
             for (TriggerRule rule : root.rules) {
                 if (rule == null || isBlank(rule.sequenceName)) {
                     continue;
                 }
+                rule.category = normalizeCategory(rule.category);
                 rule.triggerType = normalizeTriggerType(rule.triggerType);
                 rule.cooldownMs = Math.max(0, rule.cooldownMs);
                 RULES.add(rule);
@@ -129,8 +142,10 @@ public final class LegacySequenceTriggerManager {
                     ENABLED_RULE_COUNT_BY_TRIGGER.merge(rule.triggerType, 1, Integer::sum);
                 }
             }
+            ensureCategoriesSynced();
         } catch (Exception e) {
             zszlScriptMod.LOGGER.error("[LegacyTrigger] 加载规则失败", e);
+            ensureCategoriesSynced();
         }
     }
 
@@ -143,6 +158,7 @@ public final class LegacySequenceTriggerManager {
             }
             RuleEditModel model = new RuleEditModel();
             model.name = safe(rule.name);
+            model.category = normalizeCategory(rule.category);
             model.enabled = rule.enabled;
             model.triggerType = safe(rule.triggerType);
             model.contains = safe(rule.contains);
@@ -157,9 +173,14 @@ public final class LegacySequenceTriggerManager {
     }
 
     public static synchronized void saveRuleModels(List<RuleEditModel> models) {
+        saveRuleModels(models, null);
+    }
+
+    public static synchronized void saveRuleModels(List<RuleEditModel> models, List<String> categories) {
         Path path = getConfigPath();
         ensureConfigExists(path);
         ConfigRoot root = new ConfigRoot();
+        root.categories = normalizeCategoryList(categories);
         root.rules = new ArrayList<>();
         if (models != null) {
             for (RuleEditModel model : models) {
@@ -168,6 +189,7 @@ public final class LegacySequenceTriggerManager {
                 }
                 TriggerRule rule = new TriggerRule();
                 rule.name = safe(model.name).trim();
+                rule.category = normalizeCategory(model.category);
                 rule.enabled = model.enabled;
                 rule.triggerType = normalizeTriggerType(model.triggerType);
                 rule.contains = safe(model.contains).trim();
@@ -177,6 +199,9 @@ public final class LegacySequenceTriggerManager {
                 rule.cooldownMs = Math.max(0, model.cooldownMs);
                 rule.note = safe(model.note).trim();
                 root.rules.add(rule);
+                if (!containsCategoryIgnoreCase(root.categories, rule.category)) {
+                    root.categories.add(rule.category);
+                }
             }
         }
         try (Writer writer = Files.newBufferedWriter(path, StandardCharsets.UTF_8)) {
@@ -185,6 +210,12 @@ public final class LegacySequenceTriggerManager {
             zszlScriptMod.LOGGER.error("[LegacyTrigger] 保存规则失败", e);
         }
         reloadRules();
+    }
+
+    public static synchronized List<String> getCategoriesSnapshot() {
+        initialize();
+        ensureCategoriesSynced();
+        return new ArrayList<>(CATEGORIES);
     }
 
     public static void triggerEvent(String triggerType, JsonObject eventData) {
@@ -271,6 +302,56 @@ public final class LegacySequenceTriggerManager {
 
     public static boolean isDebugEnabled() {
         return ModConfig.isDebugFlagEnabled(DebugModule.TRIGGER_RULES);
+    }
+
+    private static void ensureCategoriesSynced() {
+        LinkedHashMap<String, String> normalized = new LinkedHashMap<>();
+        for (String category : CATEGORIES) {
+            String safeCategory = normalizeCategory(category);
+            normalized.put(safeCategory.toLowerCase(Locale.ROOT), safeCategory);
+        }
+        for (TriggerRule rule : RULES) {
+            if (rule == null) {
+                continue;
+            }
+            String safeCategory = normalizeCategory(rule.category);
+            rule.category = safeCategory;
+            normalized.put(safeCategory.toLowerCase(Locale.ROOT), safeCategory);
+        }
+        if (normalized.isEmpty()) {
+            normalized.put(CATEGORY_UNGROUPED.toLowerCase(Locale.ROOT), CATEGORY_UNGROUPED);
+        }
+        CATEGORIES.clear();
+        CATEGORIES.addAll(normalized.values());
+    }
+
+    private static List<String> normalizeCategoryList(List<String> categories) {
+        LinkedHashMap<String, String> normalized = new LinkedHashMap<>();
+        if (categories != null) {
+            for (String category : categories) {
+                String safeCategory = normalizeCategory(category);
+                normalized.put(safeCategory.toLowerCase(Locale.ROOT), safeCategory);
+            }
+        }
+        if (!normalized.containsKey(CATEGORY_UNGROUPED.toLowerCase(Locale.ROOT))) {
+            normalized.put(CATEGORY_UNGROUPED.toLowerCase(Locale.ROOT), CATEGORY_UNGROUPED);
+        }
+        return new ArrayList<>(normalized.values());
+    }
+
+    private static boolean containsCategoryIgnoreCase(List<String> values, String target) {
+        String normalizedTarget = normalizeCategory(target);
+        for (String value : values) {
+            if (normalizeCategory(value).equalsIgnoreCase(normalizedTarget)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static String normalizeCategory(String category) {
+        String normalized = safe(category).trim();
+        return normalized.isEmpty() ? CATEGORY_UNGROUPED : normalized;
     }
 
     private static boolean matchesRule(TriggerRule rule, JsonObject eventData, String searchText) {

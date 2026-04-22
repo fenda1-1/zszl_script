@@ -1,5 +1,8 @@
 package com.zszl.zszlScriptMod;
 
+import com.google.gson.JsonObject;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraftforge.fml.common.gameevent.InputEvent;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Keyboard;
 import com.zszl.zszlScriptMod.compat.legacy.net.minecraftforge.client.event.GuiOpenEvent;
 import com.zszl.zszlScriptMod.config.ChatOptimizationConfig;
 import com.zszl.zszlScriptMod.config.ModConfig;
@@ -11,8 +14,10 @@ import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Random;
+import java.util.Set;
 
 public final class GlobalEventListener {
     public static final GlobalEventListener instance = new GlobalEventListener();
@@ -21,6 +26,7 @@ public final class GlobalEventListener {
     private static final Random RANDOM = new Random();
 
     private final PlayerIdleTriggerTracker playerIdleTriggerTracker = new PlayerIdleTriggerTracker();
+    private final Set<Integer> activeTriggerKeys = new HashSet<>();
     private int clientTickCounter = 0;
     private int timedMessageIndex = 0;
 
@@ -39,6 +45,7 @@ public final class GlobalEventListener {
             timedMessageIndex = 0;
             clientTickCounter = 0;
             playerIdleTriggerTracker.reset();
+            activeTriggerKeys.clear();
             return;
         }
 
@@ -90,6 +97,40 @@ public final class GlobalEventListener {
         }
 
         timedMessageTickCounter = 0;
+    }
+
+    @SubscribeEvent
+    public void onLegacyKeyInput(InputEvent.KeyInputEvent event) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null || mc.level == null) {
+            activeTriggerKeys.clear();
+            return;
+        }
+
+        int keyCode = Keyboard.getEventKey();
+        boolean pressed = Keyboard.getEventKeyState();
+        if (keyCode == Keyboard.KEY_NONE) {
+            return;
+        }
+
+        if (!pressed) {
+            activeTriggerKeys.remove(keyCode);
+            return;
+        }
+
+        if (!activeTriggerKeys.add(keyCode)) {
+            return;
+        }
+
+        if (!LegacySequenceTriggerManager.hasRulesForTrigger(LegacySequenceTriggerManager.TRIGGER_KEY_INPUT)) {
+            return;
+        }
+
+        JsonObject triggerData = new JsonObject();
+        triggerData.addProperty("keyCode", keyCode);
+        triggerData.addProperty("keyName", Keyboard.getKeyName(keyCode));
+        triggerData.addProperty("screen", mc.screen == null ? "" : mc.screen.getClass().getSimpleName());
+        LegacySequenceTriggerManager.triggerEvent(LegacySequenceTriggerManager.TRIGGER_KEY_INPUT, triggerData);
     }
 
     @SubscribeEvent

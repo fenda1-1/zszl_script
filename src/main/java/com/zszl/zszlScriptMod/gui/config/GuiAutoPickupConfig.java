@@ -66,6 +66,7 @@ public class GuiAutoPickupConfig extends AbstractThreePaneRuleManager<AutoPickup
     private GuiTextField radiusField;
     private GuiTextField reachDistanceField;
     private GuiTextField maxPickupAttemptsField;
+    private GuiTextField inventoryDetectionSlotsField;
     private GuiTextField delayField;
     private GuiTextField antiStuckTimeoutField;
 
@@ -226,6 +227,7 @@ public class GuiAutoPickupConfig extends AbstractThreePaneRuleManager<AutoPickup
         copy.itemWhitelistEntries = copyEntryList(source.itemWhitelistEntries, source.itemWhitelist);
         copy.itemBlacklistEntries = copyEntryList(source.itemBlacklistEntries, source.itemBlacklist);
         copy.pickupActionEntries = copyPickupActionEntryList(source.pickupActionEntries);
+        copy.inventoryDetectionSlots = copyInventoryDetectionSlots(source.inventoryDetectionSlots);
         syncLegacyKeywordLists(copy);
         copy.postPickupSequence = source.postPickupSequence;
         copy.postPickupDelaySeconds = source.postPickupDelaySeconds;
@@ -282,6 +284,7 @@ public class GuiAutoPickupConfig extends AbstractThreePaneRuleManager<AutoPickup
         setText(radiusField, formatDouble(rule.radius));
         setText(reachDistanceField, formatDouble(rule.targetReachDistance));
         setText(maxPickupAttemptsField, String.valueOf(Math.max(1, rule.maxPickupAttempts)));
+        setText(inventoryDetectionSlotsField, formatInventoryDetectionSlots(rule.inventoryDetectionSlots));
         setText(delayField, String.valueOf(Math.max(0, rule.postPickupDelaySeconds)));
         setText(antiStuckTimeoutField, String.valueOf(Math.max(1, rule.antiStuckTimeoutSeconds)));
 
@@ -329,6 +332,8 @@ public class GuiAutoPickupConfig extends AbstractThreePaneRuleManager<AutoPickup
         base.itemWhitelistEntries = normalizeEntryList(editorWhitelistEntries);
         base.itemBlacklistEntries = normalizeEntryList(editorBlacklistEntries);
         base.pickupActionEntries = normalizePickupActionEntryList(editorPickupActionEntries);
+        base.inventoryDetectionSlots = parseInventoryDetectionSlots(
+                inventoryDetectionSlotsField == null ? "" : inventoryDetectionSlotsField.getText());
         syncLegacyKeywordLists(base);
         base.postPickupSequence = safe(editorSequence).trim();
         base.postPickupDelaySeconds = Math.max(0, parseInt(delayField.getText(), base.postPickupDelaySeconds));
@@ -360,6 +365,7 @@ public class GuiAutoPickupConfig extends AbstractThreePaneRuleManager<AutoPickup
         target.itemWhitelistEntries = copyEntryList(source.itemWhitelistEntries, source.itemWhitelist);
         target.itemBlacklistEntries = copyEntryList(source.itemBlacklistEntries, source.itemBlacklist);
         target.pickupActionEntries = copyPickupActionEntryList(source.pickupActionEntries);
+        target.inventoryDetectionSlots = copyInventoryDetectionSlots(source.inventoryDetectionSlots);
         syncLegacyKeywordLists(target);
         target.postPickupSequence = source.postPickupSequence;
         target.postPickupDelaySeconds = source.postPickupDelaySeconds;
@@ -379,6 +385,7 @@ public class GuiAutoPickupConfig extends AbstractThreePaneRuleManager<AutoPickup
         radiusField = createField(3006);
         reachDistanceField = createField(3009);
         maxPickupAttemptsField = createField(3010);
+        inventoryDetectionSlotsField = createField(3011);
         delayField = createField(3007);
         antiStuckTimeoutField = createField(3008);
     }
@@ -458,7 +465,9 @@ public class GuiAutoPickupConfig extends AbstractThreePaneRuleManager<AutoPickup
         placeField(radiusField, 5, editorFieldX + halfWidth + 10, halfWidth);
         placeField(reachDistanceField, 6, editorFieldX, halfWidth);
         placeField(maxPickupAttemptsField, 6, editorFieldX + halfWidth + 10, halfWidth);
-        placeButton(btnGetCoords, 7, editorFieldX, fullFieldWidth, 20);
+        int slotFieldWidth = Math.max(120, fullFieldWidth - 110);
+        placeField(inventoryDetectionSlotsField, 7, editorFieldX, slotFieldWidth);
+        placeButton(btnGetCoords, 7, editorFieldX + slotFieldWidth + 6, fullFieldWidth - slotFieldWidth - 6, 20);
         placeButton(btnToggleAntiStuck, 8, editorFieldX, fullFieldWidth, 20);
         placeField(antiStuckTimeoutField, 9, editorFieldX, halfWidth);
         placeButton(btnSelectAntiStuckSequence, 9, editorFieldX + halfWidth + 10, halfWidth, 20);
@@ -519,7 +528,7 @@ public class GuiAutoPickupConfig extends AbstractThreePaneRuleManager<AutoPickup
             case 6:
                 return "到达距离 / 最大尝试次数";
             case 7:
-                return "快捷定位";
+                return "检测槽位 / 快捷定位";
             case 8:
                 return "防卡重启";
             case 9:
@@ -590,6 +599,7 @@ public class GuiAutoPickupConfig extends AbstractThreePaneRuleManager<AutoPickup
         fields.add(radiusField);
         fields.add(reachDistanceField);
         fields.add(maxPickupAttemptsField);
+        fields.add(inventoryDetectionSlotsField);
         fields.add(delayField);
         fields.add(antiStuckTimeoutField);
         return fields;
@@ -631,6 +641,7 @@ public class GuiAutoPickupConfig extends AbstractThreePaneRuleManager<AutoPickup
                                 + formatDouble(item.centerZ) + "  半径: " + formatDouble(item.radius)
                                 + "  到达: " + formatDouble(item.targetReachDistance)
                                 + "  尝试: " + Math.max(1, item.maxPickupAttempts)
+                                + "  槽位: " + formatInventoryDetectionSummary(item.inventoryDetectionSlots)
                                 + "  显示: " + (item.visualizeRange ? "开" : "关"),
                         width - 12),
                 x + 6, y + 31, 0xFFBDBDBD);
@@ -684,6 +695,13 @@ public class GuiAutoPickupConfig extends AbstractThreePaneRuleManager<AutoPickup
         }
         if (item.maxPickupAttempts < 1) {
             return "最大尝试次数不能小于 1";
+        }
+        if (item.inventoryDetectionSlots != null) {
+            for (Integer slot : item.inventoryDetectionSlots) {
+                if (slot == null || slot.intValue() < 0 || slot.intValue() >= AutoPickupRule.INVENTORY_SLOT_COUNT) {
+                    return "检测槽位必须在 0-35 之间";
+                }
+            }
         }
         if (item.postPickupDelaySeconds < 0) {
             return "延迟秒数不能小于 0";
@@ -1689,6 +1707,61 @@ public class GuiAutoPickupConfig extends AbstractThreePaneRuleManager<AutoPickup
         return copyPickupActionEntryList(source);
     }
 
+    private List<Integer> copyInventoryDetectionSlots(List<Integer> source) {
+        LinkedHashSet<Integer> normalized = new LinkedHashSet<>();
+        if (source != null) {
+            for (Integer slot : source) {
+                if (slot == null) {
+                    continue;
+                }
+                int index = slot.intValue();
+                if (index >= 0 && index < AutoPickupRule.INVENTORY_SLOT_COUNT) {
+                    normalized.add(index);
+                }
+            }
+        }
+        return new ArrayList<>(normalized);
+    }
+
+    private List<Integer> parseInventoryDetectionSlots(String text) {
+        LinkedHashSet<Integer> result = new LinkedHashSet<>();
+        String normalized = safe(text).replace('，', ',').replace(';', ',').replace('；', ',').trim();
+        if (normalized.isEmpty()) {
+            return new ArrayList<>();
+        }
+        for (String token : normalized.split(",")) {
+            String value = safe(token).trim();
+            if (value.isEmpty()) {
+                continue;
+            }
+            try {
+                int slot = Integer.parseInt(value);
+                if (slot >= 0 && slot < AutoPickupRule.INVENTORY_SLOT_COUNT) {
+                    result.add(slot);
+                }
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        return new ArrayList<>(result);
+    }
+
+    private String formatInventoryDetectionSlots(List<Integer> slots) {
+        List<Integer> normalized = copyInventoryDetectionSlots(slots);
+        if (normalized.isEmpty()) {
+            return "";
+        }
+        List<String> values = new ArrayList<>();
+        for (Integer slot : normalized) {
+            values.add(String.valueOf(slot));
+        }
+        return String.join(",", values);
+    }
+
+    private String formatInventoryDetectionSummary(List<Integer> slots) {
+        int count = copyInventoryDetectionSlots(slots).size();
+        return count <= 0 ? "全背包" : (count + "格");
+    }
+
     private AutoPickupRule.ItemMatchEntry normalizeEntry(AutoPickupRule.ItemMatchEntry source) {
         if (source == null) {
             return null;
@@ -1846,6 +1919,8 @@ public class GuiAutoPickupConfig extends AbstractThreePaneRuleManager<AutoPickup
         snapshot.radius = radiusField == null ? "" : safe(radiusField.getText());
         snapshot.reachDistance = reachDistanceField == null ? "" : safe(reachDistanceField.getText());
         snapshot.maxPickupAttempts = maxPickupAttemptsField == null ? "" : safe(maxPickupAttemptsField.getText());
+        snapshot.inventoryDetectionSlots = inventoryDetectionSlotsField == null ? ""
+                : safe(inventoryDetectionSlotsField.getText());
         snapshot.delay = delayField == null ? "" : safe(delayField.getText());
         snapshot.antiStuckTimeout = antiStuckTimeoutField == null ? "" : safe(antiStuckTimeoutField.getText());
         snapshot.sequence = safe(editorSequence);
@@ -1890,6 +1965,7 @@ public class GuiAutoPickupConfig extends AbstractThreePaneRuleManager<AutoPickup
         setText(radiusField, snapshot.radius);
         setText(reachDistanceField, snapshot.reachDistance);
         setText(maxPickupAttemptsField, snapshot.maxPickupAttempts);
+        setText(inventoryDetectionSlotsField, snapshot.inventoryDetectionSlots);
         setText(delayField, snapshot.delay);
         setText(antiStuckTimeoutField, snapshot.antiStuckTimeout);
 
@@ -2066,6 +2142,7 @@ public class GuiAutoPickupConfig extends AbstractThreePaneRuleManager<AutoPickup
         private String radius = "";
         private String reachDistance = "";
         private String maxPickupAttempts = "";
+        private String inventoryDetectionSlots = "";
         private String delay = "";
         private String antiStuckTimeout = "";
         private String sequence = "";

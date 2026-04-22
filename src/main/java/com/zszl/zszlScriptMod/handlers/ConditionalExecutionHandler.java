@@ -414,7 +414,12 @@ public class ConditionalExecutionHandler {
 
     @SubscribeEvent
     public void onPlayerTick(TickEvent.PlayerTickEvent event) {
-        if (event.phase != TickEvent.Phase.START || !(event.player instanceof LocalPlayer player) || MC.level == null) {
+        if (event == null
+                || event.phase != TickEvent.Phase.START
+                || MC.player == null
+                || MC.level == null
+                || event.player != MC.player
+                || !(event.player instanceof LocalPlayer player)) {
             return;
         }
 
@@ -476,9 +481,11 @@ public class ConditionalExecutionHandler {
 
         if (activeRule != null) {
             if (!activeRule.enabled) {
+                stopActiveSequence("条件执行", "当前激活规则已被关闭");
                 activeRule = null;
             } else if (!PathSequenceEventListener.instance.isTracking()
                     && !activeRule.isInRange(player.getX(), player.getY(), player.getZ())) {
+                stopActiveSequence("条件执行", "当前激活规则已离开区域且前台序列未运行");
                 activeRule = null;
             }
         }
@@ -668,11 +675,13 @@ public class ConditionalExecutionHandler {
             return;
         }
 
-        stopActiveSequence("条件执行",
-                "条件执行防卡死重启规则 '" + describeRule(rule) + "' 前清理当前前台序列");
-        activeRule = rule;
-        activeRule.hasBeenTriggered = true;
-        runRuleSequence(activeRule, true);
+        runOnClientThread(() -> {
+            stopActiveSequence("条件执行",
+                    "条件执行防卡死重启规则 '" + describeRule(rule) + "' 前清理当前前台序列");
+            activeRule = rule;
+            activeRule.hasBeenTriggered = true;
+            runRuleSequence(activeRule, true);
+        });
     }
 
     private void runRuleSequence(ConditionalRule rule, boolean forceSingleExecution) {
@@ -683,16 +692,32 @@ public class ConditionalExecutionHandler {
         if (sequenceName.isEmpty()) {
             return;
         }
-        if (forceSingleExecution) {
-            PathSequenceManager.runPathSequenceOnce(sequenceName);
-            return;
-        }
+        runOnClientThread(() -> {
+            if (MC.player == null || MC.level == null) {
+                return;
+            }
+            if (forceSingleExecution) {
+                PathSequenceManager.runPathSequenceOnce(sequenceName);
+                return;
+            }
 
-        int explicitLoopCount = rule.loopCount;
-        if (explicitLoopCount == 0) {
+            int explicitLoopCount = rule.loopCount;
+            if (explicitLoopCount == 0) {
+                return;
+            }
+            PathSequenceManager.runPathSequenceWithLoopCount(sequenceName, explicitLoopCount);
+        });
+    }
+
+    private void runOnClientThread(Runnable task) {
+        if (task == null) {
             return;
         }
-        PathSequenceManager.runPathSequenceWithLoopCount(sequenceName, explicitLoopCount);
+        if (MC.isSameThread()) {
+            task.run();
+            return;
+        }
+        MC.execute(task);
     }
 
     private static ForegroundSequenceStartDecision allowStartDecision() {

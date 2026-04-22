@@ -67,6 +67,7 @@ public class ExecutionControlCommands {
 
                     @Override
                     public void onLostControl() {
+                        paused[0] = false;
                     }
 
                     @Override

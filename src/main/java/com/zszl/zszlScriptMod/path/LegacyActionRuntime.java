@@ -107,9 +107,9 @@ public final class LegacyActionRuntime {
             return null;
         }
 
-        if (data.has("expression")) {
-            return evaluateValueExpression(data.get("expression").getAsString(), data, runtimeVars, player, sequence,
-                    stepIndex, actionIndex);
+        String expression = readString(data, "expression").trim();
+        if (!expression.isEmpty()) {
+            return evaluateValueExpression(expression, data, runtimeVars, player, sequence, stepIndex, actionIndex);
         }
 
         String explicitType = readString(data, "valueType", "typeHint", "dataType");
@@ -126,7 +126,7 @@ public final class LegacyActionRuntime {
             return parseValueByType(data.get("string"), "string");
         }
         if (data.has("fromVar")) {
-            return getRuntimeValue(data.get("fromVar").getAsString(), runtimeVars, player, sequence, stepIndex,
+            return getRuntimeValue(readString(data, "fromVar"), runtimeVars, player, sequence, stepIndex,
                     actionIndex);
         }
         return null;

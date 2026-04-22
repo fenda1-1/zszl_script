@@ -2,6 +2,7 @@ package com.zszl.zszlScriptMod.path.node;
 
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import com.zszl.zszlScriptMod.handlers.ItemFilterHandler;
 import com.zszl.zszlScriptMod.handlers.WarehouseEventHandler;
 import com.zszl.zszlScriptMod.path.PathSequenceManager;
@@ -864,6 +865,10 @@ public class NodeSequenceRunner {
                 return value;
             }
             return element.getAsString();
+        }
+
+        if (element.isJsonArray() || element.isJsonObject()) {
+            return new JsonParser().parse(element.toString());
         }
 
         return safeString(element);

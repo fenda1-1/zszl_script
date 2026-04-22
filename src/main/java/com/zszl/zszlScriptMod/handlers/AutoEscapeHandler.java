@@ -60,7 +60,8 @@ public class AutoEscapeHandler {
     private enum RuntimeState {
         IDLE,
         ESCAPING,
-        WAITING_RESTART
+        WAITING_RESTART,
+        RESTARTING
     }
 
     private static RuntimeState runtimeState = RuntimeState.IDLE;
@@ -325,6 +326,13 @@ public class AutoEscapeHandler {
             return;
         }
 
+        if (runtimeState == RuntimeState.RESTARTING) {
+            if (!PathSequenceEventListener.instance.isTracking()) {
+                onRestartSequenceCompleted();
+            }
+            return;
+        }
+
         if (candidateRule != null) {
             triggerEscape(candidateRule);
             return;
@@ -333,6 +341,13 @@ public class AutoEscapeHandler {
         if (runtimeState == RuntimeState.WAITING_RESTART) {
             if (pendingRestartSequenceName == null || pendingRestartSequenceName.trim().isEmpty()) {
                 resetRuntimeState();
+                return;
+            }
+
+            if (shouldIgnoreTargetsUntilRestartComplete()) {
+                if (System.currentTimeMillis() >= restartExecuteAtMs) {
+                    runPendingRestartSequence();
+                }
                 return;
             }
 
@@ -364,6 +379,10 @@ public class AutoEscapeHandler {
         resetRuntimeState();
     }
 
+    private static void onRestartSequenceCompleted() {
+        resetRuntimeState();
+    }
+
     private static void runPendingRestartSequence() {
         String sequenceName = pendingRestartSequenceName == null ? "" : pendingRestartSequenceName.trim();
         if (sequenceName.isEmpty()) {
@@ -380,6 +399,12 @@ public class AutoEscapeHandler {
         stopCurrentSequenceImmediately();
         PathSequenceManager.runPathSequenceOnce(sequenceName);
         notifyPlayer("§b[自动逃离] §a开始执行后续序列: §f" + sequenceName);
+        if (shouldIgnoreTargetsUntilRestartComplete()) {
+            pendingRestartSequenceName = "";
+            restartExecuteAtMs = 0L;
+            runtimeState = RuntimeState.RESTARTING;
+            return;
+        }
         resetRuntimeState();
     }
 
@@ -550,6 +575,12 @@ public class AutoEscapeHandler {
                 && rule.escapeSequenceName != null
                 && !rule.escapeSequenceName.trim().isEmpty()
                 && PathSequenceManager.hasSequence(rule.escapeSequenceName.trim());
+    }
+
+    private static boolean shouldIgnoreTargetsUntilRestartComplete() {
+        return activeRule != null
+                && activeRule.restartEnabled
+                && activeRule.ignoreTargetsUntilRestartComplete;
     }
 
     private static void notifyPlayer(String message) {

@@ -950,7 +950,7 @@ public class PathSequenceEventListener {
         }
         double[] target = step.getGotoPoint();
         EmbeddedNavigationHandler.INSTANCE.startGoto(EmbeddedNavigationHandler.NavigationOwner.PATH_SEQUENCE,
-                target[0], target[1], target[2], false, "路径序列刷新当前步骤目标导航");
+                target[0], target[1], target[2], true, "路径序列刷新当前步骤目标导航");
         initializeStepPathRetryMonitor(Minecraft.getInstance().player);
     }
 
