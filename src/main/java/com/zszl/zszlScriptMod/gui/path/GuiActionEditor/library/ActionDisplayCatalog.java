@@ -12,6 +12,7 @@ public final class ActionDisplayCatalog {
     static {
         ACTION_DISPLAY_KEYS.put("command", "gui.path.action_editor.type.command");
         ACTION_DISPLAY_KEYS.put("system_message", "gui.path.action_editor.type.system_message");
+        ACTION_DISPLAY_KEYS.put("disconnect", "gui.path.action_editor.type.disconnect");
         ACTION_DISPLAY_KEYS.put("delay", "gui.path.action_editor.type.delay");
         ACTION_DISPLAY_KEYS.put("key", "gui.path.action_editor.type.key");
         ACTION_DISPLAY_KEYS.put("jump", "gui.path.action_editor.type.jump");

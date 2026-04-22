@@ -1,7 +1,6 @@
 # ====================== 项目特定临时文件 ======================
 project_index.txt
 build_and_index.py
-build_and_index copy.py
 # ====================== IDE ======================
 # Eclipse
 bin/

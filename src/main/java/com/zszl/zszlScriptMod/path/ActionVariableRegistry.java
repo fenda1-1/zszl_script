@@ -330,6 +330,14 @@ public final class ActionVariableRegistry {
         return normalizedScope + "." + normalizedBase;
     }
 
+    public static String buildCanonicalVariableName(String scopeKey, String baseName) {
+        String normalizedBase = safe(baseName).trim();
+        if (normalizedBase.isEmpty()) {
+            return "";
+        }
+        return normalizeScopeKey(scopeKey) + "." + normalizedBase;
+    }
+
     public static String scopeKeyToDisplay(String scopeKey) {
         switch (normalizeScopeKey(scopeKey)) {
             case "global":
@@ -378,8 +386,8 @@ public final class ActionVariableRegistry {
     }
 
     public static List<String> collectProducedVariableNames(String variableName, String actionType) {
-        String prefix = extractBaseName(variableName);
-        if (prefix.isEmpty()) {
+        String canonicalPrefix = buildCanonicalVariableName(extractScopeKey(variableName), extractBaseName(variableName));
+        if (canonicalPrefix.isEmpty()) {
             return new ArrayList<>();
         }
 
@@ -388,64 +396,64 @@ public final class ActionVariableRegistry {
         switch (normalizedType) {
             case "set_var":
             case "capture_gui_title":
-                names.add(prefix);
+                names.add(canonicalPrefix);
                 break;
             case "capture_nearby_entity":
-                addSuffixes(names, prefix,
+                addSuffixes(names, canonicalPrefix,
                         "_found", "_name", "_id", "_x", "_y", "_z",
                         "_block_x", "_block_y", "_block_z");
                 break;
             case "capture_block_at":
-                addSuffixes(names, prefix,
+                addSuffixes(names, canonicalPrefix,
                         "_found", "_name", "_registry", "_x", "_y", "_z");
                 break;
             case "capture_inventory_slot":
-                addCapturedStackVariables(names, prefix);
-                addSuffixes(names, prefix, "_slot_index", "_slot_area");
+                addCapturedStackVariables(names, canonicalPrefix);
+                addSuffixes(names, canonicalPrefix, "_slot_index", "_slot_area");
                 break;
             case "capture_hotbar":
                 for (int i = 0; i < 9; i++) {
-                    addCapturedStackVariables(names, prefix + "_" + i);
+                    addCapturedStackVariables(names, canonicalPrefix + "_" + i);
                 }
-                addSuffixes(names, prefix, "_selected_index", "_selected_slot", "_filled_count",
+                addSuffixes(names, canonicalPrefix, "_selected_index", "_selected_slot", "_filled_count",
                         "_names", "_counts", "_registries", "_nbts");
-                addCapturedStackVariables(names, prefix + "_selected");
+                addCapturedStackVariables(names, canonicalPrefix + "_selected");
                 break;
             case "capture_entity_list":
-                addSuffixes(names, prefix,
+                addSuffixes(names, canonicalPrefix,
                         "_found", "_count", "_list", "_names", "_ids", "_types",
                         "_categories", "_distances", "_radius", "_max_count",
                         "_nearest_name", "_nearest_id", "_nearest_type",
                         "_nearest_category", "_nearest_distance");
                 break;
             case "capture_packet_field":
-                names.add(prefix);
-                addSuffixes(names, prefix,
+                names.add(canonicalPrefix);
+                addSuffixes(names, canonicalPrefix,
                         "_found", "_lookup_mode", "_field_key", "_value", "_value_text",
                         "_rule_name", "_variable_name", "_scope", "_channel",
                         "_direction", "_source", "_packet_class", "_raw",
                         "_timestamp", "_snapshot");
                 break;
             case "capture_scoreboard":
-                addSuffixes(names, prefix,
+                addSuffixes(names, canonicalPrefix,
                         "_found", "_title", "_lines", "_line_count", "_joined",
                         "_selected_index", "_selected_found", "_selected_line");
                 break;
             case "capture_screen_region":
-                addSuffixes(names, prefix,
+                addSuffixes(names, canonicalPrefix,
                         "_found", "_x", "_y", "_width", "_height",
                         "_avg_r", "_avg_g", "_avg_b", "_avg_hex",
                         "_center_r", "_center_g", "_center_b", "_center_hex",
                         "_brightness", "_edge_density");
                 break;
             case "capture_gui_element":
-                addSuffixes(names, prefix,
+                addSuffixes(names, canonicalPrefix,
                         "_found", "_screen", "_screen_class", "_title",
                         "_type", "_path", "_text", "_x", "_y",
                         "_width", "_height", "_slot", "_button_id");
                 break;
             default:
-                names.add(prefix);
+                names.add(canonicalPrefix);
                 break;
         }
         return new ArrayList<>(names);

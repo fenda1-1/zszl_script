@@ -17,6 +17,7 @@ public final class InteractionActionLibraryGroup {
                         I18n.format("gui.path.action_editor.group.interaction.user"),
                         itemFactory.apply("command"),
                         itemFactory.apply("system_message"),
+                        itemFactory.apply("disconnect"),
                         itemFactory.apply("key"),
                         itemFactory.apply("click")),
                 ActionLibraryNode.group("group_interaction_gui",

@@ -9,7 +9,7 @@
   "updateUrl": "",
   "authorList": ["fenda"],
   "credits": "感谢 Forge、Mixin、Baritone 及相关开源项目提供基础能力。",
-  "logoFile": "assets/textures/logo.png",
+  "logoFile": "logo.png",
   "screenshots": [],
   "dependencies": []
 }
