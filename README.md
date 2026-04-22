@@ -8,7 +8,7 @@
 [![Bilibili](https://img.shields.io/badge/Bilibili-关注-FF69B4?logo=bilibili&logoColor=white)](https://space.bilibili.com/651467617)
 
 
-当前分支是面向 **Minecraft Forge 1.12.2** 的客户端自动化 Mod / 脚本框架系统，围绕 **路径动作 + 触发器 + 序列编排 + 变量系统 + 数据包能力 + 可视化 GUI** 构建。
+当前分支是面向 **Minecraft Forge 1.20.1** 的客户端自动化 Mod / 脚本框架系统，围绕 **路径动作 + 触发器 + 序列编排 + 变量系统 + 数据包能力 + 可视化 GUI** 构建。
 
 它不仅仅是辅助工具，而是一个可扩展的**通用脚本自动化平台**。
 
@@ -16,9 +16,9 @@
 
 ## 🚀 基本信息
 
-- 🧱 Minecraft：`1.12.2`
-- 🔧 Forge：`14.23.5.2860+`
-- ☕ Java：`8`
+- 🧱 Minecraft：`1.20.1`
+- 🔧 Forge：`47.4.18+`
+- ☕ Java：`17`
 - 📜 License：**LGPL v3.0**
 
 ---
