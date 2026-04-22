@@ -9,6 +9,8 @@ import com.zszl.zszlScriptMod.gui.config.GuiAntiStuckConfig;
 import com.zszl.zszlScriptMod.handlers.*;
 import com.zszl.zszlScriptMod.handlers.BlockReplacementHandler;
 import com.zszl.zszlScriptMod.path.PathSequenceManager;
+import com.zszl.zszlScriptMod.system.DebugKeybindManager;
+import com.zszl.zszlScriptMod.system.KeybindManager;
 import com.zszl.zszlScriptMod.utils.CapturedIdRuleManager;
 import com.zszl.zszlScriptMod.PerformanceMonitor;
 
@@ -130,6 +132,8 @@ public class ModConfig {
         PerformanceMonitor.loadConfig();
         WarehouseManager.loadWarehouses();
         PathSequenceManager.initializePathSequences();
+        KeybindManager.loadConfig();
+        DebugKeybindManager.loadConfig();
         CapturedIdRuleManager.reloadRules();
     }
 
