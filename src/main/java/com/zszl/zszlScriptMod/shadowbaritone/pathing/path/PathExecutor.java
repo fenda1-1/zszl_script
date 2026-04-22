@@ -207,12 +207,19 @@ public class PathExecutor implements IPathExecutor, Helper {
                 }
             }
 
+            CalculationContext calcContext = behavior.secretInternalGetCalculationContext();
+            if (calcContext == null) {
+                logDebug("Calculation context disappeared while executing current path. Cancelling path to avoid crash.");
+                cancel();
+                return true;
+            }
+
             boolean canCancel = movement.safeToCancel();
             if (costEstimateIndex == null || costEstimateIndex != pathPosition) {
                 costEstimateIndex = pathPosition;
                 currentMovementOriginalCostEstimate = movement.getCost();
                 for (int i = 1; i < Baritone.settings().costVerificationLookahead.value && pathPosition + i < path.length() - 1; i++) {
-                    if (((Movement) path.movements().get(pathPosition + i)).calculateCost(behavior.secretInternalGetCalculationContext()) >= ActionCosts.COST_INF && canCancel) {
+                    if (((Movement) path.movements().get(pathPosition + i)).calculateCost(calcContext) >= ActionCosts.COST_INF && canCancel) {
                         logDebug("Something has changed in the world and a future movement has become impossible. Cancelling.");
                         cancel();
                         return true;
@@ -220,7 +227,7 @@ public class PathExecutor implements IPathExecutor, Helper {
                 }
             }
 
-            double currentCost = movement.recalculateCost(behavior.secretInternalGetCalculationContext());
+            double currentCost = movement.recalculateCost(calcContext);
             if (currentCost >= ActionCosts.COST_INF && canCancel) {
                 logDebug("Something has changed in the world and this movement has become impossible. Cancelling.");
                 cancel();

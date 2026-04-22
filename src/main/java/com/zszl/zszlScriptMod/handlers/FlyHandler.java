@@ -269,7 +269,7 @@ public class FlyHandler {
             player.hasImpulse = true;
         }
 
-        if (!KillAuraHandler.enabled && !FreecamHandler.INSTANCE.isFastAttackEnabled) {
+        if (!KillAuraHandler.enabled) {
             KillAuraHandler.INSTANCE.applyMovementProtection(player, false, false, false);
         }
     }

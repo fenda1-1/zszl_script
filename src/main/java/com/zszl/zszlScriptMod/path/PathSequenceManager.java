@@ -29,7 +29,6 @@ import com.zszl.zszlScriptMod.path.template.LegacyActionTemplateManager;
 import com.zszl.zszlScriptMod.utils.HudTextScanner;
 import com.zszl.zszlScriptMod.utils.ModUtils;
 import com.zszl.zszlScriptMod.utils.locator.ActionTargetLocator;
-import com.zszl.zszlScriptMod.handlers.AutoSkillHandler;
 import com.zszl.zszlScriptMod.handlers.AutoUseItemHandler;
 import com.zszl.zszlScriptMod.system.AutoUseItemRule;
 import net.minecraft.client.Minecraft;
@@ -845,10 +844,6 @@ public class PathSequenceManager {
                             followDesc.append(", 超时 ").append(timeout).append("秒");
                         }
                         return followDesc.toString();
-                    case "use_skill":
-                        String skill = params.has("skill") ? params.get("skill").getAsString()
-                                : I18n.format("msg.common.unknown");
-                        return I18n.format("path.action.desc.use_skill", skill);
                     case "use_hotbar_item":
                         String itemName = params.has("itemName") ? params.get("itemName").getAsString() : "";
                         String matchMode = params.has("matchMode") ? params.get("matchMode").getAsString() : "CONTAINS";
@@ -2034,16 +2029,6 @@ public class PathSequenceManager {
                     return player -> PathSequenceEventListener.instance.startHunting(params);
                 case "follow_entity":
                     return player -> PathSequenceEventListener.instance.startFollowingEntity(params);
-                case "use_skill":
-                    String skillName = params.get("skill").getAsString();
-                    return player -> {
-                        for (AutoSkillHandler.Skill skill : AutoSkillHandler.skills) {
-                            if (skill.name.equalsIgnoreCase(skillName)) {
-                                AutoSkillHandler.sendSkillPackets(skill);
-                                break;
-                            }
-                        }
-                    };
                 case "use_hotbar_item":
                     final String hotbarItemName = params.has("itemName") ? params.get("itemName").getAsString() : "";
                     final AutoUseItemRule.MatchMode hotbarMatchMode = params.has("matchMode")
@@ -3227,12 +3212,10 @@ public class PathSequenceManager {
                 zszlScriptMod.LOGGER.error(I18n.format("log.path.load_categories_failed"), e);
             }
         }
-        hiddenCategories.add("再生之路");
-        hiddenCategories.add("魔塔之巅");
     }
 
     private static boolean isRemovedBuiltinServerCategory(String category) {
-        return "再生之路".equals(category) || "魔塔之巅".equals(category);
+        return false;
     }
 
     public static void saveCategories() {

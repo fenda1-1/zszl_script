@@ -158,7 +158,6 @@ public class zszlScriptMod {
     @SubscribeEvent
     public void onNetworkLogout(ClientPlayerNetworkEvent.LoggingOut event) {
         MiscFeatureManager.INSTANCE.onClientDisconnect();
-        PacketCaptureHandler.resetOwlViewSessionID();
         MovementFeatureManager.INSTANCE.onClientDisconnect();
         RenderFeatureManager.INSTANCE.onClientDisconnect();
         WorldFeatureManager.INSTANCE.onClientDisconnect();

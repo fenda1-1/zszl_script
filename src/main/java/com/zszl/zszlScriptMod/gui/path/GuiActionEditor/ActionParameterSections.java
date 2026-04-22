@@ -241,20 +241,6 @@ final class ActionParameterSections {
         editor.registerScrollableButton(btnFillFromScan, currentY);
     }
 
-    static void buildUseSkillSection(GuiActionEditor editor, int x, int currentY, int fieldWidth) {
-        editor.paramLabels.add(I18n.format("gui.path.action_editor.select_skill"));
-        int buttonX = x;
-        String[] skills = { "R", "Z", "X", "C" };
-        int skillButtonWidth = Math.max(40, (fieldWidth - 15) / 4);
-        for (int i = 0; i < skills.length; i++) {
-            GuiButton skillBtn = new ThemedButton(200 + i, buttonX, currentY, skillButtonWidth, 20, skills[i]);
-            editor.addEditorButton(skillBtn);
-            editor.skillButtons.add(skillBtn);
-            editor.registerScrollableButton(skillBtn, currentY);
-            buttonX += skillButtonWidth + 5;
-        }
-    }
-
     static void buildUseHotbarItemSection(GuiActionEditor editor, int x, int currentY, int fieldWidth) {
         editor.addTextField(I18n.format("gui.path.action_editor.label.item_name"), "itemName",
                 I18n.format("gui.path.action_editor.help.item_name"), fieldWidth, x, currentY);

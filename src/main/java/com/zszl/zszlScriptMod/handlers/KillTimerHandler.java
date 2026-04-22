@@ -14,11 +14,24 @@ import com.zszl.zszlScriptMod.system.ProfileManager;
 import com.zszl.zszlScriptMod.system.SimulatedKeyInputManager;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.world.entity.TamableAnimal;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.MobCategory;
+import net.minecraft.world.entity.ambient.AmbientCreature;
+import net.minecraft.world.entity.animal.Animal;
+import net.minecraft.world.entity.animal.WaterAnimal;
+import net.minecraft.world.entity.animal.horse.AbstractHorse;
+import net.minecraft.world.entity.boss.enderdragon.EnderDragon;
+import net.minecraft.world.entity.boss.wither.WitherBoss;
+import net.minecraft.world.entity.decoration.ArmorStand;
+import net.minecraft.world.entity.animal.AbstractGolem;
 import net.minecraft.world.entity.monster.Enemy;
+import net.minecraft.world.entity.npc.AbstractVillager;
+import net.minecraft.world.entity.player.Player;
 import net.minecraftforge.client.event.InputEvent;
 import net.minecraftforge.event.entity.living.LivingDeathEvent;
+import net.minecraftforge.event.entity.player.AttackEntityEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 
 import java.io.BufferedReader;
@@ -29,9 +42,11 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 public class KillTimerHandler {
@@ -51,6 +66,27 @@ public class KillTimerHandler {
     public static int combatTimeoutSeconds = 3;
     public static int disengageRemoveSeconds = 3;
     public static int stableDpsIntervalSeconds = 2;
+    public static double trackingRangeBlocks = 10.0D;
+    public static int maxVisibleTargets = 6;
+    public static boolean collapseExtraTargets = true;
+    public static boolean showDisengageReason = false;
+    public static boolean onlyOwnDamage = false;
+    public static boolean targetHostile = true;
+    public static boolean targetNeutral = false;
+    public static boolean targetPassive = false;
+    public static boolean targetPlayers = false;
+    public static boolean targetWater = false;
+    public static boolean targetAmbient = false;
+    public static boolean targetVillager = false;
+    public static boolean targetGolem = false;
+    public static boolean targetTameable = false;
+    public static boolean targetBoss = false;
+    public static final String SORT_RECENT = "recent";
+    public static final String SORT_DPS = "dps";
+    public static final String SORT_HEALTH = "health";
+    public static final String SORT_DURATION = "duration";
+    public static String sortMode = SORT_RECENT;
+    private static final long OWN_DAMAGE_GRACE_MS = 1800L;
     public static final int DEATH_MODE_CHAT = 0;
     public static final int DEATH_MODE_PANEL_HOLD = 1;
     public static int deathDataMode = DEATH_MODE_CHAT;
@@ -80,6 +116,7 @@ public class KillTimerHandler {
     private static int selectedIndex = -1;
 
     private static final Map<UUID, TrackInfo> tracked = new HashMap<>();
+    private static final Map<UUID, Long> recentPlayerAttackMs = new HashMap<>();
 
     private static class TrackInfo {
         UUID id;
@@ -99,6 +136,9 @@ public class KillTimerHandler {
         boolean dead;
         long deathAtMs;
         long deathFreezeUntilMs;
+        boolean withinRangeLastTick;
+        String disengageReason;
+        long disengageDeadlineMs;
 
         TrackInfo(LivingEntity entity) {
             this.id = entity.getUUID();
@@ -117,6 +157,9 @@ public class KillTimerHandler {
             this.dead = false;
             this.deathAtMs = 0L;
             this.deathFreezeUntilMs = 0L;
+            this.withinRangeLastTick = true;
+            this.disengageReason = "";
+            this.disengageDeadlineMs = 0L;
         }
 
         double getActiveSeconds(long now) {
@@ -139,6 +182,22 @@ public class KillTimerHandler {
         int combatTimeoutSeconds = 3;
         int disengageRemoveSeconds = 3;
         int stableDpsIntervalSeconds = 2;
+        double trackingRangeBlocks = 10.0D;
+        int maxVisibleTargets = 6;
+        boolean collapseExtraTargets = true;
+        boolean showDisengageReason = false;
+        boolean onlyOwnDamage = false;
+        boolean targetHostile = true;
+        boolean targetNeutral = false;
+        boolean targetPassive = false;
+        boolean targetPlayers = false;
+        boolean targetWater = false;
+        boolean targetAmbient = false;
+        boolean targetVillager = false;
+        boolean targetGolem = false;
+        boolean targetTameable = false;
+        boolean targetBoss = false;
+        String sortMode = SORT_RECENT;
         int deathDataMode = DEATH_MODE_CHAT;
         int deathPanelHoldSeconds = 3;
     }
@@ -165,8 +224,25 @@ public class KillTimerHandler {
             combatTimeoutSeconds = Math.max(1, data.combatTimeoutSeconds);
             disengageRemoveSeconds = Math.max(1, data.disengageRemoveSeconds);
             stableDpsIntervalSeconds = Math.max(1, data.stableDpsIntervalSeconds);
+            trackingRangeBlocks = Math.max(1.0D, data.trackingRangeBlocks);
+            maxVisibleTargets = Math.max(1, data.maxVisibleTargets);
+            collapseExtraTargets = data.collapseExtraTargets;
+            showDisengageReason = data.showDisengageReason;
+            onlyOwnDamage = data.onlyOwnDamage;
+            targetHostile = data.targetHostile;
+            targetNeutral = data.targetNeutral;
+            targetPassive = data.targetPassive;
+            targetPlayers = data.targetPlayers;
+            targetWater = data.targetWater;
+            targetAmbient = data.targetAmbient;
+            targetVillager = data.targetVillager;
+            targetGolem = data.targetGolem;
+            targetTameable = data.targetTameable;
+            targetBoss = data.targetBoss;
+            sortMode = normalizeSortMode(data.sortMode);
             deathDataMode = data.deathDataMode == DEATH_MODE_PANEL_HOLD ? DEATH_MODE_PANEL_HOLD : DEATH_MODE_CHAT;
             deathPanelHoldSeconds = Math.max(1, data.deathPanelHoldSeconds);
+            ensureAtLeastOneTargetTypeEnabled();
         } catch (Exception ignored) {
         }
     }
@@ -174,6 +250,7 @@ public class KillTimerHandler {
     public static void saveConfig() {
         Path file = ProfileManager.getCurrentProfileDir().resolve("kill_timer_config.json");
         try {
+            ensureAtLeastOneTargetTypeEnabled();
             Files.createDirectories(file.getParent());
             try (BufferedWriter writer = Files.newBufferedWriter(file, StandardCharsets.UTF_8)) {
                 ConfigData data = new ConfigData();
@@ -186,6 +263,22 @@ public class KillTimerHandler {
                 data.combatTimeoutSeconds = combatTimeoutSeconds;
                 data.disengageRemoveSeconds = disengageRemoveSeconds;
                 data.stableDpsIntervalSeconds = stableDpsIntervalSeconds;
+                data.trackingRangeBlocks = trackingRangeBlocks;
+                data.maxVisibleTargets = maxVisibleTargets;
+                data.collapseExtraTargets = collapseExtraTargets;
+                data.showDisengageReason = showDisengageReason;
+                data.onlyOwnDamage = onlyOwnDamage;
+                data.targetHostile = targetHostile;
+                data.targetNeutral = targetNeutral;
+                data.targetPassive = targetPassive;
+                data.targetPlayers = targetPlayers;
+                data.targetWater = targetWater;
+                data.targetAmbient = targetAmbient;
+                data.targetVillager = targetVillager;
+                data.targetGolem = targetGolem;
+                data.targetTameable = targetTameable;
+                data.targetBoss = targetBoss;
+                data.sortMode = sortMode;
                 data.deathDataMode = deathDataMode;
                 data.deathPanelHoldSeconds = deathPanelHoldSeconds;
                 GSON.toJson(data, writer);
@@ -208,6 +301,7 @@ public class KillTimerHandler {
 
     public static void clearRuntimeState() {
         tracked.clear();
+        recentPlayerAttackMs.clear();
         selectedIndex = -1;
         scrollOffset = 0;
         dragging = false;
@@ -283,6 +377,17 @@ public class KillTimerHandler {
     }
 
     @SubscribeEvent
+    public void onAttackEntity(AttackEntityEvent event) {
+        if (!isEnabled || event == null || mc.player == null || event.getEntity() != mc.player) {
+            return;
+        }
+        if (!(event.getTarget() instanceof LivingEntity living) || !matchesConfiguredEntityType(living)) {
+            return;
+        }
+        recentPlayerAttackMs.put(living.getUUID(), System.currentTimeMillis());
+    }
+
+    @SubscribeEvent
     public void onMouseScroll(InputEvent.MouseScrollingEvent event) {
         if (!isEnabled || event == null || mc.screen != null || mc.player == null || mc.level == null) {
             return;
@@ -346,6 +451,7 @@ public class KillTimerHandler {
     private static void updateFromWorld() {
         long now = System.currentTimeMillis();
         List<Entity> entities = new ArrayList<>();
+        Set<UUID> seenEntityIds = new HashSet<>();
         for (Entity entity : mc.level.entitiesForRendering()) {
             entities.add(entity);
         }
@@ -354,10 +460,12 @@ public class KillTimerHandler {
             if (!(entity instanceof LivingEntity living)) {
                 continue;
             }
-            if (!(living instanceof Enemy)) {
+            if (!matchesConfiguredEntityType(living)) {
                 continue;
             }
             UUID id = living.getUUID();
+            seenEntityIds.add(id);
+            boolean withinRange = isWithinTrackingRange(living);
 
             if (!living.isAlive()) {
                 TrackInfo track = tracked.get(id);
@@ -373,7 +481,7 @@ public class KillTimerHandler {
             float hp = Math.max(0.0F, living.getHealth());
             TrackInfo track = tracked.get(id);
             if (track == null) {
-                if (hp < maxHp) {
+                if (withinRange && hp < maxHp && (!onlyOwnDamage || wasRecentlyAttackedByPlayer(id, now))) {
                     tracked.put(id, new TrackInfo(living));
                 }
                 continue;
@@ -385,34 +493,38 @@ public class KillTimerHandler {
             track.name = living.getName().getString();
             track.maxHealth = Math.max(track.maxHealth, maxHp);
 
-            float previousHp = track.currentHealth;
-            boolean tookDamageNow = hp < previousHp - 0.0001F;
-
-            track.currentHealth = hp;
-            track.minHealth = Math.min(track.minHealth, hp);
-
-            if (tookDamageNow) {
-                track.lastDamageLikeMs = now;
-                if (track.paused) {
-                    track.pausedAccumulatedMs += Math.max(0L, now - track.pausedStartMs);
-                    track.pausedStartMs = 0L;
-                    track.paused = false;
+            if (withinRange) {
+                if (!track.withinRangeLastTick) {
+                    // Re-entering range should only refresh the baseline snapshot.
+                    // Otherwise damage taken outside the configured range would be
+                    // back-counted and immediately flip the state to "战斗中" again.
+                    track.currentHealth = hp;
+                    track.withinRangeLastTick = true;
+                    if (!track.dead && !track.paused) {
+                        track.disengageReason = "";
+                    }
+                } else {
+                    float previousHp = track.currentHealth;
+                    boolean tookDamageNow = hp < previousHp - 0.0001F;
+                    track.currentHealth = hp;
+                    if (tookDamageNow) {
+                        if (!onlyOwnDamage || wasRecentlyAttackedByPlayer(id, now)) {
+                            track.minHealth = Math.min(track.minHealth, hp);
+                            track.lastDamageLikeMs = now;
+                            resumeTrack(track, now);
+                        }
+                    }
                 }
             } else {
-                if (!track.paused && now - track.lastDamageLikeMs >= combatTimeoutSeconds * 1000L) {
-                    track.paused = true;
-                    track.pausedStartMs = now;
-                }
-                if (now - track.lastDamageLikeMs >= (combatTimeoutSeconds + disengageRemoveSeconds) * 1000L) {
-                    tracked.remove(id);
+                track.withinRangeLastTick = false;
+                if (!track.dead) {
+                    enterDisengaged(track, now, "range");
                 }
             }
         }
 
-        tracked.entrySet().removeIf(entry -> {
-            TrackInfo track = entry.getValue();
-            return track != null && track.dead && now > track.deathFreezeUntilMs;
-        });
+        tracked.entrySet().removeIf(entry -> shouldRemoveTrack(now, entry.getKey(), entry.getValue(), seenEntityIds));
+        recentPlayerAttackMs.entrySet().removeIf(entry -> now - entry.getValue() > OWN_DAMAGE_GRACE_MS * 3L);
 
         for (TrackInfo track : tracked.values()) {
             if (track.paused || track.dead) {
@@ -420,7 +532,7 @@ public class KillTimerHandler {
             }
             if (now - track.lastStableDpsUpdateMs >= stableDpsIntervalSeconds * 1000L) {
                 double sec = track.getActiveSeconds(now);
-                double totalDmg = Math.max(0.0, track.maxHealth - track.currentHealth);
+                double totalDmg = Math.max(0.0, track.maxHealth - track.minHealth);
                 track.stableDps = totalDmg / Math.max(0.001, sec);
                 track.lastStableDpsUpdateMs = now;
             }
@@ -497,7 +609,13 @@ public class KillTimerHandler {
         drawShadow(graphics, I18n.format("gui.kill_timer.target_count", tracked.size()), x + w - 68, y + 5, 0xFFFFFF);
 
         List<TrackInfo> rows = new ArrayList<>(tracked.values());
-        rows.sort(Comparator.comparingLong(a -> a.combatStartMs));
+        rows.sort(buildSortComparator(System.currentTimeMillis()));
+
+        int collapsedCount = 0;
+        if (collapseExtraTargets && rows.size() > maxVisibleTargets) {
+            collapsedCount = rows.size() - maxVisibleTargets;
+            rows = new ArrayList<>(rows.subList(0, maxVisibleTargets));
+        }
 
         int listX = x + PADDING;
         int listY = y + HEADER_H + 4;
@@ -535,38 +653,45 @@ public class KillTimerHandler {
 
             long calcNow = track.dead ? track.deathAtMs : System.currentTimeMillis();
             double sec = track.getActiveSeconds(calcNow);
-            double totalDmg = Math.max(0.0, track.maxHealth - track.currentHealth);
+            double totalDmg = Math.max(0.0, track.maxHealth - track.minHealth);
             double dpsLive = totalDmg / Math.max(0.001, sec);
 
-            String name = fitText("§e" + track.name, listW - 10);
-            String hpLine = String.format("§fHP: §c%s§7/§a%s",
-                    formatCompactNumber(track.currentHealth), formatCompactNumber(track.maxHealth));
-            String dpsLine = String.format("§fDPS: §d%s §7| 固定: §b%s",
-                    formatCompactNumber(dpsLive), formatCompactNumber(track.stableDps));
+            int leftWidth = Math.max(66, listW - 136);
+            int statsX = listX + leftWidth + 4;
+            int statsW = Math.max(96, listW - leftWidth - 8);
+            int topMetricWidth = Math.max(42, (statsW - 8) / 2);
+            int topSecondaryX = statsX + topMetricWidth + 8;
+            int timeWidth = Math.max(44, Math.min(54, statsW / 3));
+            int statusX = statsX + timeWidth + 6;
+            int statusWidth = Math.max(36, statsW - timeWidth - 6);
+
+            String name = fitText("§e" + track.name, leftWidth);
+            String hpLine = fitText(String.format("§fHP: §c%s§7/§a%s",
+                    formatCompactNumber(track.currentHealth), formatCompactNumber(track.maxHealth)), leftWidth);
 
             String statusText;
             if (track.dead) {
                 long remainMs = Math.max(0L, track.deathFreezeUntilMs - System.currentTimeMillis());
-                statusText = I18n.format("gui.kill_timer.status_killed", trimTrailingZeros(remainMs / 1000.0));
+                statusText = I18n.format("gui.kill_timer.status_killed", formatSecondsOneDecimal(remainMs / 1000.0));
             } else if (track.paused) {
-                long sinceLastDamageMs = Math.max(0L, System.currentTimeMillis() - track.lastDamageLikeMs);
-                long removeAtMs = Math.max(0L,
-                        (combatTimeoutSeconds + disengageRemoveSeconds) * 1000L - sinceLastDamageMs);
+                long removeAtMs = Math.max(0L, track.disengageDeadlineMs - System.currentTimeMillis());
                 statusText = I18n.format("gui.kill_timer.status_disengaged",
-                        trimTrailingZeros(removeAtMs / 1000.0));
+                        formatSecondsOneDecimal(removeAtMs / 1000.0));
+                if (showDisengageReason && track.disengageReason != null && !track.disengageReason.isEmpty()) {
+                    statusText = statusText + "·" + getDisengageReasonDisplay(track.disengageReason);
+                }
             } else {
                 statusText = I18n.format("gui.kill_timer.status_fighting");
             }
 
-            String timeLine = I18n.format("gui.kill_timer.time_status", sec, statusText);
-            hpLine = fitText(hpLine, listW - 10);
-            dpsLine = fitText(dpsLine, listW - 10);
-            timeLine = fitText(timeLine, listW - 10);
-
             drawShadow(graphics, name, listX + 4, cardY + 2, 0xFFFFFF);
             drawShadow(graphics, hpLine, listX + 4, cardY + 11, 0xFFFFFF);
-            drawShadow(graphics, dpsLine, listX + listW / 2, cardY + 2, 0xFFFFFF);
-            drawShadow(graphics, timeLine, listX + listW / 2, cardY + 11, 0xFFFFFF);
+            drawMetricField(graphics, "§fDPS:", "§d" + formatCompactNumber(dpsLive), statsX, cardY + 2, topMetricWidth);
+            drawMetricField(graphics, "§7固定:", "§b" + formatCompactNumber(track.stableDps), topSecondaryX, cardY + 2,
+                    topMetricWidth);
+            drawMetricField(graphics, "§f时长:", "§b" + formatSecondsOneDecimal(sec) + "s", statsX, cardY + 11,
+                    timeWidth);
+            drawStatusField(graphics, statusText, statusX, cardY + 11, statusWidth);
         }
 
         if (maxScroll > 0) {
@@ -592,12 +717,32 @@ public class KillTimerHandler {
             }
         }
 
+        if (collapsedCount > 0) {
+            drawShadow(graphics, I18n.format("gui.kill_timer.collapsed_more", collapsedCount), x + 6,
+                    y + h - FOOTER_H + 4, 0xFFB8C7D9);
+        }
+
         graphics.fill(x + w - 8, y + h - 8, x + w - 2, y + h - 2, 0xCC66CCFF);
         graphics.flush();
     }
 
     private static void drawShadow(GuiGraphics graphics, String text, int x, int y, int color) {
         graphics.drawString(mc.font, text == null ? "" : text, x, y, color, true);
+    }
+
+    private static void drawMetricField(GuiGraphics graphics, String key, String value, int x, int y, int width) {
+        String safeKey = key == null ? "" : key;
+        String safeValue = value == null ? "" : value;
+        int labelWidth = mc.font.width(safeKey);
+        int valueWidth = mc.font.width(safeValue);
+        int valueX = x + Math.max(labelWidth + 4, width - valueWidth);
+        drawShadow(graphics, safeKey, x, y, 0xFFFFFF);
+        drawShadow(graphics, safeValue, valueX, y, 0xFFFFFF);
+    }
+
+    private static void drawStatusField(GuiGraphics graphics, String statusText, int x, int y, int width) {
+        String value = statusText == null ? "" : statusText;
+        drawShadow(graphics, value, x, y, 0xFFFFFF);
     }
 
     private static String fitText(String text, int maxWidth) {
@@ -625,6 +770,213 @@ public class KillTimerHandler {
 
     private static boolean inside(int mouseX, int mouseY, int x, int y, int w, int h) {
         return mouseX >= x && mouseX <= x + w && mouseY >= y && mouseY <= y + h;
+    }
+
+    private static boolean shouldRemoveTrack(long now, UUID id, TrackInfo track, Set<UUID> seenEntityIds) {
+        if (track == null) {
+            return true;
+        }
+        if (track.dead) {
+            return now > track.deathFreezeUntilMs;
+        }
+
+        if (!seenEntityIds.contains(id)) {
+            track.withinRangeLastTick = false;
+            enterDisengaged(track, now, "lost");
+        }
+
+        if (track.withinRangeLastTick) {
+            long disengageStartMs = track.lastDamageLikeMs + combatTimeoutSeconds * 1000L;
+            if (!track.paused && now >= disengageStartMs) {
+                enterDisengaged(track, disengageStartMs, "timeout");
+            }
+        }
+
+        return track.paused && now >= track.disengageDeadlineMs;
+    }
+
+    private static boolean isWithinTrackingRange(LivingEntity living) {
+        if (living == null || mc.player == null) {
+            return false;
+        }
+        double range = Math.max(1.0D, trackingRangeBlocks);
+        return mc.player.distanceToSqr(living) <= range * range;
+    }
+
+    private static String formatSecondsOneDecimal(double value) {
+        return String.format(Locale.US, "%.1f", Math.max(0.0D, value));
+    }
+
+    private static boolean matchesConfiguredEntityType(LivingEntity entity) {
+        if (entity == null || entity == mc.player || entity instanceof ArmorStand) {
+            return false;
+        }
+        if (targetPlayers && entity instanceof Player) {
+            return true;
+        }
+        if (targetBoss && isBoss(entity)) {
+            return true;
+        }
+        if (targetHostile && isHostile(entity)) {
+            return true;
+        }
+        if (targetPassive && isPassive(entity)) {
+            return true;
+        }
+        if (targetWater && entity instanceof WaterAnimal) {
+            return true;
+        }
+        if (targetAmbient && entity instanceof AmbientCreature) {
+            return true;
+        }
+        if (targetVillager && entity instanceof AbstractVillager) {
+            return true;
+        }
+        if (targetGolem && isGolem(entity)) {
+            return true;
+        }
+        if (targetTameable && entity instanceof TamableAnimal) {
+            return true;
+        }
+        return targetNeutral && isNeutral(entity);
+    }
+
+    private static boolean isHostile(LivingEntity entity) {
+        return entity instanceof Enemy || entity.getType().getCategory() == MobCategory.MONSTER;
+    }
+
+    private static boolean isPassive(LivingEntity entity) {
+        return entity instanceof Animal || entity instanceof AbstractHorse;
+    }
+
+    private static boolean isGolem(LivingEntity entity) {
+        return entity instanceof AbstractGolem
+                || entity.getType().toString().toLowerCase(Locale.ROOT).contains("golem");
+    }
+
+    private static boolean isBoss(LivingEntity entity) {
+        return entity instanceof EnderDragon
+                || entity instanceof WitherBoss
+                || entity.getMaxHealth() >= 80.0F;
+    }
+
+    private static boolean isNeutral(LivingEntity entity) {
+        return !(entity instanceof Player)
+                && !isHostile(entity)
+                && !isPassive(entity)
+                && !(entity instanceof WaterAnimal)
+                && !(entity instanceof AmbientCreature)
+                && !(entity instanceof AbstractVillager)
+                && !isGolem(entity)
+                && !(entity instanceof TamableAnimal)
+                && !isBoss(entity);
+    }
+
+    public static void ensureAtLeastOneTargetTypeEnabled() {
+        if (!targetHostile && !targetNeutral && !targetPassive && !targetPlayers
+                && !targetWater && !targetAmbient && !targetVillager
+                && !targetGolem && !targetTameable && !targetBoss) {
+            targetHostile = true;
+        }
+    }
+
+    private static void enterDisengaged(TrackInfo track, long now, String reason) {
+        if (track == null || track.dead) {
+            return;
+        }
+        if (track.paused) {
+            if ((track.disengageReason == null || track.disengageReason.isEmpty()) && reason != null) {
+                track.disengageReason = reason;
+            }
+            return;
+        }
+        track.paused = true;
+        track.pausedStartMs = now;
+        track.disengageReason = reason == null ? "" : reason;
+        track.disengageDeadlineMs = now + Math.max(1, disengageRemoveSeconds) * 1000L;
+    }
+
+    private static void resumeTrack(TrackInfo track, long now) {
+        if (track == null) {
+            return;
+        }
+        if (track.paused) {
+            track.pausedAccumulatedMs += Math.max(0L, now - track.pausedStartMs);
+            track.pausedStartMs = 0L;
+            track.paused = false;
+        }
+        track.disengageReason = "";
+        track.disengageDeadlineMs = 0L;
+    }
+
+    private static boolean wasRecentlyAttackedByPlayer(UUID id, long now) {
+        if (id == null) {
+            return false;
+        }
+        Long last = recentPlayerAttackMs.get(id);
+        return last != null && now - last.longValue() <= OWN_DAMAGE_GRACE_MS;
+    }
+
+    private static Comparator<TrackInfo> buildSortComparator(long now) {
+        String normalized = normalizeSortMode(sortMode);
+        if (SORT_DPS.equals(normalized)) {
+            return Comparator.comparingDouble((TrackInfo track) -> currentDps(track, now)).reversed()
+                    .thenComparingLong(track -> track.combatStartMs);
+        }
+        if (SORT_HEALTH.equals(normalized)) {
+            return Comparator.comparingDouble((TrackInfo track) -> healthRatio(track))
+                    .thenComparingLong(track -> track.combatStartMs);
+        }
+        if (SORT_DURATION.equals(normalized)) {
+            return Comparator.comparingDouble((TrackInfo track) -> track.getActiveSeconds(now)).reversed()
+                    .thenComparingLong(track -> track.combatStartMs);
+        }
+        return Comparator.comparingLong((TrackInfo track) -> effectiveRecentTime(track)).reversed()
+                .thenComparingLong(track -> track.combatStartMs);
+    }
+
+    private static double currentDps(TrackInfo track, long now) {
+        if (track == null) {
+            return 0.0D;
+        }
+        double sec = track.getActiveSeconds(track.dead ? track.deathAtMs : now);
+        double totalDmg = Math.max(0.0D, track.maxHealth - track.minHealth);
+        return totalDmg / Math.max(0.001D, sec);
+    }
+
+    private static double healthRatio(TrackInfo track) {
+        if (track == null || track.maxHealth <= 0.0F) {
+            return 1.0D;
+        }
+        return Math.max(0.0D, track.currentHealth / Math.max(1.0F, track.maxHealth));
+    }
+
+    private static long effectiveRecentTime(TrackInfo track) {
+        if (track == null) {
+            return 0L;
+        }
+        if (track.dead) {
+            return track.deathAtMs;
+        }
+        return Math.max(track.lastDamageLikeMs, track.combatStartMs);
+    }
+
+    private static String normalizeSortMode(String value) {
+        String normalized = value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
+        if (SORT_DPS.equals(normalized) || SORT_HEALTH.equals(normalized) || SORT_DURATION.equals(normalized)) {
+            return normalized;
+        }
+        return SORT_RECENT;
+    }
+
+    private static String getDisengageReasonDisplay(String reason) {
+        if ("range".equalsIgnoreCase(reason)) {
+            return I18n.format("gui.kill_timer.reason.range");
+        }
+        if ("lost".equalsIgnoreCase(reason)) {
+            return I18n.format("gui.kill_timer.reason.lost");
+        }
+        return I18n.format("gui.kill_timer.reason.timeout");
     }
 
     private static String formatCompactNumber(double value) {

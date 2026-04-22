@@ -26,32 +26,25 @@ import com.zszl.zszlScriptMod.gui.changelog.GuiChangelog;
 import com.zszl.zszlScriptMod.gui.components.GuiTextInput;
 import com.zszl.zszlScriptMod.gui.components.GuiTheme;
 import com.zszl.zszlScriptMod.gui.components.ThemedButton;
-import com.zszl.zszlScriptMod.gui.config.GuiAdExpPanelConfig;
 import com.zszl.zszlScriptMod.gui.config.GuiAutoEatConfig;
 import com.zszl.zszlScriptMod.gui.config.GuiAutoFishingConfig;
 import com.zszl.zszlScriptMod.gui.config.GuiAutoEquipManager;
 import com.zszl.zszlScriptMod.gui.config.GuiAutoEscapeManager;
 import com.zszl.zszlScriptMod.gui.config.GuiAutoFollowManager;
 import com.zszl.zszlScriptMod.gui.config.GuiAutoPickupConfig;
-import com.zszl.zszlScriptMod.gui.config.GuiAutoSigninOnlineConfig;
-import com.zszl.zszlScriptMod.gui.config.GuiAutoSkillEditor;
-import com.zszl.zszlScriptMod.gui.config.GuiAutoStackingConfig;
 import com.zszl.zszlScriptMod.gui.config.GuiAutoUseItemConfig;
 import com.zszl.zszlScriptMod.gui.config.GuiBaritoneCommandTable;
 import com.zszl.zszlScriptMod.gui.config.GuiBaritoneSettings;
 import com.zszl.zszlScriptMod.gui.config.GuiBlockReplacementConfig;
 import com.zszl.zszlScriptMod.gui.config.GuiChatOptimization;
 import com.zszl.zszlScriptMod.gui.config.GuiConditionalExecutionManager;
-import com.zszl.zszlScriptMod.gui.config.GuiDeathAutoRejoinConfig;
 import com.zszl.zszlScriptMod.gui.config.GuiDebugConfig;
-import com.zszl.zszlScriptMod.gui.config.GuiFastAttackConfig;
 import com.zszl.zszlScriptMod.gui.config.GuiFlyConfig;
 import com.zszl.zszlScriptMod.gui.config.GuiKeybindManager;
 import com.zszl.zszlScriptMod.gui.config.GuiKillAuraConfig;
 import com.zszl.zszlScriptMod.gui.config.GuiKillTimerConfig;
 import com.zszl.zszlScriptMod.gui.config.GuiLoopCountInput;
 import com.zszl.zszlScriptMod.gui.config.GuiProfileManager;
-import com.zszl.zszlScriptMod.gui.config.GuiQuickExchangeConfig;
 import com.zszl.zszlScriptMod.gui.config.GuiResolutionConfig;
 import com.zszl.zszlScriptMod.gui.config.GuiServerFeatureVisibilityConfig;
 import com.zszl.zszlScriptMod.gui.config.GuiTerrainScannerManager;
@@ -63,7 +56,6 @@ import com.zszl.zszlScriptMod.gui.halloffame.GuiHallOfFame;
 import com.zszl.zszlScriptMod.gui.path.GuiCustomPathCreator;
 import com.zszl.zszlScriptMod.gui.path.GuiPathManager;
 import com.zszl.zszlScriptMod.gui.theme.GuiThemeManager;
-import com.zszl.zszlScriptMod.handlers.AdExpPanelHandler;
 import com.zszl.zszlScriptMod.handlers.AutoEatHandler;
 import com.zszl.zszlScriptMod.handlers.AutoEscapeHandler;
 import com.zszl.zszlScriptMod.handlers.AutoFishingHandler;
@@ -71,19 +63,13 @@ import com.zszl.zszlScriptMod.handlers.AutoEquipHandler;
 import com.zszl.zszlScriptMod.system.SimulatedKeyInputManager;
 import com.zszl.zszlScriptMod.handlers.AutoFollowHandler;
 import com.zszl.zszlScriptMod.handlers.AutoPickupHandler;
-import com.zszl.zszlScriptMod.handlers.AutoSigninOnlineHandler;
-import com.zszl.zszlScriptMod.handlers.AutoSkillHandler;
 import com.zszl.zszlScriptMod.handlers.AutoUseItemHandler;
 import com.zszl.zszlScriptMod.handlers.BlockReplacementHandler;
 import com.zszl.zszlScriptMod.handlers.ConditionalExecutionHandler;
-import com.zszl.zszlScriptMod.handlers.DeathAutoRejoinHandler;
 import com.zszl.zszlScriptMod.handlers.EmbeddedNavigationHandler;
-import com.zszl.zszlScriptMod.handlers.FreecamHandler;
 import com.zszl.zszlScriptMod.handlers.FlyHandler;
 import com.zszl.zszlScriptMod.handlers.KillAuraHandler;
 import com.zszl.zszlScriptMod.handlers.KillTimerHandler;
-import com.zszl.zszlScriptMod.handlers.ShulkerBoxStackingHandler;
-import com.zszl.zszlScriptMod.handlers.ShulkerMiningReboundFixHandler;
 import com.zszl.zszlScriptMod.handlers.WarehouseEventHandler;
 import com.zszl.zszlScriptMod.inventory.InventoryViewerManager;
 import com.zszl.zszlScriptMod.otherfeatures.OtherFeatureGroupManager;
@@ -823,8 +809,6 @@ public class GuiInventory {
         isDebugRecordingMenuVisible = false;
         UpdateChecker.fetchVersionAndChangelog();
         UpdateChecker.notifyIfNewVersion();
-        PacketCaptureHandler.notifyIfSessionIdMissing();
-
         rebuildSideButtons();
     }
 
@@ -1872,8 +1856,6 @@ public class GuiInventory {
     private static void normalizeCategoryState() {
         if ("gui.inventory.category.common".equals(sLastCategory)) {
             sLastCategory = I18n.format("gui.inventory.category.common");
-        } else if ("gui.inventory.category.rsl".equals(sLastCategory)) {
-            sLastCategory = I18n.format("gui.inventory.category.common");
         } else if ("gui.inventory.category.debug".equals(sLastCategory)) {
             sLastCategory = I18n.format("gui.inventory.category.debug");
         } else if ("gui.inventory.category.builtin_script".equals(sLastCategory)) {
@@ -1881,8 +1863,6 @@ public class GuiInventory {
         }
 
         if ("gui.inventory.category.common".equals(currentCategory)) {
-            currentCategory = I18n.format("gui.inventory.category.common");
-        } else if ("gui.inventory.category.rsl".equals(currentCategory)) {
             currentCategory = I18n.format("gui.inventory.category.common");
         } else if ("gui.inventory.category.debug".equals(currentCategory)) {
             currentCategory = I18n.format("gui.inventory.category.debug");
@@ -4813,9 +4793,6 @@ public class GuiInventory {
             return false;
         }
         String normalized = primaryCategory.trim();
-        if (ServerFeatureVisibilityManager.shouldHideMotaFeatures() && "魔塔之巅".equals(normalized)) {
-            return true;
-        }
         return false;
     }
 
@@ -6188,9 +6165,7 @@ public class GuiInventory {
                                 } else {
                                     itemNames.set(index, I18n.format("gui.inventory.item.auto_fishing.name"));
                                 }
-                            } else if (command.equals("toggle_fast_attack")
-                                    && FreecamHandler.INSTANCE.isFastAttackEnabled)
-                                bgColor = 0xFF33AA33;
+                            }
                             else if (command.equals("toggle_kill_aura")) {
                                 if (KillAuraHandler.enabled) {
                                     bgColor = 0xFF33AA33;
@@ -6198,11 +6173,15 @@ public class GuiInventory {
                                 } else {
                                     itemNames.set(index, I18n.format("gui.inventory.item.kill_aura.name"));
                                 }
+                            } else if (command.equals("toggle_kill_timer")) {
+                                boolean timer = KillTimerHandler.isEnabled;
+                                if (timer) {
+                                    bgColor = 0xFF33AA33;
+                                    itemNames.set(index, I18n.format("gui.inventory.kill_timer.on"));
+                                } else {
+                                    itemNames.set(index, I18n.format("gui.inventory.kill_timer.name"));
+                                }
                             } else if (command.equals("warehouse_manager") && WarehouseEventHandler.oneClickDepositMode)
-                                bgColor = 0xFF33AA33;
-                            else if (command.equals("autoskill") && AutoSkillHandler.autoSkillEnabled)
-                                bgColor = 0xFF33AA33;
-                            else if (command.equals("signin_online_rewards") && AutoSigninOnlineHandler.enabled)
                                 bgColor = 0xFF33AA33;
                             else if (command.equals("toggle_mouse_detach") && ModConfig.isMouseDetached)
                                 bgColor = 0xFF33AA33;
@@ -6218,45 +6197,8 @@ public class GuiInventory {
                                 bgColor = 0xFF33AA33;
                             else if (command.equals("toggle_auto_use_item") && AutoUseItemHandler.globalEnabled)
                                 bgColor = 0xFF33AA33;
-                            else if (command.equals("toggle_death_auto_rejoin")) {
-                                if (DeathAutoRejoinHandler.deathAutoRejoinEnabled) {
-                                    bgColor = 0xFF33AA33;
-                                    itemNames.set(index, I18n.format("gui.inventory.death_auto_rejoin.on"));
-                                } else {
-                                    itemNames.set(index, I18n.format("gui.inventory.item.death_auto_rejoin.name"));
-                                }
-                            } else if (command.equals("toggle_kill_timer")) {
-                                boolean timer = KillTimerHandler.isEnabled;
-                                if (timer) {
-                                    bgColor = 0xFF33AA33; // 绿色: 只开计时
-                                    itemNames.set(index, I18n.format("gui.inventory.kill_timer.on"));
-                                } else {
-                                    // 默认灰色
-                                    itemNames.set(index, I18n.format("gui.inventory.kill_timer.name"));
-                                }
-                            } else if (command.equals("toggle_ad_exp_panel")) {
-                                boolean panel = AdExpPanelHandler.enabled;
-                                if (panel) {
-                                    bgColor = 0xFF33AA33;
-                                    itemNames.set(index, I18n.format("gui.inventory.ad_exp_panel.on"));
-                                } else {
-                                    itemNames.set(index, I18n.format("gui.inventory.ad_exp_panel.name"));
-                                }
-                            } else if (command.equals("toggle_shulker_rebound_fix")) {
-                                boolean fix = ShulkerMiningReboundFixHandler.enabled;
-                                if (fix) {
-                                    bgColor = 0xFF33AA33;
-                                    itemNames.set(index, I18n.format("gui.inventory.shulker_rebound_fix.on"));
-                                } else {
-                                    itemNames.set(index, I18n.format("gui.inventory.shulker_rebound_fix.name"));
-                                }
-                            } else if (command.equals("toggle_kill_timer") && KillTimerHandler.isEnabled)
-                                bgColor = 0xFF33AA33;
                             else if (command.equals("debug_settings") && ModConfig.isDebugModeEnabled)
                                 bgColor = 0xFF00AA00;
-                            else if (command.equals("toggle_auto_stack_shulker_boxes")
-                                    && ShulkerBoxStackingHandler.autoStackingEnabled)
-                                bgColor = 0xFF33AA33;
                             else if (command.startsWith("path:") || command.startsWith("custom_path:")) {
                                 String sequenceName = command.substring(command.indexOf(":") + 1);
                                 if (PathSequenceEventListener.instance.isTracking()
@@ -6962,14 +6904,10 @@ public class GuiInventory {
                         mc.setScreen(new GuiLoopCountInput(null));
                         commandHandled = true;
                     }
-                } else if (currentCategory.equals(I18n.format("gui.inventory.category.common"))
-                        || currentCategory.equals(I18n.format("gui.inventory.category.rsl"))) {
+                } else if (currentCategory.equals(I18n.format("gui.inventory.category.common"))) {
                     if (command.equals("profile_manager")) {
                         closeOverlay();
                         mc.setScreen(new GuiProfileManager(null));
-                    } else if (command.equals("quick_exchange_config")) {
-                        closeOverlay();
-                        mc.setScreen(new GuiQuickExchangeConfig(null));
                     } else if (command.equals("chat_optimization")) {
                         closeOverlay();
                         mc.setScreen(new GuiChatOptimization(null));
@@ -7019,30 +6957,6 @@ public class GuiInventory {
                             closeOverlay();
                             mc.setScreen(new GuiAutoFishingConfig(null));
                         }
-                    } else if (command.equals("autoskill")) {
-                        if (mouseButton == 0) {
-                            AutoSkillHandler.autoSkillEnabled = !AutoSkillHandler.autoSkillEnabled;
-                            AutoSkillHandler.saveSkillConfig();
-                        } else if (mouseButton == 1) {
-                            closeOverlay();
-                            mc.setScreen(new GuiAutoSkillEditor(null));
-                        }
-                    } else if (command.equals("signin_online_rewards")) {
-                        if (mouseButton == 0) {
-                            AutoSigninOnlineHandler.enabled = !AutoSigninOnlineHandler.enabled;
-                            AutoSigninOnlineHandler.saveConfig();
-                        } else if (mouseButton == 1) {
-                            closeOverlay();
-                            mc.setScreen(new GuiAutoSigninOnlineConfig(null));
-                        }
-                    } else if (command.equals("toggle_fast_attack")) {
-                        if (mouseButton == 0) {
-                            FreecamHandler.INSTANCE.toggleFastAttack();
-                        } else if (mouseButton == 1) {
-                            closeOverlay();
-                            mc.setScreen(new GuiFastAttackConfig(null));
-                        }
-                        refreshGuiLists();
                     } else if (command.equals("toggle_kill_aura")) {
                         if (mouseButton == 0) {
                             KillAuraHandler.INSTANCE.toggleEnabled();
@@ -7051,25 +6965,6 @@ public class GuiInventory {
                             closeOverlay();
                             mc.setScreen(new GuiKillAuraConfig(null));
                         }
-                    } else if (command.equals("toggle_kill_timer")) {
-                        if (mouseButton == 0) {
-                            KillTimerHandler.toggleEnabled();
-                        } else if (mouseButton == 1) {
-                            closeOverlay();
-                            mc.setScreen(new GuiKillTimerConfig(null));
-                        }
-                        refreshGuiLists();
-                    } else if (command.equals("toggle_ad_exp_panel")) {
-                        if (mouseButton == 0) {
-                            AdExpPanelHandler.toggleEnabled();
-                        } else if (mouseButton == 1) {
-                            closeOverlay();
-                            mc.setScreen(new GuiAdExpPanelConfig(null));
-                        }
-                        refreshGuiLists();
-                    } else if (command.equals("toggle_shulker_rebound_fix")) {
-                        ShulkerMiningReboundFixHandler.toggleEnabled();
-                        refreshGuiLists();
                     } else if (command.equals("toggle_mouse_detach")) {
                         ModConfig.isMouseDetached = !ModConfig.isMouseDetached;
                         String mouseStatus = ModConfig.isMouseDetached ? I18n.format("gui.inventory.mouse.detached")
@@ -7126,22 +7021,6 @@ public class GuiInventory {
                             closeOverlay();
                             mc.setScreen(new GuiAutoEscapeManager(null));
                         }
-                    } else if (command.equals("toggle_death_auto_rejoin")) {
-                        if (mouseButton == 0) {
-                            DeathAutoRejoinHandler.deathAutoRejoinEnabled = !DeathAutoRejoinHandler.deathAutoRejoinEnabled;
-                            DeathAutoRejoinHandler.saveConfig();
-                            if (mc.player != null) {
-                                String status = DeathAutoRejoinHandler.deathAutoRejoinEnabled
-                                        ? I18n.format("gui.inventory.death_auto_rejoin.enabled")
-                                        : I18n.format("gui.inventory.death_auto_rejoin.disabled");
-                                mc.player.sendSystemMessage(new TextComponentString(
-                                        I18n.format("msg.inventory.death_auto_rejoin_status", status)));
-                            }
-                            refreshGuiLists();
-                        } else if (mouseButton == 1) {
-                            closeOverlay();
-                            mc.setScreen(new GuiDeathAutoRejoinConfig(null));
-                        }
                     } else if (command.equals("keybind_manager")) {
                         closeOverlay();
                         mc.setScreen(new GuiKeybindManager(null));
@@ -7151,21 +7030,6 @@ public class GuiInventory {
                     } else if (command.equals("baritone_settings")) {
                         closeOverlay();
                         mc.setScreen(new GuiBaritoneCommandTable(null));
-                    } else if (command.equals("toggle_auto_stack_shulker_boxes")) {
-                        if (mouseButton == 0) {
-                            ShulkerBoxStackingHandler.autoStackingEnabled = !ShulkerBoxStackingHandler.autoStackingEnabled;
-                            ShulkerBoxStackingHandler.saveConfig();
-                            if (mc.player != null) {
-                                String status = ShulkerBoxStackingHandler.autoStackingEnabled
-                                        ? I18n.format("gui.inventory.autostack.enabled")
-                                        : I18n.format("gui.inventory.autostack.disabled");
-                                mc.player.sendSystemMessage(
-                                        new TextComponentString(I18n.format("msg.inventory.autostack_status", status)));
-                            }
-                        } else if (mouseButton == 1) {
-                            closeOverlay();
-                            mc.setScreen(new GuiAutoStackingConfig(null));
-                        }
                     }
                     commandHandled = true;
                 } else if (currentCategory.equals(I18n.format("gui.inventory.category.debug"))) {

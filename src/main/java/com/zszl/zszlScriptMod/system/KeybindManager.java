@@ -17,19 +17,12 @@ import com.zszl.zszlScriptMod.gui.packet.PacketSequence;
 import com.zszl.zszlScriptMod.gui.packet.PacketSequenceManager;
 import com.zszl.zszlScriptMod.inventory.InventoryViewerManager;
 import com.zszl.zszlScriptMod.utils.PacketCaptureHandler;
-import com.zszl.zszlScriptMod.handlers.AdExpPanelHandler;
 import com.zszl.zszlScriptMod.handlers.AutoEatHandler;
 import com.zszl.zszlScriptMod.handlers.AutoFishingHandler;
 import com.zszl.zszlScriptMod.handlers.AutoPickupHandler;
-import com.zszl.zszlScriptMod.handlers.AutoSigninOnlineHandler;
-import com.zszl.zszlScriptMod.handlers.AutoSkillHandler;
-import com.zszl.zszlScriptMod.handlers.DeathAutoRejoinHandler;
 import com.zszl.zszlScriptMod.handlers.FlyHandler;
-import com.zszl.zszlScriptMod.handlers.FreecamHandler;
 import com.zszl.zszlScriptMod.handlers.KillAuraHandler;
 import com.zszl.zszlScriptMod.handlers.KillTimerHandler;
-import com.zszl.zszlScriptMod.handlers.ShulkerBoxStackingHandler;
-import com.zszl.zszlScriptMod.handlers.ShulkerMiningReboundFixHandler;
 import com.zszl.zszlScriptMod.otherfeatures.handler.block.BlockFeatureManager;
 import com.zszl.zszlScriptMod.otherfeatures.handler.item.ItemFeatureManager;
 import com.zszl.zszlScriptMod.otherfeatures.handler.movement.MovementFeatureManager;
@@ -171,9 +164,6 @@ public class KeybindManager {
                 mc.player.sendSystemMessage(
                         new TextComponentString(ChatFormatting.AQUA + I18n.format("msg.keybind.open_inventory_viewer")));
                 break;
-            case TOGGLE_FAST_ATTACK:
-                mc.execute(() -> FreecamHandler.INSTANCE.toggleFastAttack());
-                break;
             case TOGGLE_AUTO_EAT:
                 AutoEatHandler.autoEatEnabled = !AutoEatHandler.autoEatEnabled;
                 AutoEatHandler.saveAutoEatConfig();
@@ -191,22 +181,6 @@ public class KeybindManager {
             case TOGGLE_KILL_AURA:
                 KillAuraHandler.INSTANCE.toggleEnabled();
                 break;
-            case TOGGLE_AUTO_SKILL:
-                AutoSkillHandler.autoSkillEnabled = !AutoSkillHandler.autoSkillEnabled;
-                AutoSkillHandler.saveSkillConfig();
-                mc.player.sendSystemMessage(new TextComponentString(I18n.format("msg.keybind.common_toggle_status",
-                        I18n.format("keybind.action.toggle_auto_skill.name"),
-                        AutoSkillHandler.autoSkillEnabled ? I18n.format("gui.common.enabled")
-                                : I18n.format("gui.common.disabled"))));
-                break;
-            case TOGGLE_SIGNIN_ONLINE:
-                AutoSigninOnlineHandler.enabled = !AutoSigninOnlineHandler.enabled;
-                AutoSigninOnlineHandler.saveConfig();
-                mc.player.sendSystemMessage(new TextComponentString(I18n.format("msg.keybind.common_toggle_status",
-                        I18n.format("keybind.action.toggle_signin_online.name"),
-                        AutoSigninOnlineHandler.enabled ? I18n.format("gui.common.enabled")
-                                : I18n.format("gui.common.disabled"))));
-                break;
             case TOGGLE_AUTO_PICKUP:
                 AutoPickupHandler.globalEnabled = !AutoPickupHandler.globalEnabled;
                 AutoPickupHandler.saveConfig();
@@ -222,30 +196,8 @@ public class KeybindManager {
                         PacketCaptureHandler.isCapturing ? I18n.format("gui.common.enabled")
                                 : I18n.format("gui.common.disabled"))));
                 break;
-            case TOGGLE_DEATH_AUTO_REJOIN:
-                DeathAutoRejoinHandler.deathAutoRejoinEnabled = !DeathAutoRejoinHandler.deathAutoRejoinEnabled;
-                DeathAutoRejoinHandler.saveConfig();
-                mc.player.sendSystemMessage(new TextComponentString(I18n.format("msg.keybind.common_toggle_status",
-                        I18n.format("keybind.action.toggle_death_auto_rejoin.name"),
-                        DeathAutoRejoinHandler.deathAutoRejoinEnabled ? I18n.format("gui.common.enabled")
-                                : I18n.format("gui.common.disabled"))));
-                break;
             case TOGGLE_KILL_TIMER:
                 KillTimerHandler.toggleEnabled();
-                break;
-            case TOGGLE_AD_EXP_PANEL:
-                AdExpPanelHandler.toggleEnabled();
-                break;
-            case TOGGLE_SHULKER_REBOUND_FIX:
-                ShulkerMiningReboundFixHandler.toggleEnabled();
-                break;
-            case TOGGLE_AUTO_STACK_SHULKER:
-                ShulkerBoxStackingHandler.autoStackingEnabled = !ShulkerBoxStackingHandler.autoStackingEnabled;
-                ShulkerBoxStackingHandler.saveConfig();
-                mc.player.sendSystemMessage(new TextComponentString(I18n.format("msg.keybind.common_toggle_status",
-                        I18n.format("keybind.action.toggle_auto_stack_shulker.name"),
-                        ShulkerBoxStackingHandler.autoStackingEnabled ? I18n.format("gui.common.enabled")
-                                : I18n.format("gui.common.disabled"))));
                 break;
             case EXECUTE_SPECIFIC_PACKET_SEQUENCE:
                 Keybind keybind = keybinds.get(action);

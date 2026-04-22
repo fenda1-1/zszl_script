@@ -55,8 +55,6 @@ public class PacketCaptureHandler extends ChannelDuplexHandler {
     private static final String HANDLER_NAME = "keycommand_packet_handler";
     private static final String OWL_VIEW_CHANNEL = "OwlViewChannel";
     private static final String OWL_CONTROL_CHANNEL = "OwlControlChannel";
-    private static final byte[] BUTTON_CLICK_MARKER = "Button_click"
-            .getBytes(java.nio.charset.StandardCharsets.US_ASCII);
     private static final int MAX_RECENT_ITEMS = 200;
     private static final long AGGREGATE_WINDOW_MS = 500L;
     private static final int MAX_CAPTURE_QUEUE = 6000;
@@ -260,49 +258,12 @@ public class PacketCaptureHandler extends ChannelDuplexHandler {
     private static final List<String> recentOwlViewDecoded = Collections.synchronizedList(new ArrayList<>());
     private static final List<String> recentPacketTexts = Collections.synchronizedList(new ArrayList<>());
     private static volatile long packetTextVersion = 0L;
-    private static volatile boolean missingIdNoticeShown = false;
     private static volatile int lastKnownCaptureQueueSize = 0;
     private static volatile long sampledPacketCount = 0L;
     private static volatile long droppedPacketCount = 0L;
     private static volatile int activeSamplingModulo = 1;
     private static volatile PacketCaptureUiSnapshot lastUiSnapshot = new PacketCaptureUiSnapshot(0, 0, 0, 0, 1,
             true, false, System.currentTimeMillis());
-
-    public static byte[] getOwlViewSessionID() {
-        return CapturedIdRuleManager.getCapturedIdBytes("id");
-    }
-
-    public static String getSessionIdAsHex() {
-        return CapturedIdRuleManager.getCapturedIdHex("id");
-    }
-
-    public static byte[] getJjcID1() {
-        return CapturedIdRuleManager.getCapturedIdBytes("jjc_id1");
-    }
-
-    public static void setJjcID1(byte[] id) {
-        CapturedIdRuleManager.setCapturedId("jjc_id1", id);
-    }
-
-    public static String getJjcID1AsHex() {
-        return CapturedIdRuleManager.getCapturedIdHex("jjc_id1");
-    }
-
-    public static void resetOwlViewSessionID() {
-        CapturedIdRuleManager.clearAllCapturedIds();
-        missingIdNoticeShown = false;
-    }
-
-    public static void notifyIfSessionIdMissing() {
-        if (missingIdNoticeShown || getOwlViewSessionID() != null) {
-            return;
-        }
-        Minecraft mc = Minecraft.getInstance();
-        if (mc.player != null) {
-            missingIdNoticeShown = true;
-            mc.player.sendSystemMessage(Component.literal("请打开背包一次以获取必要的会话ID。"));
-        }
-    }
 
     public static void onClientTick() {
         Minecraft mc = Minecraft.getInstance();
@@ -545,9 +506,6 @@ public class PacketCaptureHandler extends ChannelDuplexHandler {
                             meta.channel, meta.rawData, isDecodedTextNeeded(true), shouldTrackRecentPacketTexts());
                     handlePacketCapture(meta, decodedText, true, captureFeatureEnabled);
 
-                    if (meta.isFmlPacket && isSwitchLineConfirmClickPacket(meta.channel, meta.rawData)) {
-                        resetOwlViewSessionID();
-                    }
                 }
             }
             super.write(ctx, msg, promise);
@@ -1268,51 +1226,6 @@ public class PacketCaptureHandler extends ChannelDuplexHandler {
 
     private static String bytesToHex(byte[] bytes) {
         return bytes == null ? "" : ByteBufUtil.hexDump(bytes).toUpperCase(Locale.ROOT);
-    }
-
-    private static int indexOf(byte[] source, byte[] target) {
-        if (source == null || target == null || target.length == 0 || source.length < target.length) {
-            return -1;
-        }
-        for (int i = 0; i <= source.length - target.length; i++) {
-            boolean matched = true;
-            for (int j = 0; j < target.length; j++) {
-                if (source[i + j] != target[j]) {
-                    matched = false;
-                    break;
-                }
-            }
-            if (matched) {
-                return i;
-            }
-        }
-        return -1;
-    }
-
-    private static byte[] tryExtractClickedComponentId(byte[] outboundData) {
-        if (outboundData == null || outboundData.length == 0) {
-            return null;
-        }
-        int markerPos = indexOf(outboundData, BUTTON_CLICK_MARKER);
-        if (markerPos < 6) {
-            return null;
-        }
-        if ((outboundData[markerPos - 1] & 0xFF) != 0x0C || (outboundData[markerPos - 2] & 0xFF) != 0x00) {
-            return null;
-        }
-        return Arrays.copyOfRange(outboundData, markerPos - 6, markerPos - 2);
-    }
-
-    private static boolean isSwitchLineConfirmClickPacket(String channel, byte[] outboundData) {
-        if (!OWL_VIEW_CHANNEL.equalsIgnoreCase(channel) || outboundData == null || outboundData.length == 0) {
-            return false;
-        }
-        byte[] switchConfirmId = CapturedIdRuleManager.getCapturedIdBytes("switch_line_confirm_button_id");
-        if (switchConfirmId == null || switchConfirmId.length != 4) {
-            return false;
-        }
-        byte[] clickedId = tryExtractClickedComponentId(outboundData);
-        return clickedId != null && Arrays.equals(clickedId, switchConfirmId);
     }
 
     private static String safe(String value) {

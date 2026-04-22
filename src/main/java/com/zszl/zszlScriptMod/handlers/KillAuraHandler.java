@@ -939,14 +939,11 @@ public class KillAuraHandler implements AbstractGameEventListener {
             return;
         }
 
-        boolean fastAttackEnabled = FreecamHandler.INSTANCE.isFastAttackEnabled;
         boolean flyEnabled = FlyHandler.enabled;
-        boolean movementProtectionActive = enabled || fastAttackEnabled || flyEnabled;
+        boolean movementProtectionActive = enabled || flyEnabled;
         boolean useNoCollision = (enabled && enableNoCollision)
-                || (fastAttackEnabled && FreecamHandler.enableNoCollision)
                 || (flyEnabled && FlyHandler.enableNoCollision);
         boolean useAntiKnockback = (enabled && enableAntiKnockback)
-                || (fastAttackEnabled && FreecamHandler.enableAntiKnockback)
                 || (flyEnabled && FlyHandler.enableAntiKnockback);
         applyKillAuraOwnMovementProtection(mc.player, movementProtectionActive, useNoCollision, useAntiKnockback);
     }
@@ -973,14 +970,11 @@ public class KillAuraHandler implements AbstractGameEventListener {
         }
         tickTeleportAttackRecovery(player);
 
-        boolean fastAttackEnabled = FreecamHandler.INSTANCE.isFastAttackEnabled;
         boolean flyEnabled = FlyHandler.enabled;
-        boolean movementProtectionActive = enabled || fastAttackEnabled || flyEnabled;
+        boolean movementProtectionActive = enabled || flyEnabled;
         boolean useNoCollision = (enabled && enableNoCollision)
-                || (fastAttackEnabled && FreecamHandler.enableNoCollision)
                 || (flyEnabled && FlyHandler.enableNoCollision);
         boolean useAntiKnockback = (enabled && enableAntiKnockback)
-                || (fastAttackEnabled && FreecamHandler.enableAntiKnockback)
                 || (flyEnabled && FlyHandler.enableAntiKnockback);
         applyKillAuraOwnMovementProtection(player, movementProtectionActive, useNoCollision, useAntiKnockback);
 

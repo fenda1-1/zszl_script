@@ -73,7 +73,6 @@ public final class ActionDisplayCatalog {
         ACTION_DISPLAY_KEYS.put("toggle_other_feature", "gui.path.action_editor.type.toggle_other_feature");
         ACTION_DISPLAY_KEYS.put("hunt", "gui.path.action_editor.type.hunt");
         ACTION_DISPLAY_KEYS.put("follow_entity", "gui.path.action_editor.type.follow_entity");
-        ACTION_DISPLAY_KEYS.put("use_skill", "gui.path.action_editor.type.use_skill");
         ACTION_DISPLAY_KEYS.put("use_hotbar_item", "gui.path.action_editor.type.use_hotbar_item");
         ACTION_DISPLAY_KEYS.put("use_held_item", "gui.path.action_editor.type.use_held_item");
         ACTION_DISPLAY_KEYS.put("move_inventory_item_to_hotbar",

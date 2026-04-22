@@ -155,6 +155,7 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
             if (current.failed() || current.finished()) {
                 current = null;
                 if (goal == null || goal.isInGoal(ctx.playerFeet())) {
+                    context = null;
                     logDebug("All done. At " + goal);
                     queuePathEvent(PathEvent.AT_GOAL);
                     next = null;
@@ -344,7 +345,9 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
             next = null;
         }
         secretInternalSetGoal(null);
-        context = null;
+        if (doIt || current == null) {
+            context = null;
+        }
         baritone.getPathingControlManager().cancelEverything(); // regardless of if we can stop the current segment, we can still stop the processes
         return doIt;
     }

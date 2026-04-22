@@ -144,7 +144,7 @@ public final class NodeParameterSchemaRegistry {
                                         "toggle_autoeat", "toggle_autofishing", "toggle_kill_aura", "toggle_fly",
                                         "runlastsequence", "run_sequence", "stop_current_sequence",
                                         "silentuse", "switch_hotbar_slot", "use_hotbar_item",
-                                        "move_inventory_item_to_hotbar", "use_held_item", "hunt", "use_skill",
+                                        "move_inventory_item_to_hotbar", "use_held_item", "hunt",
                                         "send_packet"));
                         schemas.addAll(getActionParamSchemas(actionType, graphNames));
                         schemas.addAll(commonConnectionSchemas("1"));
@@ -545,9 +545,6 @@ public final class NodeParameterSchemaRegistry {
                                         "启用后忽略名称包含黑名单关键字的实体。", "true / false", "false"));
                         schemas.add(FieldSchema.paramsField("nameBlacklistText", "名称黑名单", FieldType.TEXTAREA, false,
                                         "每行或逗号分隔一个关键字，按包含匹配。", "可为空", ""));
-                } else if ("use_skill".equals(normalized)) {
-                        schemas.add(FieldSchema.paramsField("skill", "技能名", FieldType.TEXT, true,
-                                        "要施放的技能名。", "不能为空", ""));
                 } else if ("send_packet".equals(normalized)) {
                         schemas.add(FieldSchema.paramsField("direction", "方向", FieldType.SELECT, false,
                                         "C2S 表示发包，S2C 表示按入站处理。", "C2S / S2C", "C2S",

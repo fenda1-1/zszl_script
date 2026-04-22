@@ -45,8 +45,6 @@ public class CapturedIdRuleManager {
     private static final Path CUSTOM_CONFIG_PATH = Paths.get(ModConfig.CONFIG_DIR, "captured_ids_custom.json");
     private static final String RESOURCE_NAME = "captured_ids.json";
     private static final String RULE_SHARE_PREFIX = "CIDR1.";
-    private static final String CATEGORY_RSL = "再生之路";
-    private static final String CATEGORY_MOTA = "魔塔之巅";
     private static final String CATEGORY_UNGROUPED = "未分组";
 
     private static final List<CaptureRule> rules = new CopyOnWriteArrayList<>();
@@ -330,8 +328,7 @@ public class CapturedIdRuleManager {
     public static synchronized boolean addCategory(String category) {
         initialize();
         String normalized = normalizeCategory(category);
-        if (isBlank(normalized) || CATEGORY_RSL.equals(normalized) || CATEGORY_MOTA.equals(normalized)
-                || CATEGORY_UNGROUPED.equals(normalized)) {
+        if (isBlank(normalized) || CATEGORY_UNGROUPED.equals(normalized)) {
             return false;
         }
 
@@ -351,10 +348,7 @@ public class CapturedIdRuleManager {
     public static synchronized boolean deleteCategory(String category) {
         initialize();
         String normalized = normalizeCategory(category);
-        if (isBlank(normalized)
-                || CATEGORY_RSL.equals(normalized)
-                || CATEGORY_MOTA.equals(normalized)
-                || CATEGORY_UNGROUPED.equals(normalized)) {
+        if (isBlank(normalized) || CATEGORY_UNGROUPED.equals(normalized)) {
             return false;
         }
 
@@ -382,17 +376,11 @@ public class CapturedIdRuleManager {
         String normalizedOld = normalizeCategory(oldCategory);
         String normalizedNew = normalizeCategory(newCategory);
 
-        if (isBlank(normalizedOld)
-                || CATEGORY_RSL.equals(normalizedOld)
-                || CATEGORY_MOTA.equals(normalizedOld)
-                || CATEGORY_UNGROUPED.equals(normalizedOld)) {
+        if (isBlank(normalizedOld) || CATEGORY_UNGROUPED.equals(normalizedOld)) {
             return false;
         }
 
-        if (isBlank(normalizedNew)
-                || CATEGORY_RSL.equals(normalizedNew)
-                || CATEGORY_MOTA.equals(normalizedNew)
-                || CATEGORY_UNGROUPED.equals(normalizedNew)) {
+        if (isBlank(normalizedNew) || CATEGORY_UNGROUPED.equals(normalizedNew)) {
             return false;
         }
 
@@ -883,8 +871,7 @@ public class CapturedIdRuleManager {
 
     private static void addCategoryToRootIfNeeded(ConfigRoot root, String category) {
         String normalized = normalizeRuleCategory(category);
-        if (isBlank(normalized) || CATEGORY_RSL.equals(normalized) || CATEGORY_MOTA.equals(normalized)
-                || CATEGORY_UNGROUPED.equals(normalized)) {
+        if (isBlank(normalized) || CATEGORY_UNGROUPED.equals(normalized)) {
             return;
         }
         ensureRootLists(root);
@@ -992,12 +979,11 @@ public class CapturedIdRuleManager {
     }
 
     private static String normalizeRuleCategory(String category) {
-        String normalized = normalizeCategory(category);
-        return isRemovedBuiltinServerCategory(normalized) ? CATEGORY_UNGROUPED : normalized;
+        return normalizeCategory(category);
     }
 
     private static boolean isRemovedBuiltinServerCategory(String category) {
-        return CATEGORY_RSL.equals(normalizeCategory(category)) || CATEGORY_MOTA.equals(normalizeCategory(category));
+        return false;
     }
 
     private static String resolveRuleName(String key) {

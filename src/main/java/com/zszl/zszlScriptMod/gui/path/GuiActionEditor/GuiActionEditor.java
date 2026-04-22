@@ -251,7 +251,6 @@ public class GuiActionEditor extends ThemedGuiScreen {
     List<String> paramDropdownKeys = new ArrayList<>();
     private List<String> paramDropdownLabels = new ArrayList<>();
     private List<String> paramDropdownHelpTexts = new ArrayList<>();
-    List<GuiButton> skillButtons = new ArrayList<>();
     private List<GuiButton> messageColorButtons = new ArrayList<>();
     List<ToggleOptionButton> toggleButtons = new ArrayList<>();
     List<String> toggleKeys = new ArrayList<>();
@@ -268,7 +267,6 @@ public class GuiActionEditor extends ThemedGuiScreen {
     private final Map<String, String> nearbyEntityPosMap = new LinkedHashMap<>();
     private final Map<String, String> nearbyEntityNameMap = new LinkedHashMap<>();
     private final Map<String, String> nearbyBlockPosMap = new LinkedHashMap<>();
-    private String selectedSkill = "R";
     private GuiTextField systemMessageField;
     GuiButton btnSelectRunSequence;
     GuiButton btnSelectHuntAttackSequence;
@@ -848,9 +846,6 @@ public class GuiActionEditor extends ThemedGuiScreen {
 
     private boolean shouldHideInNewActionPanel(String actionType) {
         String normalized = actionType == null ? "" : actionType.trim().toLowerCase(Locale.ROOT);
-        if ("use_skill".equals(normalized)) {
-            return true;
-        }
         if (!isNew) {
             return false;
         }
@@ -948,10 +943,6 @@ public class GuiActionEditor extends ThemedGuiScreen {
 
         this.currentParams = new JsonParser().parse(this.actionToEdit.params.toString()).getAsJsonObject();
 
-        if ("use_skill".equalsIgnoreCase(this.actionToEdit.type) && this.currentParams.has("skill")) {
-            this.selectedSkill = this.currentParams.get("skill").getAsString();
-        }
-
         this.sequenceBuiltinDelayEnabledDraft = PathSequenceEventListener.isBuiltinSequenceDelayEnabled();
         this.sequenceBuiltinDelayTicksDraft = String.valueOf(PathSequenceEventListener.getBuiltinSequenceDelayTicks());
         refreshAvailableSequenceNames();
@@ -1019,7 +1010,6 @@ public class GuiActionEditor extends ThemedGuiScreen {
         this.groupedVariableBindings.clear();
         this.expressionTemplateBindings.clear();
         this.expressionEditorBindings.clear();
-        this.skillButtons.clear();
         this.messageColorButtons.clear();
         this.toggleButtons.clear();
         this.toggleKeys.clear();
@@ -1959,9 +1949,6 @@ public class GuiActionEditor extends ThemedGuiScreen {
             case "follow_entity":
                 ActionParameterSections.buildFollowEntitySection(this, x, currentY, fieldWidth);
                 break;
-            case "use_skill":
-                ActionParameterSections.buildUseSkillSection(this, x, currentY, fieldWidth);
-                break;
             case "use_hotbar_item":
                 ActionParameterSections.buildUseHotbarItemSection(this, x, currentY, fieldWidth);
                 break;
@@ -2190,8 +2177,6 @@ public class GuiActionEditor extends ThemedGuiScreen {
                 newParams.addProperty("originalWidth", mc.getWindow().getScreenWidth());
                 newParams.addProperty("originalHeight", mc.getWindow().getScreenHeight());
             }
-        } else if ("use_skill".equalsIgnoreCase(selectedType)) {
-            newParams.addProperty("skill", this.selectedSkill);
         }
 
         for (int i = 0; i < paramFields.size(); i++) {
@@ -4350,14 +4335,6 @@ public class GuiActionEditor extends ThemedGuiScreen {
             return;
         }
 
-        if (button.id >= 200 && button.id < 204) {
-            String[] skills = { "R", "Z", "X", "C" };
-            this.selectedSkill = skills[button.id - 200];
-            this.hasUnsavedChanges = true;
-            this.pendingSwitchActionType = null;
-            return;
-        }
-
         if (button.id >= BTN_ID_APPLY_HUNT_PRESET_BASE && button.id < BTN_ID_APPLY_HUNT_PRESET_BASE + 3) {
             applyHuntPreset(button.id - BTN_ID_APPLY_HUNT_PRESET_BASE);
             return;
@@ -4564,22 +4541,6 @@ public class GuiActionEditor extends ThemedGuiScreen {
         drawConditionInventoryCustomSection(mouseX, mouseY);
         drawMoveChestCustomSection(mouseX, mouseY);
 
-        if ("use_skill".equalsIgnoreCase(availableActionTypes.get(selectedTypeIndex))) {
-            int x = getParamContentX();
-            int y = paramViewTop + 6;
-            this.drawString(fontRenderer, I18n.format("gui.path.action_editor.select_skill"), x, y - 12, 0xFFDDDDDD);
-            for (GuiButton btn : this.skillButtons) {
-                if (btn.displayString.equals(this.selectedSkill)) {
-                    btn.packedFGColour = 0xFFFFAA00;
-                } else {
-                    btn.packedFGColour = 0xFFE0E0E0;
-                }
-                if (btn.y + btn.height >= paramViewTop && btn.y <= paramViewBottom) {
-                    btn.drawButton(mc, mouseX, mouseY, partialTicks);
-                }
-            }
-        }
-
         if ("run_sequence".equalsIgnoreCase(availableActionTypes.get(selectedTypeIndex))
                 && btnSelectRunSequence != null) {
             int x = btnSelectRunSequence.x;
@@ -4642,7 +4603,7 @@ public class GuiActionEditor extends ThemedGuiScreen {
         }
 
         if (paramFields.isEmpty() && paramDropdowns.isEmpty() && toggleButtons.isEmpty()
-                && skillButtons.isEmpty() && btnSelectRunSequence == null
+                && btnSelectRunSequence == null
                 && btnSelectOtherFeature == null) {
             GuiTheme.drawEmptyState(editorPaneX + editorPaneWidth / 2, paramViewTop + 18, "当前动作没有可编辑参数",
                     this.fontRenderer);
