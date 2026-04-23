@@ -120,6 +120,8 @@ public class SingleItemFeatureConfigScreen extends ThemedGuiScreen {
             return "箱子窃取间隔 : " + ItemFeatureManager.getChestStealDelayTicks() + " tick";
         case "auto_equip":
             return "扫描间隔 : " + ItemFeatureManager.getAutoEquipIntervalTicks() + " tick";
+        case "always_critical":
+            return "触发方式 : 攻击前补发暴击包";
         case "drop_all":
             return "丢弃关键词 : " + (ItemFeatureManager.getDropAllKeywordsText().isEmpty()
                     ? "未配置" : ItemFeatureManager.getDropAllKeywordsText());

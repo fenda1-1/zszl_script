@@ -81,6 +81,8 @@ public enum BindableAction {
             "keybind.action.toggle_item_chest_steal.desc", FeatureGroup.ITEM, "chest_steal"),
     TOGGLE_ITEM_AUTO_EQUIP("keybind.action.toggle_item_auto_equip.name",
             "keybind.action.toggle_item_auto_equip.desc", FeatureGroup.ITEM, "auto_equip"),
+    TOGGLE_ITEM_ALWAYS_CRITICAL("keybind.action.toggle_item_always_critical.name",
+            "keybind.action.toggle_item_always_critical.desc", FeatureGroup.ITEM, "always_critical"),
     TOGGLE_ITEM_DROP_ALL("keybind.action.toggle_item_drop_all.name",
             "keybind.action.toggle_item_drop_all.desc", FeatureGroup.ITEM, "drop_all"),
     TOGGLE_ITEM_SHULKER_PREVIEW("keybind.action.toggle_item_shulker_preview.name",
