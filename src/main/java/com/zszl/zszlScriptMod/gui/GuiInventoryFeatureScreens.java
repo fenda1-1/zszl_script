@@ -38,6 +38,7 @@ import com.zszl.zszlScriptMod.utils.MerchantExchangeManager.MerchantDef;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.FontRenderer;
 import net.minecraft.client.gui.Gui;
+import net.minecraft.client.gui.GuiScreen;
 import net.minecraft.client.renderer.RenderHelper;
 import net.minecraft.client.resources.I18n;
 import net.minecraft.client.util.ITooltipFlag;
@@ -505,13 +506,16 @@ abstract class GuiInventoryFeatureScreens extends GuiInventoryCustomSupport {
         if (feature == null) {
             return false;
         }
+        GuiScreen returnScreen = mc.currentScreen instanceof GuiInventoryOverlayScreen
+                ? mc.currentScreen
+                : new GuiInventoryOverlayScreen();
 
         if ("speed".equalsIgnoreCase(feature.id)) {
             if (mouseButton == 0) {
                 SpeedHandler.INSTANCE.toggleEnabled();
             } else if (mouseButton == 1) {
                 closeOverlay();
-                mc.displayGuiScreen(new GuiSpeedConfig(null));
+                mc.displayGuiScreen(new GuiSpeedConfig(returnScreen));
             }
             return true;
         }
@@ -521,7 +525,7 @@ abstract class GuiInventoryFeatureScreens extends GuiInventoryCustomSupport {
                 MovementFeatureManager.toggleFeature(feature.id);
             } else if (mouseButton == 1) {
                 closeOverlay();
-                net.minecraft.client.gui.GuiScreen configScreen = MovementFeatureGuiFactory.create(null, feature.id);
+                GuiScreen configScreen = MovementFeatureGuiFactory.create(returnScreen, feature.id);
                 if (configScreen != null) {
                     mc.displayGuiScreen(configScreen);
                 }
@@ -534,7 +538,7 @@ abstract class GuiInventoryFeatureScreens extends GuiInventoryCustomSupport {
                 BlockFeatureManager.toggleFeature(feature.id);
             } else if (mouseButton == 1) {
                 closeOverlay();
-                net.minecraft.client.gui.GuiScreen configScreen = BlockFeatureGuiFactory.create(null, feature.id);
+                GuiScreen configScreen = BlockFeatureGuiFactory.create(returnScreen, feature.id);
                 if (configScreen != null) {
                     mc.displayGuiScreen(configScreen);
                 }
@@ -547,7 +551,7 @@ abstract class GuiInventoryFeatureScreens extends GuiInventoryCustomSupport {
                 RenderFeatureManager.toggleFeature(feature.id);
             } else if (mouseButton == 1) {
                 closeOverlay();
-                net.minecraft.client.gui.GuiScreen configScreen = RenderFeatureGuiFactory.create(null, feature.id);
+                GuiScreen configScreen = RenderFeatureGuiFactory.create(returnScreen, feature.id);
                 if (configScreen != null) {
                     mc.displayGuiScreen(configScreen);
                 }
@@ -560,7 +564,7 @@ abstract class GuiInventoryFeatureScreens extends GuiInventoryCustomSupport {
                 WorldFeatureManager.toggleFeature(feature.id);
             } else if (mouseButton == 1) {
                 closeOverlay();
-                net.minecraft.client.gui.GuiScreen configScreen = WorldFeatureGuiFactory.create(null, feature.id);
+                GuiScreen configScreen = WorldFeatureGuiFactory.create(returnScreen, feature.id);
                 if (configScreen != null) {
                     mc.displayGuiScreen(configScreen);
                 }
@@ -573,7 +577,7 @@ abstract class GuiInventoryFeatureScreens extends GuiInventoryCustomSupport {
                 ItemFeatureManager.toggleFeature(feature.id);
             } else if (mouseButton == 1) {
                 closeOverlay();
-                net.minecraft.client.gui.GuiScreen configScreen = ItemFeatureGuiFactory.create(null, feature.id);
+                GuiScreen configScreen = ItemFeatureGuiFactory.create(returnScreen, feature.id);
                 if (configScreen != null) {
                     mc.displayGuiScreen(configScreen);
                 }
@@ -586,7 +590,7 @@ abstract class GuiInventoryFeatureScreens extends GuiInventoryCustomSupport {
                 MiscFeatureManager.toggleFeature(feature.id);
             } else if (mouseButton == 1) {
                 closeOverlay();
-                net.minecraft.client.gui.GuiScreen configScreen = MiscFeatureGuiFactory.create(null, feature.id);
+                GuiScreen configScreen = MiscFeatureGuiFactory.create(returnScreen, feature.id);
                 if (configScreen != null) {
                     mc.displayGuiScreen(configScreen);
                 }
