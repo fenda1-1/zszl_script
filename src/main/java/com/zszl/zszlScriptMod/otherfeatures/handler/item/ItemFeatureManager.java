@@ -16,6 +16,8 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
 import net.minecraft.network.protocol.game.ServerboundPlayerCommandPacket;
 import net.minecraft.network.chat.Component;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.food.FoodData;
@@ -31,6 +33,7 @@ import net.minecraft.world.item.enchantment.EnchantmentHelper;
 import net.minecraft.world.item.enchantment.Enchantments;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.level.block.ShulkerBoxBlock;
+import net.minecraft.world.phys.EntityHitResult;
 import net.minecraftforge.client.event.RenderTooltipEvent;
 import net.minecraftforge.client.event.ScreenEvent;
 import net.minecraftforge.event.entity.player.ItemTooltipEvent;
@@ -62,6 +65,7 @@ public final class ItemFeatureManager {
     private static final int DEFAULT_SHULKER_PREVIEW_SLOT_BORDER = 0xFF31475D;
     private static final double CRITICAL_PACKET_STEP_Y = 0.0625D;
     private static final double CRITICAL_PACKET_EPSILON_Y = 1.1E-5D;
+    private static final float FULLY_CHARGED_ATTACK_THRESHOLD = 1.0F;
 
     private static int chestStealDelayTicks = DEFAULT_CHEST_STEAL_DELAY_TICKS;
     private static int autoEquipIntervalTicks = DEFAULT_AUTO_EQUIP_INTERVAL_TICKS;
@@ -82,6 +86,8 @@ public final class ItemFeatureManager {
         register(new FeatureState("auto_equip", "自动装备", "如果身上没穿或有更差的装备，会自动从背包里穿上更好的装备。", true));
         register(new FeatureState("always_critical", "刀刀暴击",
                 "攻击实体前补发短暂伪下落数据，尽量让近战命中按原版暴击条件结算。", true));
+        register(new FeatureState("attack_no_cooldown", "攻击自动蓄力",
+                "客户端近似实现：按住攻击键时拦截未满蓄力的近战攻击，并在满蓄力瞬间自动出刀，尽量避免连续平砍掉伤。", true));
         register(new FeatureState("force_no_hunger", "强制不饥饿",
                 "持续锁定客户端饥饿值、饱和度和消耗值，尽量让角色保持满饱食状态。", true));
         register(new FeatureState("drop_all", "丢弃所有", "按关键词自动丢弃指定物品，支持多个关键词。", true));
@@ -230,6 +236,7 @@ public final class ItemFeatureManager {
 
         tickCooldowns();
         handlePendingCriticalSprintRestore(mc.player);
+        handleAttackNoCooldown(mc);
         handleForceNoHunger(mc.player);
         handleAutoEquip(mc, mc.player);
         handleChestSteal(mc, mc.player);
@@ -462,7 +469,8 @@ public final class ItemFeatureManager {
     }
 
     private void handleChestSteal(Minecraft mc, LocalPlayer player) {
-        if (!isEnabled("chest_steal") || chestStealCooldownTicks > 0 || !(player.containerMenu instanceof ChestMenu chestMenu)) {
+        if (!isEnabled("chest_steal") || chestStealCooldownTicks > 0
+                || !(player.containerMenu instanceof ChestMenu chestMenu)) {
             return;
         }
         int containerSlots = chestMenu.getRowCount() * 9;
@@ -557,7 +565,8 @@ public final class ItemFeatureManager {
     }
 
     private void handlePendingCriticalSprintRestore(LocalPlayer player) {
-        if (!pendingCriticalSprintRestore || criticalSprintRestoreTicks > 0 || player == null || player.connection == null) {
+        if (!pendingCriticalSprintRestore || criticalSprintRestoreTicks > 0 || player == null
+                || player.connection == null) {
             return;
         }
         player.connection.send(
@@ -573,10 +582,13 @@ public final class ItemFeatureManager {
 
         int sourceMenuSlot = inventoryIndexToMenuSlot(sourceInvSlot);
         int targetMenuSlot = inventoryIndexToMenuSlot(targetInvSlot);
-        mc.gameMode.handleInventoryMouseClick(player.inventoryMenu.containerId, sourceMenuSlot, 0, ClickType.PICKUP, player);
-        mc.gameMode.handleInventoryMouseClick(player.inventoryMenu.containerId, targetMenuSlot, 0, ClickType.PICKUP, player);
+        mc.gameMode.handleInventoryMouseClick(player.inventoryMenu.containerId, sourceMenuSlot, 0, ClickType.PICKUP,
+                player);
+        mc.gameMode.handleInventoryMouseClick(player.inventoryMenu.containerId, targetMenuSlot, 0, ClickType.PICKUP,
+                player);
         if (!player.inventoryMenu.getCarried().isEmpty()) {
-            mc.gameMode.handleInventoryMouseClick(player.inventoryMenu.containerId, sourceMenuSlot, 0, ClickType.PICKUP, player);
+            mc.gameMode.handleInventoryMouseClick(player.inventoryMenu.containerId, sourceMenuSlot, 0, ClickType.PICKUP,
+                    player);
         }
     }
 
@@ -622,7 +634,8 @@ public final class ItemFeatureManager {
         if (stack.getItem() instanceof ArmorItem) {
             return 0;
         }
-        if (stack.getItem() instanceof SwordItem || stack.getItem() instanceof DiggerItem || stack.getItem() instanceof BowItem) {
+        if (stack.getItem() instanceof SwordItem || stack.getItem() instanceof DiggerItem
+                || stack.getItem() instanceof BowItem) {
             return 1;
         }
         if (stack.isEdible()) {
@@ -655,6 +668,53 @@ public final class ItemFeatureManager {
             return false;
         }
         return player.getAttackStrengthScale(0.5F) > 0.9F;
+    }
+
+    private void handleAttackNoCooldown(Minecraft mc) {
+        if (!isEnabled("attack_no_cooldown")
+                || mc == null
+                || mc.player == null
+                || mc.level == null
+                || mc.gameMode == null
+                || mc.screen != null
+                || mc.player.isHandsBusy()
+                || !mc.options.keyAttack.isDown()
+                || !(mc.hitResult instanceof EntityHitResult entityHitResult)) {
+            return;
+        }
+
+        Entity target = entityHitResult.getEntity();
+        if (!canPerformFullStrengthAttack(mc.player, target)) {
+            return;
+        }
+
+        mc.gameMode.attack(mc.player, target);
+        mc.player.swing(InteractionHand.MAIN_HAND);
+    }
+
+    public static boolean shouldCancelWeakEntityAttack(Minecraft mc) {
+        if (!isEnabled("attack_no_cooldown")
+                || mc == null
+                || mc.player == null
+                || mc.screen != null
+                || mc.player.isHandsBusy()
+                || !(mc.hitResult instanceof EntityHitResult entityHitResult)) {
+            return false;
+        }
+
+        Entity target = entityHitResult.getEntity();
+        return !INSTANCE.canPerformFullStrengthAttack(mc.player, target);
+    }
+
+    private boolean canPerformFullStrengthAttack(LocalPlayer player, Entity target) {
+        if (player == null
+                || target == null
+                || target == player
+                || target.isRemoved()
+                || !target.isAlive()) {
+            return false;
+        }
+        return player.getAttackStrengthScale(0.0F) >= FULLY_CHARGED_ATTACK_THRESHOLD;
     }
 
     public static void prepareCriticalAttack(net.minecraft.world.entity.player.Player player,
@@ -750,9 +810,11 @@ public final class ItemFeatureManager {
         graphics.fill(panelX, panelY, panelX + panelWidth, panelY + panelHeight, DEFAULT_SHULKER_PREVIEW_BG);
         graphics.fill(panelX, panelY, panelX + panelWidth, panelY + 15, DEFAULT_SHULKER_PREVIEW_HEADER_BG);
         graphics.fill(panelX, panelY, panelX + panelWidth, panelY + 1, 0xFF5FB8FF);
-        graphics.fill(panelX, panelY + panelHeight - 1, panelX + panelWidth, panelY + panelHeight, DEFAULT_SHULKER_PREVIEW_BORDER);
+        graphics.fill(panelX, panelY + panelHeight - 1, panelX + panelWidth, panelY + panelHeight,
+                DEFAULT_SHULKER_PREVIEW_BORDER);
         graphics.fill(panelX, panelY, panelX + 1, panelY + panelHeight, DEFAULT_SHULKER_PREVIEW_BORDER);
-        graphics.fill(panelX + panelWidth - 1, panelY, panelX + panelWidth, panelY + panelHeight, DEFAULT_SHULKER_PREVIEW_BORDER);
+        graphics.fill(panelX + panelWidth - 1, panelY, panelX + panelWidth, panelY + panelHeight,
+                DEFAULT_SHULKER_PREVIEW_BORDER);
         graphics.drawString(mc.font, shulkerStack.getHoverName(), panelX + 6, panelY + 4, 0xFFEAF6FF, false);
 
         int startX = panelX + 6;
@@ -810,6 +872,9 @@ public final class ItemFeatureManager {
         if (isEnabled("always_critical") && getFeature("always_critical").statusHudEnabled) {
             parts.add("§c刀刀暴击");
         }
+        if (isEnabled("attack_no_cooldown") && getFeature("attack_no_cooldown").statusHudEnabled) {
+            parts.add("§6满蓄力刀");
+        }
         if (isEnabled("chest_steal") && getFeature("chest_steal").statusHudEnabled) {
             parts.add("§e箱窃:" + chestStealDelayTicks + "t");
         }
@@ -842,26 +907,28 @@ public final class ItemFeatureManager {
         }
 
         switch (featureId) {
-        case "auto_equip":
-            return isEnabled(featureId) ? "自动装备扫描间隔: " + autoEquipIntervalTicks + " tick" : "未启用";
-        case "always_critical":
-            return isEnabled(featureId) ? "攻击前补发伪下落数据，尽量触发近战原版暴击" : "未启用";
-        case "force_no_hunger":
-            return isEnabled(featureId) ? "持续锁定客户端饥饿值与饱和度" : "未启用";
-        case "inventory_sort":
-            return isEnabled(featureId) ? "打开背包界面时自动整理主背包" : "未启用";
-        case "chest_steal":
-            return isEnabled(featureId) ? "箱子搬运间隔: " + chestStealDelayTicks + " tick" : "未启用";
-        case "drop_all":
-            if (!isEnabled(featureId)) {
-                return "未启用";
-            }
-            List<String> keywords = getDropAllKeywords();
-            return keywords.isEmpty() ? "已启用，但尚未配置丢弃关键词" : "丢弃关键词: " + String.join(" / ", keywords);
-        case "shulker_preview":
-            return isEnabled(featureId) ? "悬停潜影盒时显示内容预览" : "未启用";
-        default:
-            return state.enabled ? "已启用" : "未启用";
+            case "auto_equip":
+                return isEnabled(featureId) ? "自动装备扫描间隔: " + autoEquipIntervalTicks + " tick" : "未启用";
+            case "always_critical":
+                return isEnabled(featureId) ? "攻击前补发伪下落数据，尽量触发近战原版暴击" : "未启用";
+            case "attack_no_cooldown":
+                return isEnabled(featureId) ? "按住攻击键时只在满蓄力瞬间自动出刀，避免低伤平砍" : "未启用";
+            case "force_no_hunger":
+                return isEnabled(featureId) ? "持续锁定客户端饥饿值与饱和度" : "未启用";
+            case "inventory_sort":
+                return isEnabled(featureId) ? "打开背包界面时自动整理主背包" : "未启用";
+            case "chest_steal":
+                return isEnabled(featureId) ? "箱子搬运间隔: " + chestStealDelayTicks + " tick" : "未启用";
+            case "drop_all":
+                if (!isEnabled(featureId)) {
+                    return "未启用";
+                }
+                List<String> keywords = getDropAllKeywords();
+                return keywords.isEmpty() ? "已启用，但尚未配置丢弃关键词" : "丢弃关键词: " + String.join(" / ", keywords);
+            case "shulker_preview":
+                return isEnabled(featureId) ? "悬停潜影盒时显示内容预览" : "未启用";
+            default:
+                return state.enabled ? "已启用" : "未启用";
         }
     }
 
@@ -883,6 +950,7 @@ public final class ItemFeatureManager {
 
     private static final Comparator<ItemStack> INVENTORY_SORT_COMPARATOR = Comparator
             .comparingInt(ItemFeatureManager::categoryWeight)
-            .thenComparing(stack -> stack.isEmpty() ? "" : safe(stack.getHoverName().getString()), String.CASE_INSENSITIVE_ORDER)
+            .thenComparing(stack -> stack.isEmpty() ? "" : safe(stack.getHoverName().getString()),
+                    String.CASE_INSENSITIVE_ORDER)
             .thenComparingInt(stack -> stack.isEmpty() ? 0 : -stack.getCount());
 }

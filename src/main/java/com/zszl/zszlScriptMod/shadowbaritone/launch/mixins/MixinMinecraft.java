@@ -17,6 +17,7 @@
 
 package com.zszl.zszlScriptMod.shadowbaritone.launch.mixins;
 
+import com.zszl.zszlScriptMod.otherfeatures.handler.item.ItemFeatureManager;
 import com.zszl.zszlScriptMod.otherfeatures.handler.movement.MovementFeatureManager;
 import com.zszl.zszlScriptMod.shadowbaritone.api.BaritoneAPI;
 import com.zszl.zszlScriptMod.shadowbaritone.api.IBaritone;
@@ -36,6 +37,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.Slice;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 import java.util.function.BiFunction;
 
@@ -107,6 +109,17 @@ public class MixinMinecraft {
         }
 
         this.tickProvider = null;
+    }
+
+    @Inject(
+            method = "startAttack",
+            at = @At("HEAD"),
+            cancellable = true
+    )
+    private void zszlScriptMod$delayWeakEntityAttack(CallbackInfoReturnable<Boolean> cir) {
+        if (ItemFeatureManager.shouldCancelWeakEntityAttack(self())) {
+            cir.setReturnValue(false);
+        }
     }
 
     @Inject(

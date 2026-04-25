@@ -122,6 +122,8 @@ public class SingleItemFeatureConfigScreen extends ThemedGuiScreen {
             return "扫描间隔 : " + ItemFeatureManager.getAutoEquipIntervalTicks() + " tick";
         case "always_critical":
             return "触发方式 : 攻击前补发暴击包";
+        case "attack_no_cooldown":
+            return "触发方式 : 按住左键自动满蓄力出刀";
         case "drop_all":
             return "丢弃关键词 : " + (ItemFeatureManager.getDropAllKeywordsText().isEmpty()
                     ? "未配置" : ItemFeatureManager.getDropAllKeywordsText());
