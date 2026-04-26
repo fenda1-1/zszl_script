@@ -33,6 +33,7 @@
     "MixinNBTTagLongArray",
     "MixinNetHandlerPlayClient",
     "MixinNetworkManager",
+    "MixinPlayerController",
     "MixinRenderChunk",
     "MixinRenderList",
     "MixinStateImplementation",

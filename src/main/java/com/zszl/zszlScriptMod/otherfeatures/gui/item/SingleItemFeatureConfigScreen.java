@@ -71,6 +71,8 @@ public class SingleItemFeatureConfigScreen extends SimpleFeatureConfigScreen {
             return "箱子窃取间隔 : " + ItemFeatureManager.getChestStealDelayTicks() + " tick";
         case "auto_equip":
             return "扫描间隔 : " + ItemFeatureManager.getAutoEquipIntervalTicks() + " tick";
+        case "always_critical":
+            return "触发方式 : 攻击前补发暴击包";
         case "drop_all":
             return "丢弃关键词 : " + (ItemFeatureManager.getDropAllKeywordsText().isEmpty()
                     ? "未配置" : ItemFeatureManager.getDropAllKeywordsText());
@@ -107,6 +109,10 @@ public class SingleItemFeatureConfigScreen extends SimpleFeatureConfigScreen {
             return Arrays.asList("§e自动装备扫描间隔",
                     "§7控制自动检查并替换装备的频率。",
                     "§7数值越小，响应越快。");
+        case "always_critical":
+            return Arrays.asList("§e刀刀暴击",
+                    "§7攻击实体前发送短暂伪下落位置包。",
+                    "§7当前功能没有额外可调参数。");
         case "drop_all":
             return Arrays.asList("§e丢弃关键词",
                     "§7多个关键词可用逗号分隔。",

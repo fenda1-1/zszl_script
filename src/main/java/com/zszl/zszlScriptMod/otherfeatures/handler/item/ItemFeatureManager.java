@@ -15,7 +15,11 @@ import net.minecraft.client.gui.inventory.GuiInventory;
 import net.minecraft.client.renderer.GlStateManager;
 import net.minecraft.client.renderer.RenderHelper;
 import net.minecraft.enchantment.EnchantmentHelper;
+import net.minecraft.entity.Entity;
+import net.minecraft.entity.EntityLivingBase;
+import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.init.Enchantments;
+import net.minecraft.init.MobEffects;
 import net.minecraft.inventory.ClickType;
 import net.minecraft.inventory.ContainerChest;
 import net.minecraft.inventory.ItemStackHelper;
@@ -30,6 +34,8 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.item.ItemSword;
 import net.minecraft.item.ItemTool;
 import net.minecraft.nbt.NBTTagCompound;
+import net.minecraft.network.play.client.CPacketEntityAction;
+import net.minecraft.network.play.client.CPacketPlayer;
 import net.minecraft.util.FoodStats;
 import net.minecraft.util.NonNullList;
 import net.minecraft.util.math.MathHelper;
@@ -62,6 +68,9 @@ public class ItemFeatureManager {
     private static final int DEFAULT_SHULKER_PREVIEW_BORDER = 0xFF3A556E;
     private static final int DEFAULT_SHULKER_PREVIEW_SLOT_BG = 0xFF1A2532;
     private static final int DEFAULT_SHULKER_PREVIEW_SLOT_BORDER = 0xFF31475D;
+    private static final double CRITICAL_PACKET_STEP_Y = 0.0625D;
+    private static final double CRITICAL_PACKET_EPSILON_Y = 1.1E-5D;
+    private static final float CRITICAL_MIN_ATTACK_STRENGTH = 0.9F;
 
     private static int chestStealDelayTicks = DEFAULT_CHEST_STEAL_DELAY_TICKS;
     private static int autoEquipIntervalTicks = DEFAULT_AUTO_EQUIP_INTERVAL_TICKS;
@@ -72,7 +81,9 @@ public class ItemFeatureManager {
     private int chestStealCooldownTicks = 0;
     private int autoEquipCooldownTicks = 0;
     private int dropAllCooldownTicks = 0;
+    private int criticalSprintRestoreTicks = 0;
     private boolean forceNoHungerReflectionFailed = false;
+    private boolean pendingCriticalSprintRestore = false;
 
     static {
         register(new FeatureState("inventory_sort", "自动整理",
@@ -83,6 +94,9 @@ public class ItemFeatureManager {
                 null, 0.0F, 0.0F, 0.0F, true));
         register(new FeatureState("auto_equip", "自动装备",
                 "如果身上没穿或有更差的装备，会自动从背包里穿上更好的装备。",
+                null, 0.0F, 0.0F, 0.0F, true));
+        register(new FeatureState("always_critical", "刀刀暴击",
+                "攻击实体前补发短暂伪下落数据，尽量让近战命中按原版暴击条件结算。",
                 null, 0.0F, 0.0F, 0.0F, true));
         register(new FeatureState("force_no_hunger", "强制不饥饿",
                 "持续锁定客户端饥饿值、饱和度和消耗值，尽量让角色保持满饱食状态。",
@@ -374,6 +388,8 @@ public class ItemFeatureManager {
         this.chestStealCooldownTicks = 0;
         this.autoEquipCooldownTicks = 0;
         this.dropAllCooldownTicks = 0;
+        this.criticalSprintRestoreTicks = 0;
+        this.pendingCriticalSprintRestore = false;
     }
 
     @SubscribeEvent
@@ -390,6 +406,7 @@ public class ItemFeatureManager {
         }
 
         tickCooldowns();
+        handlePendingCriticalSprintRestore(player);
         handleForceNoHunger(player);
         handleAutoEquip(mc, player);
         handleChestSteal(mc, player);
@@ -409,6 +426,9 @@ public class ItemFeatureManager {
         }
         if (this.dropAllCooldownTicks > 0) {
             this.dropAllCooldownTicks--;
+        }
+        if (this.criticalSprintRestoreTicks > 0) {
+            this.criticalSprintRestoreTicks--;
         }
     }
 
@@ -771,6 +791,72 @@ public class ItemFeatureManager {
         return score;
     }
 
+    public static void prepareCriticalAttack(EntityPlayer player, Entity target) {
+        if (!(player instanceof EntityPlayerSP)) {
+            return;
+        }
+        INSTANCE.prepareCriticalAttackInternal((EntityPlayerSP) player, target);
+    }
+
+    private void prepareCriticalAttackInternal(EntityPlayerSP player, Entity target) {
+        if (!canInjectCriticalPackets(player, target)) {
+            return;
+        }
+
+        boolean restoreSprint = player.isSprinting();
+        if (restoreSprint) {
+            player.connection.sendPacket(
+                    new CPacketEntityAction(player, CPacketEntityAction.Action.STOP_SPRINTING));
+            player.setSprinting(false);
+            this.pendingCriticalSprintRestore = true;
+            this.criticalSprintRestoreTicks = 1;
+        }
+
+        sendCriticalPackets(player);
+    }
+
+    private boolean canInjectCriticalPackets(EntityPlayerSP player, Entity target) {
+        if (!isEnabled("always_critical")
+                || player == null
+                || player.connection == null
+                || !(target instanceof EntityLivingBase)
+                || !((EntityLivingBase) target).isEntityAlive()) {
+            return false;
+        }
+        if (!player.onGround
+                || player.capabilities == null
+                || player.capabilities.isFlying
+                || player.isElytraFlying()
+                || player.isRiding()
+                || player.isOnLadder()
+                || player.isInWater()
+                || player.isInLava()
+                || player.isPotionActive(MobEffects.BLINDNESS)) {
+            return false;
+        }
+        return player.getCooledAttackStrength(0.5F) > CRITICAL_MIN_ATTACK_STRENGTH;
+    }
+
+    private void sendCriticalPackets(EntityPlayerSP player) {
+        double x = player.posX;
+        double y = player.posY;
+        double z = player.posZ;
+        player.connection.sendPacket(new CPacketPlayer.Position(x, y + CRITICAL_PACKET_STEP_Y, z, false));
+        player.connection.sendPacket(new CPacketPlayer.Position(x, y, z, false));
+        player.connection.sendPacket(new CPacketPlayer.Position(x, y + CRITICAL_PACKET_EPSILON_Y, z, false));
+        player.connection.sendPacket(new CPacketPlayer.Position(x, y, z, false));
+    }
+
+    private void handlePendingCriticalSprintRestore(EntityPlayerSP player) {
+        if (!this.pendingCriticalSprintRestore || this.criticalSprintRestoreTicks > 0
+                || player == null || player.connection == null) {
+            return;
+        }
+        player.connection.sendPacket(new CPacketEntityAction(player, CPacketEntityAction.Action.START_SPRINTING));
+        player.setSprinting(true);
+        this.pendingCriticalSprintRestore = false;
+    }
+
     private static boolean sameStackIdentity(ItemStack a, ItemStack b) {
         if (a == null || a.isEmpty()) {
             return b == null || b.isEmpty();
@@ -848,6 +934,9 @@ public class ItemFeatureManager {
         if (isEnabled("auto_equip") && shouldDisplayFeatureStatusHud("auto_equip")) {
             parts.add("§b自动装备");
         }
+        if (isEnabled("always_critical") && shouldDisplayFeatureStatusHud("always_critical")) {
+            parts.add("§c刀刀暴击");
+        }
         if (isEnabled("chest_steal") && shouldDisplayFeatureStatusHud("chest_steal")) {
             parts.add("§e箱窃:" + chestStealDelayTicks + "t");
         }
@@ -883,6 +972,8 @@ public class ItemFeatureManager {
         switch (featureId) {
         case "auto_equip":
             return isEnabled(featureId) ? "自动装备扫描间隔: " + autoEquipIntervalTicks + " tick" : "未启用";
+        case "always_critical":
+            return isEnabled(featureId) ? "攻击前补发伪下落数据，尽量触发近战原版暴击" : "未启用";
         case "force_no_hunger":
             return isEnabled(featureId) ? "持续锁定客户端饥饿值与饱和度" : "未启用";
         case "inventory_sort":
