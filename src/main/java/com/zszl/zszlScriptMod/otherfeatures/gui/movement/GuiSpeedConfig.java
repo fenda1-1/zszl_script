@@ -24,6 +24,7 @@ public class GuiSpeedConfig extends ThemedGuiScreen {
     private static final int CONTROL_HEIGHT = 20;
     private static final int DROPDOWN_ITEM_HEIGHT = 18;
     private static final int MAX_DROPDOWN_MENU_HEIGHT = 2 + DROPDOWN_ITEM_HEIGHT * 4;
+    private static final int SCROLL_BOTTOM_PADDING = 18;
 
     private static final int BTN_TIMER_TOGGLE = 10;
     private static final int BTN_STATUS_HUD = 13;
@@ -281,7 +282,7 @@ public class GuiSpeedConfig extends ThemedGuiScreen {
         statusHudButton.width = buttonW;
         statusHudButton.height = CONTROL_HEIGHT;
 
-        int totalContentHeight = (safetyBodyY + CONTROL_HEIGHT) - layoutBaseY;
+        int totalContentHeight = (safetyBodyY + CONTROL_HEIGHT) - baseY + SCROLL_BOTTOM_PADDING;
         int visibleContentHeight = Math.max(24, visibleBottom - visibleTop);
         this.contentMaxScroll = Math.max(0, totalContentHeight - visibleContentHeight);
         this.contentScrollOffset = clampInt(this.contentScrollOffset, 0, this.contentMaxScroll);
@@ -413,8 +414,7 @@ public class GuiSpeedConfig extends ThemedGuiScreen {
 
         int dWheel = Mouse.getEventDWheel();
         if (dWheel != 0) {
-            if (isInside(mouseX, mouseY, this.panelX + 8, this.contentTop + 20, this.panelWidth - 16,
-                    Math.max(20, this.contentBottom - this.contentTop - 12))) {
+            if (isPointInsideScrollableViewport(mouseX, mouseY)) {
                 this.contentScrollOffset = dWheel > 0
                         ? Math.max(0, this.contentScrollOffset - 14)
                         : Math.min(this.contentMaxScroll, this.contentScrollOffset + 14);

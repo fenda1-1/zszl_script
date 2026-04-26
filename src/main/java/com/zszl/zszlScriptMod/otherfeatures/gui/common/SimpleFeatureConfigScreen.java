@@ -22,6 +22,7 @@ public abstract class SimpleFeatureConfigScreen extends ThemedGuiScreen {
     protected static final int CONTROL_HEIGHT = 20;
     private static final int SCROLLBAR_TRACK_WIDTH = 4;
     private static final int SCROLLBAR_GUTTER = 10;
+    private static final int SCROLL_BOTTOM_PADDING = 18;
     private static final int BTN_SAVE = 100;
     private static final int BTN_DEFAULT = 101;
     private static final int BTN_CANCEL = 102;
@@ -288,7 +289,7 @@ public abstract class SimpleFeatureConfigScreen extends ThemedGuiScreen {
             currentY += this.fontRenderer.FONT_HEIGHT + 2;
             this.infoSectionBottom = currentY;
 
-            int totalContentHeight = this.infoSectionBottom - layoutBaseY + 18;
+            int totalContentHeight = this.infoSectionBottom - baseY + SCROLL_BOTTOM_PADDING;
             this.maxContentScroll = Math.max(0, totalContentHeight - visibleContentHeight);
             int clampedScroll = clampInt(this.contentScrollOffset, 0, this.maxContentScroll);
             if (clampedScroll == this.contentScrollOffset) {
@@ -408,8 +409,7 @@ public abstract class SimpleFeatureConfigScreen extends ThemedGuiScreen {
 
         int dWheel = Mouse.getEventDWheel();
         if (dWheel != 0) {
-            if (isInside(mouseX, mouseY, this.panelX + 8, this.contentTop + 20, this.panelWidth - 16,
-                    Math.max(20, this.contentBottom - this.contentTop - 12))) {
+            if (isPointInsideScrollableViewport(mouseX, mouseY)) {
                 this.contentScrollOffset = dWheel > 0
                         ? Math.max(0, this.contentScrollOffset - 14)
                         : Math.min(this.maxContentScroll, this.contentScrollOffset + 14);
