@@ -19,11 +19,12 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
-import javax.xml.bind.DatatypeConverter; // 用于将字节数组转换为十六进制字符串
 
 public class AHKExecutor {
 
     public static final Logger LOGGER = LogManager.getLogger(zszlScriptMod.class);
+
+    private static final char[] HEX_CHARS = "0123456789ABCDEF".toCharArray();
 
     private static final Path AHK_DIR = createCustomTempDir();
 
@@ -198,7 +199,17 @@ public class AHKExecutor {
             }
         }
         byte[] digest = md.digest();
-        return DatatypeConverter.printHexBinary(digest).toUpperCase();
+        return toUpperHex(digest);
+    }
+
+    private static String toUpperHex(byte[] bytes) {
+        char[] result = new char[bytes.length * 2];
+        for (int i = 0; i < bytes.length; i++) {
+            int value = bytes[i] & 0xFF;
+            result[i * 2] = HEX_CHARS[value >>> 4];
+            result[i * 2 + 1] = HEX_CHARS[value & 0x0F];
+        }
+        return new String(result);
     }
 
     /**

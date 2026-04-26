@@ -42,10 +42,16 @@ import java.util.Set;
 
 public class MovementTraverse extends Movement {
 
+    private static final double IRON_DOOR_BUTTON_COST = WALK_ONE_BLOCK_COST;
+    private static final int MIN_IRON_DOOR_BUTTON_CLICK_COOLDOWN_TICKS = 4;
+    private static final int IRON_DOOR_PASSAGE_PUSH_TICKS = 14;
+
     /**
      * Did we have to place a bridge block or was it always there
      */
     private boolean wasTheBridgeBlockAlwaysThere = true;
+    private int ironDoorButtonClickCooldown;
+    private int ironDoorPassagePushTicks;
 
     public MovementTraverse(IBaritone baritone, BetterBlockPos from, BetterBlockPos to) {
         super(baritone, from, to, new BetterBlockPos[] { to.up(), to }, to.down());
@@ -55,6 +61,8 @@ public class MovementTraverse extends Movement {
     public void reset() {
         super.reset();
         wasTheBridgeBlockAlwaysThere = true;
+        ironDoorButtonClickCooldown = 0;
+        ironDoorPassagePushTicks = 0;
     }
 
     @Override
@@ -96,6 +104,9 @@ public class MovementTraverse extends Movement {
                     WC += (WALK_ONE_OVER_SOUL_SAND_COST - WALK_ONE_BLOCK_COST) / 2;
                 }
             }
+            boolean needsIronDoorButton = MovementHelper.canOpenIronDoorWithButton(context.bsi, destX, y, destZ, pb1)
+                    || MovementHelper.canOpenIronDoorWithButton(context.bsi, destX, y + 1, destZ, pb0);
+            double interactionCost = needsIronDoorButton ? IRON_DOOR_BUTTON_COST : 0.0D;
             double hardness1 = MovementHelper.getMiningDurationTicks(context, destX, y, destZ, pb1, false);
             if (hardness1 >= COST_INF) {
                 return COST_INF;
@@ -116,13 +127,13 @@ public class MovementTraverse extends Movement {
                     // Don't check for soul sand, since we can sprint on that too
                     WC *= SPRINT_MULTIPLIER;
                 }
-                return WC;
+                return WC + interactionCost;
             }
             if (srcDownBlock == Blocks.LADDER || srcDownBlock == Blocks.VINE) {
                 hardness1 *= 5;
                 hardness2 *= 5;
             }
-            return WC + hardness1 + hardness2;
+            return WC + hardness1 + hardness2 + interactionCost;
         } else {// this is a bridge, so we need to place a block
             if (srcDownBlock == Blocks.LADDER || srcDownBlock == Blocks.VINE) {
                 return COST_INF;
@@ -249,6 +260,66 @@ public class MovementTraverse extends Movement {
 
         Block fd = BlockStateInterface.get(ctx, src.down()).getBlock();
         boolean ladder = fd == Blocks.LADDER || fd == Blocks.VINE;
+        BlockPos actualFeet = ctx.playerFeet();
+        BlockPos pathFeet = adjustFeetForLiquidTraversal(actualFeet);
+        if (ironDoorButtonClickCooldown > 0) {
+            ironDoorButtonClickCooldown--;
+        }
+        if (ironDoorPassagePushTicks > 0) {
+            ironDoorPassagePushTicks--;
+        }
+
+        BlockPos ironDoorInPath = pb1.getBlock() == Blocks.IRON_DOOR ? positionsToBreak[1]
+                : (pb0.getBlock() == Blocks.IRON_DOOR ? positionsToBreak[0] : null);
+        if (ironDoorInPath != null && !dest.equals(pathFeet)) {
+            Optional<BlockPos> button = MovementHelper.findReachableButtonForIronDoor(ctx, ironDoorInPath);
+            if (button.isPresent()) {
+                MovementHelper.moveTowards(ctx, state, dest);
+                state.setInput(Input.SPRINT, true);
+                if (ironDoorButtonClickCooldown <= 0) {
+                    if (MovementHelper.tryRightClickButton(ctx, button.get())) {
+                        ironDoorButtonClickCooldown = Math.max(MIN_IRON_DOOR_BUTTON_CLICK_COOLDOWN_TICKS,
+                                Baritone.settings().rightClickSpeed.value);
+                        ironDoorPassagePushTicks = IRON_DOOR_PASSAGE_PUSH_TICKS;
+                    }
+                }
+                if (MovementHelper.isIronDoorOpen(ctx, ironDoorInPath)) {
+                    ironDoorPassagePushTicks = Math.max(ironDoorPassagePushTicks, 2);
+                }
+                return state;
+            }
+        }
+        if (ironDoorInPath != null
+                && (ironDoorPassagePushTicks > 0 || MovementHelper.isIronDoorOpen(ctx, ironDoorInPath))) {
+            ironDoorPassagePushTicks = Math.max(ironDoorPassagePushTicks, 2);
+            MovementHelper.moveTowards(ctx, state, dest);
+            state.setInput(Input.SPRINT, true);
+            return state;
+        }
+
+        BlockPos blockedIronDoor = null;
+        if (pb1.getBlock() == Blocks.IRON_DOOR && !MovementHelper.isIronDoorPassable(ctx, positionsToBreak[1], src)) {
+            blockedIronDoor = positionsToBreak[1];
+        } else if (pb0.getBlock() == Blocks.IRON_DOOR
+                && !MovementHelper.isIronDoorPassable(ctx, positionsToBreak[0], src.up())) {
+            blockedIronDoor = positionsToBreak[0];
+        }
+        if (blockedIronDoor != null) {
+            Optional<BlockPos> button = MovementHelper.findReachableButtonForIronDoor(ctx, blockedIronDoor);
+            if (button.isPresent()) {
+                MovementHelper.moveTowards(ctx, state, dest);
+                state.setInput(Input.SPRINT, true);
+                if (ironDoorButtonClickCooldown <= 0) {
+                    if (MovementHelper.tryRightClickButton(ctx, button.get())) {
+                        ironDoorButtonClickCooldown = Math.max(MIN_IRON_DOOR_BUTTON_CLICK_COOLDOWN_TICKS,
+                                Baritone.settings().rightClickSpeed.value);
+                        ironDoorPassagePushTicks = IRON_DOOR_PASSAGE_PUSH_TICKS;
+                    }
+                }
+                return state;
+            }
+            return state.setStatus(MovementStatus.UNREACHABLE);
+        }
 
         if ((pb0.getBlock() instanceof BlockDoor && MovementHelper.isConfiguredInteractionBlock(pb0.getBlock()))
                 || (pb1.getBlock() instanceof BlockDoor && MovementHelper.isConfiguredInteractionBlock(pb1.getBlock()))) {
@@ -298,8 +369,6 @@ public class MovementTraverse extends Movement {
 
         boolean isTheBridgeBlockThere = MovementHelper.canWalkOn(ctx, positionToPlace) || ladder
                 || MovementHelper.canUseFrostWalker(ctx, positionToPlace);
-        BlockPos actualFeet = ctx.playerFeet();
-        BlockPos pathFeet = adjustFeetForLiquidTraversal(actualFeet);
         if (pathFeet.getY() != dest.getY() && !ladder) {
             logDebug("Wrong Y coordinate");
             if (pathFeet.getY() < dest.getY()) {

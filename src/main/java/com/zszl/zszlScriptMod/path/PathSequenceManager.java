@@ -677,17 +677,21 @@ public class PathSequenceManager {
                                 && ActionTargetLocator.TARGET_MODE_NAME
                                         .equalsIgnoreCase(params.get("locatorMode").getAsString())) {
                             return "右键点击方块: 按名称 "
-                                    + (params.has("locatorText") ? params.get("locatorText").getAsString() : "");
+                                    + (params.has("locatorText") ? params.get("locatorText").getAsString() : "")
+                                    + getPreserveViewDescriptionSuffix(params);
                         }
-                        return I18n.format("path.action.desc.right_click_block", params.get("pos").toString());
+                        return I18n.format("path.action.desc.right_click_block", params.get("pos").toString())
+                                + getPreserveViewDescriptionSuffix(params);
                     case "rightclickentity":
                         if (params.has("locatorMode")
                                 && ActionTargetLocator.TARGET_MODE_NAME
                                         .equalsIgnoreCase(params.get("locatorMode").getAsString())) {
                             return "右键点击实体: 按名称 "
-                                    + (params.has("locatorText") ? params.get("locatorText").getAsString() : "");
+                                    + (params.has("locatorText") ? params.get("locatorText").getAsString() : "")
+                                    + getPreserveViewDescriptionSuffix(params);
                         }
-                        return I18n.format("path.action.desc.right_click_entity", params.get("pos").toString());
+                        return I18n.format("path.action.desc.right_click_entity", params.get("pos").toString())
+                                + getPreserveViewDescriptionSuffix(params);
                     case "takeallitems":
                         return I18n.format("path.action.desc.take_all_items");
                     case "dropfiltereditems":
@@ -1232,6 +1236,25 @@ public class PathSequenceManager {
 
     private static String getDelayNormalizationDescriptionSuffix(JsonObject params) {
         return isDelayNormalizedTo20Tps(params) ? " / 20TPS基准" : "";
+    }
+
+    private static boolean isPreserveViewEnabled(JsonObject params) {
+        return readBooleanParam(params, "preserveView", readBooleanParam(params, "noMoveView", false));
+    }
+
+    private static boolean readBooleanParam(JsonObject params, String key, boolean defaultValue) {
+        if (params == null || key == null || !params.has(key) || !params.get(key).isJsonPrimitive()) {
+            return defaultValue;
+        }
+        try {
+            return params.get(key).getAsBoolean();
+        } catch (Exception ignored) {
+            return defaultValue;
+        }
+    }
+
+    private static String getPreserveViewDescriptionSuffix(JsonObject params) {
+        return isPreserveViewEnabled(params) ? " / 不移动视角" : "";
     }
 
     private static boolean isRunSequenceBackgroundExecution(JsonObject params) {
@@ -1970,6 +1993,7 @@ public class PathSequenceManager {
                     final String blockLocatorMatchMode = params.has("locatorMatchMode")
                             ? params.get("locatorMatchMode").getAsString()
                             : ActionTargetLocator.MATCH_MODE_CONTAINS;
+                    final boolean blockPreserveView = isPreserveViewEnabled(params);
                     return player -> {
                         BlockPos resolvedPos = pos;
                         if (ActionTargetLocator.TARGET_MODE_NAME.equalsIgnoreCase(blockLocatorMode)) {
@@ -1981,7 +2005,7 @@ public class PathSequenceManager {
                                 return;
                             }
                         }
-                        ModUtils.rightClickOnBlock(player, resolvedPos);
+                        ModUtils.rightClickOnBlock(player, resolvedPos, blockPreserveView);
                     };
                 case "rightclickentity":
                     JsonArray entityPosArray = params.getAsJsonArray("pos");
@@ -1997,6 +2021,7 @@ public class PathSequenceManager {
                     final String entityLocatorMatchMode = params.has("locatorMatchMode")
                             ? params.get("locatorMatchMode").getAsString()
                             : ActionTargetLocator.MATCH_MODE_CONTAINS;
+                    final boolean entityPreserveView = isPreserveViewEnabled(params);
                     return player -> {
                         if (ActionTargetLocator.TARGET_MODE_NAME.equalsIgnoreCase(entityLocatorMode)) {
                             Entity targetEntity = ActionTargetLocator.findNearbyEntity(entityLocatorText,
@@ -2011,7 +2036,7 @@ public class PathSequenceManager {
                             player.swingArm(EnumHand.MAIN_HAND);
                             return;
                         }
-                        ModUtils.rightClickOnNearestEntity(player, entityPos, range);
+                        ModUtils.rightClickOnNearestEntity(player, entityPos, range, entityPreserveView);
                     };
                 case "takeallitems":
                     final boolean shiftQuickMove = !params.has("shiftQuickMove")

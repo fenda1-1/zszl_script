@@ -413,6 +413,17 @@ public class ModUtils {
      * @param pos    目标方块位置
      */
     public static void rightClickOnBlock(EntityPlayerSP player, BlockPos pos) {
+        rightClickOnBlock(player, pos, false);
+    }
+
+    /**
+     * 右键点击方块。
+     *
+     * @param player       玩家实体
+     * @param pos          目标方块位置
+     * @param preserveView 是否保留当前视角
+     */
+    public static void rightClickOnBlock(EntityPlayerSP player, BlockPos pos, boolean preserveView) {
         if (player == null || player.world == null || Minecraft.getMinecraft().playerController == null || pos == null) {
             zszlScriptMod.LOGGER.warn("rightClickOnBlock 失败: 玩家、世界、控制器或坐标为空");
             return;
@@ -461,7 +472,9 @@ public class ModUtils {
         float yaw = (float) Math.toDegrees(Math.atan2(dz, dx)) - 90.0F;
         float pitch = (float) -Math.toDegrees(Math.atan2(dy, Math.max(0.0001D, horizontalDistance)));
 
-        setPlayerViewAngles(player, yaw, pitch);
+        if (!preserveView) {
+            setPlayerViewAngles(player, yaw, pitch);
+        }
 
         new DelayAction(3, () -> {
             RayTraceResult validateRay = player.world.rayTraceBlocks(
@@ -485,7 +498,7 @@ public class ModUtils {
                     hitVec,
                     EnumHand.MAIN_HAND);
             player.swingArm(EnumHand.MAIN_HAND);
-            zszlScriptMod.LOGGER.info("执行右键方块: {} 面: {} 命中点: {}", pos, facing, hitVec);
+            zszlScriptMod.LOGGER.info("执行右键方块: {} 面: {} 命中点: {} 保留视角: {}", pos, facing, hitVec, preserveView);
         }).accept(player);
     }
 
@@ -497,6 +510,18 @@ public class ModUtils {
      * @param range  查找范围
      */
     public static void rightClickOnNearestEntity(EntityPlayerSP player, BlockPos pos, double range) {
+        rightClickOnNearestEntity(player, pos, range, false);
+    }
+
+    /**
+     * 右键点击最近的实体
+     *
+     * @param player       玩家实体
+     * @param pos          目标位置（用于查找附近的实体）
+     * @param range        查找范围
+     * @param preserveView 是否保留当前视角
+     */
+    public static void rightClickOnNearestEntity(EntityPlayerSP player, BlockPos pos, double range, boolean preserveView) {
         if (ModConfig.isDebugModeEnabled && Minecraft.getMinecraft().player != null) {
             Minecraft.getMinecraft().player
                     .sendMessage(new TextComponentString("§d[DEBUG] §7尝试右键实体于: §f" + pos.toString()));
@@ -525,7 +550,8 @@ public class ModUtils {
         if (nearest != null) {
             Minecraft.getMinecraft().playerController.interactWithEntity(player, nearest, EnumHand.MAIN_HAND);
             player.swingArm(EnumHand.MAIN_HAND);
-            zszlScriptMod.LOGGER.info("Right clicked entity {} at {}", nearest.getName(), pos);
+            zszlScriptMod.LOGGER.info("Right clicked entity {} at {} preserveView={}", nearest.getName(), pos,
+                    preserveView);
         } else {
             zszlScriptMod.LOGGER.warn("No entity found near: " + pos);
         }

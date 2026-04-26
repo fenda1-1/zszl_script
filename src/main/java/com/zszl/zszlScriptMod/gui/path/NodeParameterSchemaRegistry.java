@@ -374,11 +374,15 @@ public final class NodeParameterSchemaRegistry {
                 } else if ("rightclickblock".equals(normalized)) {
                         schemas.add(FieldSchema.paramsField("pos", "方块坐标", FieldType.TEXT, true,
                                         "目标方块坐标，格式：x,y,z", "不能为空，使用英文逗号分隔", "0,64,0"));
+                        schemas.add(FieldSchema.paramsField("preserveView", "不移动视角", FieldType.BOOLEAN, false,
+                                        "开启后右键方块时不主动改变玩家当前视角。", "true / false", "false"));
                 } else if ("rightclickentity".equals(normalized)) {
                         schemas.add(FieldSchema.paramsField("pos", "目标中心坐标", FieldType.TEXT, true,
                                         "实体搜索中心坐标，格式：x,y,z", "不能为空，使用英文逗号分隔", "0,64,0"));
                         schemas.add(FieldSchema.paramsField("range", "搜索半径", FieldType.NUMBER, false,
                                         "在该范围内查找最近实体并右键交互。", ">= 0", "3"));
+                        schemas.add(FieldSchema.paramsField("preserveView", "不移动视角", FieldType.BOOLEAN, false,
+                                        "开启后右键实体时不主动改变玩家当前视角。", "true / false", "false"));
                 } else if ("takeallitems".equals(normalized)) {
                 } else if ("take_all_items_safe".equals(normalized)) {
                 } else if ("dropfiltereditems".equals(normalized)) {

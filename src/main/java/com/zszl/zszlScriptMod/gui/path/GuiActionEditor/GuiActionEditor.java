@@ -1659,6 +1659,14 @@ public class GuiActionEditor extends ThemedGuiScreen {
                 addTextField(I18n.format("gui.path.action_editor.label.range"), "range",
                         I18n.format("gui.path.action_editor.help.range"), fieldWidth, x, currentY, "10");
                 currentY += 40;
+                addToggle(I18n.format("gui.path.action_editor.label.preserve_view"), "preserveView",
+                        I18n.format("gui.path.action_editor.help.preserve_view"), fieldWidth, x, currentY,
+                        (currentParams.has("preserveView")
+                                && currentParams.get("preserveView").getAsBoolean())
+                                || (currentParams.has("noMoveView")
+                                        && currentParams.get("noMoveView").getAsBoolean()),
+                        I18n.format("path.common.on"), I18n.format("path.common.off"));
+                currentY += 40;
                 btnScanNearbyBlocks = new ThemedButton(BTN_ID_SCAN_NEARBY_BLOCKS, x, currentY, fieldWidth, 20,
                         "§a扫描附近可交互方块");
                 this.buttonList.add(btnScanNearbyBlocks);
@@ -1702,6 +1710,14 @@ public class GuiActionEditor extends ThemedGuiScreen {
                 currentY += 40;
                 addTextField(I18n.format("gui.path.action_editor.label.range"), "range",
                         I18n.format("gui.path.action_editor.help.range"), fieldWidth, x, currentY, "3");
+                currentY += 40;
+                addToggle(I18n.format("gui.path.action_editor.label.preserve_view"), "preserveView",
+                        I18n.format("gui.path.action_editor.help.preserve_view"), fieldWidth, x, currentY,
+                        (currentParams.has("preserveView")
+                                && currentParams.get("preserveView").getAsBoolean())
+                                || (currentParams.has("noMoveView")
+                                        && currentParams.get("noMoveView").getAsBoolean()),
+                        I18n.format("path.common.on"), I18n.format("path.common.off"));
                 currentY += 40;
                 btnScanNearbyEntities = new ThemedButton(BTN_ID_SCAN_NEARBY_ENTITIES, x, currentY, fieldWidth, 20,
                         "§a扫描附近生物");

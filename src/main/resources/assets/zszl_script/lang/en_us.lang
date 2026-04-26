@@ -1379,6 +1379,8 @@ gui.path.action_editor.label.slot_locator_mode=槽位定位模式
 gui.path.action_editor.help.slot_locator_mode=直接槽位=使用手填槽位；槽位物品文本=按当前容器内物品名定位；第一个空槽位=自动选择第一个空槽；槽位路径=按 slot/chest_slot/player_slot 路径定位
 gui.path.action_editor.label.target_locator_mode=目标定位模式
 gui.path.action_editor.help.target_locator_mode=坐标=使用手填坐标；名称=按玩家附近的方块名或实体名自动定位
+gui.path.action_editor.label.preserve_view=不移动视角
+gui.path.action_editor.help.preserve_view=开启后执行右键交互时不主动改变玩家当前视角
 gui.path.action_editor.label.locator_text=定位文本
 gui.path.action_editor.help.locator_text=用于按按钮文本、槽位物品名或元素路径定位目标；路径示例: button#303, chest_slot[0], screen/GuiChest/slot[13], screen/GuiCustom/custom/components[0]/Widget/id#1001
 gui.path.action_editor.help.world_locator_text=用于按附近方块名或实体名定位目标；定位模式为坐标时可留空

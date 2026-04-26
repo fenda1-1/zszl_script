@@ -1375,6 +1375,22 @@ public final class PathConfigValidator {
         return resources;
     }
 
+    private static boolean isPreserveViewEnabled(ActionData action) {
+        JsonObject params = action == null ? null : action.params;
+        return readBooleanParam(params, "preserveView", readBooleanParam(params, "noMoveView", false));
+    }
+
+    private static boolean readBooleanParam(JsonObject params, String key, boolean defaultValue) {
+        if (params == null || key == null || !params.has(key) || !params.get(key).isJsonPrimitive()) {
+            return defaultValue;
+        }
+        try {
+            return params.get(key).getAsBoolean();
+        } catch (Exception ignored) {
+            return defaultValue;
+        }
+    }
+
     private static EnumSet<ResourceLockManager.Resource> resolveActionResources(ActionData action) {
         EnumSet<ResourceLockManager.Resource> resources = EnumSet.noneOf(ResourceLockManager.Resource.class);
         String type = action == null || action.type == null ? "" : action.type.trim().toLowerCase(Locale.ROOT);
@@ -1383,10 +1399,15 @@ public final class PathConfigValidator {
                 resources.add(ResourceLockManager.Resource.LOOK);
                 break;
             case "click":
+                resources.add(ResourceLockManager.Resource.INTERACT);
+                resources.add(ResourceLockManager.Resource.LOOK);
+                break;
             case "rightclickblock":
             case "rightclickentity":
                 resources.add(ResourceLockManager.Resource.INTERACT);
-                resources.add(ResourceLockManager.Resource.LOOK);
+                if (!isPreserveViewEnabled(action)) {
+                    resources.add(ResourceLockManager.Resource.LOOK);
+                }
                 break;
             case "window_click":
             case "conditional_window_click":

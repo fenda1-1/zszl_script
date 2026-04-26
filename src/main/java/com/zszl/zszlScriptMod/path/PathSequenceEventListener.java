@@ -486,6 +486,22 @@ public class PathSequenceEventListener {
         return resources;
     }
 
+    private boolean isPreserveViewEnabled(ActionData actionData) {
+        JsonObject params = actionData == null ? null : actionData.params;
+        return readBooleanParam(params, "preserveView", readBooleanParam(params, "noMoveView", false));
+    }
+
+    private boolean readBooleanParam(JsonObject params, String key, boolean defaultValue) {
+        if (params == null || key == null || !params.has(key) || !params.get(key).isJsonPrimitive()) {
+            return defaultValue;
+        }
+        try {
+            return params.get(key).getAsBoolean();
+        } catch (Exception ignored) {
+            return defaultValue;
+        }
+    }
+
     private EnumSet<ResourceLockManager.Resource> resolveActionResources(ActionData actionData) {
         EnumSet<ResourceLockManager.Resource> resources = EnumSet.noneOf(ResourceLockManager.Resource.class);
         String type = actionData == null || actionData.type == null ? "" : actionData.type.trim().toLowerCase(Locale.ROOT);
@@ -494,10 +510,15 @@ public class PathSequenceEventListener {
                 resources.add(ResourceLockManager.Resource.LOOK);
                 break;
             case "click":
+                resources.add(ResourceLockManager.Resource.INTERACT);
+                resources.add(ResourceLockManager.Resource.LOOK);
+                break;
             case "rightclickblock":
             case "rightclickentity":
                 resources.add(ResourceLockManager.Resource.INTERACT);
-                resources.add(ResourceLockManager.Resource.LOOK);
+                if (!isPreserveViewEnabled(actionData)) {
+                    resources.add(ResourceLockManager.Resource.LOOK);
+                }
                 break;
             case "window_click":
             case "conditional_window_click":

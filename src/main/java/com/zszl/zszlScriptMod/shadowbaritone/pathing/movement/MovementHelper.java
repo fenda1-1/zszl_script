@@ -33,7 +33,9 @@ import net.minecraft.block.properties.PropertyBool;
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.enchantment.EnchantmentHelper;
 import net.minecraft.init.Blocks;
+import net.minecraft.util.EnumActionResult;
 import net.minecraft.util.EnumFacing;
+import net.minecraft.util.EnumHand;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.RayTraceResult;
@@ -133,8 +135,13 @@ public interface MovementHelper extends ActionCosts, Helper {
             return YES;
         }
         if (isConfiguredDangerousBlock(block)
-                || Baritone.settings().blocksToAvoid.value.contains(block)
-                || isConfiguredBlockingBlock(block)) {
+                || Baritone.settings().blocksToAvoid.value.contains(block)) {
+            return NO;
+        }
+        if (block == Blocks.IRON_DOOR) {
+            return MAYBE;
+        }
+        if (isConfiguredBlockingBlock(block)) {
             return NO;
         }
         if (isConfiguredInteractionBlock(block)) {
@@ -216,6 +223,10 @@ public interface MovementHelper extends ActionCosts, Helper {
                 return false;
             }
             return block == Blocks.WATER || block == Blocks.FLOWING_WATER;
+        }
+
+        if (block == Blocks.IRON_DOOR) {
+            return state.getValue(BlockDoor.OPEN) || canOpenIronDoorWithButton(bsi, new BlockPos(x, y, z), state);
         }
 
         return block.isPassable(bsi.access, bsi.isPassableBlockPos.setPos(x, y, z));
@@ -336,6 +347,33 @@ public interface MovementHelper extends ActionCosts, Helper {
         return isHorizontalBlockPassable(doorPos, state, playerPos, BlockDoor.OPEN);
     }
 
+    static boolean isIronDoorPassable(IPlayerContext ctx, BlockPos doorPos, BlockPos playerPos) {
+        if (playerPos.equals(doorPos)) {
+            return false;
+        }
+
+        IBlockState state = BlockStateInterface.get(ctx, doorPos);
+        if (state.getBlock() != Blocks.IRON_DOOR) {
+            return true;
+        }
+
+        return isHorizontalBlockPassable(doorPos, state, playerPos, BlockDoor.OPEN);
+    }
+
+    static boolean isIronDoorOpen(IPlayerContext ctx, BlockPos doorPos) {
+        if (ctx == null || doorPos == null) {
+            return false;
+        }
+        BlockStateInterface bsi = new BlockStateInterface(ctx);
+        IBlockState state = bsi.get0(doorPos);
+        if (state.getBlock() != Blocks.IRON_DOOR) {
+            return false;
+        }
+        BlockPos lowerDoor = lowerIronDoorHalf(bsi, doorPos, state);
+        IBlockState lowerState = bsi.get0(lowerDoor);
+        return lowerState.getBlock() == Blocks.IRON_DOOR && lowerState.getValue(BlockDoor.OPEN);
+    }
+
     static boolean isGatePassable(IPlayerContext ctx, BlockPos gatePos, BlockPos playerPos) {
         if (playerPos.equals(gatePos)) {
             return false;
@@ -355,6 +393,115 @@ public interface MovementHelper extends ActionCosts, Helper {
             return true;
         }
         return state.getValue(BlockTrapDoor.OPEN);
+    }
+
+    static boolean canOpenIronDoorWithButton(BlockStateInterface bsi, int x, int y, int z, IBlockState state) {
+        return canOpenIronDoorWithButton(bsi, new BlockPos(x, y, z), state);
+    }
+
+    static boolean canOpenIronDoorWithButton(BlockStateInterface bsi, BlockPos doorPos, IBlockState state) {
+        if (state.getBlock() != Blocks.IRON_DOOR || state.getValue(BlockDoor.OPEN)) {
+            return false;
+        }
+        return findButtonForIronDoor(bsi, doorPos).isPresent();
+    }
+
+    static Optional<BlockPos> findButtonForIronDoor(IPlayerContext ctx, BlockPos doorPos) {
+        return findButtonForIronDoor(new BlockStateInterface(ctx), doorPos);
+    }
+
+    static Optional<BlockPos> findReachableButtonForIronDoor(IPlayerContext ctx, BlockPos doorPos) {
+        BlockStateInterface bsi = new BlockStateInterface(ctx);
+        IBlockState state = bsi.get0(doorPos);
+        if (state.getBlock() != Blocks.IRON_DOOR) {
+            return Optional.empty();
+        }
+        BlockPos lowerDoor = lowerIronDoorHalf(bsi, doorPos, state);
+        for (int y = lowerDoor.getY() - 1; y <= lowerDoor.getY() + 2; y++) {
+            for (int x = lowerDoor.getX() - 2; x <= lowerDoor.getX() + 2; x++) {
+                for (int z = lowerDoor.getZ() - 2; z <= lowerDoor.getZ() + 2; z++) {
+                    BlockPos buttonPos = new BlockPos(x, y, z);
+                    IBlockState buttonState = bsi.get0(buttonPos);
+                    if (isButtonForIronDoor(buttonPos, buttonState, lowerDoor)
+                            && RotationUtils.reachable(ctx, buttonPos).isPresent()) {
+                        return Optional.of(buttonPos);
+                    }
+                }
+            }
+        }
+        return Optional.empty();
+    }
+
+    static Optional<BlockPos> findButtonForIronDoor(BlockStateInterface bsi, BlockPos doorPos) {
+        IBlockState state = bsi.get0(doorPos);
+        if (state.getBlock() != Blocks.IRON_DOOR) {
+            return Optional.empty();
+        }
+        BlockPos lowerDoor = lowerIronDoorHalf(bsi, doorPos, state);
+        for (int y = lowerDoor.getY() - 1; y <= lowerDoor.getY() + 2; y++) {
+            for (int x = lowerDoor.getX() - 2; x <= lowerDoor.getX() + 2; x++) {
+                for (int z = lowerDoor.getZ() - 2; z <= lowerDoor.getZ() + 2; z++) {
+                    BlockPos buttonPos = new BlockPos(x, y, z);
+                    IBlockState buttonState = bsi.get0(buttonPos);
+                    if (isButtonForIronDoor(buttonPos, buttonState, lowerDoor)) {
+                        return Optional.of(buttonPos);
+                    }
+                }
+            }
+        }
+        return Optional.empty();
+    }
+
+    static BlockPos lowerIronDoorHalf(BlockStateInterface bsi, BlockPos doorPos, IBlockState state) {
+        if (state.getValue(BlockDoor.HALF) == BlockDoor.EnumDoorHalf.UPPER) {
+            BlockPos lower = doorPos.down();
+            if (bsi.get0(lower).getBlock() == Blocks.IRON_DOOR) {
+                return lower;
+            }
+        }
+        return doorPos;
+    }
+
+    static boolean isButtonForIronDoor(BlockPos buttonPos, IBlockState buttonState, BlockPos lowerDoor) {
+        if (!(buttonState.getBlock() instanceof BlockButton)) {
+            return false;
+        }
+        BlockPos support = buttonPos.offset(buttonState.getValue(BlockButton.FACING).getOpposite());
+        return canSupportPowerDoorHalf(support, lowerDoor)
+                || canSupportPowerDoorHalf(support, lowerDoor.up());
+    }
+
+    static boolean canSupportPowerDoorHalf(BlockPos support, BlockPos doorHalf) {
+        if (support.getY() != doorHalf.getY()) {
+            return false;
+        }
+        int dx = Math.abs(support.getX() - doorHalf.getX());
+        int dz = Math.abs(support.getZ() - doorHalf.getZ());
+        return dx + dz <= 1;
+    }
+
+    static boolean tryRightClickButton(IPlayerContext ctx, BlockPos buttonPos) {
+        if (ctx == null || buttonPos == null) {
+            return false;
+        }
+        IBlockState state = BlockStateInterface.get(ctx, buttonPos);
+        if (!(state.getBlock() instanceof BlockButton)) {
+            return false;
+        }
+        EnumFacing side = state.getValue(BlockButton.FACING);
+        Vec3d hitVec = VecUtils.calculateBlockCenter(ctx.world(), buttonPos);
+        RayTraceResult mouseOver = ctx.objectMouseOver();
+        if (mouseOver != null && mouseOver.typeOfHit == RayTraceResult.Type.BLOCK
+                && buttonPos.equals(mouseOver.getBlockPos())) {
+            side = mouseOver.sideHit;
+            hitVec = mouseOver.hitVec;
+        }
+        if (ctx.playerController().processRightClickBlock(ctx.player(), ctx.world(), buttonPos, side, hitVec,
+                EnumHand.MAIN_HAND) == EnumActionResult.SUCCESS) {
+            ctx.player().swingArm(EnumHand.MAIN_HAND);
+            return true;
+        }
+        return false;
     }
 
     static boolean isHorizontalBlockPassable(BlockPos blockPos, IBlockState blockState, BlockPos playerPos,

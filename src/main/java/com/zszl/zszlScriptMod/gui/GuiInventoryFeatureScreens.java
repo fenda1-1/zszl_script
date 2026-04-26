@@ -506,9 +506,7 @@ abstract class GuiInventoryFeatureScreens extends GuiInventoryCustomSupport {
         if (feature == null) {
             return false;
         }
-        GuiScreen returnScreen = mc.currentScreen instanceof GuiInventoryOverlayScreen
-                ? mc.currentScreen
-                : new GuiInventoryOverlayScreen();
+        GuiScreen returnScreen = createOtherFeatureReturnScreen(mc);
 
         if ("speed".equalsIgnoreCase(feature.id)) {
             if (mouseButton == 0) {
@@ -599,6 +597,13 @@ abstract class GuiInventoryFeatureScreens extends GuiInventoryCustomSupport {
         }
 
         return false;
+    }
+
+    private static GuiScreen createOtherFeatureReturnScreen(Minecraft mc) {
+        if (mc != null && mc.currentScreen instanceof GuiInventoryOverlayScreen) {
+            return mc.currentScreen;
+        }
+        return new GuiInventoryOverlayScreen();
     }
 
     protected static String getOtherFeaturesHudButtonLabel() {

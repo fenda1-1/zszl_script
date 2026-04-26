@@ -197,10 +197,51 @@ task proguard(type: JavaExec) {
 
     // 在执行前动态生成 ProGuard 配置文件
     doFirst {
-        // 获取 Java Home 路径并找到 rt.jar (适用于 JDK 8)
-        def javaHome = System.getProperty('java.home')
-        def rtJarPath = new File(javaHome, 'lib/rt.jar').absolutePath.replace('\\', '/')
-        def rtJarArg = "-libraryjars \"${rtJarPath}\""
+        def libraryJarLines = []
+        def addLibraryJar = { File file, String filter = null ->
+            if (file != null && file.exists()) {
+                def normalizedPath = file.absolutePath.replace('\\', '/')
+                libraryJarLines << "-libraryjars \"${normalizedPath}\"${filter ?: ''}"
+                return true
+            }
+            return false
+        }
+        def addJavaRuntimeLibraries = {
+            def javaHomeCandidates = [
+                    System.getProperty('java.home'),
+                    System.getenv('JAVA8_HOME'),
+                    System.getenv('JDK8_HOME'),
+                    System.getenv('JAVA_HOME'),
+                    'C:/Program Files/Java/jdk1.8.0_202',
+                    'C:/Program Files/Java/jre1.8.0_202'
+            ].findAll { it != null && it.toString().trim().length() > 0 }
+
+            for (def candidate : javaHomeCandidates) {
+                File javaHomeDir = file(candidate)
+                if (addLibraryJar(new File(javaHomeDir, 'lib/rt.jar'))) {
+                    return
+                }
+                if (addLibraryJar(new File(javaHomeDir, 'jre/lib/rt.jar'))) {
+                    return
+                }
+            }
+
+            File currentJavaHome = file(System.getProperty('java.home'))
+            File jmodsDir = new File(currentJavaHome, 'jmods')
+            if (jmodsDir.isDirectory()) {
+                File[] jmods = jmodsDir.listFiles({ File dir, String name -> name.endsWith('.jmod') } as FilenameFilter)
+                if (jmods != null && jmods.length > 0) {
+                    jmods.sort { it.name }.each {
+                        addLibraryJar(it, '(!**.jar;!module-info.class)')
+                    }
+                    return
+                }
+            }
+
+            throw new GradleException("Unable to locate Java runtime libraries for ProGuard. Set JAVA8_HOME/JDK8_HOME to a JDK 8 install, or run Gradle with a JDK that has jmods.")
+        }
+
+        addJavaRuntimeLibraries()
         def normalizedInputJar = inputJar.replace('\\', '/')
         def normalizedOutputJar = outputJar.replace('\\', '/')
 
@@ -210,7 +251,7 @@ task proguard(type: JavaExec) {
         }.join('\n')
 
         // 将 Java 运行库和其他库合并
-        def allLibraryJars = rtJarArg + '\n' + otherLibraryJars
+        def allLibraryJars = (libraryJarLines + [otherLibraryJars]).findAll { it != null && it.length() > 0 }.join('\n')
 
         // 生成 proguard.pro 文件内容
         new File(configFile).withWriter('UTF-8') { writer ->
