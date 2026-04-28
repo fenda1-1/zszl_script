@@ -26,6 +26,7 @@ import com.zszl.zszlScriptMod.system.ServerFeatureVisibilityManager;
 import com.zszl.zszlScriptMod.path.template.LegacyActionTemplateManager;
 import com.zszl.zszlScriptMod.utils.HudTextScanner;
 import com.zszl.zszlScriptMod.utils.ModUtils;
+import com.zszl.zszlScriptMod.utils.TickRangeSpec;
 import com.zszl.zszlScriptMod.utils.locator.ActionTargetLocator;
 import com.zszl.zszlScriptMod.handlers.AutoSkillHandler;
 import com.zszl.zszlScriptMod.handlers.AutoUseItemHandler;
@@ -55,6 +56,9 @@ import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 public class PathSequenceManager {
+    private static final int MIN_DELAY_TICKS = 0;
+    private static final int MAX_DELAY_TICKS = Integer.MAX_VALUE - 1;
+
     private static class SequenceCallContext {
         private final String sequenceName;
         private final PathSequenceEventListener.ProgressSnapshot snapshot;
@@ -323,7 +327,7 @@ public class PathSequenceManager {
                     case "disconnect":
                         return I18n.format("path.action.desc.disconnect");
                     case "delay":
-                        return I18n.format("path.action.desc.delay", params.get("ticks").getAsInt())
+                        return I18n.format("path.action.desc.delay", formatTickDelaySpec(params, "ticks", 0))
                                 + getDelayNormalizationDescriptionSuffix(params);
                     case "key":
                         String keyState = params.has("state") ? params.get("state").getAsString() : "Press";
@@ -669,6 +673,8 @@ public class PathSequenceManager {
                                 + (params.has("count") ? params.get("count").getAsString() : "1")
                                 + " / 块长度="
                                 + (params.has("bodyCount") ? params.get("bodyCount").getAsString() : "1");
+                    case "restart_sequence":
+                        return I18n.format("path.action.desc.restart_sequence");
                     case "setview":
                         return I18n.format("path.action.desc.setview", params.get("yaw").getAsFloat(),
                                 params.get("pitch").getAsFloat());
@@ -1350,6 +1356,13 @@ public class PathSequenceManager {
         return Math.max(0, delayTicks) + " ticks";
     }
 
+    private static String formatTickDelaySpec(JsonObject params, String key, int fallback) {
+        if (params == null || key == null || !params.has(key)) {
+            return String.valueOf(Math.max(0, fallback));
+        }
+        return TickRangeSpec.normalize(params.get(key), fallback, MIN_DELAY_TICKS, MAX_DELAY_TICKS);
+    }
+
     private static String formatOptionalTickDelay(JsonObject params, String key, String defaultText) {
         if (params == null || key == null || !params.has(key)) {
             return defaultText;
@@ -1750,7 +1763,7 @@ public class PathSequenceManager {
                     return player -> ModUtils.disconnectFromCurrentWorld();
                 case "delay":
                     return new ModUtils.DelayAction(
-                            params.get("ticks").getAsInt(),
+                            TickRangeSpec.sample(params.get("ticks"), 0, MIN_DELAY_TICKS, MAX_DELAY_TICKS),
                             isDelayNormalizedTo20Tps(params));
                 case "key":
                     final String keyName = params.has("key") ? params.get("key").getAsString() : "";

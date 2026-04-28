@@ -28,6 +28,7 @@ import com.zszl.zszlScriptMod.shadowbaritone.process.KillAuraOrbitProcess;
 import com.zszl.zszlScriptMod.shadowbaritone.utils.PathRenderer;
 import com.zszl.zszlScriptMod.system.ProfileManager;
 import com.zszl.zszlScriptMod.utils.ModUtils;
+import com.zszl.zszlScriptMod.utils.TickRangeSpec;
 import com.zszl.zszlScriptMod.zszlScriptMod;
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.client.Minecraft;
@@ -57,6 +58,7 @@ import net.minecraft.network.play.client.CPacketUseEntity;
 import net.minecraft.network.play.server.SPacketPlayerPosLook;
 import net.minecraft.util.EnumFacing;
 import net.minecraft.util.EnumHand;
+import net.minecraft.util.math.AxisAlignedBB;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.RayTraceResult;
@@ -80,6 +82,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Consumer;
 
 public class KillAuraHandler implements AbstractGameEventListener {
@@ -101,6 +104,13 @@ public class KillAuraHandler implements AbstractGameEventListener {
     public static boolean enabled = false;
     public static boolean rotateToTarget = true;
     public static boolean smoothRotation = true;
+    public static final float MIN_SMOOTH_MAX_TURN_STEP = 0.5F;
+    public static final float MAX_SMOOTH_MAX_TURN_STEP = 60.0F;
+    public static final float DEFAULT_SMOOTH_MAX_TURN_STEP = 8.0F;
+    public static float smoothMaxTurnStep = DEFAULT_SMOOTH_MAX_TURN_STEP;
+    public static String smoothMaxTurnStepSpec = formatSmoothMaxTurnStepValue(DEFAULT_SMOOTH_MAX_TURN_STEP);
+    public static boolean rotateOnlyOnAttack = false;
+    public static boolean relockOnlyWhenNoCrosshairTarget = false;
     public static boolean requireLineOfSight = true;
     public static boolean targetHostile = true;
     public static boolean targetPassive = false;
@@ -115,7 +125,11 @@ public class KillAuraHandler implements AbstractGameEventListener {
     public static float fullBrightGamma = 1000.0F;
     public static String attackMode = ATTACK_MODE_NORMAL;
     public static String attackSequenceName = "";
-    public static int attackSequenceDelayTicks = 2;
+    public static final int MIN_ATTACK_SEQUENCE_DELAY_TICKS = 0;
+    public static final int MAX_ATTACK_SEQUENCE_DELAY_TICKS = 200;
+    public static final int DEFAULT_ATTACK_SEQUENCE_DELAY_TICKS = 2;
+    public static int attackSequenceDelayTicks = DEFAULT_ATTACK_SEQUENCE_DELAY_TICKS;
+    public static String attackSequenceDelayTicksSpec = String.valueOf(DEFAULT_ATTACK_SEQUENCE_DELAY_TICKS);
     public static float aimYawOffset = 0.0F;
     public static boolean huntEnabled = true;
     public static String huntMode = HUNT_MODE_APPROACH;
@@ -174,10 +188,23 @@ public class KillAuraHandler implements AbstractGameEventListener {
     private static final double TELEPORT_ATTACK_MAX_RADIUS_ADJUST = 1.4D;
     private static final double TELEPORT_ATTACK_ORIGIN_TOLERANCE_SQ = 0.09D;
     private static final double TELEPORT_ATTACK_WAYPOINT_EPSILON_SQ = 0.04D;
+    private static final int TARGET_SWITCH_SMOOTH_TICKS = 12;
+    private static final float SMOOTH_ATTACK_READY_YAW_DEGREES = 28.0F;
+    private static final float SMOOTH_ATTACK_READY_PITCH_DEGREES = 40.0F;
 
     private int attackCooldownTicks = 0;
     private int sequenceCooldownTicks = 0;
     private int currentTargetEntityId = -1;
+    private int lastAimTargetEntityId = Integer.MIN_VALUE;
+    private int targetSwitchSmoothTicks = 0;
+    private int lastSmoothTurnLimitTick = Integer.MIN_VALUE;
+    private float smoothYawTurnUsedThisTick = 0.0F;
+    private float smoothPitchTurnUsedThisTick = 0.0F;
+    private int visualRotationCacheTick = Integer.MIN_VALUE;
+    private int visualRotationCacheTargetEntityId = Integer.MIN_VALUE;
+    private float visualRotationCacheSourceYaw = 0.0F;
+    private float visualRotationCacheSourcePitch = 0.0F;
+    private Rotation visualRotationCache = null;
     private boolean huntNavigationActive = false;
     private int lastHuntGotoTick = -99999;
     private int lastHuntTargetEntityId = Integer.MIN_VALUE;
@@ -208,6 +235,10 @@ public class KillAuraHandler implements AbstractGameEventListener {
         public String name = "";
         public boolean rotateToTarget = true;
         public boolean smoothRotation = true;
+        public float smoothMaxTurnStep = DEFAULT_SMOOTH_MAX_TURN_STEP;
+        public String smoothMaxTurnStepSpec = "";
+        public boolean rotateOnlyOnAttack = false;
+        public boolean relockOnlyWhenNoCrosshairTarget = false;
         public boolean requireLineOfSight = true;
         public boolean targetHostile = true;
         public boolean targetPassive = false;
@@ -222,7 +253,8 @@ public class KillAuraHandler implements AbstractGameEventListener {
         public float fullBrightGamma = 1000.0F;
         public String attackMode = ATTACK_MODE_NORMAL;
         public String attackSequenceName = "";
-        public int attackSequenceDelayTicks = 2;
+        public int attackSequenceDelayTicks = DEFAULT_ATTACK_SEQUENCE_DELAY_TICKS;
+        public String attackSequenceDelayTicksSpec = "";
         public float aimYawOffset = 0.0F;
         public String huntMode = HUNT_MODE_APPROACH;
         public boolean huntPickupItemsEnabled = false;
@@ -254,6 +286,12 @@ public class KillAuraHandler implements AbstractGameEventListener {
             this.name = other.name == null ? "" : other.name;
             this.rotateToTarget = other.rotateToTarget;
             this.smoothRotation = other.smoothRotation;
+            this.smoothMaxTurnStep = other.smoothMaxTurnStep;
+            this.smoothMaxTurnStepSpec = other.smoothMaxTurnStepSpec == null || other.smoothMaxTurnStepSpec.trim().isEmpty()
+                    ? formatSmoothMaxTurnStepValue(other.smoothMaxTurnStep)
+                    : other.smoothMaxTurnStepSpec;
+            this.rotateOnlyOnAttack = other.rotateOnlyOnAttack;
+            this.relockOnlyWhenNoCrosshairTarget = other.relockOnlyWhenNoCrosshairTarget;
             this.requireLineOfSight = other.requireLineOfSight;
             this.targetHostile = other.targetHostile;
             this.targetPassive = other.targetPassive;
@@ -269,6 +307,10 @@ public class KillAuraHandler implements AbstractGameEventListener {
             this.attackMode = other.attackMode == null ? ATTACK_MODE_NORMAL : other.attackMode;
             this.attackSequenceName = other.attackSequenceName == null ? "" : other.attackSequenceName;
             this.attackSequenceDelayTicks = other.attackSequenceDelayTicks;
+            this.attackSequenceDelayTicksSpec = other.attackSequenceDelayTicksSpec == null
+                    || other.attackSequenceDelayTicksSpec.trim().isEmpty()
+                            ? String.valueOf(other.attackSequenceDelayTicks)
+                            : other.attackSequenceDelayTicksSpec;
             this.aimYawOffset = other.aimYawOffset;
             this.huntMode = other.huntMode == null ? HUNT_MODE_APPROACH : other.huntMode;
             this.huntPickupItemsEnabled = other.huntPickupItemsEnabled;
@@ -307,6 +349,10 @@ public class KillAuraHandler implements AbstractGameEventListener {
         enabled = false;
         rotateToTarget = true;
         smoothRotation = true;
+        smoothMaxTurnStep = DEFAULT_SMOOTH_MAX_TURN_STEP;
+        smoothMaxTurnStepSpec = formatSmoothMaxTurnStepValue(DEFAULT_SMOOTH_MAX_TURN_STEP);
+        rotateOnlyOnAttack = false;
+        relockOnlyWhenNoCrosshairTarget = false;
         requireLineOfSight = true;
         targetHostile = true;
         targetPassive = false;
@@ -321,7 +367,8 @@ public class KillAuraHandler implements AbstractGameEventListener {
         fullBrightGamma = 1000.0F;
         attackMode = ATTACK_MODE_NORMAL;
         attackSequenceName = "";
-        attackSequenceDelayTicks = 2;
+        attackSequenceDelayTicks = DEFAULT_ATTACK_SEQUENCE_DELAY_TICKS;
+        attackSequenceDelayTicksSpec = String.valueOf(DEFAULT_ATTACK_SEQUENCE_DELAY_TICKS);
         aimYawOffset = 0.0F;
         huntEnabled = true;
         huntMode = HUNT_MODE_APPROACH;
@@ -362,6 +409,18 @@ public class KillAuraHandler implements AbstractGameEventListener {
             }
             if (json.has("smoothRotation")) {
                 smoothRotation = json.get("smoothRotation").getAsBoolean();
+            }
+            if (json.has("smoothMaxTurnStep")) {
+                setSmoothMaxTurnStepSpec(json.get("smoothMaxTurnStep").getAsString());
+            }
+            if (json.has("smoothMaxTurnStepSpec")) {
+                setSmoothMaxTurnStepSpec(json.get("smoothMaxTurnStepSpec").getAsString());
+            }
+            if (json.has("rotateOnlyOnAttack")) {
+                rotateOnlyOnAttack = json.get("rotateOnlyOnAttack").getAsBoolean();
+            }
+            if (json.has("relockOnlyWhenNoCrosshairTarget")) {
+                relockOnlyWhenNoCrosshairTarget = json.get("relockOnlyWhenNoCrosshairTarget").getAsBoolean();
             }
             if (json.has("requireLineOfSight")) {
                 requireLineOfSight = json.get("requireLineOfSight").getAsBoolean();
@@ -406,7 +465,10 @@ public class KillAuraHandler implements AbstractGameEventListener {
                 attackSequenceName = json.get("attackSequenceName").getAsString();
             }
             if (json.has("attackSequenceDelayTicks")) {
-                attackSequenceDelayTicks = json.get("attackSequenceDelayTicks").getAsInt();
+                setAttackSequenceDelayTicksSpec(json.get("attackSequenceDelayTicks").getAsString());
+            }
+            if (json.has("attackSequenceDelayTicksSpec")) {
+                setAttackSequenceDelayTicksSpec(json.get("attackSequenceDelayTicksSpec").getAsString());
             }
             if (json.has("aimYawOffset")) {
                 aimYawOffset = json.get("aimYawOffset").getAsFloat();
@@ -508,6 +570,10 @@ public class KillAuraHandler implements AbstractGameEventListener {
             json.addProperty("enabled", enabled);
             json.addProperty("rotateToTarget", rotateToTarget);
             json.addProperty("smoothRotation", smoothRotation);
+            json.addProperty("smoothMaxTurnStep", smoothMaxTurnStepSpec);
+            json.addProperty("smoothMaxTurnStepValue", smoothMaxTurnStep);
+            json.addProperty("rotateOnlyOnAttack", rotateOnlyOnAttack);
+            json.addProperty("relockOnlyWhenNoCrosshairTarget", relockOnlyWhenNoCrosshairTarget);
             json.addProperty("requireLineOfSight", requireLineOfSight);
             json.addProperty("targetHostile", targetHostile);
             json.addProperty("targetPassive", targetPassive);
@@ -522,7 +588,8 @@ public class KillAuraHandler implements AbstractGameEventListener {
             json.addProperty("fullBrightGamma", fullBrightGamma);
             json.addProperty("attackMode", attackMode);
             json.addProperty("attackSequenceName", attackSequenceName);
-            json.addProperty("attackSequenceDelayTicks", attackSequenceDelayTicks);
+            json.addProperty("attackSequenceDelayTicks", attackSequenceDelayTicksSpec);
+            json.addProperty("attackSequenceDelayTicksValue", attackSequenceDelayTicks);
             json.addProperty("aimYawOffset", aimYawOffset);
             json.addProperty("huntMode", huntMode);
             json.addProperty("huntEnabled", isHuntEnabled());
@@ -683,6 +750,9 @@ public class KillAuraHandler implements AbstractGameEventListener {
         }
         rotateToTarget = safePreset.rotateToTarget;
         smoothRotation = safePreset.smoothRotation;
+        setSmoothMaxTurnStepSpec(safePreset.smoothMaxTurnStepSpec);
+        rotateOnlyOnAttack = safePreset.rotateOnlyOnAttack;
+        relockOnlyWhenNoCrosshairTarget = safePreset.relockOnlyWhenNoCrosshairTarget;
         requireLineOfSight = safePreset.requireLineOfSight;
         targetHostile = safePreset.targetHostile;
         targetPassive = safePreset.targetPassive;
@@ -697,7 +767,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
         fullBrightGamma = safePreset.fullBrightGamma;
         attackMode = safePreset.attackMode;
         attackSequenceName = safePreset.attackSequenceName;
-        attackSequenceDelayTicks = safePreset.attackSequenceDelayTicks;
+        setAttackSequenceDelayTicksSpec(safePreset.attackSequenceDelayTicksSpec);
         aimYawOffset = safePreset.aimYawOffset;
         huntMode = safePreset.huntMode;
         huntPickupItemsEnabled = safePreset.huntPickupItemsEnabled;
@@ -729,6 +799,9 @@ public class KillAuraHandler implements AbstractGameEventListener {
         this.attackCooldownTicks = 0;
         this.sequenceCooldownTicks = 0;
         this.currentTargetEntityId = -1;
+        clearAimTargetTransition();
+        resetSmoothTurnLimitBudget();
+        clearVisualRotationCache();
         this.huntNavigationActive = false;
         this.lastHuntGotoTick = -99999;
         this.lastHuntTargetEntityId = Integer.MIN_VALUE;
@@ -765,6 +838,9 @@ public class KillAuraHandler implements AbstractGameEventListener {
         if (player == null || player.world == null || !shouldRotateToTarget() || this.currentTargetEntityId == -1) {
             return Optional.empty();
         }
+        if (!shouldApplyContinuousRotation(false)) {
+            return Optional.empty();
+        }
         Entity target = player.world.getEntityByID(this.currentTargetEntityId);
         if (!(target instanceof EntityLivingBase)) {
             return Optional.empty();
@@ -773,7 +849,21 @@ public class KillAuraHandler implements AbstractGameEventListener {
         if (!isValidTarget(player, livingTarget)) {
             return Optional.empty();
         }
-        return Optional.of(getDesiredAimRotation(player, livingTarget));
+        if (isRelockSuppressedByCrosshairTarget(player, livingTarget)) {
+            return Optional.empty();
+        }
+
+        Rotation cachedRotation = getCachedVisualRotation(player, livingTarget);
+        if (cachedRotation != null) {
+            return Optional.of(cachedRotation);
+        }
+
+        Rotation nextRotation = computeNextAimRotation(player, livingTarget, false, false);
+        if (nextRotation == null) {
+            return Optional.empty();
+        }
+        cacheVisualRotation(player, livingTarget, nextRotation);
+        return Optional.of(nextRotation);
     }
 
     private void ensureBaritonePacketListenerRegistered() {
@@ -908,6 +998,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
             this.attackCooldownTicks = 0;
             this.sequenceCooldownTicks = 0;
             this.currentTargetEntityId = -1;
+            clearAimTargetTransition();
             stopHuntPickupNavigation();
             if (!PathSequenceEventListener.isAnyHuntOrbitActionRunning()) {
                 stopHuntNavigation();
@@ -923,6 +1014,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
 
         if (player.isDead || player.getHealth() <= 0.0F || player.isSpectator()) {
             this.currentTargetEntityId = -1;
+            clearAimTargetTransition();
             stopHuntPickupNavigation();
             stopHuntNavigation();
             this.attackSequenceExecutor.stop();
@@ -936,6 +1028,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
 
         if (!aimOnlyMode && !sequenceAttackMode && onlyWeapon && getPreferredAttackHotbarSlot(player) < 0) {
             this.currentTargetEntityId = -1;
+            clearAimTargetTransition();
             stopHuntPickupNavigation();
             stopHuntNavigation();
             return;
@@ -950,6 +1043,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
         List<EntityLivingBase> targets = findTargets(player);
         if (targets.isEmpty()) {
             this.currentTargetEntityId = -1;
+            clearAimTargetTransition();
             this.attackSequenceExecutor.stop();
             if (autoPickupRulePriority) {
                 stopHuntPickupNavigation();
@@ -967,9 +1061,11 @@ public class KillAuraHandler implements AbstractGameEventListener {
         }
 
         EntityLivingBase primaryTarget = targets.get(0);
+        updateAimTargetTransition(primaryTarget);
         boolean orbitFacingActive = shouldForceOrbitFacing(player, primaryTarget);
+        boolean crosshairTargetLocked = isRelockSuppressedByCrosshairTarget(player, primaryTarget);
 
-        if (shouldRotateToTarget() || orbitFacingActive) {
+        if (shouldApplyContinuousRotation(orbitFacingActive) && !crosshairTargetLocked) {
             applyRotation(player, primaryTarget, orbitFacingActive);
         }
 
@@ -989,18 +1085,22 @@ public class KillAuraHandler implements AbstractGameEventListener {
 
         if (sequenceAttackMode) {
             this.attackSequenceExecutor.tick(player);
-            if (canTriggerAttackSequence(player, primaryTarget) && triggerAttackSequence(player, primaryTarget)) {
-                this.sequenceCooldownTicks = attackSequenceDelayTicks;
+            if (canTriggerAttackSequence(player, primaryTarget)
+                    && prepareRotationForAttack(player, primaryTarget, crosshairTargetLocked ? primaryTarget : null)
+                    && triggerAttackSequence(player, primaryTarget)) {
+                this.sequenceCooldownTicks = sampleAttackSequenceDelayTicks();
             }
+            decayTargetSwitchSmoothTicks();
             return;
         }
 
         if (aimOnlyMode) {
+            decayTargetSwitchSmoothTicks();
             return;
         }
 
         if (canStartAttack(player) && mc.playerController != null) {
-            int attackedCount = attackTargets(mc, player, targets);
+            int attackedCount = attackTargets(mc, player, targets, crosshairTargetLocked ? primaryTarget : null);
             if (attackedCount > 0) {
                 player.swingArm(EnumHand.MAIN_HAND);
                 this.attackCooldownTicks = minAttackIntervalTicks;
@@ -1009,6 +1109,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
                 }
             }
         }
+        decayTargetSwitchSmoothTicks();
     }
 
     @Override
@@ -1234,8 +1335,114 @@ public class KillAuraHandler implements AbstractGameEventListener {
         for (TargetCandidate nearbyTarget : nearbyTargets) {
             targets.add(nearbyTarget.entity);
         }
-        this.currentTargetEntityId = targets.isEmpty() ? -1 : targets.get(0).getEntityId();
+        promoteCrosshairLockedTarget(player, targets);
+        int nextTargetEntityId = targets.isEmpty() ? -1 : targets.get(0).getEntityId();
+        if (nextTargetEntityId != this.currentTargetEntityId) {
+            clearVisualRotationCache();
+        }
+        this.currentTargetEntityId = nextTargetEntityId;
         return targets;
+    }
+
+    private void promoteCrosshairLockedTarget(EntityPlayerSP player, List<EntityLivingBase> targets) {
+        EntityLivingBase crosshairTarget = getCrosshairLockedTarget(player, targets);
+        if (crosshairTarget == null || targets == null || targets.isEmpty() || targets.get(0) == crosshairTarget) {
+            return;
+        }
+        targets.remove(crosshairTarget);
+        targets.add(0, crosshairTarget);
+    }
+
+    private EntityLivingBase getCrosshairLockedTarget(EntityPlayerSP player, List<EntityLivingBase> targets) {
+        if (!shouldUseRelockOnlyWhenNoCrosshairTarget() || player == null || targets == null || targets.isEmpty()) {
+            return null;
+        }
+
+        Vec3d eyePos = player.getPositionEyes(1.0F);
+        Vec3d lookVec = player.getLook(1.0F);
+        double searchDistance = Math.max(0.1D, attackRange);
+        Vec3d endPos = eyePos.addVector(lookVec.x * searchDistance, lookVec.y * searchDistance,
+                lookVec.z * searchDistance);
+
+        EntityLivingBase bestTarget = null;
+        double bestDistanceSq = Double.MAX_VALUE;
+        for (EntityLivingBase target : targets) {
+            if (!canAttackTargetBeforeRotation(player, target)) {
+                continue;
+            }
+            double hitDistanceSq = getCrosshairHitDistanceSq(player, target, eyePos, endPos);
+            if (hitDistanceSq >= 0.0D && hitDistanceSq < bestDistanceSq) {
+                bestDistanceSq = hitDistanceSq;
+                bestTarget = target;
+            }
+        }
+        return bestTarget;
+    }
+
+    private boolean isRelockSuppressedByCrosshairTarget(EntityPlayerSP player, EntityLivingBase target) {
+        return shouldUseRelockOnlyWhenNoCrosshairTarget()
+                && target != null
+                && canAttackTargetBeforeRotation(player, target)
+                && getCrosshairHitDistanceSq(player, target) >= 0.0D;
+    }
+
+    private double getCrosshairHitDistanceSq(EntityPlayerSP player, EntityLivingBase target) {
+        if (player == null) {
+            return -1.0D;
+        }
+        Vec3d eyePos = player.getPositionEyes(1.0F);
+        Vec3d lookVec = player.getLook(1.0F);
+        double searchDistance = Math.max(0.1D, attackRange);
+        Vec3d endPos = eyePos.addVector(lookVec.x * searchDistance, lookVec.y * searchDistance,
+                lookVec.z * searchDistance);
+        return getCrosshairHitDistanceSq(player, target, eyePos, endPos);
+    }
+
+    private double getCrosshairHitDistanceSq(EntityPlayerSP player, EntityLivingBase target, Vec3d eyePos,
+            Vec3d endPos) {
+        if (player == null || target == null || eyePos == null || endPos == null) {
+            return -1.0D;
+        }
+        AxisAlignedBB boundingBox = target.getEntityBoundingBox();
+        if (boundingBox == null) {
+            return -1.0D;
+        }
+        double border = Math.max(0.0D, target.getCollisionBorderSize());
+        AxisAlignedBB hitBox = border > 0.0D ? boundingBox.grow(border) : boundingBox;
+        Vec3d hitVec;
+        if (containsPoint(hitBox, eyePos)) {
+            hitVec = eyePos;
+        } else {
+            RayTraceResult intercept = hitBox.calculateIntercept(eyePos, endPos);
+            if (intercept == null || intercept.hitVec == null) {
+                return -1.0D;
+            }
+            hitVec = intercept.hitVec;
+        }
+        if (requireLineOfSight && isCrosshairHitBlockedByWorld(eyePos, hitVec)) {
+            return -1.0D;
+        }
+        return eyePos.squareDistanceTo(hitVec);
+    }
+
+    private boolean containsPoint(AxisAlignedBB box, Vec3d point) {
+        return box != null
+                && point != null
+                && point.x >= box.minX
+                && point.x <= box.maxX
+                && point.y >= box.minY
+                && point.y <= box.maxY
+                && point.z >= box.minZ
+                && point.z <= box.maxZ;
+    }
+
+    private boolean isCrosshairHitBlockedByWorld(Vec3d eyePos, Vec3d hitVec) {
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc == null || mc.world == null || eyePos == null || hitVec == null) {
+            return false;
+        }
+        RayTraceResult blockRay = mc.world.rayTraceBlocks(eyePos, hitVec, false, true, false);
+        return blockRay != null && blockRay.typeOfHit == RayTraceResult.Type.BLOCK;
     }
 
     private boolean isValidTarget(EntityPlayerSP player, EntityLivingBase target) {
@@ -1281,14 +1488,16 @@ public class KillAuraHandler implements AbstractGameEventListener {
             return null;
         }
         int whitelistPriority = Integer.MAX_VALUE;
+        boolean whitelistMatched = false;
         if (enableNameWhitelist) {
             whitelistPriority = getNormalizedNameListMatchIndex(targetName, nameWhitelist);
             if (whitelistPriority == Integer.MAX_VALUE) {
                 return null;
             }
+            whitelistMatched = true;
         }
 
-        if (!matchesEnabledTargetGroup(target)) {
+        if (!whitelistMatched && !matchesEnabledTargetGroup(target)) {
             return null;
         }
         float yawDeltaAbs = Math.abs(MathHelper.wrapDegrees(getDesiredAimRotation(player, target).getYaw() - player.rotationYaw));
@@ -1319,7 +1528,8 @@ public class KillAuraHandler implements AbstractGameEventListener {
         return player.getCooledAttackStrength(0.0F) >= minAttackStrength;
     }
 
-    private int attackTargets(Minecraft mc, EntityPlayerSP player, List<EntityLivingBase> targets) {
+    private int attackTargets(Minecraft mc, EntityPlayerSP player, List<EntityLivingBase> targets,
+            EntityLivingBase crosshairLockedTarget) {
         if (mc == null || player == null || targets == null || targets.isEmpty()) {
             return 0;
         }
@@ -1329,6 +1539,12 @@ public class KillAuraHandler implements AbstractGameEventListener {
         for (EntityLivingBase target : targets) {
             if (attackedCount >= attackLimit) {
                 break;
+            }
+            if (!canAttackTargetBeforeRotation(player, target)) {
+                continue;
+            }
+            if (!prepareRotationForAttack(player, target, crosshairLockedTarget)) {
+                continue;
             }
             if (!canAttackTarget(player, target)) {
                 continue;
@@ -1348,7 +1564,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
         return attackedCount;
     }
 
-    private boolean canAttackTarget(EntityPlayerSP player, EntityLivingBase target) {
+    private boolean canAttackTargetBeforeRotation(EntityPlayerSP player, EntityLivingBase target) {
         if (target == null || target.isDead || target.getHealth() <= 0.0F) {
             return false;
         }
@@ -1361,7 +1577,13 @@ public class KillAuraHandler implements AbstractGameEventListener {
         if (player.getDistanceSq(target) > attackRange * attackRange) {
             return false;
         }
+        return true;
+    }
 
+    private boolean canAttackTarget(EntityPlayerSP player, EntityLivingBase target) {
+        if (!canAttackTargetBeforeRotation(player, target)) {
+            return false;
+        }
         float yawDiff = Math.abs(MathHelper.wrapDegrees(getDesiredAimRotation(player, target).getYaw() - player.rotationYaw));
         if (shouldRotateToTarget() && yawDiff > 100.0F) {
             return false;
@@ -1400,13 +1622,14 @@ public class KillAuraHandler implements AbstractGameEventListener {
             return false;
         }
 
-        TeleportAttackPlan plan = buildTeleportAttackPlan(player, target);
+        boolean preserveCurrentLook = isRelockSuppressedByCrosshairTarget(player, target);
+        TeleportAttackPlan plan = buildTeleportAttackPlan(player, target, preserveCurrentLook);
         if (plan == null) {
             return false;
         }
 
         sendTeleportWaypoints(player, plan.outboundWaypoints, plan.originOnGround);
-        if (shouldRotateToTarget()) {
+        if (shouldRotateToTarget() && !preserveCurrentLook) {
             player.connection.sendPacket(new CPacketPlayer.PositionRotation(plan.assaultX, plan.assaultY, plan.assaultZ,
                     plan.attackYaw, plan.attackPitch, plan.originOnGround));
         } else {
@@ -1420,7 +1643,8 @@ public class KillAuraHandler implements AbstractGameEventListener {
         return true;
     }
 
-    private TeleportAttackPlan buildTeleportAttackPlan(EntityPlayerSP player, EntityLivingBase target) {
+    private TeleportAttackPlan buildTeleportAttackPlan(EntityPlayerSP player, EntityLivingBase target,
+            boolean preserveCurrentLook) {
         if (player == null || target == null) {
             return null;
         }
@@ -1437,10 +1661,10 @@ public class KillAuraHandler implements AbstractGameEventListener {
                 assaultCandidate.x, assaultCandidate.y, assaultCandidate.z,
                 player.posX, player.posY, player.posZ);
 
-        float attackYaw = shouldRotateToTarget()
+        float attackYaw = shouldRotateToTarget() && !preserveCurrentLook
                 ? getTargetYawFromPosition(assaultCandidate.x, assaultCandidate.z, target)
                 : player.rotationYaw;
-        float attackPitch = shouldRotateToTarget()
+        float attackPitch = shouldRotateToTarget() && !preserveCurrentLook
                 ? getTargetPitchFromPosition(assaultCandidate.x, assaultCandidate.y, assaultCandidate.z, target)
                 : player.rotationPitch;
 
@@ -1648,31 +1872,189 @@ public class KillAuraHandler implements AbstractGameEventListener {
     }
 
     private void applyRotation(EntityPlayerSP player, EntityLivingBase target, boolean forceSmoothRotation) {
-        Rotation desiredAim = getDesiredAimRotation(player, target);
-        float targetYaw = desiredAim.getYaw();
-        float targetPitch = desiredAim.getPitch();
+        applyRotation(player, target, forceSmoothRotation, false);
+    }
 
-        if (!forceSmoothRotation && !smoothRotation) {
-            player.rotationYaw = targetYaw;
-            player.rotationPitch = targetPitch;
-            player.rotationYawHead = targetYaw;
-            player.renderYawOffset = targetYaw;
+    private boolean prepareRotationForAttack(EntityPlayerSP player, EntityLivingBase target,
+            EntityLivingBase crosshairLockedTarget) {
+        if (crosshairLockedTarget != null) {
+            return isSameEntity(target, crosshairLockedTarget);
+        }
+        boolean targetSwitchSmoothing = isTargetSwitchSmoothingActive();
+        boolean rotateOnlyForAttack = shouldRotateOnlyOnAttack();
+        if (!rotateOnlyForAttack && !targetSwitchSmoothing) {
+            return true;
+        }
+        if (rotateOnlyForAttack && !targetSwitchSmoothing) {
+            applyRotation(player, target, false, true);
+        }
+        return targetSwitchSmoothing ? isRotationReadyForSmoothAttack(player, target)
+                : isRotationReadyForAttack(player, target);
+    }
+
+    private void applyRotation(EntityPlayerSP player, EntityLivingBase target, boolean forceSmoothRotation,
+            boolean attackRotation) {
+        Rotation nextRotation = computeNextAimRotation(player, target, forceSmoothRotation, attackRotation);
+        if (nextRotation == null) {
             return;
         }
 
-        float yawDelta = MathHelper.wrapDegrees(targetYaw - player.rotationYaw);
-        float pitchDelta = targetPitch - player.rotationPitch;
-        float yawSpeed = Math.max(computeTurnSpeed(Math.abs(yawDelta)), computeTrackingYawSpeedFloor(player, target));
-        float pitchSpeed = Math.max(1.5F, yawSpeed * 0.75F);
+        player.rotationYaw = nextRotation.getYaw();
+        player.rotationPitch = nextRotation.getPitch();
+        player.rotationYawHead = nextRotation.getYaw();
+        player.renderYawOffset = nextRotation.getYaw();
+    }
 
-        float nextYaw = player.rotationYaw + clampSigned(yawDelta, yawSpeed);
-        float nextPitch = player.rotationPitch + clampSigned(pitchDelta, pitchSpeed);
-        nextPitch = MathHelper.clamp(nextPitch, -90.0F, 90.0F);
+    private Rotation computeNextAimRotation(EntityPlayerSP player, EntityLivingBase target, boolean forceSmoothRotation,
+            boolean attackRotation) {
+        if (player == null || target == null || isRelockSuppressedByCrosshairTarget(player, target)) {
+            return null;
+        }
 
-        player.rotationYaw = nextYaw;
-        player.rotationPitch = nextPitch;
-        player.rotationYawHead = nextYaw;
-        player.renderYawOffset = nextYaw;
+        Rotation desiredAim = getDesiredAimRotation(player, target);
+        boolean useSmoothRotation = forceSmoothRotation || smoothRotation;
+        if (!useSmoothRotation) {
+            return desiredAim;
+        }
+
+        float yawDelta = MathHelper.wrapDegrees(desiredAim.getYaw() - player.rotationYaw);
+        float pitchDelta = desiredAim.getPitch() - player.rotationPitch;
+        float yawSpeed = Math.max(computeTurnSpeed(Math.abs(yawDelta), attackRotation),
+                computeTrackingYawSpeedFloor(player, target) * (attackRotation ? 0.85F : 0.65F));
+        float pitchSpeed = Math.max(0.6F, yawSpeed * 0.62F);
+
+        float yawStep = clampSigned(yawDelta, yawSpeed);
+        float pitchStep = clampSigned(pitchDelta, pitchSpeed);
+        updateSmoothTurnLimitBudget(player);
+        float turnLimit = sampleSmoothMaxTurnStepForTurn();
+        yawStep = clampSigned(yawStep, getRemainingSmoothYawTurnStep(turnLimit));
+        pitchStep = clampSigned(pitchStep, getRemainingSmoothPitchTurnStep(turnLimit));
+        smoothYawTurnUsedThisTick += Math.abs(yawStep);
+        smoothPitchTurnUsedThisTick += Math.abs(pitchStep);
+
+        float nextYaw = player.rotationYaw + yawStep;
+        float nextPitch = player.rotationPitch + pitchStep;
+        return new Rotation(nextYaw, MathHelper.clamp(nextPitch, -90.0F, 90.0F));
+    }
+
+    private void updateSmoothTurnLimitBudget(EntityPlayerSP player) {
+        int currentTick = player == null ? Integer.MIN_VALUE : player.ticksExisted;
+        if (currentTick != this.lastSmoothTurnLimitTick) {
+            this.lastSmoothTurnLimitTick = currentTick;
+            this.smoothYawTurnUsedThisTick = 0.0F;
+            this.smoothPitchTurnUsedThisTick = 0.0F;
+        }
+    }
+
+    private void resetSmoothTurnLimitBudget() {
+        this.lastSmoothTurnLimitTick = Integer.MIN_VALUE;
+        this.smoothYawTurnUsedThisTick = 0.0F;
+        this.smoothPitchTurnUsedThisTick = 0.0F;
+        clearVisualRotationCache();
+    }
+
+    private Rotation getCachedVisualRotation(EntityPlayerSP player, EntityLivingBase target) {
+        if (player == null || target == null || this.visualRotationCache == null) {
+            return null;
+        }
+        if (this.visualRotationCacheTick != player.ticksExisted
+                || this.visualRotationCacheTargetEntityId != target.getEntityId()
+                || Float.compare(this.visualRotationCacheSourceYaw, player.rotationYaw) != 0
+                || Float.compare(this.visualRotationCacheSourcePitch, player.rotationPitch) != 0) {
+            return null;
+        }
+        return this.visualRotationCache;
+    }
+
+    private void cacheVisualRotation(EntityPlayerSP player, EntityLivingBase target, Rotation rotation) {
+        if (player == null || target == null || rotation == null) {
+            clearVisualRotationCache();
+            return;
+        }
+        this.visualRotationCacheTick = player.ticksExisted;
+        this.visualRotationCacheTargetEntityId = target.getEntityId();
+        this.visualRotationCacheSourceYaw = player.rotationYaw;
+        this.visualRotationCacheSourcePitch = player.rotationPitch;
+        this.visualRotationCache = rotation;
+    }
+
+    private void clearVisualRotationCache() {
+        this.visualRotationCacheTick = Integer.MIN_VALUE;
+        this.visualRotationCacheTargetEntityId = Integer.MIN_VALUE;
+        this.visualRotationCacheSourceYaw = 0.0F;
+        this.visualRotationCacheSourcePitch = 0.0F;
+        this.visualRotationCache = null;
+    }
+
+    private float getRemainingSmoothYawTurnStep(float turnLimit) {
+        return Math.max(0.0F, turnLimit - this.smoothYawTurnUsedThisTick);
+    }
+
+    private float getRemainingSmoothPitchTurnStep(float turnLimit) {
+        return Math.max(0.0F, turnLimit - this.smoothPitchTurnUsedThisTick);
+    }
+
+    private boolean isRotationReadyForAttack(EntityPlayerSP player, EntityLivingBase target) {
+        if (player == null || target == null) {
+            return false;
+        }
+        Rotation desiredAim = getDesiredAimRotation(player, target);
+        float yawDiff = Math.abs(MathHelper.wrapDegrees(desiredAim.getYaw() - player.rotationYaw));
+        float pitchDiff = Math.abs(desiredAim.getPitch() - player.rotationPitch);
+        return yawDiff <= 100.0F && pitchDiff <= 80.0F;
+    }
+
+    private boolean isRotationReadyForSmoothAttack(EntityPlayerSP player, EntityLivingBase target) {
+        if (player == null || target == null) {
+            return false;
+        }
+        Rotation desiredAim = getDesiredAimRotation(player, target);
+        float yawDiff = Math.abs(MathHelper.wrapDegrees(desiredAim.getYaw() - player.rotationYaw));
+        float pitchDiff = Math.abs(desiredAim.getPitch() - player.rotationPitch);
+        return yawDiff <= SMOOTH_ATTACK_READY_YAW_DEGREES && pitchDiff <= SMOOTH_ATTACK_READY_PITCH_DEGREES;
+    }
+
+    private boolean shouldApplyContinuousRotation(boolean orbitFacingActive) {
+        if (!shouldRotateToTarget() && !orbitFacingActive) {
+            return false;
+        }
+        return !rotateOnlyOnAttack || aimOnlyMode || isTargetSwitchSmoothingActive();
+    }
+
+    private void updateAimTargetTransition(EntityLivingBase target) {
+        if (target == null) {
+            clearAimTargetTransition();
+            return;
+        }
+
+        int targetEntityId = target.getEntityId();
+        if (targetEntityId == this.lastAimTargetEntityId) {
+            return;
+        }
+
+        boolean hadPreviousTarget = this.lastAimTargetEntityId != Integer.MIN_VALUE && this.lastAimTargetEntityId != -1;
+        this.lastAimTargetEntityId = targetEntityId;
+        if (hadPreviousTarget && smoothRotation && shouldRotateToTarget()) {
+            this.targetSwitchSmoothTicks = TARGET_SWITCH_SMOOTH_TICKS;
+        } else {
+            this.targetSwitchSmoothTicks = 0;
+        }
+    }
+
+    private boolean isTargetSwitchSmoothingActive() {
+        return this.targetSwitchSmoothTicks > 0 && smoothRotation && shouldRotateToTarget();
+    }
+
+    private void decayTargetSwitchSmoothTicks() {
+        if (this.targetSwitchSmoothTicks > 0) {
+            this.targetSwitchSmoothTicks--;
+        }
+    }
+
+    private void clearAimTargetTransition() {
+        this.lastAimTargetEntityId = Integer.MIN_VALUE;
+        this.targetSwitchSmoothTicks = 0;
+        clearVisualRotationCache();
     }
 
     private boolean shouldForceOrbitFacing(EntityPlayerSP player, EntityLivingBase target) {
@@ -1794,13 +2176,136 @@ public class KillAuraHandler implements AbstractGameEventListener {
         return (float) (-Math.toDegrees(Math.atan2(dy, horizontal)));
     }
 
-    private float computeTurnSpeed(float yawDeltaAbs) {
-        float normalized = MathHelper.clamp(yawDeltaAbs / 90.0F, 0.0F, 1.0F);
-        return minTurnSpeed + (maxTurnSpeed - minTurnSpeed) * normalized;
+    private float computeTurnSpeed(float yawDeltaAbs, boolean attackRotation) {
+        float normalized = MathHelper.clamp(yawDeltaAbs / 120.0F, 0.0F, 1.0F);
+        float eased = normalized * normalized;
+        float effectiveMin = Math.max(0.65F, minTurnSpeed * (attackRotation ? 0.75F : 0.58F));
+        float effectiveMax = Math.max(effectiveMin, maxTurnSpeed * (attackRotation ? 0.86F : 0.72F));
+        return effectiveMin + (effectiveMax - effectiveMin) * eased;
     }
 
     private float clampSigned(float value, float maxMagnitude) {
-        return Math.copySign(Math.min(Math.abs(value), Math.max(0.1F, maxMagnitude)), value);
+        if (maxMagnitude <= 0.0F) {
+            return 0.0F;
+        }
+        return Math.copySign(Math.min(Math.abs(value), maxMagnitude), value);
+    }
+
+    private static float sampleSmoothMaxTurnStepForTurn() {
+        SmoothTurnStepRange range = parseSmoothMaxTurnStepSpec(smoothMaxTurnStepSpec, smoothMaxTurnStep);
+        if (!range.isRandom()) {
+            return range.min;
+        }
+        return (float) ThreadLocalRandom.current().nextDouble(range.min, range.max);
+    }
+
+    public static void setSmoothMaxTurnStepSpec(String spec) {
+        SmoothTurnStepRange range = parseSmoothMaxTurnStepSpec(spec, smoothMaxTurnStep);
+        smoothMaxTurnStep = range.min;
+        smoothMaxTurnStepSpec = range.toSpec();
+    }
+
+    public static String getSmoothMaxTurnStepDisplayText() {
+        return parseSmoothMaxTurnStepSpec(smoothMaxTurnStepSpec, smoothMaxTurnStep).toDisplayText();
+    }
+
+    public static String getSmoothMaxTurnStepSpec() {
+        return parseSmoothMaxTurnStepSpec(smoothMaxTurnStepSpec, smoothMaxTurnStep).toSpec();
+    }
+
+    private static SmoothTurnStepRange parseSmoothMaxTurnStepSpec(String spec, float fallback) {
+        float safeFallback = MathHelper.clamp(Float.isNaN(fallback) ? DEFAULT_SMOOTH_MAX_TURN_STEP : fallback,
+                MIN_SMOOTH_MAX_TURN_STEP, MAX_SMOOTH_MAX_TURN_STEP);
+        String normalized = spec == null ? "" : spec.trim();
+        if (normalized.isEmpty()) {
+            return new SmoothTurnStepRange(safeFallback, safeFallback);
+        }
+
+        normalized = normalized.replace("°", "")
+                .replace("，", ",")
+                .replace("－", "-")
+                .replace("–", "-")
+                .replace("—", "-")
+                .replace("~", "-")
+                .replace("～", "-")
+                .replace("至", "-")
+                .replace("到", "-")
+                .replaceAll("\\s+", "");
+        String[] parts = normalized.split("-", -1);
+        try {
+            if (parts.length == 1) {
+                float value = MathHelper.clamp(Float.parseFloat(parts[0]), MIN_SMOOTH_MAX_TURN_STEP,
+                        MAX_SMOOTH_MAX_TURN_STEP);
+                return new SmoothTurnStepRange(value, value);
+            }
+            if (parts.length == 2 && !parts[0].isEmpty() && !parts[1].isEmpty()) {
+                float first = Float.parseFloat(parts[0]);
+                float second = Float.parseFloat(parts[1]);
+                float min = MathHelper.clamp(Math.min(first, second), MIN_SMOOTH_MAX_TURN_STEP,
+                        MAX_SMOOTH_MAX_TURN_STEP);
+                float max = MathHelper.clamp(Math.max(first, second), MIN_SMOOTH_MAX_TURN_STEP,
+                        MAX_SMOOTH_MAX_TURN_STEP);
+                return new SmoothTurnStepRange(min, Math.max(min, max));
+            }
+        } catch (Exception ignored) {
+        }
+        return new SmoothTurnStepRange(safeFallback, safeFallback);
+    }
+
+    private static String formatSmoothMaxTurnStepValue(float value) {
+        float clamped = MathHelper.clamp(value, MIN_SMOOTH_MAX_TURN_STEP, MAX_SMOOTH_MAX_TURN_STEP);
+        if (Math.abs(clamped - Math.round(clamped)) < 0.0001F) {
+            return String.valueOf(Math.round(clamped));
+        }
+        return String.format(Locale.ROOT, "%.2f", clamped).replaceAll("0+$", "").replaceAll("\\.$", "");
+    }
+
+    private static final class SmoothTurnStepRange {
+        private final float min;
+        private final float max;
+
+        private SmoothTurnStepRange(float min, float max) {
+            this.min = MathHelper.clamp(min, MIN_SMOOTH_MAX_TURN_STEP, MAX_SMOOTH_MAX_TURN_STEP);
+            this.max = MathHelper.clamp(Math.max(this.min, max), MIN_SMOOTH_MAX_TURN_STEP,
+                    MAX_SMOOTH_MAX_TURN_STEP);
+        }
+
+        private boolean isRandom() {
+            return this.max - this.min > 0.0001F;
+        }
+
+        private String toSpec() {
+            if (!isRandom()) {
+                return formatSmoothMaxTurnStepValue(this.min);
+            }
+            return formatSmoothMaxTurnStepValue(this.min) + "-" + formatSmoothMaxTurnStepValue(this.max);
+        }
+
+        private String toDisplayText() {
+            return toSpec();
+        }
+    }
+
+    private static int sampleAttackSequenceDelayTicks() {
+        return TickRangeSpec.sample(attackSequenceDelayTicksSpec, attackSequenceDelayTicks,
+                MIN_ATTACK_SEQUENCE_DELAY_TICKS, MAX_ATTACK_SEQUENCE_DELAY_TICKS);
+    }
+
+    public static void setAttackSequenceDelayTicksSpec(String spec) {
+        TickRangeSpec.Range range = TickRangeSpec.parse(spec, attackSequenceDelayTicks,
+                MIN_ATTACK_SEQUENCE_DELAY_TICKS, MAX_ATTACK_SEQUENCE_DELAY_TICKS);
+        attackSequenceDelayTicks = range.getMin();
+        attackSequenceDelayTicksSpec = range.toSpec();
+    }
+
+    public static String getAttackSequenceDelayTicksDisplayText() {
+        return TickRangeSpec.parse(attackSequenceDelayTicksSpec, attackSequenceDelayTicks,
+                MIN_ATTACK_SEQUENCE_DELAY_TICKS, MAX_ATTACK_SEQUENCE_DELAY_TICKS).toDisplayText();
+    }
+
+    public static String getAttackSequenceDelayTicksSpec() {
+        return TickRangeSpec.parse(attackSequenceDelayTicksSpec, attackSequenceDelayTicks,
+                MIN_ATTACK_SEQUENCE_DELAY_TICKS, MAX_ATTACK_SEQUENCE_DELAY_TICKS).toSpec();
     }
 
     private float getTargetSearchRadius() {
@@ -1853,6 +2358,18 @@ public class KillAuraHandler implements AbstractGameEventListener {
 
     private boolean shouldRotateToTarget() {
         return aimOnlyMode || (!isPacketAttackMode() && rotateToTarget);
+    }
+
+    private boolean shouldRotateOnlyOnAttack() {
+        return rotateOnlyOnAttack && !aimOnlyMode && shouldRotateToTarget();
+    }
+
+    private boolean shouldUseRelockOnlyWhenNoCrosshairTarget() {
+        return relockOnlyWhenNoCrosshairTarget && shouldRotateToTarget();
+    }
+
+    private boolean isSameEntity(EntityLivingBase left, EntityLivingBase right) {
+        return left != null && right != null && left.getEntityId() == right.getEntityId();
     }
 
     private boolean canTriggerAttackSequence(EntityPlayerSP player, EntityLivingBase target) {
@@ -3125,6 +3642,10 @@ public class KillAuraHandler implements AbstractGameEventListener {
         preset.name = normalizePresetName(name);
         preset.rotateToTarget = rotateToTarget;
         preset.smoothRotation = smoothRotation;
+        preset.smoothMaxTurnStep = smoothMaxTurnStep;
+        preset.smoothMaxTurnStepSpec = smoothMaxTurnStepSpec;
+        preset.rotateOnlyOnAttack = rotateOnlyOnAttack;
+        preset.relockOnlyWhenNoCrosshairTarget = relockOnlyWhenNoCrosshairTarget;
         preset.requireLineOfSight = requireLineOfSight;
         preset.targetHostile = targetHostile;
         preset.targetPassive = targetPassive;
@@ -3140,6 +3661,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
         preset.attackMode = attackMode;
         preset.attackSequenceName = attackSequenceName;
         preset.attackSequenceDelayTicks = attackSequenceDelayTicks;
+        preset.attackSequenceDelayTicksSpec = attackSequenceDelayTicksSpec;
         preset.aimYawOffset = aimYawOffset;
         preset.huntMode = huntMode;
         preset.huntPickupItemsEnabled = huntPickupItemsEnabled;
@@ -3173,6 +3695,9 @@ public class KillAuraHandler implements AbstractGameEventListener {
         }
         KillAuraPreset normalizedPreset = new KillAuraPreset(preset);
         normalizedPreset.name = normalizedName;
+        normalizedPreset.rotateOnlyOnAttack = normalizedPreset.rotateOnlyOnAttack && normalizedPreset.rotateToTarget;
+        normalizedPreset.relockOnlyWhenNoCrosshairTarget = normalizedPreset.relockOnlyWhenNoCrosshairTarget
+                && (normalizedPreset.rotateToTarget || normalizedPreset.aimOnlyMode);
         normalizedPreset.nameWhitelist = normalizeNameList(normalizedPreset.nameWhitelist);
         normalizedPreset.nameBlacklist = normalizeNameList(normalizedPreset.nameBlacklist);
         normalizedPreset.attackSequenceName = normalizedPreset.attackSequenceName == null
@@ -3181,12 +3706,20 @@ public class KillAuraHandler implements AbstractGameEventListener {
         normalizedPreset.fullBrightGamma = MathHelper.clamp(normalizedPreset.fullBrightGamma, 1.0F, 1000.0F);
         normalizedPreset.attackRange = MathHelper.clamp(normalizedPreset.attackRange, 1.0F, 100.0F);
         normalizedPreset.minAttackStrength = MathHelper.clamp(normalizedPreset.minAttackStrength, 0.0F, 1.0F);
+        SmoothTurnStepRange presetTurnRange = parseSmoothMaxTurnStepSpec(normalizedPreset.smoothMaxTurnStepSpec,
+                normalizedPreset.smoothMaxTurnStep);
+        normalizedPreset.smoothMaxTurnStep = presetTurnRange.min;
+        normalizedPreset.smoothMaxTurnStepSpec = presetTurnRange.toSpec();
         normalizedPreset.minTurnSpeed = MathHelper.clamp(normalizedPreset.minTurnSpeed, 1.0F, 40.0F);
         normalizedPreset.maxTurnSpeed = MathHelper.clamp(normalizedPreset.maxTurnSpeed,
                 normalizedPreset.minTurnSpeed, 60.0F);
         normalizedPreset.minAttackIntervalTicks = MathHelper.clamp(normalizedPreset.minAttackIntervalTicks, 0, 20);
         normalizedPreset.targetsPerAttack = MathHelper.clamp(normalizedPreset.targetsPerAttack, 1, 50);
-        normalizedPreset.attackSequenceDelayTicks = MathHelper.clamp(normalizedPreset.attackSequenceDelayTicks, 0, 200);
+        TickRangeSpec.Range attackSequenceDelayRange = TickRangeSpec.parse(normalizedPreset.attackSequenceDelayTicksSpec,
+                normalizedPreset.attackSequenceDelayTicks, MIN_ATTACK_SEQUENCE_DELAY_TICKS,
+                MAX_ATTACK_SEQUENCE_DELAY_TICKS);
+        normalizedPreset.attackSequenceDelayTicks = attackSequenceDelayRange.getMin();
+        normalizedPreset.attackSequenceDelayTicksSpec = attackSequenceDelayRange.toSpec();
         normalizedPreset.aimYawOffset = MathHelper.clamp(normalizedPreset.aimYawOffset, -30.0F, 30.0F);
         normalizedPreset.huntRadius = MathHelper.clamp(normalizedPreset.huntRadius, normalizedPreset.attackRange, 100.0F);
         normalizedPreset.huntFixedDistance = MathHelper.clamp(normalizedPreset.huntFixedDistance, 0.5F, 100.0F);
@@ -3207,9 +3740,12 @@ public class KillAuraHandler implements AbstractGameEventListener {
         normalizedPreset.huntMode = normalizeHuntModeValue(normalizedPreset.huntMode);
         if (normalizedPreset.aimOnlyMode) {
             normalizedPreset.attackMode = ATTACK_MODE_SEQUENCE;
+            normalizedPreset.rotateOnlyOnAttack = false;
         } else if (ATTACK_MODE_PACKET.equals(normalizedPreset.attackMode)) {
             normalizedPreset.rotateToTarget = false;
             normalizedPreset.smoothRotation = false;
+            normalizedPreset.rotateOnlyOnAttack = false;
+            normalizedPreset.relockOnlyWhenNoCrosshairTarget = false;
         }
         if (!normalizedPreset.targetHostile && !normalizedPreset.targetPassive && !normalizedPreset.targetPlayers) {
             normalizedPreset.targetHostile = true;
@@ -3223,11 +3759,17 @@ public class KillAuraHandler implements AbstractGameEventListener {
     private static void normalizeConfig() {
         attackRange = MathHelper.clamp(attackRange, 1.0F, 100.0F);
         minAttackStrength = MathHelper.clamp(minAttackStrength, 0.0F, 1.0F);
+        SmoothTurnStepRange turnRange = parseSmoothMaxTurnStepSpec(smoothMaxTurnStepSpec, smoothMaxTurnStep);
+        smoothMaxTurnStep = turnRange.min;
+        smoothMaxTurnStepSpec = turnRange.toSpec();
         minTurnSpeed = MathHelper.clamp(minTurnSpeed, 1.0F, 40.0F);
         maxTurnSpeed = MathHelper.clamp(maxTurnSpeed, minTurnSpeed, 60.0F);
         minAttackIntervalTicks = MathHelper.clamp(minAttackIntervalTicks, 0, 20);
         targetsPerAttack = MathHelper.clamp(targetsPerAttack, 1, 50);
-        attackSequenceDelayTicks = MathHelper.clamp(attackSequenceDelayTicks, 0, 200);
+        TickRangeSpec.Range attackSequenceDelayRange = TickRangeSpec.parse(attackSequenceDelayTicksSpec,
+                attackSequenceDelayTicks, MIN_ATTACK_SEQUENCE_DELAY_TICKS, MAX_ATTACK_SEQUENCE_DELAY_TICKS);
+        attackSequenceDelayTicks = attackSequenceDelayRange.getMin();
+        attackSequenceDelayTicksSpec = attackSequenceDelayRange.toSpec();
         aimYawOffset = MathHelper.clamp(aimYawOffset, -30.0F, 30.0F);
         huntRadius = MathHelper.clamp(huntRadius, attackRange, 100.0F);
         huntFixedDistance = MathHelper.clamp(huntFixedDistance, 0.5F, 100.0F);
@@ -3252,10 +3794,15 @@ public class KillAuraHandler implements AbstractGameEventListener {
 
         if (aimOnlyMode) {
             attackMode = ATTACK_MODE_SEQUENCE;
+            rotateOnlyOnAttack = false;
         } else if (ATTACK_MODE_PACKET.equals(attackMode)) {
             rotateToTarget = false;
             smoothRotation = false;
+            rotateOnlyOnAttack = false;
+            relockOnlyWhenNoCrosshairTarget = false;
         }
+        rotateOnlyOnAttack = rotateOnlyOnAttack && rotateToTarget;
+        relockOnlyWhenNoCrosshairTarget = relockOnlyWhenNoCrosshairTarget && (aimOnlyMode || rotateToTarget);
 
         huntMode = normalizeHuntModeValue(huntMode);
         huntEnabled = !HUNT_MODE_OFF.equals(huntMode);
@@ -3477,6 +4024,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
         private boolean shouldSkipAction(String actionType) {
             return "run_sequence".equals(actionType) || "hunt".equals(actionType) || "set_var".equals(actionType)
                     || "goto_action".equals(actionType) || "repeat_actions".equals(actionType)
+                    || "restart_sequence".equals(actionType)
                     || "capture_nearby_entity".equals(actionType) || "capture_gui_title".equals(actionType)
                     || "capture_block_at".equals(actionType) || actionType.startsWith("condition_")
                     || actionType.startsWith("wait_until_");

@@ -4,30 +4,37 @@ import com.zszl.zszlScriptMod.zszlScriptMod;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiDisconnected;
 import net.minecraft.client.gui.GuiMainMenu;
+import net.minecraft.client.gui.GuiMultiplayer;
+import net.minecraft.client.gui.GuiScreen;
 import net.minecraft.client.multiplayer.GuiConnecting;
 import net.minecraft.client.multiplayer.ServerData;
 
 public final class AutoReconnectRuntime {
 
     private ServerData pendingReconnectServer = null;
+    private ServerData lastConnectedServer = null;
     private int reconnectDelayTicks = 0;
     private int reconnectKeepAliveTicks = 0;
     private int reconnectAttemptCount = 0;
 
     public void onClientDisconnected(Minecraft mc, boolean featureEnabled, int reconnectDelayTicks) {
+        rememberCurrentServer(mc);
         if (!featureEnabled || mc == null || mc.isSingleplayer()) {
             clearState();
             return;
         }
 
-        ServerData current = mc.getCurrentServerData();
-        if (current == null || current.serverIP == null || current.serverIP.trim().isEmpty()) {
+        ServerData reconnectTarget = copyServerData(mc.getCurrentServerData());
+        if (reconnectTarget == null) {
+            reconnectTarget = copyServerData(this.lastConnectedServer);
+        }
+        if (reconnectTarget == null) {
             clearState();
             return;
         }
 
-        this.pendingReconnectServer = new ServerData(current.serverName, current.serverIP, false);
-        this.reconnectDelayTicks = reconnectDelayTicks;
+        this.pendingReconnectServer = reconnectTarget;
+        this.reconnectDelayTicks = Math.max(0, reconnectDelayTicks);
         this.reconnectKeepAliveTicks = 200;
         this.reconnectAttemptCount = 0;
     }
@@ -36,18 +43,25 @@ public final class AutoReconnectRuntime {
         clearState();
     }
 
+    public void onClientDisconnectReset(boolean featureEnabled) {
+        if (!featureEnabled) {
+            clearState();
+        }
+    }
+
     public void tick(boolean featureEnabled, boolean infiniteAttempts, int maxAttempts, int retryDelayTicks, Minecraft mc) {
         if (!featureEnabled || this.pendingReconnectServer == null || mc == null) {
             return;
         }
         if (mc.player != null && mc.world != null) {
+            rememberCurrentServer(mc);
             clearState();
             return;
         }
         if (mc.currentScreen instanceof GuiConnecting) {
             return;
         }
-        if (mc.currentScreen instanceof GuiDisconnected) {
+        if (mc.currentScreen instanceof GuiDisconnected || mc.currentScreen instanceof GuiMultiplayer) {
             if (this.reconnectDelayTicks > 0) {
                 this.reconnectDelayTicks--;
                 return;
@@ -57,9 +71,18 @@ public final class AutoReconnectRuntime {
                 return;
             }
             try {
-                mc.displayGuiScreen(new GuiConnecting(new GuiMainMenu(), mc, this.pendingReconnectServer));
+                ServerData reconnectTarget = copyServerData(this.pendingReconnectServer);
+                if (reconnectTarget == null) {
+                    clearState();
+                    return;
+                }
+                GuiScreen parent = mc.currentScreen instanceof GuiMultiplayer
+                        ? mc.currentScreen
+                        : new GuiMultiplayer(new GuiMainMenu());
+                mc.displayGuiScreen(new GuiConnecting(parent, mc, reconnectTarget));
                 this.reconnectAttemptCount++;
-                this.reconnectDelayTicks = retryDelayTicks;
+                this.reconnectDelayTicks = Math.max(0, retryDelayTicks);
+                this.reconnectKeepAliveTicks = 200;
             } catch (Exception e) {
                 zszlScriptMod.LOGGER.debug("自动重连执行失败", e);
                 clearState();
@@ -71,6 +94,16 @@ public final class AutoReconnectRuntime {
             return;
         }
         clearState();
+    }
+
+    public void rememberCurrentServer(Minecraft mc) {
+        if (mc == null || mc.isSingleplayer()) {
+            return;
+        }
+        ServerData current = copyServerData(mc.getCurrentServerData());
+        if (current != null) {
+            this.lastConnectedServer = current;
+        }
     }
 
     public void clearState() {
@@ -90,5 +123,15 @@ public final class AutoReconnectRuntime {
 
     public int getReconnectAttemptCount() {
         return this.reconnectAttemptCount;
+    }
+
+    private static ServerData copyServerData(ServerData source) {
+        if (source == null || source.serverIP == null || source.serverIP.trim().isEmpty()) {
+            return null;
+        }
+        String name = source.serverName == null || source.serverName.trim().isEmpty()
+                ? source.serverIP.trim()
+                : source.serverName;
+        return new ServerData(name, source.serverIP.trim(), false);
     }
 }

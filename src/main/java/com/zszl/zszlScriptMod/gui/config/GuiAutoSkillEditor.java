@@ -100,7 +100,7 @@ public class GuiAutoSkillEditor extends ThemedGuiScreen {
 
         cooldownField = new GuiTextField(11, fontRenderer, editorX + editorWidth - 100, topControlsY, 100, 20);
         cooldownField.setText(String.valueOf(selectedSkill.cooldownSeconds));
-        cooldownField.setValidator(s -> s.matches("\\d*"));
+        cooldownField.setMaxStringLength(9);
 
         // --- 核心修复：增加顶部控件和列表之间的间距，为提示文本留出空间 ---
         listX = editorX;
@@ -165,11 +165,8 @@ public class GuiAutoSkillEditor extends ThemedGuiScreen {
             selectedHexIndex++;
             updateHexButtonStates();
         } else if (button.id == 100) { // Save
-            try {
-                selectedSkill.cooldownSeconds = Integer.parseInt(cooldownField.getText());
-            } catch (NumberFormatException e) {
-                selectedSkill.cooldownSeconds = 1;
-            }
+            sanitizeCooldownField();
+            updateSelectedSkillCooldown(true);
             AutoSkillHandler.saveSkillConfig();
             mc.displayGuiScreen(parentScreen);
         } else if (button.id == 101) { // Cancel
@@ -259,16 +256,13 @@ public class GuiAutoSkillEditor extends ThemedGuiScreen {
 
     @Override
     protected void keyTyped(char typedChar, int keyCode) throws IOException {
-        // ... (此方法保持不变)
-        super.keyTyped(typedChar, keyCode);
-        if (cooldownField.textboxKeyTyped(typedChar, keyCode)) {
-            try {
-                int cd = Integer.parseInt(cooldownField.getText());
-                AutoSkillHandler.skills.get(selectedSkillIndex).cooldownSeconds = cd;
-            } catch (NumberFormatException e) {
-                // ignore
-            }
+        if (cooldownField != null && cooldownField.isFocused()
+                && cooldownField.textboxKeyTyped(typedChar, keyCode)) {
+            sanitizeCooldownField();
+            updateSelectedSkillCooldown(false);
+            return;
         }
+        super.keyTyped(typedChar, keyCode);
     }
 
     @Override
@@ -287,6 +281,54 @@ public class GuiAutoSkillEditor extends ThemedGuiScreen {
     @Override
     public void onGuiClosed() {
         Keyboard.enableRepeatEvents(false);
+    }
+
+    private void sanitizeCooldownField() {
+        if (cooldownField == null) {
+            return;
+        }
+        String original = cooldownField.getText();
+        String digits = keepAsciiDigits(original);
+        if (!digits.equals(original)) {
+            cooldownField.setText(digits);
+            cooldownField.setCursorPositionEnd();
+        }
+    }
+
+    private void updateSelectedSkillCooldown(boolean useDefaultWhenEmpty) {
+        if (selectedSkillIndex < 0 || selectedSkillIndex >= AutoSkillHandler.skills.size()) {
+            return;
+        }
+        String text = cooldownField == null ? "" : cooldownField.getText().trim();
+        if (text.isEmpty()) {
+            if (useDefaultWhenEmpty) {
+                AutoSkillHandler.skills.get(selectedSkillIndex).cooldownSeconds = 1;
+            }
+            return;
+        }
+        try {
+            AutoSkillHandler.skills.get(selectedSkillIndex).cooldownSeconds = Math.max(0, Integer.parseInt(text));
+        } catch (NumberFormatException e) {
+            AutoSkillHandler.skills.get(selectedSkillIndex).cooldownSeconds = Integer.MAX_VALUE;
+            if (cooldownField != null) {
+                cooldownField.setText(String.valueOf(Integer.MAX_VALUE));
+                cooldownField.setCursorPositionEnd();
+            }
+        }
+    }
+
+    private static String keepAsciiDigits(String value) {
+        if (value == null || value.isEmpty()) {
+            return "";
+        }
+        StringBuilder result = new StringBuilder(value.length());
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            if (c >= '0' && c <= '9') {
+                result.append(c);
+            }
+        }
+        return result.toString();
     }
 }
 

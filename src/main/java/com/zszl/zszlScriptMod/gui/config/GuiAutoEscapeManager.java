@@ -24,7 +24,9 @@ public class GuiAutoEscapeManager extends AbstractThreePaneRuleManager<AutoEscap
     private static final int BTN_SELECT_RESTART_SEQUENCE = 1004;
     private static final int BTN_TOGGLE_IGNORE_UNTIL_RESTART_COMPLETE = 1005;
     private static final int BTN_TOGGLE_ENABLED = 1006;
+    private static final int BTN_TOGGLE_PLAYER_GAME_MODE_FILTER = 1007;
     private static final int BTN_ENTITY_TYPE_BASE = 1100;
+    private static final int BTN_PLAYER_GAME_MODE_BASE = 1200;
     private static final long CARD_DOUBLE_CLICK_WINDOW_MS = 300L;
 
     private static final DecimalFormat DECIMAL_FORMAT = new DecimalFormat("#.##");
@@ -41,6 +43,13 @@ public class GuiAutoEscapeManager extends AbstractThreePaneRuleManager<AutoEscap
             { "boss", "首领" },
             { "living", "生物" },
             { "any", "任意" }
+    };
+    private static final String[][] PLAYER_GAME_MODE_OPTIONS = new String[][] {
+            { AutoEscapeRule.PLAYER_GAME_MODE_ALL, "全部" },
+            { AutoEscapeRule.PLAYER_GAME_MODE_SURVIVAL, "生存" },
+            { AutoEscapeRule.PLAYER_GAME_MODE_CREATIVE, "创造" },
+            { AutoEscapeRule.PLAYER_GAME_MODE_SPECTATOR, "旁观" },
+            { AutoEscapeRule.PLAYER_GAME_MODE_UNKNOWN, "未知" }
     };
 
     private GuiTextField nameField;
@@ -60,12 +69,16 @@ public class GuiAutoEscapeManager extends AbstractThreePaneRuleManager<AutoEscap
     private GuiButton btnSelectRestartSequence;
     private GuiButton btnToggleIgnoreUntilRestartComplete;
     private GuiButton btnToggleEnabled;
+    private GuiButton btnTogglePlayerGameModeFilter;
     private final List<ToggleGuiButton> entityTypeButtons = new ArrayList<>();
+    private final List<ToggleGuiButton> playerGameModeButtons = new ArrayList<>();
     private final Set<String> editorEntityTypes = new LinkedHashSet<>();
 
     private boolean editorEnabled = true;
     private boolean editorWhitelistEnabled = false;
     private boolean editorBlacklistEnabled = false;
+    private boolean editorPlayerGameModeFilterEnabled = false;
+    private String editorPlayerGameModeFilter = AutoEscapeRule.PLAYER_GAME_MODE_ALL;
     private boolean editorRestartEnabled = false;
     private boolean editorIgnoreTargetsUntilRestartComplete = false;
     private EditorStateSnapshot pendingRestoreState = null;
@@ -216,6 +229,8 @@ public class GuiAutoEscapeManager extends AbstractThreePaneRuleManager<AutoEscap
         editorEnabled = model.enabled;
         editorWhitelistEnabled = model.enableNameWhitelist;
         editorBlacklistEnabled = model.enableNameBlacklist;
+        editorPlayerGameModeFilterEnabled = model.enablePlayerGameModeFilter;
+        editorPlayerGameModeFilter = AutoEscapeRule.normalizePlayerGameModeFilter(model.playerGameModeFilter);
         editorRestartEnabled = model.restartEnabled;
         editorIgnoreTargetsUntilRestartComplete = model.ignoreTargetsUntilRestartComplete;
 
@@ -237,6 +252,9 @@ public class GuiAutoEscapeManager extends AbstractThreePaneRuleManager<AutoEscap
 
         base.enableNameBlacklist = editorBlacklistEnabled;
         base.nameBlacklist = parseList(blacklistField.getText());
+
+        base.enablePlayerGameModeFilter = editorPlayerGameModeFilterEnabled;
+        base.playerGameModeFilter = AutoEscapeRule.normalizePlayerGameModeFilter(editorPlayerGameModeFilter);
 
         base.restartEnabled = editorRestartEnabled;
         base.restartDelaySeconds = parseInt(restartDelayField.getText(), base.restartDelaySeconds);
@@ -265,6 +283,8 @@ public class GuiAutoEscapeManager extends AbstractThreePaneRuleManager<AutoEscap
         target.enableNameBlacklist = source.enableNameBlacklist;
         target.nameBlacklist = new ArrayList<>(
                 source.nameBlacklist == null ? Collections.<String>emptyList() : source.nameBlacklist);
+        target.enablePlayerGameModeFilter = source.enablePlayerGameModeFilter;
+        target.playerGameModeFilter = source.playerGameModeFilter;
         target.escapeSequenceName = source.escapeSequenceName;
         target.restartEnabled = source.restartEnabled;
         target.restartDelaySeconds = source.restartDelaySeconds;
@@ -296,6 +316,7 @@ public class GuiAutoEscapeManager extends AbstractThreePaneRuleManager<AutoEscap
         btnSelectRestartSequence = createButton(BTN_SELECT_RESTART_SEQUENCE, "选择");
         btnToggleIgnoreUntilRestartComplete = createButton(BTN_TOGGLE_IGNORE_UNTIL_RESTART_COMPLETE, "");
         btnToggleEnabled = createButton(BTN_TOGGLE_ENABLED, "");
+        btnTogglePlayerGameModeFilter = createButton(BTN_TOGGLE_PLAYER_GAME_MODE_FILTER, "");
 
         this.buttonList.add(btnSelectEscapeSequence);
         this.buttonList.add(btnToggleWhitelist);
@@ -304,11 +325,19 @@ public class GuiAutoEscapeManager extends AbstractThreePaneRuleManager<AutoEscap
         this.buttonList.add(btnSelectRestartSequence);
         this.buttonList.add(btnToggleIgnoreUntilRestartComplete);
         this.buttonList.add(btnToggleEnabled);
+        this.buttonList.add(btnTogglePlayerGameModeFilter);
 
         entityTypeButtons.clear();
         for (int i = 0; i < ENTITY_TYPE_OPTIONS.length; i++) {
             ToggleGuiButton button = new ToggleGuiButton(BTN_ENTITY_TYPE_BASE + i, 0, 0, 80, 20, "", false);
             entityTypeButtons.add(button);
+            this.buttonList.add(button);
+        }
+
+        playerGameModeButtons.clear();
+        for (int i = 0; i < PLAYER_GAME_MODE_OPTIONS.length; i++) {
+            ToggleGuiButton button = new ToggleGuiButton(BTN_PLAYER_GAME_MODE_BASE + i, 0, 0, 64, 20, "", false);
+            playerGameModeButtons.add(button);
             this.buttonList.add(button);
         }
     }
@@ -340,6 +369,24 @@ public class GuiAutoEscapeManager extends AbstractThreePaneRuleManager<AutoEscap
         }
 
         placeField(detectionRangeField, getDetectionRangeRow(), editorFieldX, halfWidth);
+
+        placeButton(btnTogglePlayerGameModeFilter, getPlayerGameModeToggleRow(), editorFieldX, fullFieldWidth, 20);
+
+        int modeColumns = getPlayerGameModeGridColumns(fullFieldWidth);
+        int modeGap = 6;
+        int modeButtonWidth = Math.max(50, (fullFieldWidth - modeGap * (modeColumns - 1)) / modeColumns);
+        int modeIndex = 0;
+        for (int row = 0; row < getPlayerGameModeGridRowCount(); row++) {
+            int editorRow = getPlayerGameModeStartRow() + row;
+            for (int col = 0; col < modeColumns; col++) {
+                if (modeIndex >= playerGameModeButtons.size()) {
+                    break;
+                }
+                int buttonX = editorFieldX + col * (modeButtonWidth + modeGap);
+                placeButton(playerGameModeButtons.get(modeIndex), editorRow, buttonX, modeButtonWidth, 20);
+                modeIndex++;
+            }
+        }
 
         placeField(escapeSequenceField, getEscapeSequenceRow(), editorFieldX, Math.max(60, fullFieldWidth - 70));
         placeButton(btnSelectEscapeSequence, getEscapeSequenceRow(),
@@ -388,6 +435,15 @@ public class GuiAutoEscapeManager extends AbstractThreePaneRuleManager<AutoEscap
         }
         if (row == getDetectionRangeRow()) {
             return "检测范围";
+        }
+        if (row == getPlayerGameModeToggleRow()) {
+            return "玩家模式筛选";
+        }
+        if (row == getPlayerGameModeStartRow()) {
+            return "选择玩家模式";
+        }
+        if (row > getPlayerGameModeStartRow() && row <= getPlayerGameModeEndRow()) {
+            return "";
         }
         if (row == getEscapeSequenceRow()) {
             return "逃离序列";
@@ -501,7 +557,8 @@ public class GuiAutoEscapeManager extends AbstractThreePaneRuleManager<AutoEscap
                         width - 16),
                 x + 8, y + 19, 0xFFDDDDDD);
         drawString(fontRenderer,
-                trimToWidth("实体: " + joinEntityTypeLabels(item.entityTypes), width - 16),
+                trimToWidth("实体: " + joinEntityTypeLabels(item.entityTypes)
+                        + " | 玩家模式: " + getPlayerGameModeCardText(item), width - 16),
                 x + 8, y + 31, 0xFFBDBDBD);
 
         String restartText = item.restartEnabled
@@ -524,6 +581,11 @@ public class GuiAutoEscapeManager extends AbstractThreePaneRuleManager<AutoEscap
         if (btnToggleBlacklist != null) {
             btnToggleBlacklist.displayString = "启用名称黑名单(包含即可): " + yesNo(editorBlacklistEnabled);
             btnToggleBlacklist.enabled = btnToggleBlacklist.visible;
+        }
+        if (btnTogglePlayerGameModeFilter != null) {
+            btnTogglePlayerGameModeFilter.displayString = "启用玩家模式筛选: "
+                    + yesNo(editorPlayerGameModeFilterEnabled);
+            btnTogglePlayerGameModeFilter.enabled = btnTogglePlayerGameModeFilter.visible;
         }
         if (btnToggleRestart != null) {
             btnToggleRestart.displayString = "启用重启功能: " + yesNo(editorRestartEnabled);
@@ -548,6 +610,17 @@ public class GuiAutoEscapeManager extends AbstractThreePaneRuleManager<AutoEscap
             button.setEnabledState(selected);
             button.displayString = selected ? "§a" + label : "§7" + label;
             button.enabled = button.visible;
+        }
+
+        editorPlayerGameModeFilter = AutoEscapeRule.normalizePlayerGameModeFilter(editorPlayerGameModeFilter);
+        for (int i = 0; i < playerGameModeButtons.size(); i++) {
+            ToggleGuiButton button = playerGameModeButtons.get(i);
+            String token = PLAYER_GAME_MODE_OPTIONS[i][0];
+            String label = PLAYER_GAME_MODE_OPTIONS[i][1];
+            boolean selected = token.equals(editorPlayerGameModeFilter);
+            button.setEnabledState(selected);
+            button.displayString = selected ? "§a" + label : "§7" + label;
+            button.enabled = button.visible && editorPlayerGameModeFilterEnabled;
         }
 
         boolean hasSelected = !creatingNew && selectedVisibleIndex >= 0 && selectedVisibleIndex < visibleItems.size();
@@ -587,6 +660,21 @@ public class GuiAutoEscapeManager extends AbstractThreePaneRuleManager<AutoEscap
                 editorEntityTypes.add(token);
             }
             layoutAllWidgets();
+            return true;
+        }
+        if (button.id == BTN_TOGGLE_PLAYER_GAME_MODE_FILTER) {
+            editorPlayerGameModeFilterEnabled = !editorPlayerGameModeFilterEnabled;
+            editorPlayerGameModeFilter = AutoEscapeRule.normalizePlayerGameModeFilter(editorPlayerGameModeFilter);
+            layoutAllWidgets();
+            return true;
+        }
+        if (button.id >= BTN_PLAYER_GAME_MODE_BASE
+                && button.id < BTN_PLAYER_GAME_MODE_BASE + PLAYER_GAME_MODE_OPTIONS.length) {
+            if (editorPlayerGameModeFilterEnabled) {
+                int index = button.id - BTN_PLAYER_GAME_MODE_BASE;
+                editorPlayerGameModeFilter = PLAYER_GAME_MODE_OPTIONS[index][0];
+                layoutAllWidgets();
+            }
             return true;
         }
         if (button.id == BTN_SELECT_ESCAPE_SEQUENCE) {
@@ -723,6 +811,12 @@ public class GuiAutoEscapeManager extends AbstractThreePaneRuleManager<AutoEscap
         if (row == getDetectionRangeRow()) {
             return "检测范围：当匹配实体进入当前玩家多少格范围内时，立即触发自动逃离。";
         }
+        if (row == getPlayerGameModeToggleRow()) {
+            return "玩家模式筛选：开启后，只有匹配所选玩家游戏模式的玩家才会触发；不开启时不检查玩家模式。";
+        }
+        if (row >= getPlayerGameModeStartRow() && row <= getPlayerGameModeEndRow()) {
+            return "玩家模式：只影响玩家实体；生存会同时接受冒险模式，未知表示客户端暂时拿不到该玩家的模式信息。";
+        }
         if (row == getEscapeSequenceRow()) {
             return "逃离序列：检测到目标后优先执行的序列，会立刻终止当前正在执行的序列。选择后会保留当前编辑位置。";
         }
@@ -813,6 +907,23 @@ public class GuiAutoEscapeManager extends AbstractThreePaneRuleManager<AutoEscap
         return "";
     }
 
+    private String getPlayerGameModeCardText(AutoEscapeRule rule) {
+        if (rule == null || !rule.enablePlayerGameModeFilter) {
+            return "关闭";
+        }
+        return getPlayerGameModeLabel(rule.playerGameModeFilter);
+    }
+
+    private String getPlayerGameModeLabel(String token) {
+        String normalized = AutoEscapeRule.normalizePlayerGameModeFilter(token);
+        for (String[] option : PLAYER_GAME_MODE_OPTIONS) {
+            if (option[0].equalsIgnoreCase(normalized)) {
+                return option[1];
+            }
+        }
+        return "全部";
+    }
+
     private List<String> parseList(String text) {
         List<String> result = new ArrayList<>();
         String normalized = safe(text).replace('，', ',').replace('\n', ',').replace('\r', ',');
@@ -896,6 +1007,26 @@ public class GuiAutoEscapeManager extends AbstractThreePaneRuleManager<AutoEscap
         return Math.max(1, (entityTypeButtons.size() + columns - 1) / columns);
     }
 
+    private int getPlayerGameModeGridColumns(int fullFieldWidth) {
+        if (fullFieldWidth >= 340) {
+            return 5;
+        }
+        if (fullFieldWidth >= 220) {
+            return 3;
+        }
+        if (fullFieldWidth >= 150) {
+            return 2;
+        }
+        return 1;
+    }
+
+    private int getPlayerGameModeGridRowCount() {
+        int right = editorX + editorWidth - 14;
+        int fullFieldWidth = Math.max(110, right - editorFieldX);
+        int columns = getPlayerGameModeGridColumns(fullFieldWidth);
+        return Math.max(1, (playerGameModeButtons.size() + columns - 1) / columns);
+    }
+
     private int getEntityTypeStartRow() {
         return 3;
     }
@@ -908,8 +1039,20 @@ public class GuiAutoEscapeManager extends AbstractThreePaneRuleManager<AutoEscap
         return getEntityTypeEndRow() + 1;
     }
 
-    private int getEscapeSequenceRow() {
+    private int getPlayerGameModeToggleRow() {
         return getDetectionRangeRow() + 1;
+    }
+
+    private int getPlayerGameModeStartRow() {
+        return getPlayerGameModeToggleRow() + 1;
+    }
+
+    private int getPlayerGameModeEndRow() {
+        return getPlayerGameModeStartRow() + getPlayerGameModeGridRowCount() - 1;
+    }
+
+    private int getEscapeSequenceRow() {
+        return getPlayerGameModeEndRow() + 1;
     }
 
     private int getWhitelistToggleRow() {
@@ -962,6 +1105,8 @@ public class GuiAutoEscapeManager extends AbstractThreePaneRuleManager<AutoEscap
         snapshot.whitelist = whitelistField == null ? "" : safe(whitelistField.getText());
         snapshot.blacklistEnabled = editorBlacklistEnabled;
         snapshot.blacklist = blacklistField == null ? "" : safe(blacklistField.getText());
+        snapshot.playerGameModeFilterEnabled = editorPlayerGameModeFilterEnabled;
+        snapshot.playerGameModeFilter = AutoEscapeRule.normalizePlayerGameModeFilter(editorPlayerGameModeFilter);
         snapshot.restartEnabled = editorRestartEnabled;
         snapshot.restartDelay = restartDelayField == null ? "" : safe(restartDelayField.getText());
         snapshot.restartSequenceName = restartSequenceField == null ? "" : safe(restartSequenceField.getText());
@@ -998,6 +1143,8 @@ public class GuiAutoEscapeManager extends AbstractThreePaneRuleManager<AutoEscap
         editorEnabled = snapshot.enabled;
         editorWhitelistEnabled = snapshot.whitelistEnabled;
         editorBlacklistEnabled = snapshot.blacklistEnabled;
+        editorPlayerGameModeFilterEnabled = snapshot.playerGameModeFilterEnabled;
+        editorPlayerGameModeFilter = AutoEscapeRule.normalizePlayerGameModeFilter(snapshot.playerGameModeFilter);
         editorRestartEnabled = snapshot.restartEnabled;
         editorIgnoreTargetsUntilRestartComplete = snapshot.ignoreTargetsUntilRestartComplete;
         editorScrollOffset = snapshot.editorScrollOffset;
@@ -1018,6 +1165,8 @@ public class GuiAutoEscapeManager extends AbstractThreePaneRuleManager<AutoEscap
         private String whitelist = "";
         private boolean blacklistEnabled = false;
         private String blacklist = "";
+        private boolean playerGameModeFilterEnabled = false;
+        private String playerGameModeFilter = AutoEscapeRule.PLAYER_GAME_MODE_ALL;
         private boolean restartEnabled = false;
         private String restartDelay = "";
         private String restartSequenceName = "";

@@ -63,6 +63,7 @@ public final class ActionDisplayCatalog {
         ACTION_DISPLAY_KEYS.put("skip_actions", "gui.path.action_editor.type.skip_actions");
         ACTION_DISPLAY_KEYS.put("skip_steps", "gui.path.action_editor.type.skip_steps");
         ACTION_DISPLAY_KEYS.put("repeat_actions", "gui.path.action_editor.type.repeat_actions");
+        ACTION_DISPLAY_KEYS.put("restart_sequence", "gui.path.action_editor.type.restart_sequence");
         ACTION_DISPLAY_KEYS.put("autoeat", "gui.path.action_editor.type.autoeat");
         ACTION_DISPLAY_KEYS.put("autoequip", "gui.path.action_editor.type.autoequip");
         ACTION_DISPLAY_KEYS.put("autopickup", "gui.path.action_editor.type.autopickup");

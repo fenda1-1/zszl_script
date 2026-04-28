@@ -15,6 +15,7 @@ import com.zszl.zszlScriptMod.system.ProfileManager;
 import com.zszl.zszlScriptMod.zszlScriptMod;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.entity.EntityPlayerSP;
+import net.minecraft.client.network.NetworkPlayerInfo;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityLivingBase;
 import net.minecraft.entity.monster.IMob;
@@ -29,6 +30,7 @@ import net.minecraft.entity.monster.EntityGolem;
 import net.minecraft.util.math.AxisAlignedBB;
 import net.minecraft.util.text.TextComponentString;
 import net.minecraft.util.text.TextFormatting;
+import net.minecraft.world.GameType;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import net.minecraftforge.fml.common.gameevent.TickEvent;
 
@@ -461,6 +463,9 @@ public class AutoEscapeHandler {
             if (!matchesEntityType(entity, rule)) {
                 continue;
             }
+            if (!matchesPlayerGameModeFilter(entity, rule)) {
+                continue;
+            }
             if (!matchesNameFilters(entity, rule)) {
                 continue;
             }
@@ -504,6 +509,52 @@ public class AutoEscapeHandler {
         }
 
         return true;
+    }
+
+    private static boolean matchesPlayerGameModeFilter(Entity entity, AutoEscapeRule rule) {
+        if (rule == null || !rule.enablePlayerGameModeFilter) {
+            return true;
+        }
+        if (!(entity instanceof EntityPlayer)) {
+            return true;
+        }
+
+        String filter = AutoEscapeRule.normalizePlayerGameModeFilter(rule.playerGameModeFilter);
+        if (AutoEscapeRule.PLAYER_GAME_MODE_ALL.equals(filter)) {
+            return true;
+        }
+
+        String detected = getPlayerGameModeToken((EntityPlayer) entity);
+        return filter.equals(detected);
+    }
+
+    private static String getPlayerGameModeToken(EntityPlayer player) {
+        GameType gameType = getNetworkPlayerGameType(player);
+        if (gameType == GameType.CREATIVE) {
+            return AutoEscapeRule.PLAYER_GAME_MODE_CREATIVE;
+        }
+        if (gameType == GameType.SPECTATOR) {
+            return AutoEscapeRule.PLAYER_GAME_MODE_SPECTATOR;
+        }
+        if (gameType == GameType.SURVIVAL || gameType == GameType.ADVENTURE) {
+            return AutoEscapeRule.PLAYER_GAME_MODE_SURVIVAL;
+        }
+        return AutoEscapeRule.PLAYER_GAME_MODE_UNKNOWN;
+    }
+
+    private static GameType getNetworkPlayerGameType(EntityPlayer player) {
+        if (player == null || mc.getConnection() == null) {
+            return null;
+        }
+        try {
+            NetworkPlayerInfo info = mc.getConnection().getPlayerInfo(player.getUniqueID());
+            if (info == null) {
+                return null;
+            }
+            return info.getGameType();
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 
     private static boolean matchesEntityType(Entity entity, AutoEscapeRule rule) {

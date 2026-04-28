@@ -14,6 +14,7 @@ import com.zszl.zszlScriptMod.path.PathSequenceManager.PathSequence;
 import com.zszl.zszlScriptMod.path.PathSequenceManager.PathStep;
 import com.zszl.zszlScriptMod.path.runtime.locks.ResourceLockManager;
 import com.zszl.zszlScriptMod.path.template.LegacyActionTemplateManager;
+import com.zszl.zszlScriptMod.utils.TickRangeSpec;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -617,7 +618,7 @@ public final class PathConfigValidator {
                 }
                 break;
             case "delay":
-                validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "ticks", "延迟",
+                validateNonNegativeTickRangeParam(sequenceName, stepIndex, actionIndex, params, "ticks", "延迟",
                         variableContext, issues);
                 break;
             case "capture_inventory_slot":
@@ -1469,6 +1470,35 @@ public final class PathConfigValidator {
             JsonObject params, String key, String label, List<Issue> issues) {
         validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, key, label,
                 ActionParameterVariableResolver.buildContext(sequenceName, Collections.<PathSequence>emptyList()), issues);
+    }
+
+    private static void validateNonNegativeTickRangeParam(String sequenceName, int stepIndex, int actionIndex,
+            JsonObject params, String key, String label, ActionParameterVariableResolver.Context variableContext,
+            List<Issue> issues) {
+        if (params == null || key == null || !params.has(key)) {
+            return;
+        }
+        ResolvedParamValue resolvedValue = resolveParamValue(variableContext, params, key);
+        Integer value = readResolvedInt(resolvedValue);
+        if (value != null) {
+            if (value.intValue() < 0) {
+                issues.add(new Issue(Severity.ERROR, key + "_negative", sequenceName, stepIndex, actionIndex,
+                        label + "不能小于 0", "参数 " + key + " 当前值为 " + value.intValue() + "。"));
+            }
+            return;
+        }
+        if (resolvedValue == null || resolvedValue.isDynamicReference() || resolvedValue.isMissingReference()) {
+            return;
+        }
+        String raw = safe(LegacyActionRuntime.stringifyValue(resolvedValue.value)).trim();
+        if (raw.isEmpty()) {
+            return;
+        }
+        if (TickRangeSpec.isValid(raw)) {
+            return;
+        }
+        addNumericParseIssue(sequenceName, stepIndex, actionIndex, key + "_parse", label,
+                "参数 " + key + " 需要填写数字，或 3-5 这种随机范围。", issues);
     }
 
     private static void validateNonNegativeIntParam(String sequenceName, int stepIndex, int actionIndex,

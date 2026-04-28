@@ -145,6 +145,7 @@ public final class NodeParameterSchemaRegistry {
                                         "toggle_autoeat", "toggle_autofishing", "toggle_kill_aura", "toggle_fly",
                                         "runlastsequence", "run_sequence", "stop_current_sequence",
                                         "goto_action", "skip_actions", "skip_steps", "repeat_actions",
+                                        "restart_sequence",
                                         "silentuse", "switch_hotbar_slot", "use_hotbar_item",
                                         "move_inventory_item_to_hotbar", "use_held_item", "hunt", "use_skill",
                                         "send_packet"));

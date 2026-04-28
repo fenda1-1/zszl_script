@@ -165,6 +165,9 @@ public class MiscFeatureManager {
             return;
         }
         state.setEnabledInternal(enabled);
+        if ("auto_reconnect".equals(normalizeId(featureId)) && !enabled) {
+            INSTANCE.autoReconnectRuntime.clearState();
+        }
         saveConfig();
     }
 
@@ -327,7 +330,7 @@ public class MiscFeatureManager {
 
     public void onClientDisconnect() {
         this.autoRespawnRuntime.onClientDisconnect();
-        this.autoReconnectRuntime.clearState();
+        this.autoReconnectRuntime.onClientDisconnectReset(isEnabled("auto_reconnect"));
     }
 
     @SubscribeEvent
@@ -349,6 +352,7 @@ public class MiscFeatureManager {
 
         Minecraft mc = Minecraft.getMinecraft();
         this.autoRespawnRuntime.tick(isEnabled("auto_respawn"), autoRespawnDelayTicks);
+        this.autoReconnectRuntime.rememberCurrentServer(mc);
         this.autoReconnectRuntime.tick(isEnabled("auto_reconnect"), autoReconnectInfiniteAttempts,
                 autoReconnectMaxAttempts, autoReconnectDelayTicks, mc);
     }

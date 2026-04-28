@@ -8,6 +8,7 @@ import com.zszl.zszlScriptMod.path.PathSequenceManager.PathSequence;
 import com.zszl.zszlScriptMod.path.PathSequenceManager.PathStep;
 import com.zszl.zszlScriptMod.system.ProfileManager;
 import com.zszl.zszlScriptMod.utils.ModUtils;
+import com.zszl.zszlScriptMod.utils.TickRangeSpec;
 import com.zszl.zszlScriptMod.zszlScriptMod;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.entity.EntityPlayerSP;
@@ -143,7 +144,8 @@ public class AutoSigninOnlineHandler {
                     int delay = 0;
                     try {
                         if (actionData.params != null && actionData.params.has("ticks")) {
-                            delay = Math.max(0, actionData.params.get("ticks").getAsInt());
+                            delay = TickRangeSpec.sample(actionData.params.get("ticks"), 0, 0,
+                                    Integer.MAX_VALUE - 1);
                         }
                     } catch (Exception ignore) {
                     }

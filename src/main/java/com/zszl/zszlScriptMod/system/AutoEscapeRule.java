@@ -8,6 +8,11 @@ import java.util.List;
 public class AutoEscapeRule {
     public static final double DEFAULT_DETECTION_RANGE = 8.0D;
     public static final int DEFAULT_RESTART_DELAY_SECONDS = 10;
+    public static final String PLAYER_GAME_MODE_ALL = "all";
+    public static final String PLAYER_GAME_MODE_SURVIVAL = "survival";
+    public static final String PLAYER_GAME_MODE_CREATIVE = "creative";
+    public static final String PLAYER_GAME_MODE_SPECTATOR = "spectator";
+    public static final String PLAYER_GAME_MODE_UNKNOWN = "unknown";
 
     public String name;
     public String category;
@@ -20,6 +25,9 @@ public class AutoEscapeRule {
 
     public boolean enableNameBlacklist;
     public List<String> nameBlacklist;
+
+    public boolean enablePlayerGameModeFilter;
+    public String playerGameModeFilter;
 
     public String escapeSequenceName;
 
@@ -47,6 +55,9 @@ public class AutoEscapeRule {
 
         this.enableNameBlacklist = false;
         this.nameBlacklist = new ArrayList<>();
+
+        this.enablePlayerGameModeFilter = false;
+        this.playerGameModeFilter = PLAYER_GAME_MODE_ALL;
 
         this.escapeSequenceName = "";
 
@@ -81,6 +92,7 @@ public class AutoEscapeRule {
 
         escapeSequenceName = escapeSequenceName == null ? "" : escapeSequenceName.trim();
         restartSequenceName = restartSequenceName == null ? "" : restartSequenceName.trim();
+        playerGameModeFilter = normalizePlayerGameModeFilter(playerGameModeFilter);
 
         ensureLists();
         entityTypes = sanitizeStringList(entityTypes);
@@ -103,6 +115,8 @@ public class AutoEscapeRule {
         copy.nameWhitelist = new ArrayList<>(this.nameWhitelist == null ? new ArrayList<String>() : this.nameWhitelist);
         copy.enableNameBlacklist = this.enableNameBlacklist;
         copy.nameBlacklist = new ArrayList<>(this.nameBlacklist == null ? new ArrayList<String>() : this.nameBlacklist);
+        copy.enablePlayerGameModeFilter = this.enablePlayerGameModeFilter;
+        copy.playerGameModeFilter = this.playerGameModeFilter;
         copy.escapeSequenceName = this.escapeSequenceName;
         copy.restartEnabled = this.restartEnabled;
         copy.restartDelaySeconds = this.restartDelaySeconds;
@@ -111,6 +125,28 @@ public class AutoEscapeRule {
         copy.triggerLatched = this.triggerLatched;
         copy.normalize();
         return copy;
+    }
+
+    public static String normalizePlayerGameModeFilter(String value) {
+        String normalized = value == null ? "" : value.trim().toLowerCase();
+        switch (normalized) {
+            case "生存":
+            case "冒险":
+            case "adventure":
+            case PLAYER_GAME_MODE_SURVIVAL:
+                return PLAYER_GAME_MODE_SURVIVAL;
+            case "创造":
+            case PLAYER_GAME_MODE_CREATIVE:
+                return PLAYER_GAME_MODE_CREATIVE;
+            case "旁观":
+            case PLAYER_GAME_MODE_SPECTATOR:
+                return PLAYER_GAME_MODE_SPECTATOR;
+            case "未知":
+            case PLAYER_GAME_MODE_UNKNOWN:
+                return PLAYER_GAME_MODE_UNKNOWN;
+            default:
+                return PLAYER_GAME_MODE_ALL;
+        }
     }
 
     private static List<String> sanitizeStringList(List<String> source) {

@@ -53,6 +53,7 @@ import net.minecraft.client.gui.ScaledResolution;
 import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
 import com.zszl.zszlScriptMod.gui.components.ThemedButton;
 import com.zszl.zszlScriptMod.gui.components.GuiTheme;
+import com.zszl.zszlScriptMod.gui.components.GuiTextInput;
 import net.minecraft.client.gui.GuiTextField;
 import net.minecraft.client.resources.I18n;
 import net.minecraft.block.Block;
@@ -948,7 +949,7 @@ public class GuiActionEditor extends ThemedGuiScreen {
         }
 
         this.sequenceBuiltinDelayEnabledDraft = PathSequenceEventListener.isBuiltinSequenceDelayEnabled();
-        this.sequenceBuiltinDelayTicksDraft = String.valueOf(PathSequenceEventListener.getBuiltinSequenceDelayTicks());
+        this.sequenceBuiltinDelayTicksDraft = PathSequenceEventListener.getBuiltinSequenceDelayTicksSpec();
         refreshAvailableSequenceNames();
         refreshAvailableRuntimeVariables();
     }
@@ -1230,7 +1231,8 @@ public class GuiActionEditor extends ThemedGuiScreen {
 
     private void refreshSequenceBuiltinDelayTicksToolbarText() {
         if (btnCycleSequenceBuiltinDelayTicks != null) {
-            btnCycleSequenceBuiltinDelayTicks.displayString = "§7延迟 " + getSequenceBuiltinDelayTicksDraftValue() + "t";
+            btnCycleSequenceBuiltinDelayTicks.displayString = "§7延迟 "
+                    + getSequenceBuiltinDelayTicksDraftDisplayText() + "t";
         }
     }
 
@@ -1405,6 +1407,24 @@ public class GuiActionEditor extends ThemedGuiScreen {
         }
     }
 
+    private String getSequenceBuiltinDelayTicksDraftDisplayText() {
+        return PathSequenceEventListener.normalizeBuiltinSequenceDelayTicksSpec(sequenceBuiltinDelayTicksDraft);
+    }
+
+    private void openSequenceBuiltinDelayTicksInput() {
+        mc.displayGuiScreen(new GuiTextInput(this, "输入执行序列内置延迟 Tick (0 - 200，支持 3-5 随机)",
+                getSequenceBuiltinDelayTicksDraftDisplayText(), value -> {
+                    sequenceBuiltinDelayTicksDraft = PathSequenceEventListener
+                            .normalizeBuiltinSequenceDelayTicksSpec(value);
+                    refreshSequenceBuiltinDelayTicksToolbarText();
+                    refreshSequenceBuiltinDelayToolbarText();
+                    this.hasUnsavedChanges = true;
+                    this.pendingSwitchActionType = null;
+                    savePreferences();
+                    mc.displayGuiScreen(this);
+                }));
+    }
+
     private void cycleSequenceBuiltinDelayTicks() {
         int current = getSequenceBuiltinDelayTicksDraftValue();
         int next = BUILTIN_DELAY_TICK_PRESETS[0];
@@ -1492,7 +1512,8 @@ public class GuiActionEditor extends ThemedGuiScreen {
                 break;
             case "delay":
                 addTextField(I18n.format("gui.path.action_editor.label.delay_ticks"), "ticks",
-                        I18n.format("gui.path.action_editor.help.delay_ticks"), fieldWidth, x, currentY);
+                        I18n.format("gui.path.action_editor.help.delay_ticks") + "；支持 3-5 随机",
+                        fieldWidth, x, currentY);
                 currentY += 40;
                 addToggle(I18n.format("gui.path.action_editor.label.normalize_delay_to_20tps"),
                         "normalizeDelayTo20Tps",
@@ -4217,10 +4238,7 @@ public class GuiActionEditor extends ThemedGuiScreen {
         }
 
         if (button.id == BTN_ID_SEQUENCE_BUILTIN_DELAY_TICKS) {
-            cycleSequenceBuiltinDelayTicks();
-            this.hasUnsavedChanges = true;
-            this.pendingSwitchActionType = null;
-            savePreferences();
+            openSequenceBuiltinDelayTicksInput();
             return;
         }
 
@@ -4301,8 +4319,8 @@ public class GuiActionEditor extends ThemedGuiScreen {
         }
 
         if (button.id == 100) { // save
-            int builtinDelayTicks = getSequenceBuiltinDelayTicksDraftValue();
-            sequenceBuiltinDelayTicksDraft = String.valueOf(builtinDelayTicks);
+            String builtinDelayTicks = getSequenceBuiltinDelayTicksDraftDisplayText();
+            sequenceBuiltinDelayTicksDraft = builtinDelayTicks;
             PathSequenceEventListener.updateBuiltinSequenceDelayConfig(sequenceBuiltinDelayEnabledDraft,
                     builtinDelayTicks);
             ActionData result = buildEditorActionData();

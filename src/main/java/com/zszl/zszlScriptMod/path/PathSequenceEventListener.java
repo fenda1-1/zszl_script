@@ -94,6 +94,7 @@ import com.zszl.zszlScriptMod.utils.ModUtils;
 import com.zszl.zszlScriptMod.utils.CapturedIdRuleManager;
 import com.zszl.zszlScriptMod.utils.PacketCaptureHandler;
 import com.zszl.zszlScriptMod.utils.PacketFieldRuleManager;
+import com.zszl.zszlScriptMod.utils.TickRangeSpec;
 import com.zszl.zszlScriptMod.utils.vision.ScreenVisionUtils;
 import net.minecraft.client.resources.I18n;
 import net.minecraft.client.renderer.GlStateManager;
@@ -109,10 +110,13 @@ public class PathSequenceEventListener {
     private static final Path RUNTIME_CONFIG_PATH = Paths.get(ModConfig.CONFIG_DIR, "path_sequence_runtime_config.json");
     private static final Gson RUNTIME_CONFIG_GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final int DEFAULT_BUILTIN_SEQUENCE_DELAY_TICKS = 5;
+    private static final int MIN_BUILTIN_SEQUENCE_DELAY_TICKS = 0;
+    private static final int MAX_BUILTIN_SEQUENCE_DELAY_TICKS = 200;
     private static final int PATH_RETRY_NOTIFY_TICKS = 20;
     private static final double PATH_RETRY_MOVEMENT_EPSILON_SQ = 0.16D;
     private static boolean builtinSequenceDelayEnabled = true;
     private static int builtinSequenceDelayTicks = DEFAULT_BUILTIN_SEQUENCE_DELAY_TICKS;
+    private static String builtinSequenceDelayTicksSpec = String.valueOf(DEFAULT_BUILTIN_SEQUENCE_DELAY_TICKS);
     private static boolean runtimeConfigLoaded = false;
     private static final ThreadLocal<PathSequenceEventListener> ACTION_EXECUTION_CONTEXT = new ThreadLocal<>();
     private static final List<PathSequenceEventListener> backgroundRunners = new CopyOnWriteArrayList<>();
@@ -768,6 +772,7 @@ public class PathSequenceEventListener {
         runtimeConfigLoaded = true;
         builtinSequenceDelayEnabled = true;
         builtinSequenceDelayTicks = DEFAULT_BUILTIN_SEQUENCE_DELAY_TICKS;
+        builtinSequenceDelayTicksSpec = String.valueOf(DEFAULT_BUILTIN_SEQUENCE_DELAY_TICKS);
 
         if (!Files.exists(RUNTIME_CONFIG_PATH)) {
             return;
@@ -782,7 +787,10 @@ public class PathSequenceEventListener {
                 builtinSequenceDelayEnabled = root.get("builtinSequenceDelayEnabled").getAsBoolean();
             }
             if (root.has("builtinSequenceDelayTicks")) {
-                builtinSequenceDelayTicks = Math.max(0, root.get("builtinSequenceDelayTicks").getAsInt());
+                setBuiltinSequenceDelayTicksSpecInternal(root.get("builtinSequenceDelayTicks").getAsString());
+            }
+            if (root.has("builtinSequenceDelayTicksSpec")) {
+                setBuiltinSequenceDelayTicksSpecInternal(root.get("builtinSequenceDelayTicksSpec").getAsString());
             }
         } catch (Exception e) {
             zszlScriptMod.LOGGER.warn("读取序列运行时配置失败: {}", RUNTIME_CONFIG_PATH, e);
@@ -795,7 +803,8 @@ public class PathSequenceEventListener {
             Files.createDirectories(RUNTIME_CONFIG_PATH.getParent());
             JsonObject root = new JsonObject();
             root.addProperty("builtinSequenceDelayEnabled", builtinSequenceDelayEnabled);
-            root.addProperty("builtinSequenceDelayTicks", Math.max(0, builtinSequenceDelayTicks));
+            root.addProperty("builtinSequenceDelayTicks", builtinSequenceDelayTicksSpec);
+            root.addProperty("builtinSequenceDelayTicksValue", Math.max(0, builtinSequenceDelayTicks));
             try (Writer writer = Files.newBufferedWriter(RUNTIME_CONFIG_PATH, StandardCharsets.UTF_8)) {
                 RUNTIME_CONFIG_GSON.toJson(root, writer);
             }
@@ -814,20 +823,51 @@ public class PathSequenceEventListener {
         return Math.max(0, builtinSequenceDelayTicks);
     }
 
+    public static synchronized String getBuiltinSequenceDelayTicksSpec() {
+        ensureRuntimeConfigLoaded();
+        return normalizeBuiltinSequenceDelayTicksSpec(builtinSequenceDelayTicksSpec);
+    }
+
+    public static synchronized String getBuiltinSequenceDelayTicksDisplayText() {
+        ensureRuntimeConfigLoaded();
+        return TickRangeSpec.parse(builtinSequenceDelayTicksSpec, builtinSequenceDelayTicks,
+                MIN_BUILTIN_SEQUENCE_DELAY_TICKS, MAX_BUILTIN_SEQUENCE_DELAY_TICKS).toDisplayText();
+    }
+
+    public static synchronized String normalizeBuiltinSequenceDelayTicksSpec(String spec) {
+        ensureRuntimeConfigLoaded();
+        return TickRangeSpec.normalize(spec, builtinSequenceDelayTicks, MIN_BUILTIN_SEQUENCE_DELAY_TICKS,
+                MAX_BUILTIN_SEQUENCE_DELAY_TICKS);
+    }
+
     public static synchronized void updateBuiltinSequenceDelayConfig(boolean enabled, int ticks) {
+        updateBuiltinSequenceDelayConfig(enabled, String.valueOf(ticks));
+    }
+
+    public static synchronized void updateBuiltinSequenceDelayConfig(boolean enabled, String ticksSpec) {
         ensureRuntimeConfigLoaded();
         builtinSequenceDelayEnabled = enabled;
-        builtinSequenceDelayTicks = Math.max(0, ticks);
+        setBuiltinSequenceDelayTicksSpecInternal(ticksSpec);
         saveRuntimeConfig();
     }
 
     private static synchronized int getBuiltinSequenceActionDelayTicks() {
         ensureRuntimeConfigLoaded();
-        return builtinSequenceDelayEnabled ? Math.max(0, builtinSequenceDelayTicks) : 0;
+        return builtinSequenceDelayEnabled
+                ? TickRangeSpec.sample(builtinSequenceDelayTicksSpec, builtinSequenceDelayTicks,
+                        MIN_BUILTIN_SEQUENCE_DELAY_TICKS, MAX_BUILTIN_SEQUENCE_DELAY_TICKS)
+                : 0;
     }
 
     private void applyBuiltinSequenceDelay() {
         this.tickDelay = getBuiltinSequenceActionDelayTicks();
+    }
+
+    private static void setBuiltinSequenceDelayTicksSpecInternal(String spec) {
+        TickRangeSpec.Range range = TickRangeSpec.parse(spec, builtinSequenceDelayTicks,
+                MIN_BUILTIN_SEQUENCE_DELAY_TICKS, MAX_BUILTIN_SEQUENCE_DELAY_TICKS);
+        builtinSequenceDelayTicks = range.getMin();
+        builtinSequenceDelayTicksSpec = range.toSpec();
     }
 
     public boolean isTracking() {
@@ -1940,6 +1980,10 @@ public class PathSequenceEventListener {
     }
 
     private boolean restartSequenceFromBeginning(String reason) {
+        return restartSequenceFromBeginning(reason, "寻路重试已回到开头", "序列从头重试");
+    }
+
+    private boolean restartSequenceFromBeginning(String reason, String statusSuffix, String debugPrefix) {
         if (currentSequence == null || currentSequence.getSteps().isEmpty()) {
             markExecutionResult(false, reason == null ? "seek_retry_restart_failed" : reason);
             stopTracking();
@@ -1965,9 +2009,13 @@ public class PathSequenceEventListener {
         this.currentDebugActionDescription = "";
         resetSequenceRuntimeToInitialVariables();
         runtimeVariables.enterStep(this.currentStepIndex);
-        recordDebugTrace("序列从头重试: " + (reason == null ? "unknown" : reason));
+        String safeDebugPrefix = debugPrefix == null || debugPrefix.trim().isEmpty() ? "序列回到开头" : debugPrefix.trim();
+        recordDebugTrace(safeDebugPrefix + ": " + (reason == null ? "unknown" : reason));
         restartCurrentStepTarget(currentSequence.getSteps().get(this.currentStepIndex));
-        setStatus(currentSequence.getName() + (backgroundRunner ? " | 后台执行" : "") + " | 寻路重试已回到开头");
+        String safeStatusSuffix = statusSuffix == null || statusSuffix.trim().isEmpty()
+                ? "已回到开头"
+                : statusSuffix.trim();
+        setStatus(currentSequence.getName() + (backgroundRunner ? " | 后台执行" : "") + " | " + safeStatusSuffix);
         return true;
     }
 
@@ -2681,6 +2729,14 @@ public class PathSequenceEventListener {
         }
 
         String type = resolvedActionData.type.toLowerCase(Locale.ROOT);
+
+        if ("restart_sequence".equals(type)) {
+            boolean handled = restartSequenceFromBeginning("restart_sequence_action",
+                    "重头执行序列",
+                    "控制流重头执行序列");
+            consumeDebugProgress("控制流重头执行序列: restart_sequence -> 0");
+            return handled;
+        }
 
         if ("set_var".equals(type)) {
             String varName = resolvedActionData.params.has("name") ? resolvedActionData.params.get("name").getAsString().trim()
@@ -4974,6 +5030,7 @@ public class PathSequenceEventListener {
         private boolean shouldSkipAction(String actionType) {
             return "run_sequence".equals(actionType) || "hunt".equals(actionType) || "set_var".equals(actionType)
                     || "goto_action".equals(actionType) || "repeat_actions".equals(actionType)
+                    || "restart_sequence".equals(actionType)
                     || "capture_nearby_entity".equals(actionType) || "capture_gui_title".equals(actionType)
                     || "capture_block_at".equals(actionType) || actionType.startsWith("condition_")
                     || actionType.startsWith("wait_until_");

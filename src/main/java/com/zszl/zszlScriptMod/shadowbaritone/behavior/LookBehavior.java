@@ -155,18 +155,22 @@ public final class LookBehavior extends Behavior implements ILookBehavior {
 
                 if (this.target.mode == Target.Mode.CLIENT || humanLikeVisualControl || this.killAuraVisualControlThisTick) {
                     this.prevRotation = new Rotation(ctx.player().rotationYaw, ctx.player().rotationPitch);
-                    this.visualTargetThisTick = this.killAuraVisualControlThisTick
-                            ? killAuraVisualTarget.orElse(this.target.rotation)
-                            : getHumanLikeVisualTarget(this.target.rotation);
-                    final Rotation actual = this.processor.peekRotation(this.visualTargetThisTick);
-                    HumanLikeMovementController.RotationState smoothed = HumanLikeMovementController.INSTANCE
-                            .smoothRotation(
-                                    this.prevRotation.getYaw(),
-                                    this.prevRotation.getPitch(),
-                                    actual.getYaw(),
-                                    actual.getPitch());
-                    ctx.player().rotationYaw = smoothed.yaw;
-                    ctx.player().rotationPitch = smoothed.pitch;
+                    if (this.killAuraVisualControlThisTick) {
+                        this.visualTargetThisTick = killAuraVisualTarget.orElse(this.prevRotation);
+                        ctx.player().rotationYaw = this.visualTargetThisTick.getYaw();
+                        ctx.player().rotationPitch = this.visualTargetThisTick.getPitch();
+                    } else {
+                        this.visualTargetThisTick = getHumanLikeVisualTarget(this.target.rotation);
+                        final Rotation actual = this.processor.peekRotation(this.visualTargetThisTick);
+                        HumanLikeMovementController.RotationState smoothed = HumanLikeMovementController.INSTANCE
+                                .smoothRotation(
+                                        this.prevRotation.getYaw(),
+                                        this.prevRotation.getPitch(),
+                                        actual.getYaw(),
+                                        actual.getPitch());
+                        ctx.player().rotationYaw = smoothed.yaw;
+                        ctx.player().rotationPitch = smoothed.pitch;
+                    }
                 }
                 break;
             }
