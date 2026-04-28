@@ -1,0 +1,81 @@
+/*
+ * This file is part of Baritone.
+ *
+ * Baritone is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Lesser General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * Baritone is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License
+ * along with Baritone.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+package com.zszl.zszlScriptMod.shadowbaritone.launch.mixins;
+
+import com.zszl.zszlScriptMod.otherfeatures.handler.movement.MovementFeatureManager;
+import com.zszl.zszlScriptMod.shadowbaritone.api.BaritoneAPI;
+import com.zszl.zszlScriptMod.shadowbaritone.api.IBaritone;
+import com.zszl.zszlScriptMod.shadowbaritone.api.event.events.ChatEvent;
+import com.zszl.zszlScriptMod.shadowbaritone.utils.GuiPathingPolicy;
+import com.zszl.zszlScriptMod.shadowbaritone.utils.accessor.IGuiScreen;
+import com.zszl.zszlScriptMod.utils.ScreenSafety;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.network.chat.ClickEvent;
+import net.minecraft.util.Util;
+import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+
+import java.net.URI;
+
+import static com.zszl.zszlScriptMod.shadowbaritone.api.command.IBaritoneChatControl.FORCE_COMMAND_PREFIX;
+
+@Mixin(Screen.class)
+public abstract class MixinScreen implements IGuiScreen {
+
+    @Inject(method = "isPauseScreen", at = @At("HEAD"), cancellable = true)
+    private void zszl$keepPathingDuringGui(CallbackInfoReturnable<Boolean> cir) {
+        Minecraft mc = Minecraft.getInstance();
+        if (ScreenSafety.isLoadingOrTransitionScreen((Screen) (Object) this)) {
+            return;
+        }
+        if (GuiPathingPolicy.shouldKeepPathingDuringGui(mc)
+                || MovementFeatureManager.shouldAllowMovementDuringGui(mc)) {
+            cir.setReturnValue(false);
+        }
+    }
+
+    @Override
+    public void openLinkInvoker(URI url) {
+        if (url != null) {
+            Util.getPlatform().openUri(url);
+        }
+    }
+
+    @Inject(method = "defaultHandleGameClickEvent", at = @At("HEAD"), cancellable = true)
+    private static void zszl$handleForcedBaritoneCommand(ClickEvent clickEvent, Minecraft minecraft, Screen screen,
+            CallbackInfo ci) {
+        if (!(clickEvent instanceof ClickEvent.RunCommand runCommand)) {
+            return;
+        }
+        String command = runCommand.command();
+        if (command == null || !command.startsWith(FORCE_COMMAND_PREFIX)) {
+            return;
+        }
+
+        IBaritone baritone = BaritoneAPI.getProvider().getPrimaryBaritone();
+        if (baritone != null) {
+            baritone.getGameEventHandler().onSendChatMessage(new ChatEvent(command));
+        }
+        ci.cancel();
+    }
+}
+

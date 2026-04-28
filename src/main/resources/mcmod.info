@@ -1,0 +1,16 @@
+[
+{
+  "modid": "zszl_script",
+  "name": "我的世界脚本",
+  "description": "Client scripts that provide functions such as automated operations, path execution, warehouse management, combat and interface assistance, etc.",
+  "version": "1.0.6-mc1.20.1",
+  "mcversion": "1.20.1",
+  "url": "https://github.com/fenda1-1/zszl_script",
+  "updateUrl": "",
+  "authorList": ["fenda"],
+  "credits": "感谢 Forge、Mixin、Baritone 及相关开源项目提供基础能力。",
+  "logoFile": "logo.png",
+  "screenshots": [],
+  "dependencies": []
+}
+]

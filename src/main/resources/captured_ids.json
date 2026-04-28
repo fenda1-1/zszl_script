@@ -1,0 +1,22 @@
+{
+  "rules": [
+    {
+      "name": "example_component_id",
+      "displayName": "示例组件ID规则",
+      "note": "这是一个示例捕获ID规则，默认禁用。请按你的协议修改频道、方向、匹配目标和正则后再启用。",
+      "aliases": [
+        "example_id"
+      ],
+      "enabled": false,
+      "channel": "",
+      "direction": "inbound",
+      "target": "hex",
+      "pattern": "([0-9A-Fa-f]{2}(?:\\s+[0-9A-Fa-f]{2}){3})",
+      "offset": "",
+      "group": 1,
+      "valueType": "hex",
+      "byteLength": 4,
+      "category": ""
+    }
+  ]
+}

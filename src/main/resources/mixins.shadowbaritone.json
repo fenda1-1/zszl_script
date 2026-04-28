@@ -1,0 +1,40 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "com.zszl.zszlScriptMod.shadowbaritone.launch.mixins",
+  "refmap": "mixins.shadowbaritone.refmap.json",
+  "compatibilityLevel": "JAVA_21",
+  "verbose": false,
+  "injectors": {
+    "maxShiftBy": 2,
+    "defaultRequire": 1
+  },
+  "client": [
+    "MixinBlockStateBase",
+    "MixinChunkArray",
+    "MixinChatComponent",
+    "MixinClientChunkProvider",
+    "MixinClientPlayNetHandler",
+    "MixinClientPlayerEntity",
+    "MixinCommandSuggestionHelper",
+    "MixinEntity",
+    "MixinFireworkRocketEntity",
+    "MixinItemStack",
+    "MixinKeyboardInput",
+    "MixinLightTexture",
+    "MixinLivingEntity",
+    "MixinLootContext",
+    "MixinMinecraft",
+    "MixinMouseHandler",
+    "MixinNetworkManager",
+    "MixinEntityRenderer",
+    "MixinPalettedContainer",
+    "MixinPalettedContainer$Data",
+    "MixinPlayerController",
+    "MixinRenderChunk",
+    "MixinScreen",
+    "MixinTimer",
+    "MixinWorldRenderer"
+  ]
+}
+
