@@ -1,6 +1,5 @@
 package com.zszl.zszlScriptMod.otherfeatures.gui.item;
 
-import com.zszl.zszlScriptMod.gui.components.GuiTextInput;
 import com.zszl.zszlScriptMod.gui.components.GuiTheme;
 import com.zszl.zszlScriptMod.gui.components.ThemedButton;
 import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
@@ -208,7 +207,7 @@ public class GuiDropAllExpressionConfig extends ThemedGuiScreen {
         final boolean editing = editIndex >= 0 && editIndex < this.expressions.size();
         String title = editing ? "编辑物品过滤表达式" : "新增物品过滤表达式";
         String initial = editing ? this.expressions.get(editIndex) : "";
-        this.mc.displayGuiScreen(new GuiTextInput(this, title, initial, value -> {
+        this.mc.displayGuiScreen(new GuiItemFilterExpressionEditor(this, title, initial, value -> {
             String expression = value == null ? "" : value.trim();
             if (expression.isEmpty()) {
                 setError("表达式不能为空。");
@@ -255,18 +254,27 @@ public class GuiDropAllExpressionConfig extends ThemedGuiScreen {
 
     @Override
     protected void mouseClicked(int mouseX, int mouseY, int mouseButton) throws IOException {
+        handleMousePressed(mouseX, mouseY, mouseButton);
+    }
+
+    private boolean handleMousePressed(int mouseX, int mouseY, int mouseButton) throws IOException {
+        if (mouseButton == 0 && handleButtonActivation(mouseX, mouseY)) {
+            return true;
+        }
         if (mouseButton == 0 && isInsideList(mouseX, mouseY)) {
             int index = getExpressionIndexAt(mouseY);
             this.selectedIndex = index >= 0 && index < this.expressions.size() ? index : -1;
             updateButtonState();
+            return true;
         }
-        super.mouseClicked(mouseX, mouseY, mouseButton);
+        return false;
     }
 
     @Override
     public void handleMouseInput() throws IOException {
         int mouseX = Mouse.getEventX() * this.width / this.mc.displayWidth;
         int mouseY = this.height - Mouse.getEventY() * this.height / this.mc.displayHeight - 1;
+
         int dWheel = Mouse.getEventDWheel();
         if (dWheel != 0 && isInsideList(mouseX, mouseY)) {
             int maxScroll = getMaxScroll();
@@ -277,7 +285,17 @@ public class GuiDropAllExpressionConfig extends ThemedGuiScreen {
             }
             return;
         }
-        super.handleMouseInput();
+
+        int button = Mouse.getEventButton();
+        if (button == -1) {
+            return;
+        }
+
+        if (Mouse.getEventButtonState()) {
+            handleMousePressed(mouseX, mouseY, button);
+        } else {
+            mouseReleased(mouseX, mouseY, button);
+        }
     }
 
     @Override
@@ -453,6 +471,21 @@ public class GuiDropAllExpressionConfig extends ThemedGuiScreen {
 
     private boolean isInsideList(int mouseX, int mouseY) {
         return isInside(mouseX, mouseY, this.listX, this.listY, this.listWidth, this.listHeight);
+    }
+
+    private boolean handleButtonActivation(int mouseX, int mouseY) throws IOException {
+        for (GuiButton button : this.buttonList) {
+            if (button == null || !button.visible || !button.enabled) {
+                continue;
+            }
+            if (!isInside(mouseX, mouseY, button.x, button.y, button.width, button.height)) {
+                continue;
+            }
+            button.playPressSound(this.mc.getSoundHandler());
+            actionPerformed(button);
+            return true;
+        }
+        return false;
     }
 
     private boolean isInside(int mouseX, int mouseY, int x, int y, int width, int height) {

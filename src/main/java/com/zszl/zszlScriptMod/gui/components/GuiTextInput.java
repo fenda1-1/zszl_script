@@ -6,6 +6,7 @@ import net.minecraft.client.gui.GuiScreen;
 import net.minecraft.client.gui.GuiTextField;
 import net.minecraft.client.resources.I18n;
 import org.lwjgl.input.Keyboard;
+import org.lwjgl.input.Mouse;
 
 import java.io.IOException;
 import java.util.function.Consumer;
@@ -88,8 +89,48 @@ public class GuiTextInput extends ThemedGuiScreen {
 
     @Override
     protected void mouseClicked(int mouseX, int mouseY, int mouseButton) throws IOException {
-        super.mouseClicked(mouseX, mouseY, mouseButton);
+        handleMousePressed(mouseX, mouseY, mouseButton);
+    }
+
+    @Override
+    public void handleMouseInput() throws IOException {
+        int mouseX = Mouse.getEventX() * this.width / this.mc.displayWidth;
+        int mouseY = this.height - Mouse.getEventY() * this.height / this.mc.displayHeight - 1;
+
+        int button = Mouse.getEventButton();
+        if (button == -1) {
+            return;
+        }
+
+        if (Mouse.getEventButtonState()) {
+            handleMousePressed(mouseX, mouseY, button);
+        } else {
+            mouseReleased(mouseX, mouseY, button);
+        }
+    }
+
+    private boolean handleMousePressed(int mouseX, int mouseY, int mouseButton) throws IOException {
+        if (mouseButton == 0 && handleButtonActivation(mouseX, mouseY)) {
+            return true;
+        }
         this.inputField.mouseClicked(mouseX, mouseY, mouseButton);
+        return false;
+    }
+
+    private boolean handleButtonActivation(int mouseX, int mouseY) throws IOException {
+        for (GuiButton button : this.buttonList) {
+            if (button == null || !button.visible || !button.enabled) {
+                continue;
+            }
+            if (mouseX < button.x || mouseX >= button.x + button.width
+                    || mouseY < button.y || mouseY >= button.y + button.height) {
+                continue;
+            }
+            button.playPressSound(this.mc.getSoundHandler());
+            actionPerformed(button);
+            return true;
+        }
+        return false;
     }
 
     @Override
