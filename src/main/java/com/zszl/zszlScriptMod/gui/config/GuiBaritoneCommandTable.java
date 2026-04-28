@@ -2,9 +2,12 @@ package com.zszl.zszlScriptMod.gui.config;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonSyntaxException;
+import com.zszl.zszlScriptMod.baritone.compat.HumanLikeMovementController;
+import com.zszl.zszlScriptMod.config.HumanLikeMovementConfig;
 import com.zszl.zszlScriptMod.gui.components.GuiTheme;
 import com.zszl.zszlScriptMod.gui.components.ThemedButton;
 import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
+import com.zszl.zszlScriptMod.gui.components.ToggleGuiButton;
 import com.zszl.zszlScriptMod.gui.config.GuiHumanLikeMovementSettings;
 import com.zszl.zszlScriptMod.shadowbaritone.api.BaritoneAPI;
 import com.zszl.zszlScriptMod.shadowbaritone.api.Settings;
@@ -293,7 +296,7 @@ public class GuiBaritoneCommandTable extends ThemedGuiScreen {
         int availableRightWidth = Math.max(300, rightEdge - reservedLeft);
 
         int gap = availableRightWidth < 430 ? 4 : 6;
-        int[] preferred = new int[]{74, 88, 82, 74, 74}; // 返回 / 模拟真人 / 设置 / 清空 / 执行
+        int[] preferred = new int[]{74, 96, 82, 74, 74}; // 返回 / 拟人化 / 设置 / 清空 / 执行
         int[] minimum = new int[]{54, 68, 60, 54, 54};
         int[] fitted = fitTopButtonWidths(availableRightWidth - gap * 4, preferred, minimum);
 
@@ -312,7 +315,8 @@ public class GuiBaritoneCommandTable extends ThemedGuiScreen {
         this.buttonList.add(new ThemedButton(BTN_EXECUTE, executeX, titleButtonY, executeW, 20, "§a执行"));
         this.buttonList.add(new ThemedButton(BTN_CLEAR_ARGS, clearX, titleButtonY, clearW, 20, "§e清空"));
         this.buttonList.add(new ThemedButton(BTN_OPEN_SETTINGS, settingsX, titleButtonY, settingsW, 20, "§b设置"));
-        this.buttonList.add(new ThemedButton(BTN_HUMAN_LIKE_MOVEMENT, humanLikeX, titleButtonY, humanLikeW, 20, "§d模拟真人"));
+        this.buttonList.add(new ToggleGuiButton(BTN_HUMAN_LIKE_MOVEMENT, humanLikeX, titleButtonY, humanLikeW, 20,
+                buildHumanLikeToggleLabel(), HumanLikeMovementConfig.INSTANCE.enabled));
         this.buttonList.add(new ThemedButton(BTN_BACK, backX, titleButtonY, backW, 20, "返回"));
     }
 
@@ -1175,6 +1179,29 @@ public class GuiBaritoneCommandTable extends ThemedGuiScreen {
         return (active ? "§b" : "§7") + section.label;
     }
 
+    private String buildHumanLikeToggleLabel() {
+        return HumanLikeMovementConfig.INSTANCE.enabled ? "§a拟人化: 开" : "§7拟人化: 关";
+    }
+
+    private void toggleHumanLikeMovement() {
+        HumanLikeMovementConfig.INSTANCE.enabled = !HumanLikeMovementConfig.INSTANCE.enabled;
+        HumanLikeMovementConfig.INSTANCE.normalize();
+        HumanLikeMovementConfig.save();
+        if (!HumanLikeMovementConfig.INSTANCE.enabled) {
+            HumanLikeMovementController.INSTANCE.reset();
+        }
+
+        GuiButton button = findButtonById(BTN_HUMAN_LIKE_MOVEMENT);
+        if (button != null) {
+            button.displayString = buildHumanLikeToggleLabel();
+            if (button instanceof ToggleGuiButton) {
+                ((ToggleGuiButton) button).setEnabledState(HumanLikeMovementConfig.INSTANCE.enabled);
+            }
+        }
+        this.statusMessage = HumanLikeMovementConfig.INSTANCE.enabled ? "拟人化已开启" : "拟人化已关闭";
+        this.statusColor = HumanLikeMovementConfig.INSTANCE.enabled ? 0xFF73D98A : 0xFFE7C35A;
+    }
+
     private String buildModeDropdownLabel() {
         return "§b模式: §f" + this.commandListMode.label + " §7▼";
     }
@@ -1263,6 +1290,21 @@ public class GuiBaritoneCommandTable extends ThemedGuiScreen {
         }
 
         drawDropdownOverlays(mouseX, mouseY);
+        updateTopButtonTooltip(mouseX, mouseY);
+    }
+
+    private void updateTopButtonTooltip(int mouseX, int mouseY) {
+        GuiButton button = findButtonById(BTN_HUMAN_LIKE_MOVEMENT);
+        if (button == null || !button.visible || mouseX < button.x || mouseX >= button.x + button.width
+                || mouseY < button.y || mouseY >= button.y + button.height) {
+            return;
+        }
+        this.hoverTooltip = "§e拟人化总开关"
+                + "\n§7左键：§f启用/关闭 Baritone 视角与移动节律修饰"
+                + "\n§7右键：§f打开详细参数配置"
+                + "\n§7当前：§f" + (HumanLikeMovementConfig.INSTANCE.enabled ? "已开启" : "已关闭");
+        this.hoverTooltipX = mouseX;
+        this.hoverTooltipY = mouseY;
     }
 
     private void drawCommandList(int mouseX, int mouseY) {
@@ -1883,7 +1925,7 @@ public class GuiBaritoneCommandTable extends ThemedGuiScreen {
             return;
         }
         if (button.id == BTN_HUMAN_LIKE_MOVEMENT) {
-            this.mc.setScreen(new GuiHumanLikeMovementSettings(this));
+            toggleHumanLikeMovement();
             return;
         }
         if (button.id == BTN_EXECUTE) {
@@ -2092,6 +2134,16 @@ public class GuiBaritoneCommandTable extends ThemedGuiScreen {
             if (isInCollapseButton(mouseX, mouseY, this.rightPaneX, this.rightPaneY, this.rightPaneW)) {
                 this.rightPaneCollapsed = !this.rightPaneCollapsed;
                 initGui();
+                return;
+            }
+        }
+
+        if (mouseButton == 1) {
+            GuiButton humanLikeButton = findButtonById(BTN_HUMAN_LIKE_MOVEMENT);
+            if (humanLikeButton != null && humanLikeButton.visible
+                    && mouseX >= humanLikeButton.x && mouseX < humanLikeButton.x + humanLikeButton.width
+                    && mouseY >= humanLikeButton.y && mouseY < humanLikeButton.y + humanLikeButton.height) {
+                this.mc.setScreen(new GuiHumanLikeMovementSettings(this));
                 return;
             }
         }

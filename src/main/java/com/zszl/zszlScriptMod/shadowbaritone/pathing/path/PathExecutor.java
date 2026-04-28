@@ -17,6 +17,7 @@
 
 package com.zszl.zszlScriptMod.shadowbaritone.pathing.path;
 
+import com.zszl.zszlScriptMod.baritone.compat.HumanLikeMovementController;
 import com.zszl.zszlScriptMod.shadowbaritone.Baritone;
 import com.zszl.zszlScriptMod.shadowbaritone.api.pathing.calc.IPath;
 import com.zszl.zszlScriptMod.shadowbaritone.api.pathing.movement.ActionCosts;
@@ -33,6 +34,7 @@ import com.zszl.zszlScriptMod.shadowbaritone.pathing.movement.MovementHelper;
 import com.zszl.zszlScriptMod.shadowbaritone.pathing.movement.movements.*;
 import com.zszl.zszlScriptMod.shadowbaritone.utils.BlockStateInterface;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.core.Vec3i;
 import net.minecraft.util.Tuple;
 import net.minecraft.world.phys.Vec3;
@@ -244,6 +246,7 @@ public class PathExecutor implements IPathExecutor, Helper {
                 return true;
             }
 
+            updateHumanLikePathContext(movement);
             MovementStatus movementStatus = movement.update();
             if (movementStatus == UNREACHABLE || movementStatus == FAILED) {
                 logDebug("Movement returns status " + movementStatus);
@@ -307,6 +310,96 @@ public class PathExecutor implements IPathExecutor, Helper {
             logDebug("Auto-advanced path position from " + previous + " to " + advance.index + " due to high-speed progression / overshoot.");
         }
         return true;
+    }
+
+    private void updateHumanLikePathContext(Movement movement) {
+        HumanLikeMovementController controller = HumanLikeMovementController.INSTANCE;
+        if (!controller.isEnabled() || movement == null || ctx.player() == null) {
+            return;
+        }
+
+        double distanceToMovementDest = VecUtils.entityFlatDistanceToCenter(ctx.player(), movement.getDest());
+        double distanceToPathEnd = VecUtils.entityFlatDistanceToCenter(ctx.player(), path.getDest());
+        controller.observePathContext(pathPosition, path.length(), distanceToMovementDest, distanceToPathEnd,
+                calculateNarrowPassageFactor(), calculateStraightPathFactor(movement), calculateObstacleEdgeBias(movement));
+    }
+
+    private float calculateStraightPathFactor(Movement movement) {
+        Vec3i currentDirection = flatDirection(movement.getDirection());
+        if (isZeroDirection(currentDirection)) {
+            return 0.0F;
+        }
+
+        int checked = 0;
+        int same = 0;
+        int end = Math.min(path.movements().size(), pathPosition + 5);
+        for (int i = pathPosition + 1; i < end; i++) {
+            IMovement next = path.movements().get(i);
+            Vec3i nextDirection = flatDirection(next.getDirection());
+            if (isZeroDirection(nextDirection)) {
+                continue;
+            }
+            checked++;
+            if (currentDirection.equals(nextDirection)) {
+                same++;
+            }
+        }
+        return checked == 0 ? 0.0F : same / (float) checked;
+    }
+
+    private Vec3i flatDirection(Vec3i direction) {
+        if (direction == null) {
+            return new Vec3i(0, 0, 0);
+        }
+        return new Vec3i(Integer.compare(direction.getX(), 0), 0, Integer.compare(direction.getZ(), 0));
+    }
+
+    private boolean isZeroDirection(Vec3i direction) {
+        return direction == null || direction.getX() == 0 && direction.getY() == 0 && direction.getZ() == 0;
+    }
+
+    private float calculateNarrowPassageFactor() {
+        BetterBlockPos feet = ctx.playerFeet();
+        if (feet == null) {
+            return 0.0F;
+        }
+
+        int blocked = 0;
+        for (Direction direction : Direction.Plane.HORIZONTAL) {
+            if (!isWalkSpaceOpen(feet.relative(direction))) {
+                blocked++;
+            }
+        }
+        return blocked / 4.0F;
+    }
+
+    private float calculateObstacleEdgeBias(Movement movement) {
+        BetterBlockPos feet = ctx.playerFeet();
+        Vec3i flat = flatDirection(movement.getDirection());
+        if (feet == null || isZeroDirection(flat)) {
+            return 0.0F;
+        }
+
+        BlockPos left = feet.offset(-flat.getZ(), 0, flat.getX());
+        BlockPos right = feet.offset(flat.getZ(), 0, -flat.getX());
+        boolean leftBlocked = !isWalkSpaceOpen(left);
+        boolean rightBlocked = !isWalkSpaceOpen(right);
+        if (leftBlocked == rightBlocked) {
+            return 0.0F;
+        }
+        return leftBlocked ? -0.6F : 0.6F;
+    }
+
+    private boolean isWalkSpaceOpen(BlockPos pos) {
+        if (pos == null) {
+            return false;
+        }
+        BetterBlockPos feet = new BetterBlockPos(pos);
+        try {
+            return MovementHelper.canWalkThrough(ctx, feet) && MovementHelper.canWalkThrough(ctx, feet.above());
+        } catch (Throwable ignored) {
+            return true;
+        }
     }
 
     private boolean isCoveredByCurrentOrIntermediateMovements(BetterBlockPos whereAmI, int fromInclusive, int toExclusive) {

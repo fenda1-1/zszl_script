@@ -17,6 +17,7 @@
 
 package com.zszl.zszlScriptMod.shadowbaritone.utils;
 
+import com.zszl.zszlScriptMod.baritone.compat.HumanLikeMovementController;
 import com.zszl.zszlScriptMod.shadowbaritone.api.BaritoneAPI;
 import com.zszl.zszlScriptMod.shadowbaritone.api.utils.IPlayerContext;
 import com.zszl.zszlScriptMod.shadowbaritone.utils.accessor.IPlayerControllerMP;
@@ -56,6 +57,11 @@ public final class BlockBreakHelper {
         }
         HitResult trace = ctx.objectMouseOver();
         boolean isBlockTrace = trace != null && trace.getType() == HitResult.Type.BLOCK;
+
+        if (isLeftClick && isBlockTrace && HumanLikeMovementController.INSTANCE.shouldDelayBlockBreakTick(wasHitting)) {
+            ctx.playerController().setHittingBlock(false);
+            return;
+        }
 
         if (isLeftClick && isBlockTrace) {
             ctx.playerController().setHittingBlock(wasHitting);

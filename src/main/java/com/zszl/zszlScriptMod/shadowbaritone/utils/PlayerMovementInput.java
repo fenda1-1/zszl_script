@@ -17,6 +17,7 @@
 
 package com.zszl.zszlScriptMod.shadowbaritone.utils;
 
+import com.zszl.zszlScriptMod.baritone.compat.HumanLikeMovementController;
 import com.zszl.zszlScriptMod.shadowbaritone.api.utils.input.Input;
 import net.minecraft.util.Mth;
 
@@ -54,9 +55,10 @@ public class PlayerMovementInput extends net.minecraft.client.player.Input {
             desiredStrafe--;
         }
 
+        float yawDifferenceDeg = 0.0F;
         boolean decoupleMovementFromVisualYaw = handler.baritone.getLookBehavior().shouldDecoupleMovementFromVisualYaw();
         if (decoupleMovementFromVisualYaw && (desiredForward != 0.0F || desiredStrafe != 0.0F)) {
-            float yawDifferenceDeg = Mth.wrapDegrees(handler.getMovementYaw() - handler.getPlayerYaw());
+            yawDifferenceDeg = Mth.wrapDegrees(handler.getMovementYaw() - handler.getPlayerYaw());
             float yawDelta = (float) Math.toRadians(yawDifferenceDeg);
             float sin = Mth.sin(yawDelta);
             float cos = Mth.cos(yawDelta);
@@ -66,6 +68,17 @@ public class PlayerMovementInput extends net.minecraft.client.player.Input {
             desiredStrafe = rawStrafe * cos - rawForward * sin;
             desiredForward = rawStrafe * sin + rawForward * cos;
         }
+
+        HumanLikeMovementController controller = HumanLikeMovementController.INSTANCE;
+        HumanLikeMovementController.MovementState humanMovement = controller.applyMovement(desiredForward,
+                desiredStrafe, desiredJump, desiredSneak, yawDifferenceDeg, handler.ctx.player().position().x,
+                handler.ctx.player().position().y, handler.ctx.player().position().z, handler.ctx.player().onGround(),
+                controller.getFinalApproachProgress(), controller.getNarrowPassageFactor(),
+                controller.getStraightPathFactor(), controller.getObstacleEdgeBias());
+        desiredForward = humanMovement.moveForward;
+        desiredStrafe = humanMovement.moveStrafe;
+        desiredJump = humanMovement.jump;
+        desiredSneak = humanMovement.sneak;
 
         this.leftImpulse = desiredStrafe;
         this.forwardImpulse = desiredForward;
