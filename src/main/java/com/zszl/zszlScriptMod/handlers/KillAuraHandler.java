@@ -84,6 +84,8 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Consumer;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class KillAuraHandler implements AbstractGameEventListener {
 
@@ -92,6 +94,8 @@ public class KillAuraHandler implements AbstractGameEventListener {
     public static final String ATTACK_MODE_PACKET = "PACKET";
     public static final String ATTACK_MODE_TELEPORT = "TELEPORT";
     public static final String ATTACK_MODE_SEQUENCE = "SEQUENCE";
+    public static final String ATTACK_MODE_MOUSE_CLICK = "MOUSE_CLICK";
+    public static final String DEFAULT_ATTACK_MODE = ATTACK_MODE_MOUSE_CLICK;
     public static final String HUNT_MODE_OFF = "OFF";
     public static final String HUNT_MODE_APPROACH = "APPROACH";
     public static final String HUNT_MODE_FIXED_DISTANCE = "FIXED_DISTANCE";
@@ -106,11 +110,12 @@ public class KillAuraHandler implements AbstractGameEventListener {
     public static boolean smoothRotation = true;
     public static final float MIN_SMOOTH_MAX_TURN_STEP = 0.5F;
     public static final float MAX_SMOOTH_MAX_TURN_STEP = 60.0F;
-    public static final float DEFAULT_SMOOTH_MAX_TURN_STEP = 8.0F;
+    public static final float DEFAULT_SMOOTH_MAX_TURN_STEP = 24.0F;
+    public static final String DEFAULT_SMOOTH_MAX_TURN_STEP_SPEC = "24-60";
     public static float smoothMaxTurnStep = DEFAULT_SMOOTH_MAX_TURN_STEP;
-    public static String smoothMaxTurnStepSpec = formatSmoothMaxTurnStepValue(DEFAULT_SMOOTH_MAX_TURN_STEP);
-    public static boolean rotateOnlyOnAttack = false;
-    public static boolean relockOnlyWhenNoCrosshairTarget = false;
+    public static String smoothMaxTurnStepSpec = DEFAULT_SMOOTH_MAX_TURN_STEP_SPEC;
+    public static boolean rotateOnlyOnAttack = true;
+    public static boolean relockOnlyWhenNoCrosshairTarget = true;
     public static boolean requireLineOfSight = true;
     public static boolean targetHostile = true;
     public static boolean targetPassive = false;
@@ -123,14 +128,25 @@ public class KillAuraHandler implements AbstractGameEventListener {
     public static boolean enableAntiKnockback = true;
     public static boolean enableFullBrightVision = false;
     public static float fullBrightGamma = 1000.0F;
-    public static String attackMode = ATTACK_MODE_NORMAL;
+    public static String attackMode = DEFAULT_ATTACK_MODE;
     public static String attackSequenceName = "";
     public static final int MIN_ATTACK_SEQUENCE_DELAY_TICKS = 0;
     public static final int MAX_ATTACK_SEQUENCE_DELAY_TICKS = 200;
-    public static final int DEFAULT_ATTACK_SEQUENCE_DELAY_TICKS = 2;
+    public static final int DEFAULT_ATTACK_SEQUENCE_DELAY_TICKS = 1;
+    public static final String DEFAULT_ATTACK_SEQUENCE_DELAY_TICKS_SPEC = "1-6";
     public static int attackSequenceDelayTicks = DEFAULT_ATTACK_SEQUENCE_DELAY_TICKS;
-    public static String attackSequenceDelayTicksSpec = String.valueOf(DEFAULT_ATTACK_SEQUENCE_DELAY_TICKS);
-    public static float aimYawOffset = 0.0F;
+    public static String attackSequenceDelayTicksSpec = DEFAULT_ATTACK_SEQUENCE_DELAY_TICKS_SPEC;
+    public static final float MIN_AIM_OFFSET = -30.0F;
+    public static final float MAX_AIM_OFFSET = 30.0F;
+    public static final float DEFAULT_AIM_OFFSET = 0.0F;
+    public static final float DEFAULT_AIM_YAW_OFFSET = -3.0F;
+    public static final String DEFAULT_AIM_YAW_OFFSET_SPEC = "-3-3";
+    public static final float DEFAULT_AIM_PITCH_OFFSET = -11.0F;
+    public static final String DEFAULT_AIM_PITCH_OFFSET_SPEC = "-11-11";
+    public static float aimYawOffset = DEFAULT_AIM_YAW_OFFSET;
+    public static String aimYawOffsetSpec = DEFAULT_AIM_YAW_OFFSET_SPEC;
+    public static float aimPitchOffset = DEFAULT_AIM_PITCH_OFFSET;
+    public static String aimPitchOffsetSpec = DEFAULT_AIM_PITCH_OFFSET_SPEC;
     public static boolean huntEnabled = true;
     public static String huntMode = HUNT_MODE_APPROACH;
     public static boolean huntPickupItemsEnabled = false;
@@ -191,6 +207,12 @@ public class KillAuraHandler implements AbstractGameEventListener {
     private static final int TARGET_SWITCH_SMOOTH_TICKS = 12;
     private static final float SMOOTH_ATTACK_READY_YAW_DEGREES = 28.0F;
     private static final float SMOOTH_ATTACK_READY_PITCH_DEGREES = 40.0F;
+    private static final double ADVANCED_AIM_MIN_LEAD_TICKS = 0.25D;
+    private static final double ADVANCED_AIM_MAX_LEAD_TICKS = 2.45D;
+    private static final double ADVANCED_AIM_MAX_PLAYER_LEAD_TICKS = 0.85D;
+    private static final float ADVANCED_OVERSHOOT_MAX_YAW = 2.15F;
+    private static final float ADVANCED_OVERSHOOT_MAX_ATTACK_YAW = 1.25F;
+    private static final float ADVANCED_OVERSHOOT_MAX_PITCH = 0.95F;
 
     private int attackCooldownTicks = 0;
     private int sequenceCooldownTicks = 0;
@@ -205,6 +227,12 @@ public class KillAuraHandler implements AbstractGameEventListener {
     private float visualRotationCacheSourceYaw = 0.0F;
     private float visualRotationCacheSourcePitch = 0.0F;
     private Rotation visualRotationCache = null;
+    private int aimOffsetSampleTick = Integer.MIN_VALUE;
+    private int aimOffsetSampleTargetEntityId = Integer.MIN_VALUE;
+    private String aimOffsetSampleYawSpec = "";
+    private String aimOffsetSamplePitchSpec = "";
+    private float sampledAimYawOffset = 0.0F;
+    private float sampledAimPitchOffset = 0.0F;
     private boolean huntNavigationActive = false;
     private int lastHuntGotoTick = -99999;
     private int lastHuntTargetEntityId = Integer.MIN_VALUE;
@@ -236,9 +264,9 @@ public class KillAuraHandler implements AbstractGameEventListener {
         public boolean rotateToTarget = true;
         public boolean smoothRotation = true;
         public float smoothMaxTurnStep = DEFAULT_SMOOTH_MAX_TURN_STEP;
-        public String smoothMaxTurnStepSpec = "";
-        public boolean rotateOnlyOnAttack = false;
-        public boolean relockOnlyWhenNoCrosshairTarget = false;
+        public String smoothMaxTurnStepSpec = DEFAULT_SMOOTH_MAX_TURN_STEP_SPEC;
+        public boolean rotateOnlyOnAttack = true;
+        public boolean relockOnlyWhenNoCrosshairTarget = true;
         public boolean requireLineOfSight = true;
         public boolean targetHostile = true;
         public boolean targetPassive = false;
@@ -251,11 +279,14 @@ public class KillAuraHandler implements AbstractGameEventListener {
         public boolean enableAntiKnockback = true;
         public boolean enableFullBrightVision = false;
         public float fullBrightGamma = 1000.0F;
-        public String attackMode = ATTACK_MODE_NORMAL;
+        public String attackMode = DEFAULT_ATTACK_MODE;
         public String attackSequenceName = "";
         public int attackSequenceDelayTicks = DEFAULT_ATTACK_SEQUENCE_DELAY_TICKS;
-        public String attackSequenceDelayTicksSpec = "";
-        public float aimYawOffset = 0.0F;
+        public String attackSequenceDelayTicksSpec = DEFAULT_ATTACK_SEQUENCE_DELAY_TICKS_SPEC;
+        public float aimYawOffset = DEFAULT_AIM_YAW_OFFSET;
+        public String aimYawOffsetSpec = DEFAULT_AIM_YAW_OFFSET_SPEC;
+        public float aimPitchOffset = DEFAULT_AIM_PITCH_OFFSET;
+        public String aimPitchOffsetSpec = DEFAULT_AIM_PITCH_OFFSET_SPEC;
         public String huntMode = HUNT_MODE_APPROACH;
         public boolean huntPickupItemsEnabled = false;
         public boolean visualizeHuntRadius = false;
@@ -312,6 +343,13 @@ public class KillAuraHandler implements AbstractGameEventListener {
                             ? String.valueOf(other.attackSequenceDelayTicks)
                             : other.attackSequenceDelayTicksSpec;
             this.aimYawOffset = other.aimYawOffset;
+            this.aimYawOffsetSpec = other.aimYawOffsetSpec == null || other.aimYawOffsetSpec.trim().isEmpty()
+                    ? formatAimOffsetValue(other.aimYawOffset)
+                    : other.aimYawOffsetSpec;
+            this.aimPitchOffset = other.aimPitchOffset;
+            this.aimPitchOffsetSpec = other.aimPitchOffsetSpec == null || other.aimPitchOffsetSpec.trim().isEmpty()
+                    ? formatAimOffsetValue(other.aimPitchOffset)
+                    : other.aimPitchOffsetSpec;
             this.huntMode = other.huntMode == null ? HUNT_MODE_APPROACH : other.huntMode;
             this.huntPickupItemsEnabled = other.huntPickupItemsEnabled;
             this.visualizeHuntRadius = other.visualizeHuntRadius;
@@ -350,9 +388,9 @@ public class KillAuraHandler implements AbstractGameEventListener {
         rotateToTarget = true;
         smoothRotation = true;
         smoothMaxTurnStep = DEFAULT_SMOOTH_MAX_TURN_STEP;
-        smoothMaxTurnStepSpec = formatSmoothMaxTurnStepValue(DEFAULT_SMOOTH_MAX_TURN_STEP);
-        rotateOnlyOnAttack = false;
-        relockOnlyWhenNoCrosshairTarget = false;
+        smoothMaxTurnStepSpec = DEFAULT_SMOOTH_MAX_TURN_STEP_SPEC;
+        rotateOnlyOnAttack = true;
+        relockOnlyWhenNoCrosshairTarget = true;
         requireLineOfSight = true;
         targetHostile = true;
         targetPassive = false;
@@ -365,11 +403,14 @@ public class KillAuraHandler implements AbstractGameEventListener {
         enableAntiKnockback = true;
         enableFullBrightVision = false;
         fullBrightGamma = 1000.0F;
-        attackMode = ATTACK_MODE_NORMAL;
+        attackMode = DEFAULT_ATTACK_MODE;
         attackSequenceName = "";
         attackSequenceDelayTicks = DEFAULT_ATTACK_SEQUENCE_DELAY_TICKS;
-        attackSequenceDelayTicksSpec = String.valueOf(DEFAULT_ATTACK_SEQUENCE_DELAY_TICKS);
-        aimYawOffset = 0.0F;
+        attackSequenceDelayTicksSpec = DEFAULT_ATTACK_SEQUENCE_DELAY_TICKS_SPEC;
+        aimYawOffset = DEFAULT_AIM_YAW_OFFSET;
+        aimYawOffsetSpec = DEFAULT_AIM_YAW_OFFSET_SPEC;
+        aimPitchOffset = DEFAULT_AIM_PITCH_OFFSET;
+        aimPitchOffsetSpec = DEFAULT_AIM_PITCH_OFFSET_SPEC;
         huntEnabled = true;
         huntMode = HUNT_MODE_APPROACH;
         huntPickupItemsEnabled = false;
@@ -471,7 +512,16 @@ public class KillAuraHandler implements AbstractGameEventListener {
                 setAttackSequenceDelayTicksSpec(json.get("attackSequenceDelayTicksSpec").getAsString());
             }
             if (json.has("aimYawOffset")) {
-                aimYawOffset = json.get("aimYawOffset").getAsFloat();
+                setAimYawOffsetSpec(json.get("aimYawOffset").getAsString());
+            }
+            if (json.has("aimYawOffsetSpec")) {
+                setAimYawOffsetSpec(json.get("aimYawOffsetSpec").getAsString());
+            }
+            if (json.has("aimPitchOffset")) {
+                setAimPitchOffsetSpec(json.get("aimPitchOffset").getAsString());
+            }
+            if (json.has("aimPitchOffsetSpec")) {
+                setAimPitchOffsetSpec(json.get("aimPitchOffsetSpec").getAsString());
             }
             if (json.has("huntMode")) {
                 huntMode = json.get("huntMode").getAsString();
@@ -590,7 +640,12 @@ public class KillAuraHandler implements AbstractGameEventListener {
             json.addProperty("attackSequenceName", attackSequenceName);
             json.addProperty("attackSequenceDelayTicks", attackSequenceDelayTicksSpec);
             json.addProperty("attackSequenceDelayTicksValue", attackSequenceDelayTicks);
-            json.addProperty("aimYawOffset", aimYawOffset);
+            json.addProperty("aimYawOffset", aimYawOffsetSpec);
+            json.addProperty("aimYawOffsetValue", aimYawOffset);
+            json.addProperty("aimYawOffsetSpec", aimYawOffsetSpec);
+            json.addProperty("aimPitchOffset", aimPitchOffsetSpec);
+            json.addProperty("aimPitchOffsetValue", aimPitchOffset);
+            json.addProperty("aimPitchOffsetSpec", aimPitchOffsetSpec);
             json.addProperty("huntMode", huntMode);
             json.addProperty("huntEnabled", isHuntEnabled());
             json.addProperty("huntPickupItemsEnabled", huntPickupItemsEnabled);
@@ -768,7 +823,8 @@ public class KillAuraHandler implements AbstractGameEventListener {
         attackMode = safePreset.attackMode;
         attackSequenceName = safePreset.attackSequenceName;
         setAttackSequenceDelayTicksSpec(safePreset.attackSequenceDelayTicksSpec);
-        aimYawOffset = safePreset.aimYawOffset;
+        setAimYawOffsetSpec(safePreset.aimYawOffsetSpec);
+        setAimPitchOffsetSpec(safePreset.aimPitchOffsetSpec);
         huntMode = safePreset.huntMode;
         huntPickupItemsEnabled = safePreset.huntPickupItemsEnabled;
         visualizeHuntRadius = safePreset.visualizeHuntRadius;
@@ -1102,8 +1158,12 @@ public class KillAuraHandler implements AbstractGameEventListener {
         if (canStartAttack(player) && mc.playerController != null) {
             int attackedCount = attackTargets(mc, player, targets, crosshairTargetLocked ? primaryTarget : null);
             if (attackedCount > 0) {
-                player.swingArm(EnumHand.MAIN_HAND);
-                this.attackCooldownTicks = minAttackIntervalTicks;
+                if (!isMouseClickAttackMode()) {
+                    player.swingArm(EnumHand.MAIN_HAND);
+                }
+                this.attackCooldownTicks = isMouseClickAttackMode()
+                        ? sampleAttackSequenceDelayTicks()
+                        : minAttackIntervalTicks;
                 if (!isHuntOrbitEnabled()) {
                     stopHuntNavigation();
                 }
@@ -1534,7 +1594,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
             return 0;
         }
 
-        int attackLimit = Math.max(1, targetsPerAttack);
+        int attackLimit = isMouseClickAttackMode() ? 1 : Math.max(1, targetsPerAttack);
         int attackedCount = 0;
         for (EntityLivingBase target : targets) {
             if (attackedCount >= attackLimit) {
@@ -1546,12 +1606,17 @@ public class KillAuraHandler implements AbstractGameEventListener {
             if (!prepareRotationForAttack(player, target, crosshairLockedTarget)) {
                 continue;
             }
-            if (!canAttackTarget(player, target)) {
+            boolean teleportAttack = shouldUseTeleportAttack(player, target);
+            if (!canAttackTarget(player, target, !teleportAttack)) {
                 continue;
             }
 
-            if (shouldUseTeleportAttack(player, target)) {
+            if (teleportAttack) {
                 if (!performTeleportAttack(player, target)) {
+                    continue;
+                }
+            } else if (isMouseClickAttackMode()) {
+                if (!performMouseClickAttack(mc)) {
                     continue;
                 }
             } else if (isPacketAttackMode()) {
@@ -1580,7 +1645,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
         return true;
     }
 
-    private boolean canAttackTarget(EntityPlayerSP player, EntityLivingBase target) {
+    private boolean canAttackTarget(EntityPlayerSP player, EntityLivingBase target, boolean requireCrosshairHit) {
         if (!canAttackTargetBeforeRotation(player, target)) {
             return false;
         }
@@ -1588,7 +1653,17 @@ public class KillAuraHandler implements AbstractGameEventListener {
         if (shouldRotateToTarget() && yawDiff > 100.0F) {
             return false;
         }
+        if (requireCrosshairHit && !isViewRayHittingAttackableTarget(player, target)) {
+            return false;
+        }
         return true;
+    }
+
+    private boolean isViewRayHittingAttackableTarget(EntityPlayerSP player, EntityLivingBase target) {
+        return player != null
+                && target != null
+                && canAttackTargetBeforeRotation(player, target)
+                && getCrosshairHitDistanceSq(player, target) >= 0.0D;
     }
 
     private boolean shouldUseTeleportAttack(EntityPlayerSP player, EntityLivingBase target) {
@@ -1643,6 +1718,17 @@ public class KillAuraHandler implements AbstractGameEventListener {
         return true;
     }
 
+    private boolean performMouseClickAttack(Minecraft mc) {
+        if (mc == null || mc.currentScreen != null) {
+            return false;
+        }
+
+        int screenWidth = Math.max(1, mc.displayWidth);
+        int screenHeight = Math.max(1, mc.displayHeight);
+        ModUtils.simulateMouseClick(screenWidth / 2, screenHeight / 2, true, screenWidth, screenHeight);
+        return true;
+    }
+
     private TeleportAttackPlan buildTeleportAttackPlan(EntityPlayerSP player, EntityLivingBase target,
             boolean preserveCurrentLook) {
         if (player == null || target == null) {
@@ -1661,15 +1747,14 @@ public class KillAuraHandler implements AbstractGameEventListener {
                 assaultCandidate.x, assaultCandidate.y, assaultCandidate.z,
                 player.posX, player.posY, player.posZ);
 
-        float attackYaw = shouldRotateToTarget() && !preserveCurrentLook
-                ? getTargetYawFromPosition(assaultCandidate.x, assaultCandidate.z, target)
-                : player.rotationYaw;
-        float attackPitch = shouldRotateToTarget() && !preserveCurrentLook
-                ? getTargetPitchFromPosition(assaultCandidate.x, assaultCandidate.y, assaultCandidate.z, target)
-                : player.rotationPitch;
+        Rotation attackRotation = shouldRotateToTarget() && !preserveCurrentLook
+                ? getAdvancedAimRotationFromPosition(player, target, assaultCandidate.x, assaultCandidate.y,
+                        assaultCandidate.z, new Rotation(player.rotationYaw, player.rotationPitch), true)
+                : new Rotation(player.rotationYaw, player.rotationPitch);
+        attackRotation = applyMouseGcdCompensation(player, attackRotation, Float.MAX_VALUE, Float.MAX_VALUE);
 
         return new TeleportAttackPlan(player, target, assaultCandidate, outboundWaypoints, returnWaypoints,
-                attackYaw, attackPitch);
+                attackRotation.getYaw(), attackRotation.getPitch());
     }
 
     private TeleportAssaultCandidate findBestTeleportAssaultCandidate(EntityPlayerSP player, EntityLivingBase target) {
@@ -1911,12 +1996,13 @@ public class KillAuraHandler implements AbstractGameEventListener {
             return null;
         }
 
-        Rotation desiredAim = getDesiredAimRotation(player, target);
+        Rotation desiredAim = getDesiredAimRotation(player, target, attackRotation);
         boolean useSmoothRotation = forceSmoothRotation || smoothRotation;
         if (!useSmoothRotation) {
-            return desiredAim;
+            return applyMouseGcdCompensation(player, desiredAim, Float.MAX_VALUE, Float.MAX_VALUE);
         }
 
+        desiredAim = applyAdvancedOvershootCorrection(player, target, desiredAim, attackRotation);
         float yawDelta = MathHelper.wrapDegrees(desiredAim.getYaw() - player.rotationYaw);
         float pitchDelta = desiredAim.getPitch() - player.rotationPitch;
         float yawSpeed = Math.max(computeTurnSpeed(Math.abs(yawDelta), attackRotation),
@@ -1927,8 +2013,13 @@ public class KillAuraHandler implements AbstractGameEventListener {
         float pitchStep = clampSigned(pitchDelta, pitchSpeed);
         updateSmoothTurnLimitBudget(player);
         float turnLimit = sampleSmoothMaxTurnStepForTurn();
-        yawStep = clampSigned(yawStep, getRemainingSmoothYawTurnStep(turnLimit));
-        pitchStep = clampSigned(pitchStep, getRemainingSmoothPitchTurnStep(turnLimit));
+        float remainingYawTurn = getRemainingSmoothYawTurnStep(turnLimit);
+        float remainingPitchTurn = getRemainingSmoothPitchTurnStep(turnLimit);
+        yawStep = clampSigned(yawStep, remainingYawTurn);
+        pitchStep = clampSigned(pitchStep, remainingPitchTurn);
+        float gcdStep = getMouseGcdStep();
+        yawStep = quantizeRotationStepForGcd(yawStep, remainingYawTurn, gcdStep);
+        pitchStep = quantizeRotationStepForGcd(pitchStep, remainingPitchTurn, gcdStep);
         smoothYawTurnUsedThisTick += Math.abs(yawStep);
         smoothPitchTurnUsedThisTick += Math.abs(pitchStep);
 
@@ -1992,6 +2083,58 @@ public class KillAuraHandler implements AbstractGameEventListener {
 
     private float getRemainingSmoothPitchTurnStep(float turnLimit) {
         return Math.max(0.0F, turnLimit - this.smoothPitchTurnUsedThisTick);
+    }
+
+    private Rotation applyMouseGcdCompensation(EntityPlayerSP player, Rotation desiredRotation,
+            float maxYawStep, float maxPitchStep) {
+        if (player == null || desiredRotation == null) {
+            return desiredRotation;
+        }
+        float yawStep = MathHelper.wrapDegrees(desiredRotation.getYaw() - player.rotationYaw);
+        float pitchStep = desiredRotation.getPitch() - player.rotationPitch;
+        float gcdStep = getMouseGcdStep();
+        yawStep = quantizeRotationStepForGcd(yawStep, maxYawStep, gcdStep);
+        pitchStep = quantizeRotationStepForGcd(pitchStep, maxPitchStep, gcdStep);
+        return new Rotation(player.rotationYaw + yawStep,
+                MathHelper.clamp(player.rotationPitch + pitchStep, -90.0F, 90.0F));
+    }
+
+    private float getMouseGcdStep() {
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc == null || mc.gameSettings == null) {
+            return 0.0F;
+        }
+        float sensitivity = MathHelper.clamp(mc.gameSettings.mouseSensitivity, 0.0F, 1.0F);
+        float f = sensitivity * 0.6F + 0.2F;
+        return f * f * f * 8.0F * 0.15F;
+    }
+
+    private float quantizeRotationStepForGcd(float step, float maxMagnitude, float gcdStep) {
+        if (step == 0.0F || gcdStep <= 1.0E-5F || maxMagnitude <= 0.0F) {
+            return step == 0.0F ? 0.0F : clampSigned(step, maxMagnitude);
+        }
+        float maxStep = Math.abs(maxMagnitude);
+        float absStep = Math.min(Math.abs(step), maxStep);
+        if (absStep <= 1.0E-5F) {
+            return 0.0F;
+        }
+
+        // When the user's smooth cap is below one mouse quantum, preserving the cap matters more than quantizing.
+        if (maxStep + 1.0E-5F < gcdStep) {
+            return Math.copySign(absStep, step);
+        }
+
+        float quantized = Math.round(absStep / gcdStep) * gcdStep;
+        if (quantized <= 1.0E-5F && absStep >= gcdStep * 0.45F) {
+            quantized = gcdStep;
+        }
+        if (quantized > maxStep) {
+            quantized = (float) Math.floor(maxStep / gcdStep) * gcdStep;
+        }
+        if (quantized <= 1.0E-5F) {
+            return 0.0F;
+        }
+        return Math.copySign(Math.min(quantized, maxStep), step);
     }
 
     private boolean isRotationReadyForAttack(EntityPlayerSP player, EntityLivingBase target) {
@@ -2097,26 +2240,187 @@ public class KillAuraHandler implements AbstractGameEventListener {
     }
 
     private Rotation getDesiredAimRotation(EntityPlayerSP player, EntityLivingBase target) {
+        return getDesiredAimRotation(player, target, false);
+    }
+
+    private Rotation getDesiredAimRotation(EntityPlayerSP player, EntityLivingBase target, boolean attackRotation) {
         if (player == null || target == null) {
             return new Rotation(0.0F, 0.0F);
         }
-        if (!shouldUseMotionCompensatedVisualAim(player, target)) {
-            return new Rotation(applyAimYawOffset(getTargetYaw(player, target)), getTargetPitch(player, target));
+        return getAdvancedAimRotation(player, target, attackRotation);
+    }
+
+    private Rotation getAdvancedAimRotation(EntityPlayerSP player, EntityLivingBase target, boolean attackRotation) {
+        float partialTicks = getCurrentAimPartialTicks();
+        Vec3d eyePos = player.getPositionEyes(partialTicks);
+        return getAdvancedAimRotationFromEye(player, target, eyePos, true,
+                new Rotation(player.rotationYaw, player.rotationPitch), attackRotation);
+    }
+
+    private Rotation getAdvancedAimRotationFromPosition(EntityPlayerSP player, EntityLivingBase target,
+            double fromX, double fromY, double fromZ, Rotation currentRotation, boolean attackRotation) {
+        double eyeHeight = player == null ? 1.62D : player.getEyeHeight();
+        return getAdvancedAimRotationFromEye(player, target, new Vec3d(fromX, fromY + eyeHeight, fromZ), false,
+                currentRotation == null ? new Rotation(0.0F, 0.0F) : currentRotation, attackRotation);
+    }
+
+    private Rotation getAdvancedAimRotationFromEye(EntityPlayerSP player, EntityLivingBase target, Vec3d baseEyePos,
+            boolean predictEye, Rotation currentRotation) {
+        return getAdvancedAimRotationFromEye(player, target, baseEyePos, predictEye, currentRotation, false);
+    }
+
+    private Rotation getAdvancedAimRotationFromEye(EntityPlayerSP player, EntityLivingBase target, Vec3d baseEyePos,
+            boolean predictEye, Rotation currentRotation, boolean attackRotation) {
+        if (target == null || baseEyePos == null) {
+            return currentRotation == null ? new Rotation(0.0F, 0.0F) : currentRotation;
         }
 
         float partialTicks = getCurrentAimPartialTicks();
-        Vec3d eyePos = player.getPositionEyes(partialTicks);
         double targetX = interpolateAimCoordinate(target.lastTickPosX, target.posX, partialTicks);
         double targetY = interpolateAimCoordinate(target.lastTickPosY, target.posY, partialTicks)
-                + target.getEyeHeight() * 0.85D;
+                + getAdvancedAimHeightOffset(player, target, baseEyePos, attackRotation);
         double targetZ = interpolateAimCoordinate(target.lastTickPosZ, target.posZ, partialTicks);
+
+        double leadTicks = computeAdvancedAimLeadTicks(player, target, baseEyePos, targetX, targetY, targetZ,
+                attackRotation);
+        double targetMotionX = clampPredictionMotion(target.posX - target.lastTickPosX);
+        double targetMotionY = clampPredictionMotion(target.posY - target.lastTickPosY);
+        double targetMotionZ = clampPredictionMotion(target.posZ - target.lastTickPosZ);
+        targetX += targetMotionX * leadTicks;
+        targetY += targetMotionY * leadTicks * 0.7D;
+        targetZ += targetMotionZ * leadTicks;
+
+        Vec3d eyePos = baseEyePos;
+        if (predictEye && player != null) {
+            double playerLead = Math.min(ADVANCED_AIM_MAX_PLAYER_LEAD_TICKS, leadTicks * 0.45D);
+            eyePos = eyePos.addVector(
+                    clampPredictionMotion(player.posX - player.lastTickPosX) * playerLead,
+                    clampPredictionMotion(player.posY - player.lastTickPosY) * playerLead * 0.45D,
+                    clampPredictionMotion(player.posZ - player.lastTickPosZ) * playerLead);
+        }
+
         Rotation desired = RotationUtils.calcRotationFromVec3d(eyePos, new Vec3d(targetX, targetY, targetZ),
-                new Rotation(player.rotationYaw, player.rotationPitch));
-        return new Rotation(applyAimYawOffset(desired.getYaw()), MathHelper.clamp(desired.getPitch(), -90.0F, 90.0F));
+                currentRotation == null ? new Rotation(0.0F, 0.0F) : currentRotation);
+        AimOffsetSample offset = sampleAimOffsets(player, target);
+        return new Rotation(MathHelper.wrapDegrees(desired.getYaw() + offset.yaw),
+                MathHelper.clamp(desired.getPitch() + offset.pitch, -90.0F, 90.0F));
     }
 
-    private float applyAimYawOffset(float yaw) {
-        return MathHelper.wrapDegrees(yaw + aimYawOffset);
+    private double getAdvancedAimHeightOffset(EntityPlayerSP player, EntityLivingBase target, Vec3d eyePos,
+            boolean attackRotation) {
+        double distance = 4.0D;
+        if (target != null && eyePos != null) {
+            double dx = target.posX - eyePos.x;
+            double dy = target.posY - eyePos.y;
+            double dz = target.posZ - eyePos.z;
+            distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        }
+        double factor = attackRotation ? 0.80D : 0.84D;
+        if (distance < 3.0D) {
+            factor -= (3.0D - distance) * 0.035D;
+        }
+        if (target != null && target.height > 2.35F) {
+            factor -= 0.08D;
+        }
+        double eyeHeight = target == null ? 1.5D : target.getEyeHeight();
+        double maxOffset = target == null ? eyeHeight : Math.max(0.32D, target.height - 0.08D);
+        return MathHelper.clamp(eyeHeight * factor, 0.28D, maxOffset);
+    }
+
+    private double computeAdvancedAimLeadTicks(EntityPlayerSP player, EntityLivingBase target, Vec3d eyePos,
+            double targetX, double targetY, double targetZ, boolean attackRotation) {
+        if (target == null || eyePos == null) {
+            return ADVANCED_AIM_MIN_LEAD_TICKS;
+        }
+        double dx = targetX - eyePos.x;
+        double dy = targetY - eyePos.y;
+        double dz = targetZ - eyePos.z;
+        double distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        double targetMotionX = target.posX - target.lastTickPosX;
+        double targetMotionZ = target.posZ - target.lastTickPosZ;
+        double playerMotionX = player == null ? 0.0D : player.posX - player.lastTickPosX;
+        double playerMotionZ = player == null ? 0.0D : player.posZ - player.lastTickPosZ;
+        double relativeSpeed = Math.sqrt((targetMotionX - playerMotionX) * (targetMotionX - playerMotionX)
+                + (targetMotionZ - playerMotionZ) * (targetMotionZ - playerMotionZ));
+
+        double lead = 0.30D
+                + Math.min(1.05D, distance / 9.0D)
+                + Math.min(0.80D, relativeSpeed * 2.45D);
+        if (attackRotation) {
+            lead += 0.18D;
+        }
+        if (SpeedHandler.enabled) {
+            lead += MathHelper.clamp((double) (SpeedHandler.getCurrentTimerSpeedMultiplier() - 1.0F) * 0.65D,
+                    0.0D, 0.75D);
+        }
+        if (distance < 2.4D) {
+            lead *= 0.58D;
+        }
+        return MathHelper.clamp(lead, ADVANCED_AIM_MIN_LEAD_TICKS, ADVANCED_AIM_MAX_LEAD_TICKS);
+    }
+
+    private double clampPredictionMotion(double motion) {
+        return MathHelper.clamp(motion, -1.15D, 1.15D);
+    }
+
+    private Rotation applyAdvancedOvershootCorrection(EntityPlayerSP player, EntityLivingBase target,
+            Rotation desiredAim, boolean attackRotation) {
+        if (player == null || target == null || desiredAim == null) {
+            return desiredAim;
+        }
+        float yawDelta = MathHelper.wrapDegrees(desiredAim.getYaw() - player.rotationYaw);
+        float pitchDelta = desiredAim.getPitch() - player.rotationPitch;
+        float absYaw = Math.abs(yawDelta);
+        float absPitch = Math.abs(pitchDelta);
+
+        float yawFade = MathHelper.clamp((absYaw - 1.35F) / 24.0F, 0.0F, 1.0F);
+        float pitchFade = MathHelper.clamp((absPitch - 1.0F) / 22.0F, 0.0F, 1.0F);
+        float angularVelocity = Math.abs(computeRelativeYawVelocity(player, target));
+        float yawMax = attackRotation ? ADVANCED_OVERSHOOT_MAX_ATTACK_YAW : ADVANCED_OVERSHOOT_MAX_YAW;
+        float yawOvershoot = MathHelper.clamp(absYaw * 0.045F + angularVelocity * 0.24F, 0.0F, yawMax) * yawFade;
+        float pitchOvershoot = MathHelper.clamp(absPitch * 0.030F, 0.0F, ADVANCED_OVERSHOOT_MAX_PITCH) * pitchFade;
+
+        float correctedYaw = desiredAim.getYaw() + Math.copySign(yawOvershoot, yawDelta);
+        float correctedPitch = desiredAim.getPitch() + Math.copySign(pitchOvershoot, pitchDelta);
+        return new Rotation(MathHelper.wrapDegrees(correctedYaw), MathHelper.clamp(correctedPitch, -90.0F, 90.0F));
+    }
+
+    private float computeRelativeYawVelocity(EntityPlayerSP player, EntityLivingBase target) {
+        if (player == null || target == null) {
+            return 0.0F;
+        }
+        double currentDx = target.posX - player.posX;
+        double currentDz = target.posZ - player.posZ;
+        double previousDx = target.lastTickPosX - player.lastTickPosX;
+        double previousDz = target.lastTickPosZ - player.lastTickPosZ;
+        if ((currentDx * currentDx + currentDz * currentDz) < 1.0E-5D
+                || (previousDx * previousDx + previousDz * previousDz) < 1.0E-5D) {
+            return 0.0F;
+        }
+        float currentYaw = (float) (Math.toDegrees(Math.atan2(currentDz, currentDx)) - 90.0D);
+        float previousYaw = (float) (Math.toDegrees(Math.atan2(previousDz, previousDx)) - 90.0D);
+        return MathHelper.wrapDegrees(currentYaw - previousYaw);
+    }
+
+    private AimOffsetSample sampleAimOffsets(EntityPlayerSP player, EntityLivingBase target) {
+        int tick = player == null ? Integer.MIN_VALUE : player.ticksExisted;
+        int targetEntityId = target == null ? Integer.MIN_VALUE : target.getEntityId();
+        String yawSpec = getAimYawOffsetSpec();
+        String pitchSpec = getAimPitchOffsetSpec();
+        if (this.aimOffsetSampleTick == tick
+                && this.aimOffsetSampleTargetEntityId == targetEntityId
+                && yawSpec.equals(this.aimOffsetSampleYawSpec)
+                && pitchSpec.equals(this.aimOffsetSamplePitchSpec)) {
+            return new AimOffsetSample(this.sampledAimYawOffset, this.sampledAimPitchOffset);
+        }
+
+        this.aimOffsetSampleTick = tick;
+        this.aimOffsetSampleTargetEntityId = targetEntityId;
+        this.aimOffsetSampleYawSpec = yawSpec;
+        this.aimOffsetSamplePitchSpec = pitchSpec;
+        this.sampledAimYawOffset = sampleAimOffset(aimYawOffsetSpec, aimYawOffset);
+        this.sampledAimPitchOffset = sampleAimOffset(aimPitchOffsetSpec, aimPitchOffset);
+        return new AimOffsetSample(this.sampledAimYawOffset, this.sampledAimPitchOffset);
     }
 
     private boolean shouldUseMotionCompensatedVisualAim(EntityPlayerSP player, EntityLivingBase target) {
@@ -2308,6 +2612,123 @@ public class KillAuraHandler implements AbstractGameEventListener {
                 MIN_ATTACK_SEQUENCE_DELAY_TICKS, MAX_ATTACK_SEQUENCE_DELAY_TICKS).toSpec();
     }
 
+    private static float sampleAimOffset(String spec, float fallback) {
+        AimOffsetRange range = parseAimOffsetSpec(spec, fallback);
+        if (!range.isRandom()) {
+            return range.min;
+        }
+        return (float) ThreadLocalRandom.current().nextDouble(range.min, range.max);
+    }
+
+    public static void setAimYawOffsetSpec(String spec) {
+        AimOffsetRange range = parseAimOffsetSpec(spec, aimYawOffset);
+        aimYawOffset = range.min;
+        aimYawOffsetSpec = range.toSpec();
+    }
+
+    public static void setAimPitchOffsetSpec(String spec) {
+        AimOffsetRange range = parseAimOffsetSpec(spec, aimPitchOffset);
+        aimPitchOffset = range.min;
+        aimPitchOffsetSpec = range.toSpec();
+    }
+
+    public static String getAimYawOffsetDisplayText() {
+        return parseAimOffsetSpec(aimYawOffsetSpec, aimYawOffset).toDisplayText();
+    }
+
+    public static String getAimPitchOffsetDisplayText() {
+        return parseAimOffsetSpec(aimPitchOffsetSpec, aimPitchOffset).toDisplayText();
+    }
+
+    public static String getAimYawOffsetSpec() {
+        return parseAimOffsetSpec(aimYawOffsetSpec, aimYawOffset).toSpec();
+    }
+
+    public static String getAimPitchOffsetSpec() {
+        return parseAimOffsetSpec(aimPitchOffsetSpec, aimPitchOffset).toSpec();
+    }
+
+    private static AimOffsetRange parseAimOffsetSpec(String spec, float fallback) {
+        float safeFallback = MathHelper.clamp(Float.isNaN(fallback) ? DEFAULT_AIM_OFFSET : fallback,
+                MIN_AIM_OFFSET, MAX_AIM_OFFSET);
+        String normalized = spec == null ? "" : spec.trim();
+        if (normalized.isEmpty()) {
+            return new AimOffsetRange(safeFallback, safeFallback);
+        }
+
+        normalized = normalized.replace("°", "")
+                .replace("，", ",")
+                .replace("－", "-")
+                .replace("–", "-")
+                .replace("—", "-")
+                .replace("～", "~")
+                .replace("至", "~")
+                .replace("到", "~")
+                .trim();
+
+        Matcher matcher = Pattern.compile("^([+-]?(?:\\d+(?:\\.\\d+)?|\\.\\d+))\\s*(?:[-~]\\s*([+-]?(?:\\d+(?:\\.\\d+)?|\\.\\d+)))?$")
+                .matcher(normalized);
+        try {
+            if (matcher.matches()) {
+                float first = Float.parseFloat(matcher.group(1));
+                String secondText = matcher.group(2);
+                if (secondText == null || secondText.trim().isEmpty()) {
+                    float value = MathHelper.clamp(first, MIN_AIM_OFFSET, MAX_AIM_OFFSET);
+                    return new AimOffsetRange(value, value);
+                }
+                float second = Float.parseFloat(secondText);
+                float min = MathHelper.clamp(Math.min(first, second), MIN_AIM_OFFSET, MAX_AIM_OFFSET);
+                float max = MathHelper.clamp(Math.max(first, second), MIN_AIM_OFFSET, MAX_AIM_OFFSET);
+                return new AimOffsetRange(min, Math.max(min, max));
+            }
+        } catch (Exception ignored) {
+        }
+        return new AimOffsetRange(safeFallback, safeFallback);
+    }
+
+    private static String formatAimOffsetValue(float value) {
+        float clamped = MathHelper.clamp(value, MIN_AIM_OFFSET, MAX_AIM_OFFSET);
+        if (Math.abs(clamped - Math.round(clamped)) < 0.00005F) {
+            return String.valueOf(Math.round(clamped));
+        }
+        return String.format(Locale.ROOT, "%.4f", clamped).replaceAll("0+$", "").replaceAll("\\.$", "");
+    }
+
+    private static final class AimOffsetRange {
+        private final float min;
+        private final float max;
+
+        private AimOffsetRange(float min, float max) {
+            this.min = MathHelper.clamp(min, MIN_AIM_OFFSET, MAX_AIM_OFFSET);
+            this.max = MathHelper.clamp(Math.max(this.min, max), MIN_AIM_OFFSET, MAX_AIM_OFFSET);
+        }
+
+        private boolean isRandom() {
+            return this.max - this.min > 0.000001F;
+        }
+
+        private String toSpec() {
+            if (!isRandom()) {
+                return formatAimOffsetValue(this.min);
+            }
+            return formatAimOffsetValue(this.min) + "-" + formatAimOffsetValue(this.max);
+        }
+
+        private String toDisplayText() {
+            return toSpec();
+        }
+    }
+
+    private static final class AimOffsetSample {
+        private final float yaw;
+        private final float pitch;
+
+        private AimOffsetSample(float yaw, float pitch) {
+            this.yaw = yaw;
+            this.pitch = pitch;
+        }
+    }
+
     private float getTargetSearchRadius() {
         return isHuntEnabled() ? Math.max(attackRange, huntRadius) : attackRange;
     }
@@ -2354,6 +2775,10 @@ public class KillAuraHandler implements AbstractGameEventListener {
 
     private boolean isSequenceAttackMode() {
         return ATTACK_MODE_SEQUENCE.equalsIgnoreCase(attackMode);
+    }
+
+    private boolean isMouseClickAttackMode() {
+        return ATTACK_MODE_MOUSE_CLICK.equalsIgnoreCase(attackMode);
     }
 
     private boolean shouldRotateToTarget() {
@@ -3663,6 +4088,9 @@ public class KillAuraHandler implements AbstractGameEventListener {
         preset.attackSequenceDelayTicks = attackSequenceDelayTicks;
         preset.attackSequenceDelayTicksSpec = attackSequenceDelayTicksSpec;
         preset.aimYawOffset = aimYawOffset;
+        preset.aimYawOffsetSpec = aimYawOffsetSpec;
+        preset.aimPitchOffset = aimPitchOffset;
+        preset.aimPitchOffsetSpec = aimPitchOffsetSpec;
         preset.huntMode = huntMode;
         preset.huntPickupItemsEnabled = huntPickupItemsEnabled;
         preset.visualizeHuntRadius = visualizeHuntRadius;
@@ -3720,7 +4148,14 @@ public class KillAuraHandler implements AbstractGameEventListener {
                 MAX_ATTACK_SEQUENCE_DELAY_TICKS);
         normalizedPreset.attackSequenceDelayTicks = attackSequenceDelayRange.getMin();
         normalizedPreset.attackSequenceDelayTicksSpec = attackSequenceDelayRange.toSpec();
-        normalizedPreset.aimYawOffset = MathHelper.clamp(normalizedPreset.aimYawOffset, -30.0F, 30.0F);
+        AimOffsetRange presetYawOffsetRange = parseAimOffsetSpec(normalizedPreset.aimYawOffsetSpec,
+                normalizedPreset.aimYawOffset);
+        normalizedPreset.aimYawOffset = presetYawOffsetRange.min;
+        normalizedPreset.aimYawOffsetSpec = presetYawOffsetRange.toSpec();
+        AimOffsetRange presetPitchOffsetRange = parseAimOffsetSpec(normalizedPreset.aimPitchOffsetSpec,
+                normalizedPreset.aimPitchOffset);
+        normalizedPreset.aimPitchOffset = presetPitchOffsetRange.min;
+        normalizedPreset.aimPitchOffsetSpec = presetPitchOffsetRange.toSpec();
         normalizedPreset.huntRadius = MathHelper.clamp(normalizedPreset.huntRadius, normalizedPreset.attackRange, 100.0F);
         normalizedPreset.huntFixedDistance = MathHelper.clamp(normalizedPreset.huntFixedDistance, 0.5F, 100.0F);
         normalizedPreset.huntOrbitSamplePoints = MathHelper.clamp(normalizedPreset.huntOrbitSamplePoints,
@@ -3734,6 +4169,8 @@ public class KillAuraHandler implements AbstractGameEventListener {
             normalizedPreset.attackMode = ATTACK_MODE_TELEPORT;
         } else if (ATTACK_MODE_SEQUENCE.equals(normalizedAttackMode)) {
             normalizedPreset.attackMode = ATTACK_MODE_SEQUENCE;
+        } else if (ATTACK_MODE_MOUSE_CLICK.equals(normalizedAttackMode)) {
+            normalizedPreset.attackMode = ATTACK_MODE_MOUSE_CLICK;
         } else {
             normalizedPreset.attackMode = ATTACK_MODE_NORMAL;
         }
@@ -3770,7 +4207,12 @@ public class KillAuraHandler implements AbstractGameEventListener {
                 attackSequenceDelayTicks, MIN_ATTACK_SEQUENCE_DELAY_TICKS, MAX_ATTACK_SEQUENCE_DELAY_TICKS);
         attackSequenceDelayTicks = attackSequenceDelayRange.getMin();
         attackSequenceDelayTicksSpec = attackSequenceDelayRange.toSpec();
-        aimYawOffset = MathHelper.clamp(aimYawOffset, -30.0F, 30.0F);
+        AimOffsetRange yawOffsetRange = parseAimOffsetSpec(aimYawOffsetSpec, aimYawOffset);
+        aimYawOffset = yawOffsetRange.min;
+        aimYawOffsetSpec = yawOffsetRange.toSpec();
+        AimOffsetRange pitchOffsetRange = parseAimOffsetSpec(aimPitchOffsetSpec, aimPitchOffset);
+        aimPitchOffset = pitchOffsetRange.min;
+        aimPitchOffsetSpec = pitchOffsetRange.toSpec();
         huntRadius = MathHelper.clamp(huntRadius, attackRange, 100.0F);
         huntFixedDistance = MathHelper.clamp(huntFixedDistance, 0.5F, 100.0F);
         huntOrbitSamplePoints = MathHelper.clamp(huntOrbitSamplePoints,
@@ -3788,6 +4230,8 @@ public class KillAuraHandler implements AbstractGameEventListener {
             attackMode = ATTACK_MODE_TELEPORT;
         } else if (ATTACK_MODE_SEQUENCE.equals(normalizedAttackMode)) {
             attackMode = ATTACK_MODE_SEQUENCE;
+        } else if (ATTACK_MODE_MOUSE_CLICK.equals(normalizedAttackMode)) {
+            attackMode = ATTACK_MODE_MOUSE_CLICK;
         } else {
             attackMode = ATTACK_MODE_NORMAL;
         }

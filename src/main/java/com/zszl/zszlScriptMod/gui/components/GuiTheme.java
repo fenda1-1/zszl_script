@@ -414,10 +414,12 @@ public final class GuiTheme {
         int fullSampleW = Math.max(1, Math.min(texW, Math.round(groupWidth * scaleFactor)));
         int fullSampleH = Math.max(1, Math.min(texH, Math.round(groupHeight * scaleFactor)));
 
-        int segOffsetX = Math.max(0, Math.round((x - groupX) * scaleFactor));
-        int segOffsetY = Math.max(0, Math.round((y - groupY) * scaleFactor));
-        int segSampleW = Math.max(1, Math.round(width * scaleFactor));
-        int segSampleH = Math.max(1, Math.round(height * scaleFactor));
+        float groupSafeW = Math.max(1.0F, groupWidth);
+        float groupSafeH = Math.max(1.0F, groupHeight);
+        int segOffsetX = Math.max(0, Math.round(((x - groupX) / groupSafeW) * fullSampleW));
+        int segOffsetY = Math.max(0, Math.round(((y - groupY) / groupSafeH) * fullSampleH));
+        int segSampleW = Math.max(1, Math.round((width / groupSafeW) * fullSampleW));
+        int segSampleH = Math.max(1, Math.round((height / groupSafeH) * fullSampleH));
 
         int uBase = Math.max(0, cropX);
         int vBase = Math.max(0, cropY);
@@ -433,6 +435,12 @@ public final class GuiTheme {
         int v = vBase + segOffsetY;
 
         // 保证分片采样范围不越界
+        if (segOffsetX + segSampleW > fullSampleW) {
+            segSampleW = Math.max(1, fullSampleW - segOffsetX);
+        }
+        if (segOffsetY + segSampleH > fullSampleH) {
+            segSampleH = Math.max(1, fullSampleH - segOffsetY);
+        }
         if (u + segSampleW > texW) {
             segSampleW = Math.max(1, texW - u);
         }

@@ -9,6 +9,44 @@ import net.minecraft.client.gui.GuiScreen;
 import net.minecraft.client.gui.GuiTextField;
 
 public class ThemedGuiScreen extends GuiScreen {
+    protected float readableUiScale = 1.0F;
+    protected int rawScreenWidth = 0;
+    protected int rawScreenHeight = 0;
+
+    protected void applyReadableUiScaleForLargeScreen(int targetWidth, int targetHeight) {
+        this.rawScreenWidth = this.width;
+        this.rawScreenHeight = this.height;
+        int safeTargetWidth = Math.max(640, targetWidth);
+        int safeTargetHeight = Math.max(360, targetHeight);
+        float widthScale = this.width / (float) safeTargetWidth;
+        float heightScale = this.height / (float) safeTargetHeight;
+        this.readableUiScale = Math.max(1.0F, Math.min(1.8F, Math.min(widthScale, heightScale)));
+        if (this.readableUiScale <= 1.02F) {
+            this.readableUiScale = 1.0F;
+            return;
+        }
+        this.width = Math.max(1, Math.round(this.rawScreenWidth / this.readableUiScale));
+        this.height = Math.max(1, Math.round(this.rawScreenHeight / this.readableUiScale));
+    }
+
+    protected int toReadableMouseX(int mouseX) {
+        return this.readableUiScale <= 1.0F ? mouseX : Math.round(mouseX / this.readableUiScale);
+    }
+
+    protected int toReadableMouseY(int mouseY) {
+        return this.readableUiScale <= 1.0F ? mouseY : Math.round(mouseY / this.readableUiScale);
+    }
+
+    protected void pushReadableUiScale() {
+        GlStateManager.pushMatrix();
+        if (this.readableUiScale > 1.0F) {
+            GlStateManager.scale(this.readableUiScale, this.readableUiScale, 1.0F);
+        }
+    }
+
+    protected void popReadableUiScale() {
+        GlStateManager.popMatrix();
+    }
 
     protected void drawThemedTextField(GuiTextField field) {
         if (field == null) {

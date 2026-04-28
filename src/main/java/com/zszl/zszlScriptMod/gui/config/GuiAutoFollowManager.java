@@ -214,6 +214,7 @@ public class GuiAutoFollowManager extends ThemedGuiScreen {
     public void initGui() {
         Keyboard.enableRepeatEvents(true);
         this.buttonList.clear();
+        applyReadableUiScaleForLargeScreen(1180, 660);
 
         recalcLayout();
         initEditorFields();
@@ -1724,35 +1725,42 @@ public class GuiAutoFollowManager extends ThemedGuiScreen {
 
     @Override
     public void drawScreen(int mouseX, int mouseY, float partialTicks) {
-        drawDefaultBackground();
+        mouseX = toReadableMouseX(mouseX);
+        mouseY = toReadableMouseY(mouseY);
+        pushReadableUiScale();
+        try {
+            drawDefaultBackground();
 
-        GuiTheme.drawPanel(panelX, panelY, panelWidth, panelHeight);
-        GuiTheme.drawTitleBar(panelX, panelY, panelWidth,
-                I18n.format("gui.autofollow.manager.title"), this.fontRenderer);
+            GuiTheme.drawPanel(panelX, panelY, panelWidth, panelHeight);
+            GuiTheme.drawTitleBar(panelX, panelY, panelWidth,
+                    I18n.format("gui.autofollow.manager.title"), this.fontRenderer);
 
-        GuiTheme.drawInputFrameSafe(panelX + 10, panelY + 22, panelWidth - 20, 18, false, true);
-        drawString(this.fontRenderer, statusMessage, panelX + 14, panelY + 27, statusColor);
+            GuiTheme.drawInputFrameSafe(panelX + 10, panelY + 22, panelWidth - 20, 18, false, true);
+            drawString(this.fontRenderer, statusMessage, panelX + 14, panelY + 27, statusColor);
 
-        drawTreePanel(mouseX, mouseY);
-        drawCardPanel(mouseX, mouseY);
-        drawEditorPanel(mouseX, mouseY);
+            drawTreePanel(mouseX, mouseY);
+            drawCardPanel(mouseX, mouseY);
+            drawEditorPanel(mouseX, mouseY);
 
-        super.drawScreen(mouseX, mouseY, partialTicks);
+            super.drawScreen(mouseX, mouseY, partialTicks);
 
-        if (treeDragging) {
-            drawTreeDragOverlay(mouseX, mouseY);
-        }
-
-        if (contextMenuVisible) {
-            drawContextMenu(mouseX, mouseY);
-        } else {
-            List<String> hoverLines = getCardHoverTooltipLines(mouseX, mouseY);
-            if ((hoverLines == null || hoverLines.isEmpty())) {
-                hoverLines = getEditorHoverTooltipLines(mouseX, mouseY);
+            if (treeDragging) {
+                drawTreeDragOverlay(mouseX, mouseY);
             }
-            if (hoverLines != null && !hoverLines.isEmpty()) {
-                drawHoveringText(hoverLines, mouseX, mouseY);
+
+            if (contextMenuVisible) {
+                drawContextMenu(mouseX, mouseY);
+            } else {
+                List<String> hoverLines = getCardHoverTooltipLines(mouseX, mouseY);
+                if ((hoverLines == null || hoverLines.isEmpty())) {
+                    hoverLines = getEditorHoverTooltipLines(mouseX, mouseY);
+                }
+                if (hoverLines != null && !hoverLines.isEmpty()) {
+                    drawHoveringText(hoverLines, mouseX, mouseY);
+                }
             }
+        } finally {
+            popReadableUiScale();
         }
     }
 

@@ -74,8 +74,8 @@ public class SingleItemFeatureConfigScreen extends SimpleFeatureConfigScreen {
         case "always_critical":
             return "触发方式 : 攻击前补发暴击包";
         case "drop_all":
-            return "丢弃关键词 : " + (ItemFeatureManager.getDropAllKeywordsText().isEmpty()
-                    ? "未配置" : ItemFeatureManager.getDropAllKeywordsText());
+            String summary = ItemFeatureManager.getDropAllExpressionSummary();
+            return "丢弃表达式 : " + (summary.isEmpty() ? "未配置" : summary);
         case "inventory_sort":
             return "整理范围 : 主背包 9-35 格";
         case "shulker_preview":
@@ -88,7 +88,7 @@ public class SingleItemFeatureConfigScreen extends SimpleFeatureConfigScreen {
     @Override
     protected String getSecondaryOptionButtonLabel() {
         if ("drop_all".equals(this.featureId)) {
-            return "丢弃间隔 : " + ItemFeatureManager.getDropAllDelayTicks() + " tick";
+            return "扔出物品间隔 : " + ItemFeatureManager.getDropAllDelayTicks() + " tick";
         }
         return "";
     }
@@ -114,9 +114,9 @@ public class SingleItemFeatureConfigScreen extends SimpleFeatureConfigScreen {
                     "§7攻击实体前发送短暂伪下落位置包。",
                     "§7当前功能没有额外可调参数。");
         case "drop_all":
-            return Arrays.asList("§e丢弃关键词",
-                    "§7多个关键词可用逗号分隔。",
-                    "§7命中关键词的物品会被自动丢弃。");
+            return Arrays.asList("§e丢弃表达式",
+                    "§7可配置多条背包物品过滤表达式。",
+                    "§7命中任意表达式的物品会被自动丢弃。");
         case "inventory_sort":
             return Arrays.asList("§e整理范围",
                     "§7当前固定整理主背包 9-35 格，不整理热栏。",
@@ -133,8 +133,8 @@ public class SingleItemFeatureConfigScreen extends SimpleFeatureConfigScreen {
     @Override
     protected List<String> getSecondaryOptionTooltipLines() {
         if ("drop_all".equals(this.featureId)) {
-            return Arrays.asList("§e丢弃间隔",
-                    "§7控制自动丢弃两次物品之间的间隔 tick。");
+            return Arrays.asList("§e扔出物品间隔",
+                    "§7控制自动扔出两次物品之间的间隔 tick。");
         }
         return Collections.emptyList();
     }
@@ -151,11 +151,7 @@ public class SingleItemFeatureConfigScreen extends SimpleFeatureConfigScreen {
                     ItemFeatureManager::setAutoEquipIntervalTicks);
             return;
         case "drop_all":
-            this.mc.displayGuiScreen(new GuiTextInput(this, "输入丢弃关键词（逗号分隔）",
-                    ItemFeatureManager.getDropAllKeywordsText(), value -> {
-                        ItemFeatureManager.setDropAllKeywordsText(value);
-                        this.mc.displayGuiScreen(this);
-                    }));
+            this.mc.displayGuiScreen(new GuiDropAllExpressionConfig(this));
             return;
         default:
             return;
@@ -167,7 +163,7 @@ public class SingleItemFeatureConfigScreen extends SimpleFeatureConfigScreen {
         if (!"drop_all".equals(this.featureId)) {
             return;
         }
-        openIntegerInput("输入丢弃间隔 (0 - 20 tick)", ItemFeatureManager.getDropAllDelayTicks(), 0, 20,
+        openIntegerInput("输入扔出物品间隔 (0 - 20 tick)", ItemFeatureManager.getDropAllDelayTicks(), 0, 20,
                 ItemFeatureManager::setDropAllDelayTicks);
     }
 

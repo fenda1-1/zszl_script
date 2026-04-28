@@ -76,10 +76,7 @@ public final class AutoReconnectRuntime {
                     clearState();
                     return;
                 }
-                GuiScreen parent = mc.currentScreen instanceof GuiMultiplayer
-                        ? mc.currentScreen
-                        : new GuiMultiplayer(new GuiMainMenu());
-                mc.displayGuiScreen(new GuiConnecting(parent, mc, reconnectTarget));
+                mc.displayGuiScreen(new GuiConnecting(resolveReconnectParentScreen(mc), mc, reconnectTarget));
                 this.reconnectAttemptCount++;
                 this.reconnectDelayTicks = Math.max(0, retryDelayTicks);
                 this.reconnectKeepAliveTicks = 200;
@@ -133,5 +130,12 @@ public final class AutoReconnectRuntime {
                 ? source.serverIP.trim()
                 : source.serverName;
         return new ServerData(name, source.serverIP.trim(), false);
+    }
+
+    private static GuiScreen resolveReconnectParentScreen(Minecraft mc) {
+        if (mc != null && mc.currentScreen instanceof GuiMultiplayer) {
+            return (GuiScreen) mc.currentScreen;
+        }
+        return new GuiMultiplayer(new GuiMainMenu());
     }
 }

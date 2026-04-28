@@ -66,6 +66,7 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
     private static final int BTN_ROTATE_ONLY_ON_ATTACK = 43;
     private static final int BTN_SMOOTH_MAX_TURN_STEP = 44;
     private static final int BTN_RELOCK_ONLY_WHEN_NO_CROSSHAIR_TARGET = 45;
+    private static final int BTN_AIM_PITCH_OFFSET = 46;
 
     private static final int BTN_SAVE = 100;
     private static final int BTN_DEFAULT = 101;
@@ -118,6 +119,7 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
 
     private GuiButton attackModeButton;
     private GuiButton aimYawOffsetButton;
+    private GuiButton aimPitchOffsetButton;
     private GuiButton smoothMaxTurnStepButton;
     private GuiButton rangeButton;
     private GuiButton minStrengthButton;
@@ -308,6 +310,7 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
 
         attackModeButton = new ThemedButton(BTN_ATTACK_MODE, 0, 0, 100, 20, "");
         aimYawOffsetButton = new ThemedButton(BTN_AIM_YAW_OFFSET, 0, 0, 100, 20, "");
+        aimPitchOffsetButton = new ThemedButton(BTN_AIM_PITCH_OFFSET, 0, 0, 100, 20, "");
         smoothMaxTurnStepButton = new ThemedButton(BTN_SMOOTH_MAX_TURN_STEP, 0, 0, 100, 20, "");
         rangeButton = new ThemedButton(BTN_RANGE, 0, 0, 100, 20, "");
         minStrengthButton = new ThemedButton(BTN_MIN_STRENGTH, 0, 0, 100, 20, "");
@@ -362,6 +365,7 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
         this.buttonList.add(nameBlacklistButton);
         this.buttonList.add(attackModeButton);
         this.buttonList.add(aimYawOffsetButton);
+        this.buttonList.add(aimPitchOffsetButton);
         this.buttonList.add(smoothMaxTurnStepButton);
         this.buttonList.add(rangeButton);
         this.buttonList.add(minStrengthButton);
@@ -403,6 +407,7 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
         boolean packetMode = KillAuraHandler.ATTACK_MODE_PACKET.equalsIgnoreCase(KillAuraHandler.attackMode);
         boolean teleportMode = KillAuraHandler.ATTACK_MODE_TELEPORT.equalsIgnoreCase(KillAuraHandler.attackMode);
         boolean sequenceMode = KillAuraHandler.ATTACK_MODE_SEQUENCE.equalsIgnoreCase(KillAuraHandler.attackMode);
+        boolean mouseClickMode = KillAuraHandler.ATTACK_MODE_MOUSE_CLICK.equalsIgnoreCase(KillAuraHandler.attackMode);
         boolean aimOnly = KillAuraHandler.aimOnlyMode;
         boolean huntEnabled = KillAuraHandler.isHuntEnabled();
 
@@ -427,8 +432,12 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
                 + stateText(KillAuraHandler.relockOnlyWhenNoCrosshairTarget);
         relockOnlyWhenNoCrosshairTargetButton.enabled = !packetMode && (aimOnly || KillAuraHandler.rotateToTarget);
 
-        aimYawOffsetButton.displayString = "索敌视角偏移: " + formatSignedPreciseFloat(KillAuraHandler.aimYawOffset) + "°";
+        aimYawOffsetButton.displayString = "索敌水平偏移: "
+                + KillAuraHandler.getAimYawOffsetDisplayText() + "°";
         aimYawOffsetButton.enabled = !packetMode || aimOnly;
+        aimPitchOffsetButton.displayString = "索敌垂直偏移: "
+                + KillAuraHandler.getAimPitchOffsetDisplayText() + "°";
+        aimPitchOffsetButton.enabled = !packetMode || aimOnly;
 
         lineOfSightButton.setEnabledState(KillAuraHandler.requireLineOfSight);
         lineOfSightButton.displayString = "必须可见: " + stateText(KillAuraHandler.requireLineOfSight);
@@ -485,8 +494,7 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
         nameBlacklistButton.setEnabledState(KillAuraHandler.enableNameBlacklist);
         nameBlacklistButton.displayString = "启用名称黑名单: " + stateText(KillAuraHandler.enableNameBlacklist);
 
-        String attackModeName = sequenceMode ? "执行序列"
-                : (packetMode ? "数据包攻击" : (teleportMode ? "TP攻击" : "普通攻击"));
+        String attackModeName = getAttackModeDisplayName(KillAuraHandler.attackMode);
         attackModeButton.displayString = aimOnly ? "攻击模式: 执行序列(只瞄准默认)" : "攻击模式: " + attackModeName;
         attackModeButton.enabled = !aimOnly;
         attackModeDropdown.syncFromCurrentMode();
@@ -507,9 +515,9 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
         }
         attackSequenceButton.displayString = trimToWidth(sequenceText, Math.max(40, attackSequenceButton.width - 10));
         attackSequenceButton.enabled = sequenceMode;
-        attackSequenceDelayButton.displayString = "执行延迟: "
+        attackSequenceDelayButton.displayString = (mouseClickMode ? "鼠标点击延迟: " : "执行延迟: ")
                 + KillAuraHandler.getAttackSequenceDelayTicksDisplayText() + " Tick";
-        attackSequenceDelayButton.enabled = sequenceMode;
+        attackSequenceDelayButton.enabled = sequenceMode || mouseClickMode;
 
         huntRadiusButton.displayString = "追击半径: " + formatFloat(KillAuraHandler.huntRadius) + " 格";
         huntFixedDistanceButton.displayString = "固定距离: " + formatFloat(KillAuraHandler.huntFixedDistance) + " 格";
@@ -575,15 +583,17 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
         int rightX = leftX + buttonW + columnGap;
         boolean packetMode = KillAuraHandler.ATTACK_MODE_PACKET.equalsIgnoreCase(KillAuraHandler.attackMode);
         boolean sequenceMode = KillAuraHandler.ATTACK_MODE_SEQUENCE.equalsIgnoreCase(KillAuraHandler.attackMode);
+        boolean mouseClickMode = KillAuraHandler.ATTACK_MODE_MOUSE_CLICK.equalsIgnoreCase(KillAuraHandler.attackMode);
 
         int totalContentHeight = layoutSelectedGroup(leftX, rightX, fullWidth, buttonW, buttonHeight, rowStep,
-                packetMode, sequenceMode, false);
+                packetMode, sequenceMode, mouseClickMode, false);
         int visibleContentHeight = Math.max(24, this.contentBottom - this.contentTop);
         this.contentMaxScroll = Math.max(0, totalContentHeight - visibleContentHeight);
         this.contentScroll = clampInt(this.contentScroll, 0, this.contentMaxScroll);
 
         hideAllContentButtons();
-        layoutSelectedGroup(leftX, rightX, fullWidth, buttonW, buttonHeight, rowStep, packetMode, sequenceMode, true);
+        layoutSelectedGroup(leftX, rightX, fullWidth, buttonW, buttonHeight, rowStep, packetMode, sequenceMode,
+                mouseClickMode, true);
 
         int footerY = this.panelY + this.panelHeight - 28;
         int footerGap = 6;
@@ -606,12 +616,13 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
     }
 
     private int layoutSelectedGroup(int leftX, int rightX, int fullWidth, int buttonW, int buttonHeight, int rowStep,
-            boolean packetMode, boolean sequenceMode, boolean layout) {
+            boolean packetMode, boolean sequenceMode, boolean mouseClickMode, boolean layout) {
         switch (this.selectedGroup) {
         case PRESET:
             return layoutPresetGroup(leftX, fullWidth, buttonHeight, rowStep, layout);
         case ATTACK:
-            return layoutAttackGroup(leftX, rightX, buttonW, buttonHeight, rowStep, packetMode, sequenceMode, layout);
+            return layoutAttackGroup(leftX, rightX, buttonW, buttonHeight, rowStep, packetMode, sequenceMode,
+                    mouseClickMode, layout);
         case TARGET:
             return layoutTargetGroup(leftX, rightX, buttonW, buttonHeight, rowStep, layout);
         case NAME_FILTER:
@@ -653,7 +664,7 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
     }
 
     private int layoutAttackGroup(int leftX, int rightX, int buttonW, int buttonHeight, int rowStep, boolean packetMode,
-            boolean sequenceMode, boolean layout) {
+            boolean sequenceMode, boolean mouseClickMode, boolean layout) {
         boolean showRotationControls = !packetMode || KillAuraHandler.aimOnlyMode;
         int currentY = 0;
         int fullButtonWidth = rightX + buttonW - leftX;
@@ -674,6 +685,10 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
         } else {
             placeContentButton(onlyWeaponButton, leftX, currentY, buttonW, buttonHeight, layout);
             placeContentButton(aimOnlyButton, rightX, currentY, buttonW, buttonHeight, layout);
+            if (mouseClickMode) {
+                currentY += rowStep;
+                placeContentButton(attackSequenceDelayButton, leftX, currentY, fullButtonWidth, buttonHeight, layout);
+            }
         }
 
         currentY += rowStep;
@@ -692,7 +707,8 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
             currentY += rowStep;
             placeContentButton(rotateOnlyOnAttackButton, leftX, currentY, fullButtonWidth, buttonHeight, layout);
             currentY += rowStep;
-            placeContentButton(aimYawOffsetButton, leftX, currentY, fullButtonWidth, buttonHeight, layout);
+            placeContentButton(aimYawOffsetButton, leftX, currentY, buttonW, buttonHeight, layout);
+            placeContentButton(aimPitchOffsetButton, rightX, currentY, buttonW, buttonHeight, layout);
         } else {
             if (layout) {
                 hideButton(rotateButton);
@@ -701,6 +717,7 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
                 hideButton(relockOnlyWhenNoCrosshairTargetButton);
                 hideButton(rotateOnlyOnAttackButton);
                 hideButton(aimYawOffsetButton);
+                hideButton(aimPitchOffsetButton);
             }
             currentY -= rowStep;
         }
@@ -861,6 +878,7 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
         hideButton(nameBlacklistButton);
         hideButton(attackModeButton);
         hideButton(aimYawOffsetButton);
+        hideButton(aimPitchOffsetButton);
         hideButton(rangeButton);
         hideButton(minStrengthButton);
         hideButton(minTurnSpeedButton);
@@ -1383,11 +1401,10 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
             KillAuraHandler.relockOnlyWhenNoCrosshairTarget = !KillAuraHandler.relockOnlyWhenNoCrosshairTarget;
             break;
         case BTN_AIM_YAW_OFFSET:
-            openPreciseFloatInput("输入索敌视角偏移 (-30.0000 - 30.0000，正数向右，负数向左)",
-                    KillAuraHandler.aimYawOffset, -30.0F, 30.0F, value -> {
-                        KillAuraHandler.aimYawOffset = value;
-                        refreshButtonTexts();
-                    });
+            openAimOffsetInput(true);
+            return;
+        case BTN_AIM_PITCH_OFFSET:
+            openAimOffsetInput(false);
             return;
         case BTN_LINE_OF_SIGHT:
             KillAuraHandler.requireLineOfSight = !KillAuraHandler.requireLineOfSight;
@@ -1442,6 +1459,8 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
                 applyAttackMode(KillAuraHandler.ATTACK_MODE_TELEPORT);
             } else if (KillAuraHandler.ATTACK_MODE_TELEPORT.equalsIgnoreCase(KillAuraHandler.attackMode)) {
                 applyAttackMode(KillAuraHandler.ATTACK_MODE_SEQUENCE);
+            } else if (KillAuraHandler.ATTACK_MODE_SEQUENCE.equalsIgnoreCase(KillAuraHandler.attackMode)) {
+                applyAttackMode(KillAuraHandler.ATTACK_MODE_MOUSE_CLICK);
             } else {
                 applyAttackMode(KillAuraHandler.ATTACK_MODE_NORMAL);
             }
@@ -1456,7 +1475,10 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
             }));
             return;
         case BTN_ATTACK_SEQUENCE_DELAY:
-            mc.displayGuiScreen(new GuiTextInput(this, "输入执行序列延迟 Tick (0 - 200，支持 3-5 随机)",
+            boolean mouseClickMode = KillAuraHandler.ATTACK_MODE_MOUSE_CLICK.equalsIgnoreCase(KillAuraHandler.attackMode);
+            mc.displayGuiScreen(new GuiTextInput(this,
+                    mouseClickMode ? "输入鼠标点击延迟 Tick (0 - 200，支持 3-5 随机)"
+                            : "输入执行序列延迟 Tick (0 - 200，支持 3-5 随机)",
                     KillAuraHandler.getAttackSequenceDelayTicksSpec(), value -> {
                         KillAuraHandler.setAttackSequenceDelayTicksSpec(value);
                         refreshButtonTexts();
@@ -1789,16 +1811,24 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
                             "§7数据包攻击：直接发送攻击包，不移动视角。",
                             "§7TP攻击：当攻击范围大于 6 格时，分段发送位置包贴近目标攻击后返回原位。",
                             "§7执行序列：命中触发条件后，独立执行你选定的攻击序列。",
+                            "§7模拟鼠标点击：命中准星碰撞箱后，在屏幕中心模拟一次左键点击。",
                             "§7开启只瞄准后，会默认切到执行序列模式。", "§7切到数据包模式后会自动关闭并隐藏转向相关选项。"),
                     mouseX, mouseY);
         } else if (attackSequenceButton.visible && isMouseOver(mouseX, mouseY, attackSequenceButton)) {
             drawHoveringText(Arrays.asList("§e攻击序列", "§7选择一个已有路径序列，作为杀戮光环的自定义攻击动作。", "§7该序列由杀戮光环独立执行，不会打断当前正在跑的其他主序列。",
                     "§7为避免互相抢控制，带导航、狩猎、再调序列等动作会被自动忽略。"), mouseX, mouseY);
         } else if (attackSequenceDelayButton.visible && isMouseOver(mouseX, mouseY, attackSequenceDelayButton)) {
-            drawHoveringText(Arrays.asList("§e执行延迟", "§7控制杀戮光环两次触发攻击序列之间的独立冷却时间。", "§7这个延迟只影响杀戮光环自己的序列触发，",
-                    "§7可以填固定 Tick，也可以填 3-5 这种范围。",
-                    "§7范围模式下每次触发序列后都会随机抽取下一次冷却。",
-                    "§7不会改动其他路径序列本身的循环或等待设置。"), mouseX, mouseY);
+            if (KillAuraHandler.ATTACK_MODE_MOUSE_CLICK.equalsIgnoreCase(KillAuraHandler.attackMode)) {
+                drawHoveringText(Arrays.asList("§e鼠标点击延迟", "§7控制模拟鼠标点击攻击两次点击之间的独立冷却时间。",
+                        "§7可以填固定 Tick，也可以填 3-5 这种范围。",
+                        "§7范围模式下每次点击后都会随机抽取下一次冷却。",
+                        "§7打开任意 GUI 时不会模拟点击。"), mouseX, mouseY);
+            } else {
+                drawHoveringText(Arrays.asList("§e执行延迟", "§7控制杀戮光环两次触发攻击序列之间的独立冷却时间。", "§7这个延迟只影响杀戮光环自己的序列触发，",
+                        "§7可以填固定 Tick，也可以填 3-5 这种范围。",
+                        "§7范围模式下每次触发序列后都会随机抽取下一次冷却。",
+                        "§7不会改动其他路径序列本身的循环或等待设置。"), mouseX, mouseY);
+            }
         } else if (aimOnlyButton.visible && isMouseOver(mouseX, mouseY, aimOnlyButton)) {
             drawHoveringText(
                     Arrays.asList("§e只瞄准不攻击", "§7开启后只会锁定杀戮范围内的目标并转向，", "§7不会进行普通攻击或数据包攻击。",
@@ -1822,8 +1852,16 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
                     "§7当准星线上没有可攻击目标时，才会重新转向目标。"), mouseX, mouseY);
         } else if (rotateOnlyOnAttackButton.visible && isMouseOver(mouseX, mouseY, rotateOnlyOnAttackButton)) {
             drawHoveringText(Arrays.asList("§e仅出手时转向", "§7开启后不会在索敌或追击时持续锁视角。",
-                    "§7只有普通攻击、TP攻击或攻击序列准备触发时才会移动视角。",
+                    "§7只有普通攻击、TP攻击、模拟点击或攻击序列准备触发时才会移动视角。",
                     "§7如果同时开启平滑转向，出手前也会按平滑转向处理。"), mouseX, mouseY);
+        } else if (aimYawOffsetButton.visible && isMouseOver(mouseX, mouseY, aimYawOffsetButton)) {
+            drawHoveringText(Arrays.asList("§e索敌水平偏移", "§7正数向右，负数向左。",
+                    "§7可以填固定小数，也可以填 0.11-0.34 这种范围。",
+                    "§7范围模式下每 Tick 对当前目标随机抽取一次偏移。"), mouseX, mouseY);
+        } else if (aimPitchOffsetButton.visible && isMouseOver(mouseX, mouseY, aimPitchOffsetButton)) {
+            drawHoveringText(Arrays.asList("§e索敌垂直偏移", "§7正数向下，负数向上。",
+                    "§7可以填固定小数，也可以填 0.11-0.34 这种范围。",
+                    "§7范围模式下每 Tick 对当前目标随机抽取一次偏移。"), mouseX, mouseY);
         } else if (this.selectedGroup == ConfigGroup.HUNT && huntModeDropdown.isHoveringAnyPart(mouseX, mouseY)) {
             drawHoveringText(Arrays.asList("§e追击模式", "§7靠近目标：旧 Hunt 行为，超出攻击距离时自动靠近目标。",
                     "§7固定距离：持续尝试和目标保持你单独设置的固定距离。", "§7关闭：不主动追击，也会禁用相关追击联动。"), mouseX, mouseY);
@@ -1851,7 +1889,7 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
                     mouseY);
         } else if (rangeButton.visible && isMouseOver(mouseX, mouseY, rangeButton)) {
             drawHoveringText(Arrays.asList("§e攻击范围", "§7现已支持 1 ~ 100 格。", "§7超过 6 格时，建议切换到 TP攻击 模式。",
-                    "§7普通攻击 / 数据包攻击在超远距离下通常无法稳定命中。"), mouseX, mouseY);
+                    "§7普通攻击 / 数据包攻击 / 模拟鼠标点击在超远距离下通常无法稳定命中。"), mouseX, mouseY);
         } else if (minStrengthButton.visible && isMouseOver(mouseX, mouseY, minStrengthButton)) {
             drawHoveringText(Arrays.asList("§e最小攻击蓄力", "§70.0 表示见到就打。", "§71.0 表示完全冷却后再打。"), mouseX, mouseY);
         } else if (targetsPerAttackButton.visible && isMouseOver(mouseX, mouseY, targetsPerAttackButton)) {
@@ -2315,6 +2353,9 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
         if (KillAuraHandler.ATTACK_MODE_SEQUENCE.equalsIgnoreCase(mode)) {
             return "执行序列";
         }
+        if (KillAuraHandler.ATTACK_MODE_MOUSE_CLICK.equalsIgnoreCase(mode)) {
+            return "模拟鼠标点击";
+        }
         return "普通攻击";
     }
 
@@ -2331,9 +2372,9 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
     private void applyDefaultValues() {
         KillAuraHandler.rotateToTarget = true;
         KillAuraHandler.smoothRotation = true;
-        KillAuraHandler.setSmoothMaxTurnStepSpec(String.valueOf(KillAuraHandler.DEFAULT_SMOOTH_MAX_TURN_STEP));
-        KillAuraHandler.rotateOnlyOnAttack = false;
-        KillAuraHandler.relockOnlyWhenNoCrosshairTarget = false;
+        KillAuraHandler.setSmoothMaxTurnStepSpec(KillAuraHandler.DEFAULT_SMOOTH_MAX_TURN_STEP_SPEC);
+        KillAuraHandler.rotateOnlyOnAttack = true;
+        KillAuraHandler.relockOnlyWhenNoCrosshairTarget = true;
         KillAuraHandler.requireLineOfSight = true;
         KillAuraHandler.targetHostile = true;
         KillAuraHandler.targetPassive = false;
@@ -2346,8 +2387,9 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
         KillAuraHandler.enableAntiKnockback = true;
         KillAuraHandler.enableFullBrightVision = false;
         KillAuraHandler.fullBrightGamma = 1000.0F;
-        KillAuraHandler.attackMode = KillAuraHandler.ATTACK_MODE_NORMAL;
-        KillAuraHandler.aimYawOffset = 0.0F;
+        KillAuraHandler.attackMode = KillAuraHandler.DEFAULT_ATTACK_MODE;
+        KillAuraHandler.setAimYawOffsetSpec(KillAuraHandler.DEFAULT_AIM_YAW_OFFSET_SPEC);
+        KillAuraHandler.setAimPitchOffsetSpec(KillAuraHandler.DEFAULT_AIM_PITCH_OFFSET_SPEC);
         KillAuraHandler.huntEnabled = true;
         KillAuraHandler.huntMode = KillAuraHandler.HUNT_MODE_APPROACH;
         KillAuraHandler.huntPickupItemsEnabled = false;
@@ -2370,7 +2412,7 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
         KillAuraHandler.minAttackIntervalTicks = 2;
         KillAuraHandler.targetsPerAttack = 1;
         KillAuraHandler.attackSequenceName = "";
-        KillAuraHandler.setAttackSequenceDelayTicksSpec(String.valueOf(KillAuraHandler.DEFAULT_ATTACK_SEQUENCE_DELAY_TICKS));
+        KillAuraHandler.setAttackSequenceDelayTicksSpec(KillAuraHandler.DEFAULT_ATTACK_SEQUENCE_DELAY_TICKS_SPEC);
         this.whitelistListScroll = 0;
         this.blacklistListScroll = 0;
         this.attackModeDropdown.collapse();
@@ -2405,6 +2447,22 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
                     refreshButtonTexts();
                     mc.displayGuiScreen(this);
                 }));
+    }
+
+    private void openAimOffsetInput(boolean horizontal) {
+        String title = horizontal
+                ? "输入索敌水平偏移 (-30.0000 - 30.0000，正数向右，负数向左，支持 0.11-0.34 随机)"
+                : "输入索敌垂直偏移 (-30.0000 - 30.0000，正数向下，负数向上，支持 0.11-0.34 随机)";
+        String current = horizontal ? KillAuraHandler.getAimYawOffsetSpec() : KillAuraHandler.getAimPitchOffsetSpec();
+        mc.displayGuiScreen(new GuiTextInput(this, title, current, value -> {
+            if (horizontal) {
+                KillAuraHandler.setAimYawOffsetSpec(value);
+            } else {
+                KillAuraHandler.setAimPitchOffsetSpec(value);
+            }
+            refreshButtonTexts();
+            mc.displayGuiScreen(this);
+        }));
     }
 
     private void openPreciseFloatInput(String title, float current, float min, float max, FloatConsumer consumer) {
@@ -2487,7 +2545,8 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
                 KillAuraHandler.ATTACK_MODE_NORMAL,
                 KillAuraHandler.ATTACK_MODE_PACKET,
                 KillAuraHandler.ATTACK_MODE_TELEPORT,
-                KillAuraHandler.ATTACK_MODE_SEQUENCE);
+                KillAuraHandler.ATTACK_MODE_SEQUENCE,
+                KillAuraHandler.ATTACK_MODE_MOUSE_CLICK);
         private int x;
         private int y;
         private int width;
