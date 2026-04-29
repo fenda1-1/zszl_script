@@ -76,6 +76,7 @@ public class PacketCaptureHandler extends ChannelDuplexHandler {
     private static final long MAX_CAPTURE_PROCESS_NANOS_PER_TICK = 2_000_000L;
     private static final int MAX_CAPTURED_PACKETS = 3000;
     private static final int CAPTURE_TRIM_BATCH = 120;
+    private static final int MAX_RECENT_TEXT_DECODE_BYTES = 64 * 1024;
     private static final long UI_SNAPSHOT_INTERVAL_MS = 500L;
     private static final long AGGREGATION_WINDOW_MS = 500L;
     private static final long MAX_BUSINESS_TASK_NANOS_PER_TICK = 1_500_000L;
@@ -831,8 +832,7 @@ public class PacketCaptureHandler extends ChannelDuplexHandler {
                                     triggerData);
                         }
                     }
-                    if (!(inboundPacket instanceof net.minecraft.network.play.server.SPacketSpawnPlayer)
-                            && !(inboundPacket instanceof net.minecraft.network.play.server.SPacketSpawnMob)) {
+                    if (!shouldSkipStandardBusinessPayload(inboundPacket)) {
                         boolean packetTriggerListeners = hasPacketTriggerListeners();
                         boolean recentPacketTextFeedNeeded = isRecentPacketTextFeedNeeded();
                         boolean needsCapturedIdRules = CapturedIdRuleManager.hasEnabledRulesForChannel("", false);
@@ -1362,7 +1362,9 @@ public class PacketCaptureHandler extends ChannelDuplexHandler {
             }
             sb.append(decodedText.trim());
         } else {
-            String fallbackDecoded = decodePayload(rawData);
+            String fallbackDecoded = shouldSkipRecentTextPayloadDecode(packetClassName, rawData)
+                    ? ""
+                    : decodePayload(rawData);
             if (fallbackDecoded != null && !fallbackDecoded.trim().isEmpty()) {
                 if (sb.length() > 0) {
                     sb.append(" | ");
@@ -1383,6 +1385,32 @@ public class PacketCaptureHandler extends ChannelDuplexHandler {
             }
             recentPacketTextVersion++;
         }
+    }
+
+    private static boolean shouldSkipStandardBusinessPayload(Packet<?> packet) {
+        if (packet == null) {
+            return true;
+        }
+        String packetClassName = packet.getClass().getSimpleName();
+        return "SPacketSpawnPlayer".equals(packetClassName)
+                || "SPacketSpawnMob".equals(packetClassName)
+                || isWorldStreamingPacket(packetClassName);
+    }
+
+    private static boolean shouldSkipRecentTextPayloadDecode(String packetClassName, byte[] rawData) {
+        if (rawData == null || rawData.length == 0) {
+            return true;
+        }
+        return rawData.length > MAX_RECENT_TEXT_DECODE_BYTES || isWorldStreamingPacket(packetClassName);
+    }
+
+    private static boolean isWorldStreamingPacket(String packetClassName) {
+        String name = packetClassName == null ? "" : packetClassName.toLowerCase(Locale.ROOT);
+        return name.contains("chunk")
+                || name.contains("lightupdate")
+                || name.contains("levelchunk")
+                || name.contains("forgetlevelchunk")
+                || name.contains("chunksbiomes");
     }
 
     public static List<String> getRecentOwlViewDecodedSnapshot() {
