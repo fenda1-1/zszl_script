@@ -44,6 +44,7 @@ import com.zszl.zszlScriptMod.system.SimulatedKeyInputManager;
 
 import java.nio.FloatBuffer;
 import java.nio.IntBuffer;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
@@ -73,6 +74,8 @@ import java.lang.reflect.Field;
 public class ModUtils {
     ;
     private static volatile boolean disconnectScheduled = false;
+    private static final Pattern CHAT_COMMAND_PLACEHOLDER_PATTERN = Pattern
+            .compile("\\{\\s*([a-zA-Z0-9_\\.]+)\\s*\\}");
 
     public static void disconnectFromCurrentWorld() {
         if (disconnectScheduled) {
@@ -375,20 +378,83 @@ public class ModUtils {
      * @param command 命令字符串
      */
     public static void sendChatCommand(String command) {
-        if (tryHandleInternalNavigation(command)) {
+        String resolvedCommand;
+        try {
+            resolvedCommand = resolveChatCommandPlaceholders(command);
+        } catch (IllegalStateException e) {
+            zszlScriptMod.LOGGER.error("[发送命令] 占位符解析失败: {}", e.getMessage());
+            if (Minecraft.getMinecraft().player != null) {
+                Minecraft.getMinecraft().player
+                        .sendMessage(new TextComponentString(TextFormatting.RED + "[脚本错误] 发送命令失败: " + e.getMessage()));
+            }
+            return;
+        }
+
+        if (tryHandleInternalNavigation(resolvedCommand)) {
             if (ModConfig.isDebugModeEnabled && Minecraft.getMinecraft().player != null) {
                 Minecraft.getMinecraft().player
-                        .sendMessage(new TextComponentString("§d[DEBUG] §7内置导航接管命令: §f" + command));
+                        .sendMessage(new TextComponentString("§d[DEBUG] §7内置导航接管命令: §f" + resolvedCommand));
             }
             return;
         }
         if (ModConfig.isDebugModeEnabled && Minecraft.getMinecraft().player != null) {
-            Minecraft.getMinecraft().player.sendMessage(new TextComponentString("§d[DEBUG] §7发送命令: §f" + command));
+            Minecraft.getMinecraft().player.sendMessage(new TextComponentString("§d[DEBUG] §7发送命令: §f" + resolvedCommand));
         }
         if (Minecraft.getMinecraft().player != null && !Minecraft.getMinecraft().player.isSpectator()) {
-            Minecraft.getMinecraft().player.sendChatMessage(command);
-            zszlScriptMod.LOGGER.info("Sent command: " + command);
+            Minecraft.getMinecraft().player.sendChatMessage(resolvedCommand);
+            zszlScriptMod.LOGGER.info("Sent command: " + resolvedCommand);
         }
+    }
+
+    private static String resolveChatCommandPlaceholders(String command) {
+        String text = command == null ? "" : command;
+        Matcher matcher = CHAT_COMMAND_PLACEHOLDER_PATTERN.matcher(text);
+        StringBuffer sb = new StringBuffer();
+        while (matcher.find()) {
+            String name = matcher.group(1);
+            String value = resolveChatCommandPlaceholderValue(name);
+            if (value == null) {
+                throw new IllegalStateException("命令中需要 {" + name + "}，但未捕获到对应值。");
+            }
+            matcher.appendReplacement(sb, Matcher.quoteReplacement(value));
+        }
+        matcher.appendTail(sb);
+        return sb.toString();
+    }
+
+    private static String resolveChatCommandPlaceholderValue(String name) {
+        if (name == null || name.trim().isEmpty()) {
+            return null;
+        }
+
+        PacketFieldRuleManager.CapturedFieldSnapshot field = PacketFieldRuleManager.getLatestCapturedField(name);
+        if (field != null && field.getValue() != null) {
+            return String.valueOf(field.getValue());
+        }
+
+        byte[] capturedBytes = CapturedIdRuleManager.getCapturedIdBytes(name);
+        if (capturedBytes == null || capturedBytes.length == 0) {
+            return null;
+        }
+        String text = tryDecodePrintableUtf8(capturedBytes);
+        return text != null ? text : bytesToHexWithSpaces(capturedBytes);
+    }
+
+    private static String tryDecodePrintableUtf8(byte[] bytes) {
+        if (bytes == null || bytes.length == 0) {
+            return null;
+        }
+        String text = new String(bytes, StandardCharsets.UTF_8);
+        if (text.trim().isEmpty()) {
+            return null;
+        }
+        for (int i = 0; i < text.length(); i++) {
+            char ch = text.charAt(i);
+            if (Character.isISOControl(ch) && !Character.isWhitespace(ch)) {
+                return null;
+            }
+        }
+        return text;
     }
 
     /**

@@ -4,7 +4,6 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.zszl.zszlScriptMod.handlers.ItemFilterHandler;
-import com.zszl.zszlScriptMod.handlers.KillAuraHandler;
 import com.zszl.zszlScriptMod.path.ActionParameterVariableResolver;
 import com.zszl.zszlScriptMod.path.InventoryItemFilterExpressionEngine;
 import com.zszl.zszlScriptMod.path.LegacyActionRuntime;
@@ -789,20 +788,12 @@ public final class PathConfigValidator {
             case "hunt":
                 validatePositiveDoubleParam(sequenceName, stepIndex, actionIndex, params, "radius", "搜索半径", false,
                         variableContext, issues);
-                validatePositiveDoubleParam(sequenceName, stepIndex, actionIndex, params, "trackingDistance", "追踪距离",
-                        false, variableContext, issues);
                 validatePositiveDoubleParam(sequenceName, stepIndex, actionIndex, params, "huntUpRange", "向上追击范围",
                         true, variableContext, issues);
                 validatePositiveDoubleParam(sequenceName, stepIndex, actionIndex, params, "huntDownRange", "向下追击范围",
                         true, variableContext, issues);
-                validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "attackCount", "攻击次数",
-                        variableContext, issues);
                 validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "noTargetSkipCount",
                         "无目标时跳过动作数", variableContext, issues);
-                validatePositiveDoubleParam(sequenceName, stepIndex, actionIndex, params, "huntChaseIntervalSeconds",
-                        "追怪间隔秒数", true, variableContext, issues);
-                validateHuntAttackSequence(sequenceName, stepIndex, actionIndex, params, sequenceNames, variableContext,
-                        issues);
                 break;
             case "autochestclick":
             case "move_inventory_items_to_chest_slots":
@@ -922,33 +913,6 @@ public final class PathConfigValidator {
                 && executeEveryCount.intValue() <= 1) {
             issues.add(new Issue(Severity.WARNING, "run_template_interval_one", sequenceName, stepIndex, actionIndex,
                     "模板间隔执行次数等于 1", "这与“每次执行”效果一致，建议改回每次执行或把次数调大。"));
-        }
-    }
-
-    private static void validateHuntAttackSequence(String sequenceName, int stepIndex, int actionIndex, JsonObject params,
-            Set<String> sequenceNames, ActionParameterVariableResolver.Context variableContext, List<Issue> issues) {
-        if (!KillAuraHandler.ATTACK_MODE_SEQUENCE.equalsIgnoreCase(getString(params, "attackMode").trim())) {
-            return;
-        }
-        ResolvedParamValue targetValue = resolveParamValue(variableContext, params, "attackSequenceName");
-        String target = targetValue.isDynamicReference() || targetValue.isMissingReference()
-                ? ""
-                : safe(LegacyActionRuntime.stringifyValue(targetValue.value)).trim();
-        if (!targetValue.isDynamicReference() && !targetValue.isMissingReference() && target.isEmpty()) {
-            issues.add(new Issue(Severity.ERROR, "hunt_attack_sequence_missing", sequenceName, stepIndex, actionIndex,
-                    "搜怪击杀未选择攻击序列", "当攻击方式为“执行序列攻击”时，必须选择一条攻击序列。"));
-            return;
-        }
-        if (targetValue.isDynamicReference() || targetValue.isMissingReference()) {
-            return;
-        }
-        if (target.equalsIgnoreCase(sequenceName)) {
-            issues.add(new Issue(Severity.ERROR, "hunt_attack_sequence_self", sequenceName, stepIndex, actionIndex,
-                    "攻击序列指向当前序列", "这会让搜怪击杀动作递归调用当前序列。"));
-        }
-        if (!sequenceNames.isEmpty() && !sequenceNames.contains(target)) {
-            issues.add(new Issue(Severity.ERROR, "hunt_attack_sequence_missing_target", sequenceName, stepIndex, actionIndex,
-                    "攻击序列目标不存在", "找不到攻击序列: " + target));
         }
     }
 
@@ -1152,9 +1116,6 @@ public final class PathConfigValidator {
         String target = "";
         if ("run_sequence".equals(type)) {
             target = getString(action.params, "sequenceName").trim();
-        } else if ("hunt".equals(type)
-                && KillAuraHandler.ATTACK_MODE_SEQUENCE.equalsIgnoreCase(getString(action.params, "attackMode").trim())) {
-            target = getString(action.params, "attackSequenceName").trim();
         } else if ("run_template".equals(type)) {
             target = safe(LegacyActionTemplateManager.resolveTemplateTargetSequence(getString(action.params, "templateName"))).trim();
         }

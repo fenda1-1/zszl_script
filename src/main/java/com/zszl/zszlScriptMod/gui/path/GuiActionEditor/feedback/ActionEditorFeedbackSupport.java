@@ -1,7 +1,6 @@
 package com.zszl.zszlScriptMod.gui.path.GuiActionEditor.feedback;
 
 import com.google.gson.JsonObject;
-import com.zszl.zszlScriptMod.handlers.KillAuraHandler;
 import com.zszl.zszlScriptMod.path.PathSequenceManager.ActionData;
 
 import java.util.Locale;
@@ -18,16 +17,9 @@ public final class ActionEditorFeedbackSupport {
         String type = safe(draft.type).trim().toLowerCase(Locale.ROOT);
         switch (type) {
             case "hunt":
-                String mode = KillAuraHandler.HUNT_MODE_FIXED_DISTANCE.equalsIgnoreCase(getDraftString(params, "huntMode",
-                        KillAuraHandler.HUNT_MODE_FIXED_DISTANCE))
-                                ? "固定距离追击"
-                                : "靠近目标追击";
-                String attack = KillAuraHandler.ATTACK_MODE_SEQUENCE.equalsIgnoreCase(getDraftString(params, "attackMode",
-                        KillAuraHandler.ATTACK_MODE_NORMAL))
-                                ? "序列攻击"
-                                : "普通攻击";
-                return String.format(Locale.ROOT, "会在中心 %.1f 格内持续搜怪，按%s进行%s。",
-                        getDraftDouble(params, "radius", 3.0D), mode, attack);
+                return String.format(Locale.ROOT,
+                        "会在触发坐标 %.1f 格范围内临时运行区域版杀戮光环，战斗/索敌/转向/追击使用杀戮光环当前配置。",
+                        getDraftDouble(params, "radius", 3.0D));
             case "run_sequence":
                 String sequenceName = getDraftString(params, "sequenceName", "").trim();
                 boolean background = getDraftBoolean(params, "backgroundExecution", false);
@@ -56,17 +48,10 @@ public final class ActionEditorFeedbackSupport {
         JsonObject params = draft.params == null ? new JsonObject() : draft.params;
         String type = safe(draft.type).trim().toLowerCase(Locale.ROOT);
         if ("hunt".equals(type)) {
-            if (KillAuraHandler.ATTACK_MODE_SEQUENCE.equalsIgnoreCase(getDraftString(params, "attackMode", ""))
-                    && getDraftString(params, "attackSequenceName", "").trim().isEmpty()) {
-                return "已切到序列攻击，但还没有选择攻击序列。";
-            }
             if (getDraftInt(params, "noTargetSkipCount", 0) > 0) {
                 return "无目标时会直接跳过 " + Math.max(0, getDraftInt(params, "noTargetSkipCount", 0)) + " 个动作。";
             }
-            if (getDraftInt(params, "attackCount", 0) <= 0) {
-                return "攻击次数不限，会持续打到无怪或动作被中断。";
-            }
-            return "风险较低，建议确认追击模式与目标筛选是否符合预期。";
+            return "中心搜怪只限制固定范围和动作名单；攻击细节会读取杀戮光环当前配置。";
         }
         if ("run_sequence".equals(type)) {
             if (getDraftString(params, "sequenceName", "").trim().isEmpty()) {

@@ -142,6 +142,7 @@ public class PacketCaptureHandler extends ChannelDuplexHandler {
         private volatile String hexData;
         private volatile String decodedData;
         private volatile String decodedDetailData;
+        private volatile String decodedFullData;
         private final int payloadSize;
         private volatile long lastTimestamp;
         private volatile int occurrenceCount;
@@ -223,6 +224,22 @@ public class PacketCaptureHandler extends ChannelDuplexHandler {
                 decodedDetailData = local == null ? "" : local;
             }
             return decodedDetailData;
+        }
+
+        public String getDecodedFullData() {
+            String local = decodedFullData;
+            if (local == null) {
+                if (isFmlPacket && OWL_CONTROL_CHANNEL.equals(channel)) {
+                    local = getDecodedData();
+                } else {
+                    local = PacketPayloadDecoder.decodeFull(rawData);
+                    if ((local == null || local.trim().isEmpty()) && decodedData != null) {
+                        local = decodedData;
+                    }
+                }
+                decodedFullData = local == null ? "" : local;
+            }
+            return decodedFullData;
         }
 
         public boolean canAggregate(CapturedPacketData other) {
@@ -729,7 +746,11 @@ public class PacketCaptureHandler extends ChannelDuplexHandler {
                                     CapturedIdRuleManager.processPacket(finalChannel, false, finalRawData, finalDecoded);
                                 }
                                 if (needsFieldRules) {
-                                    PacketFieldRuleManager.processPacket(finalChannel, false, finalRawData, finalDecoded,
+                                    String decodedForRules = finalDecoded != null && !finalDecoded.trim().isEmpty()
+                                            ? finalDecoded
+                                            : decodePayloadFull(finalRawData);
+                                    PacketFieldRuleManager.processPacket(finalChannel, false, finalRawData,
+                                            decodedForRules,
                                             fmlPacket.getClass().getSimpleName());
                                 }
                                 requestRuleSyncOnMainThread();
@@ -851,7 +872,7 @@ public class PacketCaptureHandler extends ChannelDuplexHandler {
                                         }
                                         if (needsFieldRules) {
                                             PacketFieldRuleManager.processPacket("", false, finalRawData,
-                                                    decodePayload(finalRawData), inboundPacket.getClass().getSimpleName());
+                                                    decodePayloadFull(finalRawData), inboundPacket.getClass().getSimpleName());
                                         }
                                         requestRuleSyncOnMainThread();
                                         requestSessionInitCheckOnMainThread();
@@ -987,6 +1008,10 @@ public class PacketCaptureHandler extends ChannelDuplexHandler {
 
     private static String decodePayload(byte[] data) {
         return PacketPayloadDecoder.decode(data);
+    }
+
+    private static String decodePayloadFull(byte[] data) {
+        return PacketPayloadDecoder.decodeFull(data);
     }
 
     private void handlePacketCapture(Packet<?> packet, boolean isSent) {

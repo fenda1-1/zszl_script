@@ -869,91 +869,38 @@ public class PathSequenceManager {
                                         : I18n.format("path.common.on"));
                     case "hunt":
                         double radius = params.has("radius") ? params.get("radius").getAsDouble() : 3.0;
-                        boolean autoAttack = params.has("autoAttack") ? params.get("autoAttack").getAsBoolean() : false;
-                        String attackMode = params.has("attackMode") ? params.get("attackMode").getAsString()
-                                : KillAuraHandler.ATTACK_MODE_NORMAL;
-                        String attackSequenceName = params.has("attackSequenceName")
-                                ? params.get("attackSequenceName").getAsString().trim()
-                                : "";
-                        boolean aimLockEnabled = !params.has("huntAimLockEnabled")
-                                || params.get("huntAimLockEnabled").getAsBoolean();
-                        double trackDist = params.has("trackingDistance") ? params.get("trackingDistance").getAsDouble()
-                                : 1.0;
                         double huntUpRange = params.has("huntUpRange") ? params.get("huntUpRange").getAsDouble()
                                 : KillAuraHandler.DEFAULT_HUNT_UP_RANGE;
                         double huntDownRange = params.has("huntDownRange") ? params.get("huntDownRange").getAsDouble()
                                 : KillAuraHandler.DEFAULT_HUNT_DOWN_RANGE;
-                        String huntMode = params.has("huntMode") ? params.get("huntMode").getAsString()
-                                : KillAuraHandler.HUNT_MODE_FIXED_DISTANCE;
-                        boolean huntOrbitEnabled = params.has("huntOrbitEnabled")
-                                && params.get("huntOrbitEnabled").getAsBoolean();
-                        boolean chaseIntervalEnabled = params.has("huntChaseIntervalEnabled")
-                                && params.get("huntChaseIntervalEnabled").getAsBoolean();
-                        double chaseIntervalSeconds = params.has("huntChaseIntervalSeconds")
-                                ? params.get("huntChaseIntervalSeconds").getAsDouble()
-                                : 0.0D;
-                        int attackCount = params.has("attackCount") ? params.get("attackCount").getAsInt() : -1;
                         int noTargetSkipCount = params.has("noTargetSkipCount")
                                 ? Math.max(0, params.get("noTargetSkipCount").getAsInt())
                                 : 0;
-                        boolean targetHostile = !params.has("targetHostile")
-                                || params.get("targetHostile").getAsBoolean();
-                        boolean targetPassive = params.has("targetPassive")
-                                && params.get("targetPassive").getAsBoolean();
-                        boolean targetPlayers = params.has("targetPlayers")
-                                && params.get("targetPlayers").getAsBoolean();
                         boolean enableWhitelist = params.has("enableNameWhitelist")
                                 && params.get("enableNameWhitelist").getAsBoolean();
                         boolean enableBlacklist = params.has("enableNameBlacklist")
                                 && params.get("enableNameBlacklist").getAsBoolean();
-                        int whitelistCount = countStringListParam(params, "nameWhitelist", "nameWhitelistText");
+                        int whitelistCount = countHuntWhitelistParam(params);
                         int blacklistCount = countStringListParam(params, "nameBlacklist", "nameBlacklistText");
-                        StringBuilder huntDesc = new StringBuilder(I18n.format("path.action.desc.hunt", radius,
-                                autoAttack ? I18n.format("path.common.on") : I18n.format("path.common.off"),
-                                trackDist));
-                        huntDesc.append(", 模式 ")
-                                .append(KillAuraHandler.HUNT_MODE_APPROACH.equalsIgnoreCase(huntMode) ? "靠近目标"
-                                        : "固定距离");
+                        boolean showRange = params.has("showHuntRange") && params.get("showHuntRange").getAsBoolean();
+                        StringBuilder huntDesc = new StringBuilder("中心搜怪: 半径 ")
+                                .append(String.format(Locale.ROOT, "%.1f", Math.max(0.0D, radius)))
+                                .append("，使用杀戮光环当前配置");
                         huntDesc.append(", 垂直 +")
                                 .append(String.format(Locale.ROOT, "%.1f", Math.max(0.0D, huntUpRange)))
                                 .append("/-")
                                 .append(String.format(Locale.ROOT, "%.1f", Math.max(0.0D, huntDownRange)));
-                        huntDesc.append(", 攻击 ")
-                                .append(KillAuraHandler.ATTACK_MODE_SEQUENCE.equalsIgnoreCase(attackMode) ? "序列"
-                                        : "普通");
-                        if (KillAuraHandler.ATTACK_MODE_SEQUENCE.equalsIgnoreCase(attackMode)
-                                && !attackSequenceName.isEmpty()) {
-                            huntDesc.append("[").append(attackSequenceName).append("]");
-                        }
-                        huntDesc.append(aimLockEnabled ? ", 瞄准" : ", 不瞄准");
-                        if (huntOrbitEnabled) {
-                            huntDesc.append(", 绕圈");
-                        }
-                        if (chaseIntervalEnabled) {
-                            huntDesc.append(", 间隔 ").append(chaseIntervalSeconds).append("秒");
-                        }
-                        huntDesc.append(", 次数 ")
-                                .append(attackCount > 0 ? attackCount : "不限");
                         if (noTargetSkipCount > 0) {
                             huntDesc.append(", 无目标跳过 ").append(noTargetSkipCount).append("个");
-                        }
-                        if (!targetHostile || targetPassive || targetPlayers) {
-                            huntDesc.append(", 目标[")
-                                    .append(targetHostile ? "敌对" : "")
-                                    .append(targetHostile && targetPassive ? "/" : "")
-                                    .append(targetPassive ? "被动" : "")
-                                    .append((targetHostile || targetPassive) && targetPlayers ? "/" : "")
-                                    .append(targetPlayers ? "玩家" : "");
-                            if (!targetHostile && !targetPassive && !targetPlayers) {
-                                huntDesc.append("不限");
-                            }
-                            huntDesc.append("]");
                         }
                         if (enableWhitelist) {
                             huntDesc.append(", 白名单").append(whitelistCount).append("项");
                         }
                         if (enableBlacklist) {
                             huntDesc.append(", 黑名单").append(blacklistCount).append("项");
+                        }
+                        if (showRange) {
+                            huntDesc.append(", 显示范围");
                         }
                         return huntDesc.toString();
                     case "follow_entity":
@@ -1180,6 +1127,41 @@ public class PathSequenceManager {
             values.addAll(parseIntegerListText(params.get(textKey).getAsString()));
         }
         return values.size();
+    }
+
+    private static int countHuntWhitelistParam(JsonObject params) {
+        if (params == null) {
+            return 0;
+        }
+        LinkedHashSet<String> values = new LinkedHashSet<>();
+        if (params.has("nameWhitelistEntries") && params.get("nameWhitelistEntries").isJsonArray()) {
+            for (JsonElement element : params.getAsJsonArray("nameWhitelistEntries")) {
+                if (element == null || element.isJsonNull()) {
+                    continue;
+                }
+                String value = "";
+                if (element.isJsonObject()) {
+                    JsonObject object = element.getAsJsonObject();
+                    if (object.has("name") && object.get("name").isJsonPrimitive()) {
+                        value = object.get("name").getAsString();
+                    } else if (object.has("keyword") && object.get("keyword").isJsonPrimitive()) {
+                        value = object.get("keyword").getAsString();
+                    } else if (object.has("target") && object.get("target").isJsonPrimitive()) {
+                        value = object.get("target").getAsString();
+                    }
+                } else if (element.isJsonPrimitive()) {
+                    value = element.getAsString();
+                }
+                value = value == null ? "" : value.trim();
+                if (!value.isEmpty()) {
+                    values.add(value.toLowerCase(Locale.ROOT));
+                }
+            }
+        }
+        if (!values.isEmpty()) {
+            return values.size();
+        }
+        return countStringListParam(params, "nameWhitelist", "nameWhitelistText");
     }
 
     private static int countStringListParam(JsonObject params, String arrayKey, String textKey) {
@@ -2774,6 +2756,10 @@ public class PathSequenceManager {
         runPathSequenceInternal(sequenceName, false, null, null);
     }
 
+    public static void runPathSequenceFromStep(String sequenceName, int startStepIndex) {
+        runPathSequenceInternal(sequenceName, false, null, null, startStepIndex);
+    }
+
     public static void runPathSequenceWithLoopCount(String sequenceName, int loopCount) {
         runPathSequenceInternal(sequenceName, false, loopCount, null);
     }
@@ -2794,6 +2780,11 @@ public class PathSequenceManager {
 
     private static void runPathSequenceInternal(String sequenceName, boolean preserveCallerStack,
             Integer explicitLoopCount, Map<String, Object> initialSequenceVariables) {
+        runPathSequenceInternal(sequenceName, preserveCallerStack, explicitLoopCount, initialSequenceVariables, 0);
+    }
+
+    private static void runPathSequenceInternal(String sequenceName, boolean preserveCallerStack,
+            Integer explicitLoopCount, Map<String, Object> initialSequenceVariables, int startStepIndex) {
 
         if (!preserveCallerStack) {
             clearRunSequenceCallStack();
@@ -2810,6 +2801,7 @@ public class PathSequenceManager {
             return;
         }
 
+        int effectiveStartStepIndex = clampStartStepIndex(sequence, startStepIndex);
         int effectiveLoopCount = sequence.isSingleExecution()
                 ? 1
                 : (explicitLoopCount != null ? explicitLoopCount : GuiInventory.loopCount);
@@ -2818,7 +2810,8 @@ public class PathSequenceManager {
             if (effectiveLoopCount != 0) {
                 PathSequenceEventListener.startBackgroundSequence(sequence,
                         effectiveLoopCount < 0 ? -1 : effectiveLoopCount,
-                        initialSequenceVariables);
+                        initialSequenceVariables,
+                        effectiveStartStepIndex);
             }
             return;
         }
@@ -2827,8 +2820,15 @@ public class PathSequenceManager {
         GuiInventory.isLooping = true;
 
         if (effectiveLoopCount != 0) {
-            startNextLoopInternal(sequenceName, explicitLoopCount, initialSequenceVariables);
+            startNextLoopInternal(sequenceName, explicitLoopCount, initialSequenceVariables, effectiveStartStepIndex);
         }
+    }
+
+    private static int clampStartStepIndex(PathSequence sequence, int startStepIndex) {
+        if (sequence == null || sequence.getSteps() == null || sequence.getSteps().isEmpty()) {
+            return 0;
+        }
+        return Math.max(0, Math.min(startStepIndex, sequence.getSteps().size() - 1));
     }
 
     public static synchronized void clearRunSequenceCallStack() {
@@ -3140,6 +3140,11 @@ public class PathSequenceManager {
 
     private static void startNextLoopInternal(String sequenceName, Integer explicitLoopCount,
             Map<String, Object> initialSequenceVariables) {
+        startNextLoopInternal(sequenceName, explicitLoopCount, initialSequenceVariables, 0);
+    }
+
+    private static void startNextLoopInternal(String sequenceName, Integer explicitLoopCount,
+            Map<String, Object> initialSequenceVariables, int startStepIndex) {
         if (!GuiInventory.isLooping) {
             zszlScriptMod.LOGGER.info(I18n.format("log.path.looping_false_skip"));
             return;
@@ -3147,9 +3152,10 @@ public class PathSequenceManager {
 
         PathSequence sequence = getSequence(sequenceName);
 
-        double[] firstTarget = sequence.getSteps().get(0).getGotoPoint();
+        int effectiveStartStepIndex = clampStartStepIndex(sequence, startStepIndex);
+        double[] firstTarget = sequence.getSteps().get(effectiveStartStepIndex).getGotoPoint();
 
-        if (isStopSequenceName(sequence.getName())) {
+        if (effectiveStartStepIndex == 0 && isStopSequenceName(sequence.getName())) {
             EntityPlayerSP player = Minecraft.getMinecraft().player;
             if (player != null &&
                     (player.posX < -1702 && player.posX > -1888 &&
@@ -3186,7 +3192,8 @@ public class PathSequenceManager {
 
         PathSequenceEventListener.instance.startTracking(sequence,
                 effectiveLoopCount < 0 ? -1 : effectiveLoopCount + 1 - GuiInventory.loopCounter,
-                initialSequenceVariables);
+                initialSequenceVariables,
+                effectiveStartStepIndex);
 
         PathSequenceEventListener.instance.resume();
         zszlScriptMod.LOGGER.info(I18n.format("log.path.start_running") + sequenceName);

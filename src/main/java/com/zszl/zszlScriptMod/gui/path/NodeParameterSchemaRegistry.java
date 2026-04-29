@@ -1,7 +1,6 @@
 package com.zszl.zszlScriptMod.gui.path;
 
 import com.google.gson.JsonObject;
-import com.zszl.zszlScriptMod.handlers.KillAuraHandler;
 import com.zszl.zszlScriptMod.path.node.NodeNode;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -544,47 +543,25 @@ public final class NodeParameterSchemaRegistry {
                                         "使用当前主手物品前的延迟。", ">= 0", "0"));
                 } else if ("hunt".equals(normalized)) {
                         schemas.add(FieldSchema.paramsField("radius", "搜索半径", FieldType.NUMBER, false,
-                                        "狩猎范围半径。", ">= 0", "3"));
+                                        "中心搜怪固定范围半径。", ">= 0", "3"));
+                        schemas.add(FieldSchema.paramsField("huntUpRange", "向上追击范围", FieldType.NUMBER, false,
+                                        "只允许选择比动作触发坐标高出该范围内的目标。", ">= 0", "1"));
+                        schemas.add(FieldSchema.paramsField("huntDownRange", "向下追击范围", FieldType.NUMBER, false,
+                                        "只允许选择比动作触发坐标低出该范围内的目标。", ">= 0", "1"));
                         schemas.add(FieldSchema.paramsField("scanRadius", "扫描半径", FieldType.NUMBER, false,
                                         "“扫描附近实体”按钮使用的范围。", ">= 0", "10"));
-                        schemas.add(FieldSchema.paramsField("attackCount", "攻击次数", FieldType.NUMBER, false,
-                                        "<= 0 表示不限攻击次数。", "整数", "0"));
                         schemas.add(FieldSchema.paramsField("noTargetSkipCount", "无目标时跳过动作数", FieldType.NUMBER, false,
                                         "搜不到目标时额外跳过后续几个动作。0 表示不跳过。", ">= 0", "0"));
-                        schemas.add(FieldSchema.paramsField("autoAttack", "自动攻击", FieldType.BOOLEAN, false,
-                                        "是否启用自动攻击。", "true / false", "false"));
-                        schemas.add(FieldSchema.paramsField("huntAimLockEnabled", "视角锁定目标", FieldType.BOOLEAN, false,
-                                        "开启后自动转头锁定目标再攻击；关闭后不转头也继续攻击。", "true / false", "true"));
-                        schemas.add(FieldSchema.paramsField("huntMode", "追击模式", FieldType.SELECT, false,
-                                        "固定距离或靠近目标。", "FIXED_DISTANCE / APPROACH",
-                                        KillAuraHandler.HUNT_MODE_FIXED_DISTANCE,
-                                        KillAuraHandler.HUNT_MODE_FIXED_DISTANCE, KillAuraHandler.HUNT_MODE_APPROACH));
-                        schemas.add(FieldSchema.paramsField("trackingDistance", "跟踪距离", FieldType.NUMBER, false,
-                                        "固定距离模式下作为半径，靠近目标模式下作为停止追怪距离。", ">= 0", "1"));
-                        schemas.add(FieldSchema.paramsField("huntOrbitEnabled", "自动绕圈攻击", FieldType.BOOLEAN, false,
-                                        "仅固定距离模式生效。", "true / false", "false"));
-                        schemas.add(FieldSchema.paramsField("huntChaseIntervalEnabled", "启用追怪间隔", FieldType.BOOLEAN, false,
-                                        "到达追击距离后暂停追怪，等待后再继续。", "true / false", "false"));
-                        schemas.add(FieldSchema.paramsField("huntChaseIntervalSeconds", "追怪间隔秒数", FieldType.NUMBER, false,
-                                        "启用追怪间隔后生效。", ">= 0", "0"));
-                        schemas.add(FieldSchema.paramsField("targetHostile", "敌对生物", FieldType.BOOLEAN, false,
-                                        "是否匹配敌对生物。", "true / false", "true"));
-                        schemas.add(FieldSchema.paramsField("targetPassive", "被动生物", FieldType.BOOLEAN, false,
-                                        "是否匹配被动生物。", "true / false", "false"));
-                        schemas.add(FieldSchema.paramsField("targetPlayers", "玩家", FieldType.BOOLEAN, false,
-                                        "是否匹配玩家。", "true / false", "false"));
                         schemas.add(FieldSchema.paramsField("enableNameWhitelist", "启用名称白名单", FieldType.BOOLEAN, false,
-                                        "启用后仅匹配名称包含白名单关键字的实体。", "true / false", "false"));
+                                        "启用后仅匹配中心搜怪动作自己的白名单，不读取杀戮光环名称白名单。", "true / false", "false"));
                         schemas.add(FieldSchema.paramsField("nameWhitelistText", "名称白名单", FieldType.TEXTAREA, false,
                                         "每行或逗号分隔一个关键字，按包含匹配。", "可为空", ""));
                         schemas.add(FieldSchema.paramsField("enableNameBlacklist", "启用名称黑名单", FieldType.BOOLEAN, false,
-                                        "启用后忽略名称包含黑名单关键字的实体。", "true / false", "false"));
+                                        "启用后忽略中心搜怪动作自己的黑名单，不读取杀戮光环名称黑名单。", "true / false", "false"));
                         schemas.add(FieldSchema.paramsField("nameBlacklistText", "名称黑名单", FieldType.TEXTAREA, false,
                                         "每行或逗号分隔一个关键字，按包含匹配。", "可为空", ""));
                         schemas.add(FieldSchema.paramsField("showHuntRange", "显示半径光环", FieldType.BOOLEAN, false,
                                         "显示以中心点为圆心的半径光环。", "true / false", "false"));
-                        schemas.add(FieldSchema.paramsField("ignoreInvisible", "忽略隐身目标", FieldType.BOOLEAN, false,
-                                        "隐身目标不参与搜怪。", "true / false", "false"));
                 } else if ("use_skill".equals(normalized)) {
                         schemas.add(FieldSchema.paramsField("skill", "技能名", FieldType.TEXT, true,
                                         "要施放的技能名。", "不能为空", ""));

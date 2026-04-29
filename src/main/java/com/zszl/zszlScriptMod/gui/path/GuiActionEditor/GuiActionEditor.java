@@ -109,6 +109,20 @@ public class GuiActionEditor extends ThemedGuiScreen {
         }
     }
 
+    private static final class HuntWhitelistCardDraft {
+        private final String name;
+        private final int killCount;
+
+        private HuntWhitelistCardDraft(String name, int killCount) {
+            this.name = name == null ? "" : name.trim();
+            this.killCount = Math.max(0, killCount);
+        }
+
+        private boolean isEmpty() {
+            return this.name.isEmpty();
+        }
+    }
+
     private static final int BTN_ID_FILL_NEAREST_CHEST = 300;
     static final int BTN_ID_SCAN_NEARBY_ENTITIES = 301;
     private static final int BTN_ID_SCAN_NEARBY_BLOCKS = 302;
@@ -132,6 +146,8 @@ public class GuiActionEditor extends ThemedGuiScreen {
     static final int BTN_ID_DELETE_INVENTORY_ITEM_FILTER_EXPRESSION = 627;
     static final int BTN_ID_MOVE_INVENTORY_ITEM_FILTER_EXPRESSION_UP = 628;
     static final int BTN_ID_MOVE_INVENTORY_ITEM_FILTER_EXPRESSION_DOWN = 629;
+    static final int BTN_ID_ADD_HUNT_WHITELIST_CARD = 632;
+    static final int BTN_ID_DELETE_HUNT_WHITELIST_CARD = 633;
     private static final int BTN_ID_TOGGLE_SUMMARY_CARD = 610;
     private static final int BTN_ID_TOGGLE_VALIDATION_CARD = 611;
     private static final int BTN_ID_TOGGLE_HELP_CARD = 612;
@@ -201,6 +217,9 @@ public class GuiActionEditor extends ThemedGuiScreen {
     static final int BOOLEAN_EXPRESSION_CARD_LIST_HEIGHT = 152;
     static final int BOOLEAN_EXPRESSION_CARD_ROW_HEIGHT = 36;
     static final int BOOLEAN_EXPRESSION_CARD_ROW_GAP = 6;
+    static final int HUNT_WHITELIST_CARD_LIST_HEIGHT = 128;
+    static final int HUNT_WHITELIST_CARD_ROW_HEIGHT = 32;
+    static final int HUNT_WHITELIST_CARD_ROW_GAP = 6;
     static final int BOOLEAN_EXPRESSION_EDIT_NONE = Integer.MIN_VALUE;
     static final int BOOLEAN_EXPRESSION_EDIT_NEW = -1;
     static final int ITEM_FILTER_EXPRESSION_EDIT_NONE = Integer.MIN_VALUE;
@@ -262,6 +281,8 @@ public class GuiActionEditor extends ThemedGuiScreen {
     private GuiButton btnScanNearbyBlocks;
     GuiButton btnAddSelectedHuntWhitelist;
     GuiButton btnAddSelectedHuntBlacklist;
+    GuiButton btnAddHuntWhitelistCard;
+    GuiButton btnDeleteHuntWhitelistCard;
     EnumDropdown nearbyEntityDropdown;
     private EnumDropdown nearbyBlockDropdown;
     private final Map<String, String> nearbyEntityPosMap = new LinkedHashMap<>();
@@ -307,6 +328,7 @@ public class GuiActionEditor extends ThemedGuiScreen {
     private String moveChestDraftItemName = "";
     private String moveChestDraftNbtText = "";
     private final List<MoveChestFilterRuleDraft> moveChestFilterRules = new ArrayList<>();
+    private final List<HuntWhitelistCardDraft> huntWhitelistCards = new ArrayList<>();
     private final List<String> conditionInventoryRequiredNbtTags = new ArrayList<>();
     private final LinkedHashSet<Integer> moveChestSelectedChestSlots = new LinkedHashSet<>();
     private final LinkedHashSet<Integer> moveChestSelectedInventorySlots = new LinkedHashSet<>();
@@ -314,6 +336,7 @@ public class GuiActionEditor extends ThemedGuiScreen {
     private final LinkedHashSet<Integer> moveChestDragSelectionSnapshot = new LinkedHashSet<>();
     private final LinkedHashSet<Integer> conditionInventoryDragSelectionSnapshot = new LinkedHashSet<>();
     private final List<IndexedHitRegion> moveChestTagRemoveRegions = new ArrayList<>();
+    private final List<IndexedHitRegion> huntWhitelistCardRegions = new ArrayList<>();
     private final List<IndexedHitRegion> conditionInventoryTagRemoveRegions = new ArrayList<>();
     private final List<IndexedHitRegion> moveChestTargetSlotRegions = new ArrayList<>();
     private final List<IndexedHitRegion> moveChestInventorySlotRegions = new ArrayList<>();
@@ -340,9 +363,12 @@ public class GuiActionEditor extends ThemedGuiScreen {
     int booleanExpressionCardListBaseY = -1;
     int inventoryItemFilterExpressionToolbarBaseY = -1;
     int inventoryItemFilterExpressionCardListBaseY = -1;
+    private int huntWhitelistCardListBaseY = -1;
     private int conditionInventoryNbtTagScrollOffset = 0;
     int booleanExpressionCardScrollOffset = 0;
     int inventoryItemFilterExpressionCardScrollOffset = 0;
+    private int huntWhitelistCardScrollOffset = 0;
+    private int selectedHuntWhitelistCardIndex = -1;
     int selectedBooleanExpressionIndex = -1;
     int selectedInventoryItemFilterExpressionIndex = -1;
     private List<String> availableSequenceNames = new ArrayList<>();
@@ -1053,6 +1079,8 @@ public class GuiActionEditor extends ThemedGuiScreen {
         this.headerToolbarMaxScrollIndex = 0;
         this.btnAddSelectedHuntWhitelist = null;
         this.btnAddSelectedHuntBlacklist = null;
+        this.btnAddHuntWhitelistCard = null;
+        this.btnDeleteHuntWhitelistCard = null;
         this.nearbyEntityDropdown = null;
         this.nearbyBlockDropdown = null;
         this.nearbyEntityPosMap.clear();
@@ -1077,6 +1105,7 @@ public class GuiActionEditor extends ThemedGuiScreen {
         this.moveChestDraftItemName = "";
         this.moveChestDraftNbtText = "";
         this.moveChestFilterRules.clear();
+        this.huntWhitelistCards.clear();
         this.conditionInventoryRequiredNbtTags.clear();
         this.moveChestSelectedChestSlots.clear();
         this.moveChestSelectedInventorySlots.clear();
@@ -1084,6 +1113,7 @@ public class GuiActionEditor extends ThemedGuiScreen {
         this.moveChestDragSelectionSnapshot.clear();
         this.conditionInventoryDragSelectionSnapshot.clear();
         this.moveChestTagRemoveRegions.clear();
+        this.huntWhitelistCardRegions.clear();
         this.conditionInventoryTagRemoveRegions.clear();
         this.moveChestTargetSlotRegions.clear();
         this.moveChestInventorySlotRegions.clear();
@@ -1110,9 +1140,12 @@ public class GuiActionEditor extends ThemedGuiScreen {
         this.booleanExpressionCardListBaseY = -1;
         this.inventoryItemFilterExpressionToolbarBaseY = -1;
         this.inventoryItemFilterExpressionCardListBaseY = -1;
+        this.huntWhitelistCardListBaseY = -1;
         this.conditionInventoryNbtTagScrollOffset = 0;
         this.booleanExpressionCardScrollOffset = 0;
         this.inventoryItemFilterExpressionCardScrollOffset = 0;
+        this.huntWhitelistCardScrollOffset = 0;
+        this.selectedHuntWhitelistCardIndex = -1;
         this.selectedBooleanExpressionIndex = -1;
         this.selectedInventoryItemFilterExpressionIndex = -1;
         this.booleanExpressionCardRegions.clear();
@@ -1211,6 +1244,7 @@ public class GuiActionEditor extends ThemedGuiScreen {
         updateRightHeaderButtonLayout();
         updateBooleanExpressionControlLayout();
         updateInventoryItemFilterExpressionControlLayout();
+        updateHuntWhitelistControlState();
         updateConditionInventoryNbtControlLayout();
         updateMoveChestCustomControlLayout();
         recomputeParamScrollBounds();
@@ -1218,6 +1252,7 @@ public class GuiActionEditor extends ThemedGuiScreen {
         updateScrollableControlPositions();
         updateBooleanExpressionControlLayout();
         updateInventoryItemFilterExpressionControlLayout();
+        updateHuntWhitelistControlState();
         updateConditionInventoryNbtControlLayout();
         updateMoveChestCustomControlLayout();
     }
@@ -2923,36 +2958,35 @@ public class GuiActionEditor extends ThemedGuiScreen {
     private void applyHuntPreset(int presetIndex) {
         JsonObject draft = cloneJsonObject(currentParams);
         draft.addProperty("radius", 6.0D);
-        draft.addProperty("attackCount", 0);
-        draft.addProperty("autoAttack", true);
-        draft.addProperty("huntAimLockEnabled", true);
-        draft.addProperty("trackingDistance", 1.2D);
         draft.addProperty("huntUpRange", KillAuraHandler.DEFAULT_HUNT_UP_RANGE);
         draft.addProperty("huntDownRange", KillAuraHandler.DEFAULT_HUNT_DOWN_RANGE);
-        draft.addProperty("targetHostile", true);
-        draft.addProperty("targetPassive", false);
-        draft.addProperty("targetPlayers", false);
         draft.addProperty("noTargetSkipCount", 0);
-        draft.addProperty("huntChaseIntervalEnabled", false);
-        draft.addProperty("huntChaseIntervalSeconds", 0.0D);
         draft.addProperty("showHuntRange", false);
+        draft.remove("attackCount");
+        draft.remove("autoAttack");
+        draft.remove("huntAimLockEnabled");
+        draft.remove("attackMode");
+        draft.remove("attackSequenceName");
+        draft.remove("trackingDistance");
+        draft.remove("huntMode");
+        draft.remove("huntOrbitEnabled");
+        draft.remove("targetHostile");
+        draft.remove("targetPassive");
+        draft.remove("targetPlayers");
+        draft.remove("ignoreInvisible");
+        draft.remove("noDamageAttackLimit");
+        draft.remove("huntChaseIntervalEnabled");
+        draft.remove("huntChaseIntervalSeconds");
 
         switch (presetIndex) {
             case 0:
-                draft.addProperty("attackMode", KillAuraHandler.ATTACK_MODE_NORMAL);
-                draft.addProperty("huntMode", KillAuraHandler.HUNT_MODE_APPROACH);
-                draft.addProperty("huntOrbitEnabled", false);
+                draft.addProperty("radius", 6.0D);
                 break;
             case 1:
-                draft.addProperty("attackMode", KillAuraHandler.ATTACK_MODE_NORMAL);
-                draft.addProperty("huntMode", KillAuraHandler.HUNT_MODE_FIXED_DISTANCE);
-                draft.addProperty("trackingDistance", 1.6D);
-                draft.addProperty("huntOrbitEnabled", true);
+                draft.addProperty("radius", 8.0D);
                 break;
             case 2:
-                draft.addProperty("attackMode", KillAuraHandler.ATTACK_MODE_SEQUENCE);
-                draft.addProperty("huntMode", KillAuraHandler.HUNT_MODE_APPROACH);
-                draft.addProperty("huntOrbitEnabled", false);
+                draft.addProperty("radius", 10.0D);
                 break;
             default:
                 return;
@@ -4002,6 +4036,26 @@ public class GuiActionEditor extends ThemedGuiScreen {
                 + 8;
     }
 
+    private boolean isHuntActionSelected() {
+        return "hunt".equalsIgnoreCase(getSelectedActionType());
+    }
+
+    private int getHuntWhitelistVisibleRows() {
+        int rowStride = HUNT_WHITELIST_CARD_ROW_HEIGHT + HUNT_WHITELIST_CARD_ROW_GAP;
+        return Math.max(1, (HUNT_WHITELIST_CARD_LIST_HEIGHT - 8 + HUNT_WHITELIST_CARD_ROW_GAP) / rowStride);
+    }
+
+    private int getHuntWhitelistCardMaxScroll() {
+        return Math.max(0, huntWhitelistCards.size() - getHuntWhitelistVisibleRows());
+    }
+
+    private int getHuntWhitelistCustomBottomBaseY() {
+        if (!isHuntActionSelected() || huntWhitelistCardListBaseY < 0) {
+            return 0;
+        }
+        return huntWhitelistCardListBaseY + HUNT_WHITELIST_CARD_LIST_HEIGHT + 8;
+    }
+
     private void recomputeParamScrollBounds() {
         int contentBottom = getParamContentBottomBaseY();
         int viewHeight = Math.max(1, paramViewBottom - paramViewTop);
@@ -4043,6 +4097,9 @@ public class GuiActionEditor extends ThemedGuiScreen {
         }
         if (isBooleanExpressionActionSelected()) {
             contentBottom = Math.max(contentBottom, getBooleanExpressionCustomBottomBaseY());
+        }
+        if (isHuntActionSelected()) {
+            contentBottom = Math.max(contentBottom, getHuntWhitelistCustomBottomBaseY());
         }
         if (isMoveChestActionSelected()) {
             contentBottom = Math.max(contentBottom, getMoveChestCustomBottomBaseY());
@@ -4215,8 +4272,29 @@ public class GuiActionEditor extends ThemedGuiScreen {
             return;
         }
 
+        if (button.id == BTN_ID_ADD_HUNT_WHITELIST_CARD) {
+            addOrUpdateHuntWhitelistCardFromInputs();
+            refreshDynamicParamLayout();
+            return;
+        }
+
+        if (button.id == BTN_ID_DELETE_HUNT_WHITELIST_CARD) {
+            if (selectedHuntWhitelistCardIndex >= 0 && selectedHuntWhitelistCardIndex < huntWhitelistCards.size()) {
+                huntWhitelistCards.remove(selectedHuntWhitelistCardIndex);
+                if (selectedHuntWhitelistCardIndex >= huntWhitelistCards.size()) {
+                    selectedHuntWhitelistCardIndex = huntWhitelistCards.isEmpty() ? -1 : huntWhitelistCards.size() - 1;
+                }
+                syncHuntWhitelistCardsToCurrentParams();
+                clampHuntWhitelistCardSelectionAndScroll();
+                this.hasUnsavedChanges = true;
+                this.pendingSwitchActionType = null;
+                refreshDynamicParamLayout();
+            }
+            return;
+        }
+
         if (button.id == BTN_ID_ADD_HUNT_WHITELIST) {
-            appendSelectedNearbyEntityToFilterField("nameWhitelistText", "enableNameWhitelist");
+            appendSelectedNearbyEntityToHuntWhitelistCards();
             return;
         }
 
@@ -4465,6 +4543,7 @@ public class GuiActionEditor extends ThemedGuiScreen {
         }
 
         drawBooleanExpressionCustomSection(mouseX, mouseY);
+        drawHuntWhitelistCustomSection(mouseX, mouseY);
         drawConditionInventoryCustomSection(mouseX, mouseY);
         drawMoveChestCustomSection(mouseX, mouseY);
 
@@ -4614,6 +4693,90 @@ public class GuiActionEditor extends ThemedGuiScreen {
 
     private void drawBooleanExpressionCustomSection(int mouseX, int mouseY) {
         BooleanExpressionEditorSupport.drawCustomSection(this, mouseX, mouseY);
+    }
+
+    private void drawHuntWhitelistCustomSection(int mouseX, int mouseY) {
+        huntWhitelistCardRegions.clear();
+        if (!isHuntActionSelected() || huntWhitelistCardListBaseY < 0) {
+            return;
+        }
+        clampHuntWhitelistCardSelectionAndScroll();
+        updateHuntWhitelistControlState();
+
+        int x = getParamContentX();
+        int fieldWidth = getParamFieldWidth();
+        int listY = huntWhitelistCardListBaseY - paramScrollOffset;
+        int listHeight = HUNT_WHITELIST_CARD_LIST_HEIGHT;
+        int titleY = listY - 12;
+        if (titleY + 10 >= paramViewTop && titleY <= paramViewBottom) {
+            String suffix = huntWhitelistCards.isEmpty()
+                    ? " §7(未添加)"
+                    : " §7(" + huntWhitelistCards.size() + ")";
+            this.drawString(fontRenderer, "白名单卡片" + suffix, x, titleY, 0xFFDDDDDD);
+        }
+        if (listY + listHeight < paramViewTop || listY > paramViewBottom) {
+            return;
+        }
+
+        GuiTheme.drawInputFrameSafe(x, listY, fieldWidth, listHeight, false, true);
+        drawRect(x + 1, listY + 1, x + fieldWidth - 1, listY + listHeight - 1, 0x2A101820);
+
+        if (huntWhitelistCards.isEmpty()) {
+            GuiTheme.drawEmptyState(x + fieldWidth / 2, listY + listHeight / 2 - 10,
+                    "没有白名单卡片", fontRenderer);
+            this.drawString(fontRenderer, "添加卡片后才会按白名单筛目标；数量空/0 表示清完该目标。",
+                    x + 8, listY + listHeight - 14, 0xFF8EA4B8);
+            return;
+        }
+
+        int visibleRows = getHuntWhitelistVisibleRows();
+        int maxScroll = getHuntWhitelistCardMaxScroll();
+        int cardX = x + 4;
+        int cardWidth = fieldWidth - 14;
+        int rowStride = HUNT_WHITELIST_CARD_ROW_HEIGHT + HUNT_WHITELIST_CARD_ROW_GAP;
+        for (int row = 0; row < visibleRows; row++) {
+            int index = row + huntWhitelistCardScrollOffset;
+            if (index >= huntWhitelistCards.size()) {
+                break;
+            }
+            HuntWhitelistCardDraft card = huntWhitelistCards.get(index);
+            int cardY = listY + 4 + row * rowStride;
+            boolean selected = index == selectedHuntWhitelistCardIndex;
+            boolean hovered = isPointInside(mouseX, mouseY, cardX, cardY, cardWidth, HUNT_WHITELIST_CARD_ROW_HEIGHT);
+            int border = selected ? 0xFF7AD9FF : (hovered ? 0xFF5F8FAE : 0xFF3D586B);
+            int fill = selected ? 0xAA244053 : (hovered ? 0x8A22313E : 0x6A18232C);
+            drawRect(cardX - 1, cardY - 1, cardX + cardWidth + 1, cardY + HUNT_WHITELIST_CARD_ROW_HEIGHT + 1,
+                    border);
+            drawRect(cardX, cardY, cardX + cardWidth, cardY + HUNT_WHITELIST_CARD_ROW_HEIGHT, fill);
+            drawRect(cardX, cardY, cardX + 3, cardY + HUNT_WHITELIST_CARD_ROW_HEIGHT,
+                    selected ? 0xFF56B6E8 : 0xFF4C6E84);
+
+            String indexText = "#" + (index + 1);
+            this.drawString(fontRenderer, indexText, cardX + 8, cardY + 6,
+                    selected ? 0xFFFFFFFF : 0xFFD8E5F1);
+            int countWidth = Math.max(52, fontRenderer.getStringWidth(getHuntWhitelistCountText(card)) + 14);
+            String nameText = fontRenderer.trimStringToWidth(card.name, Math.max(40, cardWidth - 42 - countWidth));
+            this.drawString(fontRenderer, nameText, cardX + 32, cardY + 6, 0xFFF1F7FC);
+            this.drawString(fontRenderer, getHuntWhitelistCountText(card),
+                    cardX + cardWidth - countWidth + 6, cardY + 6,
+                    card.killCount > 0 ? 0xFFFFD26A : 0xFF9FDFFF);
+            this.drawString(fontRenderer,
+                    card.killCount > 0 ? "达到数量后结束动作" : "不填数量: 清完匹配目标",
+                    cardX + 32, cardY + 18, 0xFF8EA4B8);
+            huntWhitelistCardRegions.add(new IndexedHitRegion(cardX, cardY, cardWidth,
+                    HUNT_WHITELIST_CARD_ROW_HEIGHT, index));
+        }
+
+        if (maxScroll > 0) {
+            int thumbHeight = Math.max(12, (int) ((visibleRows / (float) huntWhitelistCards.size()) * (listHeight - 4)));
+            int trackHeight = Math.max(1, (listHeight - 4) - thumbHeight);
+            int thumbY = listY + 2 + (int) ((huntWhitelistCardScrollOffset / (float) maxScroll) * trackHeight);
+            GuiTheme.drawScrollbar(x + fieldWidth - 6, listY + 2, 4, listHeight - 4, thumbY, thumbHeight);
+        }
+    }
+
+    private String getHuntWhitelistCountText(HuntWhitelistCardDraft card) {
+        return card != null && card.killCount > 0 ? "击杀 " + card.killCount : "清完";
     }
 
     private void drawConditionInventoryCustomSection(int mouseX, int mouseY) {
@@ -4987,6 +5150,11 @@ public class GuiActionEditor extends ThemedGuiScreen {
             return;
         }
 
+        if (mouseButton == 0 && handleHuntWhitelistCustomClick(mouseX, mouseY)) {
+            refreshDynamicParamLayout();
+            return;
+        }
+
         if (mouseButton == 0 && handleMoveChestCustomClick(mouseX, mouseY)) {
             this.hasUnsavedChanges = true;
             this.pendingSwitchActionType = null;
@@ -5220,6 +5388,9 @@ public class GuiActionEditor extends ThemedGuiScreen {
                 if (InventoryItemFilterExpressionEditorSupport.handleCustomWheel(this, mouseScaledX, mouseScaledY, dWheel)) {
                     return;
                 }
+                if (handleHuntWhitelistCustomWheel(mouseScaledX, mouseScaledY, dWheel)) {
+                    return;
+                }
                 if (handleConditionInventoryCustomWheel(mouseScaledX, mouseScaledY, dWheel)) {
                     return;
                 }
@@ -5271,6 +5442,17 @@ public class GuiActionEditor extends ThemedGuiScreen {
             if (field.getText().length() != beforeLen || Character.isDefined(typedChar)) {
                 hasUnsavedChanges = true;
                 pendingSwitchActionType = null;
+            }
+        }
+        if (isHuntActionSelected()
+                && (keyCode == org.lwjgl.input.Keyboard.KEY_RETURN
+                        || keyCode == org.lwjgl.input.Keyboard.KEY_NUMPADENTER)) {
+            GuiTextField nameField = getFieldByKey("__ui_hunt_whitelist_name");
+            GuiTextField countField = getFieldByKey("__ui_hunt_whitelist_kill_count");
+            if ((nameField != null && nameField.isFocused()) || (countField != null && countField.isFocused())) {
+                addOrUpdateHuntWhitelistCardFromInputs();
+                refreshDynamicParamLayout();
+                return;
             }
         }
         if (conditionInventoryNbtTagInputField != null) {
@@ -5408,6 +5590,232 @@ public class GuiActionEditor extends ThemedGuiScreen {
         return String.join(", ", values);
     }
 
+    void initializeHuntWhitelistCardState() {
+        this.huntWhitelistCards.clear();
+        this.huntWhitelistCards.addAll(readHuntWhitelistCards(currentParams));
+        clampHuntWhitelistCardSelectionAndScroll();
+    }
+
+    int addHuntWhitelistCardList(int width, int x, int y) {
+        this.huntWhitelistCardListBaseY = y;
+        return HUNT_WHITELIST_CARD_LIST_HEIGHT;
+    }
+
+    private List<HuntWhitelistCardDraft> readHuntWhitelistCards(JsonObject source) {
+        List<HuntWhitelistCardDraft> cards = new ArrayList<HuntWhitelistCardDraft>();
+        if (source == null) {
+            return cards;
+        }
+        if (source.has("nameWhitelistEntries") && source.get("nameWhitelistEntries").isJsonArray()) {
+            for (JsonElement element : source.getAsJsonArray("nameWhitelistEntries")) {
+                if (element == null || element.isJsonNull()) {
+                    continue;
+                }
+                if (element.isJsonObject()) {
+                    JsonObject object = element.getAsJsonObject();
+                    addOrReplaceHuntWhitelistCard(cards,
+                            readFirstString(object, "name", "keyword", "target", "value"),
+                            readFirstInt(object, 0, "killCount", "count", "kills", "targetCount"));
+                } else if (element.isJsonPrimitive()) {
+                    addOrReplaceHuntWhitelistCard(cards, element.getAsString(), 0);
+                }
+            }
+        }
+        if (!cards.isEmpty()) {
+            return cards;
+        }
+        if (source.has("nameWhitelist") && source.get("nameWhitelist").isJsonArray()) {
+            for (JsonElement element : source.getAsJsonArray("nameWhitelist")) {
+                if (element != null && element.isJsonPrimitive()) {
+                    addOrReplaceHuntWhitelistCard(cards, element.getAsString(), 0);
+                }
+            }
+        } else if (source.has("nameWhitelist") && source.get("nameWhitelist").isJsonPrimitive()) {
+            for (String token : splitFilterText(source.get("nameWhitelist").getAsString())) {
+                addOrReplaceHuntWhitelistCard(cards, token, 0);
+            }
+        }
+        if (cards.isEmpty() && source.has("nameWhitelistText") && source.get("nameWhitelistText").isJsonPrimitive()) {
+            for (String token : splitFilterText(source.get("nameWhitelistText").getAsString())) {
+                addOrReplaceHuntWhitelistCard(cards, token, 0);
+            }
+        }
+        return cards;
+    }
+
+    private String readFirstString(JsonObject object, String... keys) {
+        if (object == null || keys == null) {
+            return "";
+        }
+        for (String key : keys) {
+            if (key != null && object.has(key) && object.get(key).isJsonPrimitive()) {
+                return object.get(key).getAsString();
+            }
+        }
+        return "";
+    }
+
+    private int readFirstInt(JsonObject object, int defaultValue, String... keys) {
+        if (object == null || keys == null) {
+            return defaultValue;
+        }
+        for (String key : keys) {
+            if (key == null || !object.has(key) || !object.get(key).isJsonPrimitive()) {
+                continue;
+            }
+            try {
+                return Math.max(0, object.get(key).getAsInt());
+            } catch (Exception ignored) {
+                try {
+                    return Math.max(0, (int) Math.round(Double.parseDouble(object.get(key).getAsString().trim())));
+                } catch (Exception ignoredAgain) {
+                    return defaultValue;
+                }
+            }
+        }
+        return defaultValue;
+    }
+
+    private void addOrReplaceHuntWhitelistCard(List<HuntWhitelistCardDraft> cards, String rawName, int killCount) {
+        if (cards == null) {
+            return;
+        }
+        String normalizedName = KillAuraHandler.normalizeFilterName(rawName);
+        if (normalizedName.isEmpty()) {
+            return;
+        }
+        HuntWhitelistCardDraft card = new HuntWhitelistCardDraft(normalizedName, killCount);
+        for (int i = 0; i < cards.size(); i++) {
+            if (cards.get(i).name.equalsIgnoreCase(card.name)) {
+                cards.set(i, card);
+                return;
+            }
+        }
+        cards.add(card);
+    }
+
+    private void addOrUpdateHuntWhitelistCardFromInputs() {
+        GuiTextField nameField = getFieldByKey("__ui_hunt_whitelist_name");
+        GuiTextField countField = getFieldByKey("__ui_hunt_whitelist_kill_count");
+        String normalizedName = KillAuraHandler.normalizeFilterName(nameField == null ? "" : nameField.getText());
+        if (normalizedName.isEmpty()) {
+            return;
+        }
+        int killCount = parseHuntWhitelistKillCount(countField == null ? "" : countField.getText());
+        HuntWhitelistCardDraft card = new HuntWhitelistCardDraft(normalizedName, killCount);
+        int existingIndex = findHuntWhitelistCardIndex(normalizedName);
+        if (existingIndex >= 0) {
+            huntWhitelistCards.set(existingIndex, card);
+            selectedHuntWhitelistCardIndex = existingIndex;
+        } else if (selectedHuntWhitelistCardIndex >= 0 && selectedHuntWhitelistCardIndex < huntWhitelistCards.size()) {
+            huntWhitelistCards.set(selectedHuntWhitelistCardIndex, card);
+        } else {
+            huntWhitelistCards.add(card);
+            selectedHuntWhitelistCardIndex = huntWhitelistCards.size() - 1;
+        }
+        syncHuntWhitelistCardsToCurrentParams();
+        clampHuntWhitelistCardSelectionAndScroll();
+        this.hasUnsavedChanges = true;
+        this.pendingSwitchActionType = null;
+    }
+
+    private int parseHuntWhitelistKillCount(String text) {
+        if (text == null || text.trim().isEmpty()) {
+            return 0;
+        }
+        try {
+            return Math.max(0, (int) Math.round(Double.parseDouble(text.trim())));
+        } catch (NumberFormatException ignored) {
+            return 0;
+        }
+    }
+
+    private int findHuntWhitelistCardIndex(String normalizedName) {
+        if (normalizedName == null || normalizedName.trim().isEmpty()) {
+            return -1;
+        }
+        for (int i = 0; i < huntWhitelistCards.size(); i++) {
+            HuntWhitelistCardDraft card = huntWhitelistCards.get(i);
+            if (card != null && card.name.equalsIgnoreCase(normalizedName.trim())) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private void syncSelectedHuntWhitelistCardToInputs() {
+        if (selectedHuntWhitelistCardIndex < 0 || selectedHuntWhitelistCardIndex >= huntWhitelistCards.size()) {
+            return;
+        }
+        HuntWhitelistCardDraft card = huntWhitelistCards.get(selectedHuntWhitelistCardIndex);
+        if (card == null) {
+            return;
+        }
+        GuiTextField nameField = getFieldByKey("__ui_hunt_whitelist_name");
+        GuiTextField countField = getFieldByKey("__ui_hunt_whitelist_kill_count");
+        if (nameField != null) {
+            nameField.setText(card.name);
+        }
+        if (countField != null) {
+            countField.setText(card.killCount > 0 ? String.valueOf(card.killCount) : "");
+        }
+    }
+
+    private void syncHuntWhitelistCardsToCurrentParams() {
+        writeHuntWhitelistCardsToParams(currentParams);
+    }
+
+    private void writeHuntWhitelistCardsToParams(JsonObject target) {
+        if (target == null) {
+            return;
+        }
+        JsonArray entries = new JsonArray();
+        JsonArray names = new JsonArray();
+        LinkedHashSet<String> unique = new LinkedHashSet<String>();
+        for (HuntWhitelistCardDraft card : huntWhitelistCards) {
+            if (card == null || card.isEmpty()) {
+                continue;
+            }
+            String normalizedName = KillAuraHandler.normalizeFilterName(card.name);
+            if (normalizedName.isEmpty() || !unique.add(normalizedName.toLowerCase(Locale.ROOT))) {
+                continue;
+            }
+            JsonObject object = new JsonObject();
+            object.addProperty("name", normalizedName);
+            if (card.killCount > 0) {
+                object.addProperty("killCount", card.killCount);
+            }
+            entries.add(object);
+            names.add(normalizedName);
+        }
+        target.remove("nameWhitelistText");
+        if (entries.size() == 0) {
+            target.remove("nameWhitelistEntries");
+            target.remove("nameWhitelist");
+            return;
+        }
+        target.add("nameWhitelistEntries", entries);
+        target.add("nameWhitelist", names);
+    }
+
+    private void clampHuntWhitelistCardSelectionAndScroll() {
+        if (huntWhitelistCards.isEmpty()) {
+            selectedHuntWhitelistCardIndex = -1;
+            huntWhitelistCardScrollOffset = 0;
+            return;
+        }
+        if (selectedHuntWhitelistCardIndex >= huntWhitelistCards.size()) {
+            selectedHuntWhitelistCardIndex = huntWhitelistCards.size() - 1;
+        }
+        int maxScroll = getHuntWhitelistCardMaxScroll();
+        huntWhitelistCardScrollOffset = MathHelper.clamp(huntWhitelistCardScrollOffset, 0, maxScroll);
+        if (selectedHuntWhitelistCardIndex >= 0 && selectedHuntWhitelistCardIndex < huntWhitelistCardScrollOffset) {
+            huntWhitelistCardScrollOffset = selectedHuntWhitelistCardIndex;
+        } else if (selectedHuntWhitelistCardIndex >= huntWhitelistCardScrollOffset + getHuntWhitelistVisibleRows()) {
+            huntWhitelistCardScrollOffset = selectedHuntWhitelistCardIndex - getHuntWhitelistVisibleRows() + 1;
+        }
+    }
+
     private String getParamDropdownValue(String key, String defaultValue) {
         int index = paramDropdownKeys.indexOf(key);
         if (index < 0 || index >= paramDropdowns.size()) {
@@ -5522,6 +5930,14 @@ public class GuiActionEditor extends ThemedGuiScreen {
             btnSelectHuntAttackSequence.displayString = enabled
                     ? getHuntAttackSequenceButtonText()
                     : "§8需切到序列攻击";
+        }
+        updateHuntWhitelistControlState();
+    }
+
+    private void updateHuntWhitelistControlState() {
+        if (btnDeleteHuntWhitelistCard != null) {
+            btnDeleteHuntWhitelistCard.enabled = selectedHuntWhitelistCardIndex >= 0
+                    && selectedHuntWhitelistCardIndex < huntWhitelistCards.size();
         }
     }
 
@@ -5643,6 +6059,29 @@ public class GuiActionEditor extends ThemedGuiScreen {
         this.pendingSwitchActionType = null;
     }
 
+    private void appendSelectedNearbyEntityToHuntWhitelistCards() {
+        if (nearbyEntityDropdown == null || nearbyEntityNameMap.isEmpty()) {
+            return;
+        }
+        String selectedName = nearbyEntityNameMap.get(nearbyEntityDropdown.getValue());
+        String normalizedSelected = KillAuraHandler.normalizeFilterName(selectedName);
+        if (normalizedSelected.isEmpty()) {
+            return;
+        }
+
+        GuiTextField nameField = getFieldByKey("__ui_hunt_whitelist_name");
+        GuiTextField countField = getFieldByKey("__ui_hunt_whitelist_kill_count");
+        if (nameField != null) {
+            nameField.setText(normalizedSelected);
+        }
+        if (countField != null && selectedHuntWhitelistCardIndex < 0) {
+            countField.setText("");
+        }
+        setToggleValue("enableNameWhitelist", true);
+        addOrUpdateHuntWhitelistCardFromInputs();
+        refreshDynamicParamLayout();
+    }
+
     private void fillFollowEntityNameFromScan() {
         if (nearbyEntityDropdown == null || nearbyEntityNameMap.isEmpty()) {
             return;
@@ -5755,7 +6194,19 @@ public class GuiActionEditor extends ThemedGuiScreen {
         if (btnSelectHuntAttackSequence != null && btnSelectHuntAttackSequence.visible
                 && isPointInside(mouseX, mouseY, btnSelectHuntAttackSequence.x, btnSelectHuntAttackSequence.y,
                         btnSelectHuntAttackSequence.width, btnSelectHuntAttackSequence.height)) {
-            return "为中心搜怪击杀选择攻击序列；仅在攻击方式=执行序列攻击时生效。";
+            return "中心搜怪的攻击方式已改为使用杀戮光环当前配置。";
+        }
+
+        if (btnAddHuntWhitelistCard != null && btnAddHuntWhitelistCard.visible
+                && isPointInside(mouseX, mouseY, btnAddHuntWhitelistCard.x, btnAddHuntWhitelistCard.y,
+                        btnAddHuntWhitelistCard.width, btnAddHuntWhitelistCard.height)) {
+            return "把上方目标名和击杀数量保存为白名单卡片；数量空或 0 表示清完所有匹配目标。";
+        }
+
+        if (btnDeleteHuntWhitelistCard != null && btnDeleteHuntWhitelistCard.visible
+                && isPointInside(mouseX, mouseY, btnDeleteHuntWhitelistCard.x, btnDeleteHuntWhitelistCard.y,
+                        btnDeleteHuntWhitelistCard.width, btnDeleteHuntWhitelistCard.height)) {
+            return "删除当前选中的白名单卡片。";
         }
 
         if (btnSelectOtherFeature != null && btnSelectOtherFeature.visible
@@ -5894,6 +6345,51 @@ public class GuiActionEditor extends ThemedGuiScreen {
 
     private boolean handleBooleanExpressionCustomWheel(int mouseX, int mouseY, int dWheel) {
         return BooleanExpressionEditorSupport.handleCustomWheel(this, mouseX, mouseY, dWheel);
+    }
+
+    private boolean handleHuntWhitelistCustomClick(int mouseX, int mouseY) {
+        if (!isHuntActionSelected() || huntWhitelistCardListBaseY < 0) {
+            return false;
+        }
+        int x = getParamContentX();
+        int y = huntWhitelistCardListBaseY - paramScrollOffset;
+        int width = getParamFieldWidth();
+        if (!isPointInside(mouseX, mouseY, x, y, width, HUNT_WHITELIST_CARD_LIST_HEIGHT)) {
+            return false;
+        }
+        for (IndexedHitRegion region : huntWhitelistCardRegions) {
+            if (region.contains(mouseX, mouseY)) {
+                selectedHuntWhitelistCardIndex = region.index;
+                clampHuntWhitelistCardSelectionAndScroll();
+                syncSelectedHuntWhitelistCardToInputs();
+                return true;
+            }
+        }
+        selectedHuntWhitelistCardIndex = -1;
+        updateHuntWhitelistControlState();
+        return true;
+    }
+
+    private boolean handleHuntWhitelistCustomWheel(int mouseX, int mouseY, int dWheel) {
+        if (!isHuntActionSelected() || huntWhitelistCards.isEmpty() || dWheel == 0 || huntWhitelistCardListBaseY < 0) {
+            return false;
+        }
+        int x = getParamContentX();
+        int y = huntWhitelistCardListBaseY - paramScrollOffset;
+        int width = getParamFieldWidth();
+        if (!isPointInside(mouseX, mouseY, x, y, width, HUNT_WHITELIST_CARD_LIST_HEIGHT)) {
+            return false;
+        }
+        int maxScroll = getHuntWhitelistCardMaxScroll();
+        if (maxScroll <= 0) {
+            return true;
+        }
+        if (dWheel > 0) {
+            huntWhitelistCardScrollOffset = Math.max(0, huntWhitelistCardScrollOffset - 1);
+        } else {
+            huntWhitelistCardScrollOffset = Math.min(maxScroll, huntWhitelistCardScrollOffset + 1);
+        }
+        return true;
     }
 
     private boolean handleConditionInventoryCustomClick(int mouseX, int mouseY) {
@@ -6494,30 +6990,40 @@ public class GuiActionEditor extends ThemedGuiScreen {
         if (!"hunt".equalsIgnoreCase(getSelectedActionType()) || draft == null) {
             return;
         }
-        String attackMode = draft.has("attackMode")
-                ? draft.get("attackMode").getAsString()
-                : KillAuraHandler.ATTACK_MODE_NORMAL;
-        if (!KillAuraHandler.ATTACK_MODE_SEQUENCE.equalsIgnoreCase(attackMode)) {
-            return;
-        }
-        if (selectedHuntAttackSequenceName != null && !selectedHuntAttackSequenceName.trim().isEmpty()) {
-            draft.addProperty("attackSequenceName", selectedHuntAttackSequenceName.trim());
-        }
+        removeIgnoredHuntCombatParams(draft);
     }
 
     private void applyHuntActionSaveParams(String selectedType, JsonObject newParams) {
         if (!"hunt".equalsIgnoreCase(selectedType) || newParams == null) {
             return;
         }
-        String attackMode = newParams.has("attackMode")
-                ? newParams.get("attackMode").getAsString()
-                : KillAuraHandler.ATTACK_MODE_NORMAL;
-        if (KillAuraHandler.ATTACK_MODE_SEQUENCE.equalsIgnoreCase(attackMode)) {
-            if (selectedHuntAttackSequenceName != null && !selectedHuntAttackSequenceName.trim().isEmpty()) {
-                newParams.addProperty("attackSequenceName", selectedHuntAttackSequenceName.trim());
-            }
-        } else {
-            newParams.remove("attackSequenceName");
+        writeHuntWhitelistCardsToParams(newParams);
+        removeIgnoredHuntCombatParams(newParams);
+    }
+
+    private void removeIgnoredHuntCombatParams(JsonObject params) {
+        if (params == null) {
+            return;
+        }
+        String[] ignoredKeys = {
+                "attackCount",
+                "autoAttack",
+                "huntAimLockEnabled",
+                "attackMode",
+                "attackSequenceName",
+                "trackingDistance",
+                "huntMode",
+                "huntOrbitEnabled",
+                "targetHostile",
+                "targetPassive",
+                "targetPlayers",
+                "ignoreInvisible",
+                "noDamageAttackLimit",
+                "huntChaseIntervalEnabled",
+                "huntChaseIntervalSeconds"
+        };
+        for (String key : ignoredKeys) {
+            params.remove(key);
         }
     }
 

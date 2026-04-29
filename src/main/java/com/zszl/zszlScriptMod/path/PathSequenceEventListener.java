@@ -322,6 +322,7 @@ public class PathSequenceEventListener {
     private double lastHuntGotoTargetZ = Double.NaN;
     private int huntAttackRemaining = -1;
     private int huntNoTargetSkipCount = 0;
+    private int huntNoDamageAttackLimit = KillAuraHandler.DEFAULT_NO_DAMAGE_ATTACK_LIMIT;
     private boolean huntRestrictTargetGroups = true;
     private boolean huntTargetHostile = true;
     private boolean huntTargetPassive = false;
@@ -329,6 +330,11 @@ public class PathSequenceEventListener {
     private boolean huntEnableNameWhitelist = false;
     private boolean huntEnableNameBlacklist = false;
     private final List<String> huntNameWhitelist = new ArrayList<>();
+    private final List<HuntWhitelistTarget> huntWhitelistTargets = new ArrayList<>();
+    private final Map<String, Integer> huntWhitelistKillProgress = new LinkedHashMap<>();
+    private final Set<Integer> countedHuntKillEntityIds = new LinkedHashSet<>();
+    private final Map<Integer, HuntNoDamageAttackTracker> huntNoDamageAttackTrackers = new LinkedHashMap<>();
+    private final Set<Integer> huntNoDamageExcludedEntityIds = new LinkedHashSet<>();
     private final List<String> huntNameBlacklist = new ArrayList<>();
     private boolean huntShowRange = false; // 是否显示搜怪范围
     private boolean huntIgnoreInvisible = false; // 是否忽略隐身目标
@@ -347,7 +353,36 @@ public class PathSequenceEventListener {
     private static final double HUNT_CONTINUOUS_ORBIT_ENTRY_BUFFER = 1.25D;
     private static final double HUNT_CONTINUOUS_ORBIT_EXIT_BUFFER = 2.25D;
     private static final double HUNT_CONTINUOUS_ORBIT_MAX_VERTICAL_DELTA = 3.5D;
+    private static final float HUNT_NO_DAMAGE_HEALTH_EPSILON = 0.001F;
+    private static final int HUNT_NO_DAMAGE_OBSERVATION_DELAY_TICKS = 1;
+    private static final int HUNT_NO_DAMAGE_MAX_TRACKED_TARGETS = 256;
+    private static final int HUNT_NO_DAMAGE_MAX_EXCLUDED_TARGETS = 512;
     // --- 新增结束 ---
+
+    private static final class HuntWhitelistTarget {
+        private final String name;
+        private final int killCount;
+
+        private HuntWhitelistTarget(String name, int killCount) {
+            this.name = name == null ? "" : name.trim();
+            this.killCount = Math.max(0, killCount);
+        }
+
+        private boolean hasKillLimit() {
+            return this.killCount > 0;
+        }
+    }
+
+    private static final class HuntNoDamageAttackTracker {
+        private float baselineHealth;
+        private int pendingAttempts;
+        private int observationTicks;
+        private int confirmedNoDamageAttempts;
+
+        private HuntNoDamageAttackTracker(float baselineHealth) {
+            this.baselineHealth = baselineHealth;
+        }
+    }
 
     // --- 新增：跟随实体状态变量 ---
     private boolean isFollowingEntity = false;
@@ -636,6 +671,11 @@ public class PathSequenceEventListener {
 
     public static boolean startBackgroundSequence(PathSequence sequence, int remainingLoops,
             Map<String, Object> initialSequenceVariables) {
+        return startBackgroundSequence(sequence, remainingLoops, initialSequenceVariables, 0);
+    }
+
+    public static boolean startBackgroundSequence(PathSequence sequence, int remainingLoops,
+            Map<String, Object> initialSequenceVariables, int startStepIndex) {
         if (sequence == null || sequence.getSteps().isEmpty()) {
             return false;
         }
@@ -651,7 +691,7 @@ public class PathSequenceEventListener {
         PathSequenceEventListener runner = new PathSequenceEventListener(true);
         backgroundRunners.add(runner);
         runner.setStatus(sequence.getName() + " | 后台执行");
-        runner.startTracking(sequence, remainingLoops, initialSequenceVariables);
+        runner.startTracking(sequence, remainingLoops, initialSequenceVariables, startStepIndex);
         runner.resume();
         primeBackgroundNavigation(runner, sequence);
         return true;
@@ -702,26 +742,6 @@ public class PathSequenceEventListener {
             return false;
         }
         if (isHunting && huntTargetEntity != null && huntTargetEntity.isEntityAlive()) {
-            if (mc.player != null) {
-                EntityLivingBase livingTarget = huntTargetEntity instanceof EntityLivingBase
-                        ? (EntityLivingBase) huntTargetEntity
-                        : null;
-                if (livingTarget == null) {
-                    return false;
-                }
-                double distance = mc.player.getDistance(livingTarget);
-                if (shouldUseContinuousHuntOrbit(mc.player, livingTarget, distance)) {
-                    stopHuntEmbeddedNavigation();
-                    stopHuntOrbitProcess();
-                    driveContinuousHuntOrbit(mc.player, livingTarget);
-                    return true;
-                }
-                if (shouldRunHuntMovementForDistance(distance)) {
-                    huntOrbitController.stop();
-                    navigateHuntTowardsTarget(mc.player, livingTarget);
-                    return true;
-                }
-            }
             return false;
         }
         if (currentStepIndex < 0 || currentStepIndex >= currentSequence.getSteps().size()) {
@@ -1171,11 +1191,16 @@ public class PathSequenceEventListener {
     }
 
     public void startTracking(PathSequence sequence, int remainingLoops, Map<String, Object> initialSequenceVariables) {
+        startTracking(sequence, remainingLoops, initialSequenceVariables, 0);
+    }
+
+    public void startTracking(PathSequence sequence, int remainingLoops, Map<String, Object> initialSequenceVariables,
+            int startStepIndex) {
         releaseResources();
         resetPauseStateForSequenceLifecycle("startTracking:" + (sequence == null ? "unknown" : sequence.getName()),
                 true);
         this.currentSequence = sequence;
-        this.currentStepIndex = 0;
+        this.currentStepIndex = clampStartStepIndex(sequence, startStepIndex);
         this.actionIndex = 0;
         this.tracking = true;
         this.atTarget = false;
@@ -1213,7 +1238,7 @@ public class PathSequenceEventListener {
         currentDebugActionDescription = "";
         recordDebugTrace("序列开始: " + sequence.getName());
 
-        if (PathSequenceManager.isStopSequenceName(sequence.getName())) {
+        if (this.currentStepIndex == 0 && PathSequenceManager.isStopSequenceName(sequence.getName())) {
             EntityPlayerSP player = mc.player;
             if (player != null
                     && (player.posX < -1702 && player.posX > -1888 && player.posZ < -2011 && player.posZ > -2056)) {
@@ -1231,6 +1256,13 @@ public class PathSequenceEventListener {
 
         ensureEventBusRegistered();
         zszlScriptMod.LOGGER.info(I18n.format("log.path.tracking_started") + sequence.getName());
+    }
+
+    private int clampStartStepIndex(PathSequence sequence, int startStepIndex) {
+        if (sequence == null || sequence.getSteps() == null || sequence.getSteps().isEmpty()) {
+            return 0;
+        }
+        return Math.max(0, Math.min(startStepIndex, sequence.getSteps().size() - 1));
     }
 
     public void stopTracking() {
@@ -1349,39 +1381,28 @@ public class PathSequenceEventListener {
         resetHuntState();
         this.isHunting = true;
         double radius = readHuntDoubleParam(params, "radius", 3.0D);
-        boolean autoAttack = readHuntBooleanParam(params, "autoAttack", false);
-        String attackMode = normalizeHuntAttackMode(params != null && params.has("attackMode")
-                ? params.get("attackMode").getAsString()
-                : KillAuraHandler.ATTACK_MODE_NORMAL);
-        String attackSequenceName = params != null && params.has("attackSequenceName")
-                ? params.get("attackSequenceName").getAsString().trim()
-                : "";
-        boolean aimLockEnabled = readHuntBooleanParam(params, "huntAimLockEnabled", true);
-        double trackingDistance = readHuntDoubleParam(params, "trackingDistance", 1.0D);
         double upRange = readHuntDoubleParam(params, "huntUpRange", KillAuraHandler.DEFAULT_HUNT_UP_RANGE);
         double downRange = readHuntDoubleParam(params, "huntDownRange", KillAuraHandler.DEFAULT_HUNT_DOWN_RANGE);
         this.huntRadius = Math.max(0.0D, radius);
-        this.huntAutoAttack = autoAttack;
-        this.huntAttackMode = attackMode;
-        this.huntAttackSequenceName = attackSequenceName;
-        this.huntAimLockEnabled = aimLockEnabled;
+        this.huntAutoAttack = true;
+        this.huntAttackMode = KillAuraHandler.ATTACK_MODE_NORMAL;
+        this.huntAttackSequenceName = "";
+        this.huntAimLockEnabled = true;
         this.huntPendingCompleteAfterSequence = false;
-        this.huntTrackingDistanceSq = trackingDistance * trackingDistance;
+        this.huntTrackingDistanceSq = 0.0D;
         this.huntUpRange = Math.max(0.0D, upRange);
         this.huntDownRange = Math.max(0.0D, downRange);
-        this.huntMode = readHuntModeParam(params, "huntMode", KillAuraHandler.HUNT_MODE_FIXED_DISTANCE);
-        this.huntOrbitEnabled = KillAuraHandler.HUNT_MODE_FIXED_DISTANCE.equals(this.huntMode)
-                && readHuntBooleanParam(params, "huntOrbitEnabled", false);
-        this.huntChaseIntervalEnabled = readHuntBooleanParam(params, "huntChaseIntervalEnabled", false);
-        this.huntChaseIntervalTicks = Math.max(0,
-                (int) Math.round(readHuntDoubleParam(params, "huntChaseIntervalSeconds", 0.0D) * 20.0D));
-        int attackCount = readHuntIntParam(params, "attackCount", -1);
-        this.huntAttackRemaining = attackCount > 0 ? attackCount : -1;
+        this.huntMode = KillAuraHandler.huntMode;
+        this.huntOrbitEnabled = KillAuraHandler.isHuntOrbitEnabled();
+        this.huntChaseIntervalEnabled = false;
+        this.huntChaseIntervalTicks = 0;
+        this.huntAttackRemaining = -1;
         this.huntNoTargetSkipCount = Math.max(0, readHuntIntParam(params, "noTargetSkipCount", 0));
+        this.huntNoDamageAttackLimit = KillAuraHandler.getNoDamageAttackLimit();
         
         // 读取新增参数
         this.huntShowRange = readHuntBooleanParam(params, "showHuntRange", false);
-        this.huntIgnoreInvisible = readHuntBooleanParam(params, "ignoreInvisible", false);
+        this.huntIgnoreInvisible = KillAuraHandler.ignoreInvisible;
         
         // 记录搜怪中心点（玩家当前位置）
         if (mc.player != null) {
@@ -1390,49 +1411,43 @@ public class PathSequenceEventListener {
             this.huntCenterZ = mc.player.posZ;
         }
 
-        boolean hasTargetGroupConfig = params != null
-                && (params.has("targetHostile") || params.has("targetPassive") || params.has("targetPlayers"));
-        if (hasTargetGroupConfig) {
-            this.huntTargetHostile = readHuntBooleanParam(params, "targetHostile", false);
-            this.huntTargetPassive = readHuntBooleanParam(params, "targetPassive", false);
-            this.huntTargetPlayers = readHuntBooleanParam(params, "targetPlayers", false);
-            this.huntRestrictTargetGroups = this.huntTargetHostile || this.huntTargetPassive || this.huntTargetPlayers;
-        } else {
-            this.huntTargetHostile = true;
-            this.huntTargetPassive = false;
-            this.huntTargetPlayers = false;
-            this.huntRestrictTargetGroups = true;
-        }
+        this.huntTargetHostile = KillAuraHandler.targetHostile;
+        this.huntTargetPassive = KillAuraHandler.targetPassive;
+        this.huntTargetPlayers = KillAuraHandler.targetPlayers;
+        this.huntRestrictTargetGroups = true;
 
         this.huntEnableNameWhitelist = readHuntBooleanParam(params, "enableNameWhitelist", false);
         this.huntEnableNameBlacklist = readHuntBooleanParam(params, "enableNameBlacklist", false);
-        this.huntNameWhitelist.addAll(readHuntNameList(params, "nameWhitelist", "nameWhitelistText"));
+        this.huntWhitelistTargets.addAll(readHuntWhitelistTargets(params));
+        for (HuntWhitelistTarget target : this.huntWhitelistTargets) {
+            this.huntNameWhitelist.add(target.name);
+            if (target.hasKillLimit()) {
+                this.huntWhitelistKillProgress.put(target.name, 0);
+            }
+        }
+        if (this.huntNameWhitelist.isEmpty()) {
+            this.huntNameWhitelist.addAll(readHuntNameList(params, "nameWhitelist", "nameWhitelistText"));
+        }
         this.huntNameBlacklist.addAll(readHuntNameList(params, "nameBlacklist", "nameBlacklistText"));
 
         EmbeddedNavigationHandler.INSTANCE.stop();
         setStatus(getStatus().split(" \\| ")[0] + " | " + I18n.format("status.path.hunting"));
         zszlScriptMod.LOGGER.info(
-                "进入中心搜怪击杀: 半径={}, 自动攻击={}, 攻击方式={}, 攻击序列={}, 视角锁定={}, 追击模式={}, 距离={}, 垂直范围=+{}/-{}, 自动绕圈={}, 追怪间隔={}, 攻击次数={}, 无目标跳过={}, 目标类型[敌对={}, 被动={}, 玩家={}], 白名单={}, 黑名单={}, 显示范围={}, 忽略隐身={}",
+                "进入中心搜怪击杀: 半径={}, 垂直范围=+{}/-{}, 战斗配置=杀戮光环当前配置, 攻击模式={}, 追击模式={}, 自动绕圈={}, 无目标跳过={}, 无掉血排除次数={}, 目标类型[敌对={}, 被动={}, 玩家={}], 动作白名单={}, 动作黑名单={}, 显示范围={}",
                 this.huntRadius,
-                this.huntAutoAttack,
-                this.huntAttackMode,
-                this.huntAttackSequenceName.isEmpty() ? "未设置" : this.huntAttackSequenceName,
-                this.huntAimLockEnabled,
-                this.huntMode,
-                trackingDistance,
                 this.huntUpRange,
                 this.huntDownRange,
+                KillAuraHandler.attackMode,
+                KillAuraHandler.huntMode,
                 this.huntOrbitEnabled,
-                this.huntChaseIntervalEnabled ? (this.huntChaseIntervalTicks / 20.0D + "s") : "关闭",
-                this.huntAttackRemaining > 0 ? this.huntAttackRemaining : "不限",
                 this.huntNoTargetSkipCount,
-                this.huntRestrictTargetGroups ? this.huntTargetHostile : "不限",
-                this.huntRestrictTargetGroups ? this.huntTargetPassive : "不限",
-                this.huntRestrictTargetGroups ? this.huntTargetPlayers : "不限",
-                this.huntEnableNameWhitelist ? this.huntNameWhitelist : "关闭",
+                this.huntNoDamageAttackLimit > 0 ? this.huntNoDamageAttackLimit : "关闭",
+                this.huntTargetHostile,
+                this.huntTargetPassive,
+                this.huntTargetPlayers,
+                this.huntEnableNameWhitelist ? formatHuntWhitelistForLog() : "关闭",
                 this.huntEnableNameBlacklist ? this.huntNameBlacklist : "关闭",
-                this.huntShowRange,
-                this.huntIgnoreInvisible);
+                this.huntShowRange);
     }
     // --- 新增结束 ---
 
@@ -3799,139 +3814,76 @@ public class PathSequenceEventListener {
             return;
         }
 
-        if (huntAttackCooldownTicks > 0) {
-            huntAttackCooldownTicks--;
-        }
-        if (huntChaseCooldownTicks > 0) {
-            huntChaseCooldownTicks--;
-        }
-
-        EntityLivingBase synchronizedKillAuraTarget = getKillAuraSynchronizedHuntTarget(player);
-        if (synchronizedKillAuraTarget != null && synchronizedKillAuraTarget != huntTargetEntity
-                && !huntPendingCompleteAfterSequence && !huntAttackSequenceExecutor.isRunning()) {
-            setHuntTarget(synchronizedKillAuraTarget);
+        if (huntTargetEntity instanceof EntityLivingBase
+                && isHuntTargetKilled((EntityLivingBase) huntTargetEntity)) {
+            recordHuntTargetKill((EntityLivingBase) huntTargetEntity);
+            huntTargetEntity = null;
         }
 
-        // 1. 检查当前目标是否仍然有效
-        if (huntTargetEntity != null && (!(huntTargetEntity instanceof EntityLivingBase)
-                || !isLockedHuntTargetStillTrackable(player, (EntityLivingBase) huntTargetEntity))) {
-            if (!huntPendingCompleteAfterSequence && huntAttackSequenceExecutor.isRunning()) {
-                huntAttackSequenceExecutor.stop();
-            }
-            huntTargetEntity = null; // 目标死亡或失效，清空目标
-            lastHuntGotoTargetEntityId = -1L;
-            huntMovementStopped = false;
-            huntWasWithinDesiredDistance = false;
-            lastHuntGotoTargetX = Double.NaN;
-            lastHuntGotoTargetY = Double.NaN;
-            lastHuntGotoTargetZ = Double.NaN;
-            huntOrbitLoopNodeIndex = -1;
-            huntLastOrbitGotoTick = -99999;
-            huntOrbitStuckTicks = 0;
-            huntLastOrbitPlayerX = Double.NaN;
-            huntLastOrbitPlayerZ = Double.NaN;
-            huntOrbitController.stop();
-            stopHuntNavigationMode();
-        }
-
-        // 2. 如果没有目标，则搜索新目标
-        if (huntTargetEntity == null) {
-            if (huntPendingCompleteAfterSequence) {
-                if (huntAttackSequenceExecutor.isRunning()) {
-                    huntAttackSequenceExecutor.tick(player);
-                    if (huntPendingCompleteAfterSequence && !huntAttackSequenceExecutor.isRunning()) {
-                        completeHuntAction();
-                    }
-                    return;
-                }
+        if (shouldCompleteHuntByWhitelistKillGoals()) {
+            if (KillAuraHandler.INSTANCE.isAreaHuntSequenceRunning()) {
+                huntPendingCompleteAfterSequence = true;
+            } else {
                 completeHuntAction();
-                return;
             }
-            if (huntAttackSequenceExecutor.isRunning()) {
-                huntAttackSequenceExecutor.stop();
-            }
-            Optional<EntityLivingBase> nextTarget = mc.world.loadedEntityList.stream()
-                    .filter(entity -> entity instanceof EntityLivingBase)
-                    .map(entity -> (EntityLivingBase) entity)
-                    .filter(entity -> isValidHuntCandidate(player, entity))
-                    .min((left, right) -> compareHuntTargets(player, left, right));
-
-            if (nextTarget.isPresent()) {
-                setHuntTarget(nextTarget.get());
-            } else {
-                zszlScriptMod.LOGGER.info(I18n.format("log.path.hunt_no_monster_end"));
-                completeHuntAction(huntNoTargetSkipCount);
-                return;
-            }
+            return;
         }
 
-        // 4. 如果有目标，则执行移动和攻击
-        if (huntTargetEntity != null) {
-            EntityLivingBase livingTarget = (EntityLivingBase) huntTargetEntity;
-            double distanceSq = player.getDistanceSq(huntTargetEntity);
-            double distance = Math.sqrt(distanceSq);
-
-            // 只有开启自动攻击时才控制视角
-            if (huntAutoAttack) {
-                tickHuntAttackSequenceExecutor(player);
-                if (huntPendingCompleteAfterSequence && !huntAttackSequenceExecutor.isRunning()) {
-                    completeHuntAction();
-                    return;
-                }
-                if (huntAimLockEnabled && !isHuntOrbitMode()) {
-                    rotatePlayerTowardHuntTarget(player, livingTarget);
-                }
-                if (tryHuntAttack(player, livingTarget)) {
-                    if (huntAttackRemaining > 0) {
-                        huntAttackRemaining--;
-                        if (huntAttackRemaining <= 0) {
-                            if (isHuntSequenceAttackMode() && huntAttackSequenceExecutor.isRunning()) {
-                                huntPendingCompleteAfterSequence = true;
-                            } else {
-                                completeHuntAction();
-                                return;
-                            }
-                        }
-                    }
-                }
-                if (huntPendingCompleteAfterSequence && !huntAttackSequenceExecutor.isRunning()) {
-                    completeHuntAction();
-                    return;
-                }
-            }
-
-            boolean withinDesiredDistance = isWithinHuntDesiredDistance(distance);
-            boolean shouldRunMovement = shouldRunHuntMovementForDistance(distance);
-
-            if (huntChaseIntervalEnabled && withinDesiredDistance && !huntWasWithinDesiredDistance) {
-                huntChaseCooldownTicks = huntChaseIntervalTicks;
-            }
-            huntWasWithinDesiredDistance = withinDesiredDistance;
-
-            if (huntChaseIntervalEnabled && huntChaseCooldownTicks > 0) {
-                stopHuntNavigationMode();
-            } else if (shouldRunMovement) {
-                huntMovementStopped = false;
-                if (isHuntOrbitMode()) {
-                    if (shouldUseContinuousHuntOrbit(player, livingTarget, distance)) {
-                        stopHuntEmbeddedNavigation();
-                        stopHuntOrbitProcess();
-                        driveContinuousHuntOrbit(player, livingTarget);
-                        return;
-                    } else {
-                        huntOrbitController.stop();
-                        stopHuntOrbitProcess();
-                        navigateHuntTowardsTarget(player, livingTarget);
-                    }
-                } else {
-                    huntOrbitController.stop();
-                    stopHuntOrbitProcess();
-                    navigateHuntTowardsTarget(player, livingTarget);
-                }
+        if (huntPendingCompleteAfterSequence) {
+            if (!KillAuraHandler.INSTANCE.isAreaHuntSequenceRunning()) {
+                completeHuntAction();
             } else {
-                stopHuntNavigationMode();
+                KillAuraHandler.INSTANCE.tickAreaHuntSequenceOnly(player);
             }
+            return;
         }
+
+        KillAuraHandler.AreaHuntTickResult result = KillAuraHandler.INSTANCE.tickAreaHunt(player,
+                buildKillAuraAreaHuntOptions());
+        EntityLivingBase activeTarget = result.getTarget();
+        if (activeTarget != huntTargetEntity) {
+            setHuntTarget(activeTarget);
+        }
+
+        if (huntTargetEntity instanceof EntityLivingBase
+                && isHuntTargetKilled((EntityLivingBase) huntTargetEntity)) {
+            recordHuntTargetKill((EntityLivingBase) huntTargetEntity);
+            huntTargetEntity = null;
+        }
+
+        if (shouldCompleteHuntByWhitelistKillGoals()) {
+            if (result.isSequenceRunning()) {
+                huntPendingCompleteAfterSequence = true;
+            } else {
+                completeHuntAction();
+            }
+            return;
+        }
+
+        if (!result.hasTarget()) {
+            zszlScriptMod.LOGGER.info(I18n.format("log.path.hunt_no_monster_end"));
+            completeHuntAction(huntNoTargetSkipCount);
+        }
+    }
+
+    private KillAuraHandler.AreaHuntOptions buildKillAuraAreaHuntOptions() {
+        return new KillAuraHandler.AreaHuntOptions(huntCenterX, huntCenterY, huntCenterZ, huntRadius,
+                huntUpRange, huntDownRange, this::isAllowedByHuntActionNameFilters);
+    }
+
+    private boolean isAllowedByHuntActionNameFilters(EntityLivingBase entity) {
+        if (entity == null) {
+            return false;
+        }
+        String filterName = getHuntFilterableEntityName(entity);
+        if (huntEnableNameBlacklist
+                && KillAuraHandler.getNameListMatchIndex(filterName, huntNameBlacklist) != Integer.MAX_VALUE) {
+            return false;
+        }
+        if (huntEnableNameWhitelist) {
+            return getActiveHuntWhitelistMatchIndex(filterName) != Integer.MAX_VALUE;
+        }
+        return true;
     }
 
     private EntityLivingBase getKillAuraSynchronizedHuntTarget(EntityPlayerSP player) {
@@ -3966,6 +3918,7 @@ public class PathSequenceEventListener {
     }
 
     private void resetHuntState() {
+        KillAuraHandler.INSTANCE.stopAreaHuntAction();
         this.huntAttackSequenceExecutor.stop();
         this.isHunting = false;
         this.huntRadius = 0.0D;
@@ -3991,6 +3944,7 @@ public class PathSequenceEventListener {
         this.lastHuntGotoTargetZ = Double.NaN;
         this.huntAttackRemaining = -1;
         this.huntNoTargetSkipCount = 0;
+        this.huntNoDamageAttackLimit = KillAuraHandler.DEFAULT_NO_DAMAGE_ATTACK_LIMIT;
         this.huntRestrictTargetGroups = true;
         this.huntTargetHostile = true;
         this.huntTargetPassive = false;
@@ -3998,6 +3952,11 @@ public class PathSequenceEventListener {
         this.huntEnableNameWhitelist = false;
         this.huntEnableNameBlacklist = false;
         this.huntNameWhitelist.clear();
+        this.huntWhitelistTargets.clear();
+        this.huntWhitelistKillProgress.clear();
+        this.countedHuntKillEntityIds.clear();
+        this.huntNoDamageAttackTrackers.clear();
+        this.huntNoDamageExcludedEntityIds.clear();
         this.huntNameBlacklist.clear();
         this.huntShowRange = false;
         this.huntIgnoreInvisible = false;
@@ -4013,12 +3972,177 @@ public class PathSequenceEventListener {
         this.huntOrbitController.stop();
     }
 
+    private boolean isHuntNoDamageExclusionEnabled() {
+        return huntNoDamageAttackLimit > 0;
+    }
+
+    private boolean isHuntNoDamageExcludedTarget(Entity entity) {
+        return isHuntNoDamageExclusionEnabled()
+                && entity != null
+                && huntNoDamageExcludedEntityIds.contains(entity.getEntityId());
+    }
+
+    private void tickHuntNoDamageAttackTrackers(EntityPlayerSP player) {
+        if (!isHuntNoDamageExclusionEnabled() || player == null || player.world == null) {
+            huntNoDamageAttackTrackers.clear();
+            huntNoDamageExcludedEntityIds.clear();
+            return;
+        }
+
+        List<Integer> trackerIds = new ArrayList<>(huntNoDamageAttackTrackers.keySet());
+        for (Integer entityId : trackerIds) {
+            if (entityId == null) {
+                continue;
+            }
+            Entity entity = player.world.getEntityByID(entityId);
+            if (!(entity instanceof EntityLivingBase)) {
+                huntNoDamageAttackTrackers.remove(entityId);
+                huntNoDamageExcludedEntityIds.remove(entityId);
+                continue;
+            }
+            EntityLivingBase living = (EntityLivingBase) entity;
+            if (living.isDead || !living.isEntityAlive() || living.getHealth() <= 0.0F) {
+                huntNoDamageAttackTrackers.remove(entityId);
+                huntNoDamageExcludedEntityIds.remove(entityId);
+                continue;
+            }
+            HuntNoDamageAttackTracker tracker = huntNoDamageAttackTrackers.get(entityId);
+            if (tracker != null) {
+                updateHuntNoDamageAttackTracker(entityId, living, tracker);
+            }
+        }
+        pruneHuntNoDamageExcludedTargets(player);
+    }
+
+    private void updateHuntNoDamageAttackTracker(int entityId, EntityLivingBase target,
+            HuntNoDamageAttackTracker tracker) {
+        float currentHealth = target.getHealth();
+        if (currentHealth + HUNT_NO_DAMAGE_HEALTH_EPSILON < tracker.baselineHealth) {
+            tracker.baselineHealth = currentHealth;
+            tracker.pendingAttempts = 0;
+            tracker.observationTicks = 0;
+            tracker.confirmedNoDamageAttempts = 0;
+            return;
+        }
+
+        if (tracker.pendingAttempts <= 0) {
+            tracker.baselineHealth = currentHealth;
+            return;
+        }
+        if (tracker.observationTicks > 0) {
+            tracker.observationTicks--;
+            return;
+        }
+
+        tracker.confirmedNoDamageAttempts += tracker.pendingAttempts;
+        tracker.pendingAttempts = 0;
+        tracker.baselineHealth = currentHealth;
+        if (tracker.confirmedNoDamageAttempts >= huntNoDamageAttackLimit) {
+            excludeHuntNoDamageTarget(entityId, target);
+        }
+    }
+
+    private void recordHuntNoDamageAttackAttempt(EntityLivingBase target) {
+        if (!isHuntNoDamageExclusionEnabled() || target == null || target.getHealth() <= 0.0F) {
+            return;
+        }
+        int entityId = target.getEntityId();
+        if (huntNoDamageExcludedEntityIds.contains(entityId)) {
+            return;
+        }
+
+        float currentHealth = target.getHealth();
+        HuntNoDamageAttackTracker tracker = huntNoDamageAttackTrackers.get(entityId);
+        if (tracker == null) {
+            tracker = new HuntNoDamageAttackTracker(currentHealth);
+            huntNoDamageAttackTrackers.put(entityId, tracker);
+        } else if (currentHealth + HUNT_NO_DAMAGE_HEALTH_EPSILON < tracker.baselineHealth) {
+            tracker.baselineHealth = currentHealth;
+            tracker.pendingAttempts = 0;
+            tracker.observationTicks = 0;
+            tracker.confirmedNoDamageAttempts = 0;
+        }
+        if (tracker.pendingAttempts <= 0) {
+            tracker.baselineHealth = currentHealth;
+            tracker.observationTicks = HUNT_NO_DAMAGE_OBSERVATION_DELAY_TICKS;
+        }
+        tracker.pendingAttempts++;
+        pruneHuntNoDamageTrackingSize();
+    }
+
+    private void excludeHuntNoDamageTarget(int entityId, EntityLivingBase target) {
+        if (!huntNoDamageExcludedEntityIds.add(entityId)) {
+            return;
+        }
+        huntNoDamageAttackTrackers.remove(entityId);
+        pruneHuntNoDamageTrackingSize();
+        if (huntTargetEntity != null && huntTargetEntity.getEntityId() == entityId) {
+            clearHuntTargetLock(true);
+        }
+        String targetName = target == null ? "" : getHuntFilterableEntityName(target);
+        recordDebugTrace("hunt no-damage exclude -> id=" + entityId + ", name=" + targetName
+                + ", limit=" + huntNoDamageAttackLimit);
+    }
+
+    private void clearHuntTargetLock(boolean stopSequence) {
+        if (stopSequence && !huntPendingCompleteAfterSequence && huntAttackSequenceExecutor.isRunning()) {
+            huntAttackSequenceExecutor.stop();
+        }
+        huntTargetEntity = null;
+        lastHuntGotoTargetEntityId = -1L;
+        huntMovementStopped = false;
+        huntWasWithinDesiredDistance = false;
+        lastHuntGotoTargetX = Double.NaN;
+        lastHuntGotoTargetY = Double.NaN;
+        lastHuntGotoTargetZ = Double.NaN;
+        huntOrbitLoopNodeIndex = -1;
+        huntLastOrbitGotoTick = -99999;
+        huntOrbitStuckTicks = 0;
+        huntLastOrbitPlayerX = Double.NaN;
+        huntLastOrbitPlayerZ = Double.NaN;
+        huntOrbitController.stop();
+        stopHuntNavigationMode();
+    }
+
+    private void pruneHuntNoDamageExcludedTargets(EntityPlayerSP player) {
+        if (player == null || player.world == null || huntNoDamageExcludedEntityIds.isEmpty()) {
+            return;
+        }
+        List<Integer> excludedIds = new ArrayList<>(huntNoDamageExcludedEntityIds);
+        for (Integer entityId : excludedIds) {
+            if (entityId == null) {
+                continue;
+            }
+            Entity entity = player.world.getEntityByID(entityId);
+            if (!(entity instanceof EntityLivingBase)) {
+                huntNoDamageExcludedEntityIds.remove(entityId);
+                continue;
+            }
+            EntityLivingBase living = (EntityLivingBase) entity;
+            if (living.isDead || !living.isEntityAlive() || living.getHealth() <= 0.0F) {
+                huntNoDamageExcludedEntityIds.remove(entityId);
+            }
+        }
+    }
+
+    private void pruneHuntNoDamageTrackingSize() {
+        while (huntNoDamageAttackTrackers.size() > HUNT_NO_DAMAGE_MAX_TRACKED_TARGETS) {
+            Integer first = huntNoDamageAttackTrackers.keySet().iterator().next();
+            huntNoDamageAttackTrackers.remove(first);
+        }
+        while (huntNoDamageExcludedEntityIds.size() > HUNT_NO_DAMAGE_MAX_EXCLUDED_TARGETS) {
+            Integer first = huntNoDamageExcludedEntityIds.iterator().next();
+            huntNoDamageExcludedEntityIds.remove(first);
+        }
+    }
+
     private void completeHuntAction() {
         completeHuntAction(0);
     }
 
     private void completeHuntAction(int additionalSkipCount) {
         stopHuntNavigationMode();
+        KillAuraHandler.INSTANCE.stopAreaHuntAction();
         if (shouldStopNavigationOnFinish()) {
             EmbeddedNavigationHandler.INSTANCE.stop();
         }
@@ -4048,6 +4172,10 @@ public class PathSequenceEventListener {
 
     private boolean isHuntSequenceAttackMode() {
         return KillAuraHandler.ATTACK_MODE_SEQUENCE.equalsIgnoreCase(huntAttackMode);
+    }
+
+    private boolean isAnyHuntAttackSequenceMode() {
+        return isHuntSequenceAttackMode() || KillAuraHandler.isConfiguredSequenceAttackMode();
     }
 
     private String getConfiguredHuntAttackSequenceName() {
@@ -4082,7 +4210,7 @@ public class PathSequenceEventListener {
     }
 
     private void tickHuntAttackSequenceExecutor(EntityPlayerSP player) {
-        if (!isHuntSequenceAttackMode()) {
+        if (!isAnyHuntAttackSequenceMode()) {
             if (huntAttackSequenceExecutor.isRunning()) {
                 huntAttackSequenceExecutor.stop();
             }
@@ -4092,13 +4220,25 @@ public class PathSequenceEventListener {
     }
 
     private boolean tryTriggerHuntAttackSequence(EntityPlayerSP player, EntityLivingBase target) {
+        return tryTriggerHuntAttackSequence(player, target, getConfiguredHuntAttackSequenceName(), false);
+    }
+
+    private boolean tryTriggerKillAuraConfiguredAttackSequence(EntityPlayerSP player, EntityLivingBase target) {
+        if (!KillAuraHandler.INSTANCE.prepareCurrentConfigSequenceAttackForHunt(player, target)) {
+            return false;
+        }
+        return tryTriggerHuntAttackSequence(player, target, KillAuraHandler.getConfiguredAttackSequenceName(), true);
+    }
+
+    private boolean tryTriggerHuntAttackSequence(EntityPlayerSP player, EntityLivingBase target, String sequenceName,
+            boolean useKillAuraDelay) {
         if (player == null || target == null) {
             return false;
         }
         if (huntAttackCooldownTicks > 0 || huntAttackSequenceExecutor.isRunning()) {
             return false;
         }
-        String sequenceName = getConfiguredHuntAttackSequenceName();
+        sequenceName = sequenceName == null ? "" : sequenceName.trim();
         if (sequenceName.isEmpty()) {
             return false;
         }
@@ -4110,32 +4250,38 @@ public class PathSequenceEventListener {
         if (!huntAttackSequenceExecutor.isRunning()) {
             return false;
         }
-        huntAttackCooldownTicks = Math.max(0, KillAuraHandler.attackSequenceDelayTicks);
+        huntAttackCooldownTicks = Math.max(0, useKillAuraDelay
+                ? KillAuraHandler.sampleCurrentConfigSequenceDelayTicks()
+                : KillAuraHandler.attackSequenceDelayTicks);
         return true;
     }
 
     private boolean tryHuntAttack(EntityPlayerSP player, EntityLivingBase target) {
+        if (isHuntNoDamageExcludedTarget(target)) {
+            return false;
+        }
         if (isHuntSequenceAttackMode()) {
-            return tryTriggerHuntAttackSequence(player, target);
+            boolean triggered = tryTriggerHuntAttackSequence(player, target);
+            if (triggered) {
+                recordHuntNoDamageAttackAttempt(target);
+            }
+            return triggered;
         }
-        if (player == null || target == null || mc.playerController == null) {
+        if (KillAuraHandler.isConfiguredSequenceAttackMode()) {
+            boolean triggered = tryTriggerKillAuraConfiguredAttackSequence(player, target);
+            if (triggered) {
+                recordHuntNoDamageAttackAttempt(target);
+            }
+            return triggered;
+        }
+        if (huntAttackCooldownTicks > 0 || player == null || target == null) {
             return false;
         }
-        if (huntAttackCooldownTicks > 0) {
+        if (!KillAuraHandler.INSTANCE.tryAttackUsingCurrentConfigForHunt(player, target)) {
             return false;
         }
-        if (player.getDistance(target) > KillAuraHandler.attackRange) {
-            return false;
-        }
-        if (KillAuraHandler.requireLineOfSight && !player.canEntityBeSeen(target)) {
-            return false;
-        }
-        if (player.getCooledAttackStrength(0.0F) < KillAuraHandler.minAttackStrength) {
-            return false;
-        }
-        mc.playerController.attackEntity(player, target);
-        player.swingArm(net.minecraft.util.EnumHand.MAIN_HAND);
-        huntAttackCooldownTicks = Math.max(0, KillAuraHandler.minAttackIntervalTicks);
+        recordHuntNoDamageAttackAttempt(target);
+        huntAttackCooldownTicks = Math.max(0, KillAuraHandler.sampleCurrentConfigAttackCooldownTicks());
         return true;
     }
 
@@ -4476,6 +4622,9 @@ public class PathSequenceEventListener {
         if (player == null || entity == null || entity == player || !entity.isEntityAlive()) {
             return false;
         }
+        if (isHuntNoDamageExcludedTarget(entity)) {
+            return false;
+        }
         if (getDistanceSqToHuntCenter(entity) > getHuntRadiusSq()) {
             return false;
         }
@@ -4495,7 +4644,7 @@ public class PathSequenceEventListener {
             return false;
         }
         if (huntEnableNameWhitelist) {
-            return KillAuraHandler.getNameListMatchIndex(filterName, huntNameWhitelist) != Integer.MAX_VALUE;
+            return getActiveHuntWhitelistMatchIndex(filterName) != Integer.MAX_VALUE;
         }
         return true;
     }
@@ -4507,6 +4656,7 @@ public class PathSequenceEventListener {
                 && entity.isEntityAlive()
                 && !entity.isDead
                 && entity.world == mc.world
+                && !isHuntNoDamageExcludedTarget(entity)
                 && isWithinHuntVerticalRange(entity);
     }
 
@@ -4559,8 +4709,8 @@ public class PathSequenceEventListener {
 
     private int compareHuntTargets(EntityPlayerSP player, EntityLivingBase left, EntityLivingBase right) {
         if (huntEnableNameWhitelist && !huntNameWhitelist.isEmpty()) {
-            int leftPriority = KillAuraHandler.getNameListMatchIndex(getHuntFilterableEntityName(left), huntNameWhitelist);
-            int rightPriority = KillAuraHandler.getNameListMatchIndex(getHuntFilterableEntityName(right), huntNameWhitelist);
+            int leftPriority = getActiveHuntWhitelistMatchIndex(getHuntFilterableEntityName(left));
+            int rightPriority = getActiveHuntWhitelistMatchIndex(getHuntFilterableEntityName(right));
             if (leftPriority != rightPriority) {
                 return Integer.compare(leftPriority, rightPriority);
             }
@@ -4658,6 +4808,181 @@ public class PathSequenceEventListener {
         return values;
     }
 
+    private List<HuntWhitelistTarget> readHuntWhitelistTargets(JsonObject params) {
+        List<HuntWhitelistTarget> values = new ArrayList<>();
+        if (params == null) {
+            return values;
+        }
+        if (params.has("nameWhitelistEntries") && params.get("nameWhitelistEntries").isJsonArray()) {
+            for (JsonElement element : params.getAsJsonArray("nameWhitelistEntries")) {
+                if (element == null || element.isJsonNull()) {
+                    continue;
+                }
+                if (element.isJsonObject()) {
+                    JsonObject object = element.getAsJsonObject();
+                    addHuntWhitelistTarget(values,
+                            readFirstHuntString(object, "name", "keyword", "target", "value"),
+                            readFirstHuntInt(object, 0, "killCount", "count", "kills", "targetCount"));
+                } else if (element.isJsonPrimitive()) {
+                    addHuntWhitelistTarget(values, element.getAsString(), 0);
+                }
+            }
+        }
+        if (!values.isEmpty()) {
+            return values;
+        }
+        for (String name : readHuntNameList(params, "nameWhitelist", "nameWhitelistText")) {
+            addHuntWhitelistTarget(values, name, 0);
+        }
+        return values;
+    }
+
+    private String readFirstHuntString(JsonObject object, String... keys) {
+        if (object == null || keys == null) {
+            return "";
+        }
+        for (String key : keys) {
+            if (key != null && object.has(key) && object.get(key).isJsonPrimitive()) {
+                return object.get(key).getAsString();
+            }
+        }
+        return "";
+    }
+
+    private int readFirstHuntInt(JsonObject object, int defaultValue, String... keys) {
+        if (object == null || keys == null) {
+            return defaultValue;
+        }
+        for (String key : keys) {
+            if (key == null || !object.has(key) || !object.get(key).isJsonPrimitive()) {
+                continue;
+            }
+            try {
+                return Math.max(0, object.get(key).getAsInt());
+            } catch (Exception ignored) {
+                try {
+                    return Math.max(0, (int) Math.round(Double.parseDouble(object.get(key).getAsString().trim())));
+                } catch (Exception ignoredAgain) {
+                    return defaultValue;
+                }
+            }
+        }
+        return defaultValue;
+    }
+
+    private void addHuntWhitelistTarget(List<HuntWhitelistTarget> target, String rawValue, int killCount) {
+        if (target == null) {
+            return;
+        }
+        String normalized = KillAuraHandler.normalizeFilterName(rawValue);
+        if (normalized.isEmpty()) {
+            return;
+        }
+        for (int i = 0; i < target.size(); i++) {
+            HuntWhitelistTarget existing = target.get(i);
+            if (existing != null && existing.name.equalsIgnoreCase(normalized)) {
+                target.set(i, new HuntWhitelistTarget(normalized, killCount));
+                return;
+            }
+        }
+        target.add(new HuntWhitelistTarget(normalized, killCount));
+    }
+
+    private String formatHuntWhitelistForLog() {
+        if (huntWhitelistTargets.isEmpty()) {
+            return huntNameWhitelist.toString();
+        }
+        List<String> parts = new ArrayList<>();
+        for (HuntWhitelistTarget target : huntWhitelistTargets) {
+            if (target == null || target.name.isEmpty()) {
+                continue;
+            }
+            parts.add(target.hasKillLimit() ? target.name + " x" + target.killCount : target.name + " 清完");
+        }
+        return parts.toString();
+    }
+
+    private boolean isHuntTargetKilled(EntityLivingBase entity) {
+        return entity != null && (entity.isDead || !entity.isEntityAlive() || entity.getHealth() <= 0.0F);
+    }
+
+    private void recordHuntTargetKill(EntityLivingBase entity) {
+        if (entity == null || !huntEnableNameWhitelist || huntWhitelistTargets.isEmpty()) {
+            return;
+        }
+        int entityId = entity.getEntityId();
+        if (countedHuntKillEntityIds.contains(entityId)) {
+            return;
+        }
+        String filterName = getHuntFilterableEntityName(entity);
+        int index = getAnyHuntWhitelistMatchIndex(filterName);
+        if (index == Integer.MAX_VALUE || index < 0 || index >= huntWhitelistTargets.size()) {
+            return;
+        }
+        countedHuntKillEntityIds.add(entityId);
+        HuntWhitelistTarget target = huntWhitelistTargets.get(index);
+        if (target != null && target.hasKillLimit()) {
+            int next = huntWhitelistKillProgress.getOrDefault(target.name, 0) + 1;
+            huntWhitelistKillProgress.put(target.name, next);
+            recordDebugTrace("hunt whitelist kill -> " + target.name + " " + next + "/" + target.killCount);
+        }
+    }
+
+    private int getAnyHuntWhitelistMatchIndex(String filterName) {
+        if (huntWhitelistTargets.isEmpty()) {
+            return KillAuraHandler.getNameListMatchIndex(filterName, huntNameWhitelist);
+        }
+        for (int i = 0; i < huntWhitelistTargets.size(); i++) {
+            HuntWhitelistTarget target = huntWhitelistTargets.get(i);
+            if (target == null || target.name.isEmpty()) {
+                continue;
+            }
+            if (KillAuraHandler.getNameListMatchIndex(filterName, Collections.singletonList(target.name))
+                    != Integer.MAX_VALUE) {
+                return i;
+            }
+        }
+        return Integer.MAX_VALUE;
+    }
+
+    private int getActiveHuntWhitelistMatchIndex(String filterName) {
+        if (huntWhitelistTargets.isEmpty()) {
+            return KillAuraHandler.getNameListMatchIndex(filterName, huntNameWhitelist);
+        }
+        for (int i = 0; i < huntWhitelistTargets.size(); i++) {
+            HuntWhitelistTarget target = huntWhitelistTargets.get(i);
+            if (target == null || target.name.isEmpty() || isHuntWhitelistTargetComplete(target)) {
+                continue;
+            }
+            if (KillAuraHandler.getNameListMatchIndex(filterName, Collections.singletonList(target.name))
+                    != Integer.MAX_VALUE) {
+                return i;
+            }
+        }
+        return Integer.MAX_VALUE;
+    }
+
+    private boolean isHuntWhitelistTargetComplete(HuntWhitelistTarget target) {
+        return target != null
+                && target.hasKillLimit()
+                && huntWhitelistKillProgress.getOrDefault(target.name, 0) >= target.killCount;
+    }
+
+    private boolean shouldCompleteHuntByWhitelistKillGoals() {
+        if (!huntEnableNameWhitelist || huntWhitelistTargets.isEmpty()) {
+            return false;
+        }
+        for (HuntWhitelistTarget target : huntWhitelistTargets) {
+            if (target == null || target.name.isEmpty()) {
+                continue;
+            }
+            if (target.hasKillLimit() && isHuntWhitelistTargetComplete(target)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private void addHuntNameKeywordsFromText(List<String> target, String text) {
         if (text == null || text.trim().isEmpty()) {
             return;
@@ -4751,7 +5076,6 @@ public class PathSequenceEventListener {
         if (huntShowRange) {
             drawHuntRangeVisualization(huntCenterX, huntCenterY, huntCenterZ, viewerX, viewerY, viewerZ, huntRadius);
         }
-        renderHuntOrbitLoop();
     }
 
     private void drawHuntRangeVisualization(double centerX, double centerY, double centerZ,

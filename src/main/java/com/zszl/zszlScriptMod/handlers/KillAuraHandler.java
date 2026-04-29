@@ -82,8 +82,10 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Consumer;
+import java.util.function.Predicate;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -176,9 +178,13 @@ public class KillAuraHandler implements AbstractGameEventListener {
     public static float maxTurnSpeed = 18.0F;
     public static int minAttackIntervalTicks = 2;
     public static int targetsPerAttack = 1;
+    public static final int DEFAULT_NO_DAMAGE_ATTACK_LIMIT = 5;
+    public static final int MAX_NO_DAMAGE_ATTACK_LIMIT = 100;
+    public static int noDamageAttackLimit = DEFAULT_NO_DAMAGE_ATTACK_LIMIT;
 
     private static final int HUNT_GOTO_INTERVAL_TICKS = 6;
     private static final double HUNT_GOTO_MOVE_THRESHOLD_SQ = 1.0D;
+    private static final double TARGET_SWITCH_DISTANCE_HYSTERESIS_SQ = 1.0D;
     private static final double HUNT_FIXED_DISTANCE_TOLERANCE = 0.30D;
     private static final int HUNT_ORBIT_PROCESS_REQUEST_INTERVAL_TICKS = 2;
     private static final double HUNT_ORBIT_MAX_ENTRY_DISTANCE_BUFFER = 4.0D;
@@ -217,6 +223,10 @@ public class KillAuraHandler implements AbstractGameEventListener {
     private static final float ADVANCED_OVERSHOOT_MAX_YAW = 2.15F;
     private static final float ADVANCED_OVERSHOOT_MAX_ATTACK_YAW = 1.25F;
     private static final float ADVANCED_OVERSHOOT_MAX_PITCH = 0.95F;
+    private static final float NO_DAMAGE_HEALTH_EPSILON = 0.001F;
+    private static final int NO_DAMAGE_OBSERVATION_DELAY_TICKS = 1;
+    private static final int NO_DAMAGE_MAX_TRACKED_TARGETS = 256;
+    private static final int NO_DAMAGE_MAX_EXCLUDED_TARGETS = 512;
 
     private int attackCooldownTicks = 0;
     private int sequenceCooldownTicks = 0;
@@ -262,6 +272,9 @@ public class KillAuraHandler implements AbstractGameEventListener {
     private int lastTeleportCorrectionTick = Integer.MIN_VALUE;
     private final AttackSequenceExecutor attackSequenceExecutor = new AttackSequenceExecutor();
     private final HuntOrbitController huntOrbitController = new HuntOrbitController();
+    private final Map<Integer, NoDamageAttackTracker> noDamageAttackTrackers = new LinkedHashMap<>();
+    private final Set<Integer> noDamageExcludedEntityIds = new LinkedHashSet<>();
+    private int areaHuntControlTicks = 0;
 
     public static class KillAuraPreset {
         public String name = "";
@@ -312,6 +325,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
         public float maxTurnSpeed = 18.0F;
         public int minAttackIntervalTicks = 2;
         public int targetsPerAttack = 1;
+        public int noDamageAttackLimit = DEFAULT_NO_DAMAGE_ATTACK_LIMIT;
 
         public KillAuraPreset() {
         }
@@ -377,6 +391,89 @@ public class KillAuraHandler implements AbstractGameEventListener {
             this.maxTurnSpeed = other.maxTurnSpeed;
             this.minAttackIntervalTicks = other.minAttackIntervalTicks;
             this.targetsPerAttack = other.targetsPerAttack;
+            this.noDamageAttackLimit = other.noDamageAttackLimit;
+        }
+    }
+
+    private static final class NoDamageAttackTracker {
+        private float baselineHealth;
+        private int pendingAttempts;
+        private int observationTicks;
+        private int confirmedNoDamageAttempts;
+
+        private NoDamageAttackTracker(float baselineHealth) {
+            this.baselineHealth = baselineHealth;
+        }
+    }
+
+    public static final class AreaHuntOptions {
+        private final double centerX;
+        private final double centerY;
+        private final double centerZ;
+        private final double radius;
+        private final double radiusSq;
+        private final double upRange;
+        private final double downRange;
+        private final Predicate<EntityLivingBase> targetFilter;
+
+        public AreaHuntOptions(double centerX, double centerY, double centerZ, double radius,
+                double upRange, double downRange, Predicate<EntityLivingBase> targetFilter) {
+            this.centerX = centerX;
+            this.centerY = centerY;
+            this.centerZ = centerZ;
+            this.radius = Math.max(0.0D, radius);
+            this.radiusSq = this.radius * this.radius;
+            this.upRange = Math.max(0.0D, upRange);
+            this.downRange = Math.max(0.0D, downRange);
+            this.targetFilter = targetFilter;
+        }
+
+        private boolean allows(EntityLivingBase target) {
+            return targetFilter == null || targetFilter.test(target);
+        }
+
+        private boolean contains(Entity target) {
+            if (target == null) {
+                return false;
+            }
+            double dx = target.posX - centerX;
+            double dz = target.posZ - centerZ;
+            if (dx * dx + dz * dz > radiusSq) {
+                return false;
+            }
+            double dy = target.posY - centerY;
+            return dy <= upRange + 1.0E-6D && -dy <= downRange + 1.0E-6D;
+        }
+    }
+
+    public static final class AreaHuntTickResult {
+        private final boolean hasTarget;
+        private final EntityLivingBase target;
+        private final int attackedCount;
+        private final boolean sequenceRunning;
+
+        private AreaHuntTickResult(boolean hasTarget, EntityLivingBase target, int attackedCount,
+                boolean sequenceRunning) {
+            this.hasTarget = hasTarget;
+            this.target = target;
+            this.attackedCount = attackedCount;
+            this.sequenceRunning = sequenceRunning;
+        }
+
+        public boolean hasTarget() {
+            return hasTarget;
+        }
+
+        public EntityLivingBase getTarget() {
+            return target;
+        }
+
+        public int getAttackedCount() {
+            return attackedCount;
+        }
+
+        public boolean isSequenceRunning() {
+            return sequenceRunning;
         }
     }
 
@@ -443,6 +540,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
         maxTurnSpeed = 18.0F;
         minAttackIntervalTicks = 2;
         targetsPerAttack = 1;
+        noDamageAttackLimit = DEFAULT_NO_DAMAGE_ATTACK_LIMIT;
 
         try {
             File configFile = getConfigFile();
@@ -622,6 +720,9 @@ public class KillAuraHandler implements AbstractGameEventListener {
             if (json.has("targetsPerAttack")) {
                 targetsPerAttack = json.get("targetsPerAttack").getAsInt();
             }
+            if (json.has("noDamageAttackLimit")) {
+                noDamageAttackLimit = json.get("noDamageAttackLimit").getAsInt();
+            }
 
             normalizeConfig();
             if (migratedHuntVerticalDefaults) {
@@ -693,6 +794,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
             json.addProperty("maxTurnSpeed", maxTurnSpeed);
             json.addProperty("minAttackIntervalTicks", minAttackIntervalTicks);
             json.addProperty("targetsPerAttack", targetsPerAttack);
+            json.addProperty("noDamageAttackLimit", noDamageAttackLimit);
 
             try (FileWriter writer = new FileWriter(configFile)) {
                 writer.write(json.toString());
@@ -872,6 +974,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
         maxTurnSpeed = safePreset.maxTurnSpeed;
         minAttackIntervalTicks = safePreset.minAttackIntervalTicks;
         targetsPerAttack = safePreset.targetsPerAttack;
+        noDamageAttackLimit = safePreset.noDamageAttackLimit;
         normalizeConfig();
         INSTANCE.resetRuntimeState();
         saveConfig();
@@ -907,6 +1010,8 @@ public class KillAuraHandler implements AbstractGameEventListener {
         this.pendingTeleportReturnTicks = 0;
         this.lastTeleportCorrectionTick = Integer.MIN_VALUE;
         this.attackSequenceExecutor.stop();
+        clearNoDamageAttackTracking();
+        this.areaHuntControlTicks = 0;
     }
 
     public boolean hasActiveTarget(EntityPlayerSP player) {
@@ -959,6 +1064,212 @@ public class KillAuraHandler implements AbstractGameEventListener {
         }
         cacheVisualRotation(player, livingTarget, nextRotation);
         return Optional.of(nextRotation);
+    }
+
+    public boolean tryAttackUsingCurrentConfigForHunt(EntityPlayerSP player, EntityLivingBase target) {
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc == null || player == null || target == null || mc.playerController == null) {
+            return false;
+        }
+        if (aimOnlyMode || isSequenceAttackMode()) {
+            return false;
+        }
+        if (onlyWeapon && getPreferredAttackHotbarSlot(player) < 0) {
+            return false;
+        }
+        if ((isPacketAttackMode() || isTeleportAttackMode()) && player.connection == null) {
+            return false;
+        }
+        if (player.getCooledAttackStrength(0.0F) < minAttackStrength) {
+            return false;
+        }
+        if (!canAttackTargetBeforeRotation(player, target)) {
+            return false;
+        }
+
+        this.currentTargetEntityId = target.getEntityId();
+        updateAimTargetTransition(target);
+        EntityLivingBase crosshairLockedTarget = isRelockSuppressedByCrosshairTarget(player, target) ? target : null;
+        if (!prepareRotationForAttack(player, target, crosshairLockedTarget)) {
+            decayTargetSwitchSmoothTicks();
+            return false;
+        }
+
+        boolean teleportAttack = shouldUseTeleportAttack(player, target);
+        if (!canAttackTarget(player, target, !teleportAttack)) {
+            decayTargetSwitchSmoothTicks();
+            return false;
+        }
+
+        boolean attacked = false;
+        if (teleportAttack) {
+            attacked = performTeleportAttack(player, target);
+        } else if (isMouseClickAttackMode()) {
+            attacked = performMouseClickAttack(mc);
+        } else if (isPacketAttackMode()) {
+            player.connection.sendPacket(new CPacketUseEntity(target));
+            attacked = true;
+        } else {
+            mc.playerController.attackEntity(player, target);
+            attacked = true;
+        }
+        if (attacked && !isMouseClickAttackMode()) {
+            player.swingArm(EnumHand.MAIN_HAND);
+        }
+        if (attacked) {
+            recordNoDamageAttackAttempt(target);
+        }
+        decayTargetSwitchSmoothTicks();
+        return attacked;
+    }
+
+    public boolean prepareCurrentConfigSequenceAttackForHunt(EntityPlayerSP player, EntityLivingBase target) {
+        if (player == null || target == null || !isSequenceAttackMode() || !hasConfiguredAttackSequence()) {
+            return false;
+        }
+        if (!isValidTarget(player, target)) {
+            return false;
+        }
+        this.currentTargetEntityId = target.getEntityId();
+        updateAimTargetTransition(target);
+        EntityLivingBase crosshairLockedTarget = isRelockSuppressedByCrosshairTarget(player, target) ? target : null;
+        boolean prepared = prepareRotationForAttack(player, target, crosshairLockedTarget);
+        decayTargetSwitchSmoothTicks();
+        return prepared;
+    }
+
+    public static boolean isConfiguredSequenceAttackMode() {
+        return ATTACK_MODE_SEQUENCE.equalsIgnoreCase(attackMode);
+    }
+
+    public static int sampleCurrentConfigAttackCooldownTicks() {
+        return ATTACK_MODE_MOUSE_CLICK.equalsIgnoreCase(attackMode)
+                ? sampleAttackSequenceDelayTicks()
+                : minAttackIntervalTicks;
+    }
+
+    public static int sampleCurrentConfigSequenceDelayTicks() {
+        return sampleAttackSequenceDelayTicks();
+    }
+
+    public AreaHuntTickResult tickAreaHunt(EntityPlayerSP player, AreaHuntOptions options) {
+        this.areaHuntControlTicks = 2;
+        ensureBaritonePacketListenerRegistered();
+
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc == null || player == null || mc.world == null) {
+            return new AreaHuntTickResult(false, null, 0, this.attackSequenceExecutor.isRunning());
+        }
+
+        if (this.attackCooldownTicks > 0) {
+            this.attackCooldownTicks--;
+        }
+        if (this.sequenceCooldownTicks > 0) {
+            this.sequenceCooldownTicks--;
+        }
+        tickTeleportAttackRecovery(player);
+        applyFullBright(enableFullBrightVision);
+
+        if (player.isDead || player.getHealth() <= 0.0F || player.isSpectator()) {
+            clearAreaHuntRuntimeState(true);
+            return new AreaHuntTickResult(false, null, 0, false);
+        }
+
+        tickNoDamageAttackTrackers(player);
+
+        boolean sequenceAttackMode = isSequenceAttackMode();
+        if (!sequenceAttackMode && this.attackSequenceExecutor.isRunning()) {
+            this.attackSequenceExecutor.stop();
+        }
+
+        List<EntityLivingBase> targets = findTargets(player, options);
+        if (targets.isEmpty()) {
+            clearAreaHuntRuntimeState(false);
+            return new AreaHuntTickResult(false, null, 0, this.attackSequenceExecutor.isRunning());
+        }
+
+        EntityLivingBase primaryTarget = targets.get(0);
+        if (!aimOnlyMode && !sequenceAttackMode && onlyWeapon && getPreferredAttackHotbarSlot(player) < 0) {
+            return new AreaHuntTickResult(true, primaryTarget, 0, this.attackSequenceExecutor.isRunning());
+        }
+
+        updateAimTargetTransition(primaryTarget);
+        boolean orbitFacingActive = shouldForceOrbitFacing(player, primaryTarget);
+        boolean crosshairTargetLocked = isRelockSuppressedByCrosshairTarget(player, primaryTarget, options);
+
+        if (shouldApplyContinuousRotation(orbitFacingActive) && !crosshairTargetLocked) {
+            applyRotation(player, primaryTarget, orbitFacingActive);
+        }
+
+        if (shouldRunHuntMovement(player, primaryTarget)) {
+            stopHuntPickupNavigation();
+            handleHuntMovement(player, primaryTarget);
+        } else {
+            stopHuntPickupNavigation();
+            stopHuntNavigation();
+        }
+
+        int attackedCount = 0;
+        if (sequenceAttackMode) {
+            this.attackSequenceExecutor.tick(player);
+            if (canTriggerAttackSequence(player, primaryTarget, options)
+                    && prepareRotationForAttack(player, primaryTarget, crosshairTargetLocked ? primaryTarget : null)
+                    && triggerAttackSequence(player, primaryTarget)) {
+                recordNoDamageAttackAttempt(primaryTarget);
+                this.sequenceCooldownTicks = sampleAttackSequenceDelayTicks();
+            }
+            decayTargetSwitchSmoothTicks();
+            return new AreaHuntTickResult(true, primaryTarget, 0, this.attackSequenceExecutor.isRunning());
+        }
+
+        if (aimOnlyMode) {
+            decayTargetSwitchSmoothTicks();
+            return new AreaHuntTickResult(true, primaryTarget, 0, false);
+        }
+
+        if (canStartAttack(player) && mc.playerController != null) {
+            attackedCount = attackTargets(mc, player, targets, crosshairTargetLocked ? primaryTarget : null, options);
+            if (attackedCount > 0) {
+                if (!isMouseClickAttackMode()) {
+                    player.swingArm(EnumHand.MAIN_HAND);
+                }
+                this.attackCooldownTicks = isMouseClickAttackMode()
+                        ? sampleAttackSequenceDelayTicks()
+                        : minAttackIntervalTicks;
+                if (!isHuntOrbitEnabled()) {
+                    stopHuntNavigation();
+                }
+            }
+        }
+        decayTargetSwitchSmoothTicks();
+        return new AreaHuntTickResult(true, primaryTarget, attackedCount, this.attackSequenceExecutor.isRunning());
+    }
+
+    public void stopAreaHuntAction() {
+        clearAreaHuntRuntimeState(true);
+        this.areaHuntControlTicks = 0;
+        clearNoDamageAttackTracking();
+    }
+
+    public boolean isAreaHuntSequenceRunning() {
+        return this.attackSequenceExecutor.isRunning();
+    }
+
+    public void tickAreaHuntSequenceOnly(EntityPlayerSP player) {
+        this.areaHuntControlTicks = 2;
+        if (player != null && this.attackSequenceExecutor.isRunning()) {
+            this.attackSequenceExecutor.tick(player);
+        }
+    }
+
+    private void clearAreaHuntRuntimeState(boolean stopSequence) {
+        this.currentTargetEntityId = -1;
+        clearAimTargetTransition();
+        stopHuntPickupNavigation();
+        stopHuntNavigation();
+        if (stopSequence) {
+            this.attackSequenceExecutor.stop();
+        }
     }
 
     private void ensureBaritonePacketListenerRegistered() {
@@ -1045,11 +1356,12 @@ public class KillAuraHandler implements AbstractGameEventListener {
 
         boolean fastAttackEnabled = FreecamHandler.INSTANCE.isFastAttackEnabled;
         boolean flyEnabled = FlyHandler.enabled;
-        boolean movementProtectionActive = enabled || fastAttackEnabled || flyEnabled;
-        boolean useNoCollision = (enabled && enableNoCollision)
+        boolean areaHuntActive = this.areaHuntControlTicks > 0;
+        boolean movementProtectionActive = enabled || areaHuntActive || fastAttackEnabled || flyEnabled;
+        boolean useNoCollision = ((enabled || areaHuntActive) && enableNoCollision)
                 || (fastAttackEnabled && FreecamHandler.enableNoCollision)
                 || (flyEnabled && FlyHandler.enableNoCollision);
-        boolean useAntiKnockback = (enabled && enableAntiKnockback)
+        boolean useAntiKnockback = ((enabled || areaHuntActive) && enableAntiKnockback)
                 || (fastAttackEnabled && FreecamHandler.enableAntiKnockback)
                 || (flyEnabled && FlyHandler.enableAntiKnockback);
         applyKillAuraOwnMovementProtection(mc.player, movementProtectionActive, useNoCollision, useAntiKnockback);
@@ -1066,6 +1378,11 @@ public class KillAuraHandler implements AbstractGameEventListener {
         Minecraft mc = Minecraft.getMinecraft();
         EntityPlayerSP player = mc.player;
         if (player == null || mc.world == null) {
+            return;
+        }
+
+        if (this.areaHuntControlTicks > 0) {
+            this.areaHuntControlTicks--;
             return;
         }
 
@@ -1104,6 +1421,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
                 this.lastSafeMotionY = 0.0D;
                 this.lastSafeMotionZ = 0.0D;
             }
+            clearNoDamageAttackTracking();
             return;
         }
 
@@ -1113,8 +1431,11 @@ public class KillAuraHandler implements AbstractGameEventListener {
             stopHuntPickupNavigation();
             stopHuntNavigation();
             this.attackSequenceExecutor.stop();
+            clearNoDamageAttackTracking();
             return;
         }
+
+        tickNoDamageAttackTrackers(player);
 
         boolean sequenceAttackMode = isSequenceAttackMode();
         if (!sequenceAttackMode && this.attackSequenceExecutor.isRunning()) {
@@ -1183,6 +1504,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
             if (canTriggerAttackSequence(player, primaryTarget)
                     && prepareRotationForAttack(player, primaryTarget, crosshairTargetLocked ? primaryTarget : null)
                     && triggerAttackSequence(player, primaryTarget)) {
+                recordNoDamageAttackAttempt(primaryTarget);
                 this.sequenceCooldownTicks = sampleAttackSequenceDelayTicks();
             }
             decayTargetSwitchSmoothTicks();
@@ -1274,7 +1596,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
 
     @SubscribeEvent
     public void onRenderWorldLast(RenderWorldLastEvent event) {
-        if (!enabled) {
+        if (!enabled && this.areaHuntControlTicks <= 0) {
             return;
         }
 
@@ -1373,18 +1695,24 @@ public class KillAuraHandler implements AbstractGameEventListener {
     }
 
     private List<EntityLivingBase> findTargets(EntityPlayerSP player) {
+        return findTargets(player, null);
+    }
+
+    private List<EntityLivingBase> findTargets(EntityPlayerSP player, AreaHuntOptions areaOptions) {
         List<EntityLivingBase> targets = new ArrayList<>();
         EntityLivingBase lockedTarget = null;
-        double targetSearchRadius = getTargetSearchRadius();
+        double targetSearchRadius = areaOptions == null ? getTargetSearchRadius() : Double.MAX_VALUE;
         double targetSearchRadiusSq = targetSearchRadius * targetSearchRadius;
-        boolean useWhitelistPriority = enableNameWhitelist && nameWhitelist != null && !nameWhitelist.isEmpty();
+        boolean useWhitelistPriority = areaOptions == null
+                && enableNameWhitelist && nameWhitelist != null && !nameWhitelist.isEmpty();
         boolean preferStableOrbitTarget = isHuntOrbitEnabled();
         int previousTargetEntityId = this.currentTargetEntityId;
 
         if (focusSingleTarget && this.currentTargetEntityId != -1) {
             Entity existing = player.world.getEntityByID(this.currentTargetEntityId);
             if (existing instanceof EntityLivingBase
-                    && isTrackableTarget(player, (EntityLivingBase) existing, targetSearchRadiusSq, useWhitelistPriority)) {
+                    && isTrackableTarget(player, (EntityLivingBase) existing, targetSearchRadiusSq, useWhitelistPriority,
+                            areaOptions)) {
                 lockedTarget = (EntityLivingBase) existing;
                 targets.add(lockedTarget);
             }
@@ -1403,7 +1731,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
             }
             TargetCandidate targetCandidate = buildTargetCandidate(player, candidate, targetSearchRadiusSq,
                     useWhitelistPriority, candidate.getEntityId() == previousTargetEntityId,
-                    shouldAllowHuntTrackingWithoutLineOfSight());
+                    shouldAllowHuntTrackingWithoutLineOfSight(), areaOptions);
             if (targetCandidate != null) {
                 nearbyTargets.add(targetCandidate);
             }
@@ -1424,6 +1752,10 @@ public class KillAuraHandler implements AbstractGameEventListener {
                     return yawCompare;
                 }
             }
+            int stickyDistanceCompare = compareCurrentTargetWithinDistanceHysteresis(left, right);
+            if (stickyDistanceCompare != 0) {
+                return stickyDistanceCompare;
+            }
             int distanceCompare = Double.compare(left.distanceSq, right.distanceSq);
             if (distanceCompare != 0) {
                 return distanceCompare;
@@ -1434,7 +1766,9 @@ public class KillAuraHandler implements AbstractGameEventListener {
         for (TargetCandidate nearbyTarget : nearbyTargets) {
             targets.add(nearbyTarget.entity);
         }
-        promoteCrosshairLockedTarget(player, targets);
+        if (lockedTarget == null) {
+            promoteCrosshairLockedTarget(player, targets, areaOptions);
+        }
         int nextTargetEntityId = targets.isEmpty() ? -1 : targets.get(0).getEntityId();
         if (nextTargetEntityId != this.currentTargetEntityId) {
             clearVisualRotationCache();
@@ -1443,8 +1777,25 @@ public class KillAuraHandler implements AbstractGameEventListener {
         return targets;
     }
 
+    private int compareCurrentTargetWithinDistanceHysteresis(TargetCandidate left, TargetCandidate right) {
+        if (left == null || right == null || left.currentTargetPriority == right.currentTargetPriority) {
+            return 0;
+        }
+        TargetCandidate current = left.currentTargetPriority < right.currentTargetPriority ? left : right;
+        TargetCandidate challenger = current == left ? right : left;
+        if (current.distanceSq <= challenger.distanceSq + TARGET_SWITCH_DISTANCE_HYSTERESIS_SQ) {
+            return current == left ? -1 : 1;
+        }
+        return 0;
+    }
+
     private void promoteCrosshairLockedTarget(EntityPlayerSP player, List<EntityLivingBase> targets) {
-        EntityLivingBase crosshairTarget = getCrosshairLockedTarget(player, targets);
+        promoteCrosshairLockedTarget(player, targets, null);
+    }
+
+    private void promoteCrosshairLockedTarget(EntityPlayerSP player, List<EntityLivingBase> targets,
+            AreaHuntOptions areaOptions) {
+        EntityLivingBase crosshairTarget = getCrosshairLockedTarget(player, targets, areaOptions);
         if (crosshairTarget == null || targets == null || targets.isEmpty() || targets.get(0) == crosshairTarget) {
             return;
         }
@@ -1453,6 +1804,11 @@ public class KillAuraHandler implements AbstractGameEventListener {
     }
 
     private EntityLivingBase getCrosshairLockedTarget(EntityPlayerSP player, List<EntityLivingBase> targets) {
+        return getCrosshairLockedTarget(player, targets, null);
+    }
+
+    private EntityLivingBase getCrosshairLockedTarget(EntityPlayerSP player, List<EntityLivingBase> targets,
+            AreaHuntOptions areaOptions) {
         if (!shouldUseRelockOnlyWhenNoCrosshairTarget() || player == null || targets == null || targets.isEmpty()) {
             return null;
         }
@@ -1466,7 +1822,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
         EntityLivingBase bestTarget = null;
         double bestDistanceSq = Double.MAX_VALUE;
         for (EntityLivingBase target : targets) {
-            if (!canAttackTargetBeforeRotation(player, target)) {
+            if (!canAttackTargetBeforeRotation(player, target, areaOptions)) {
                 continue;
             }
             double hitDistanceSq = getCrosshairHitDistanceSq(player, target, eyePos, endPos);
@@ -1479,9 +1835,14 @@ public class KillAuraHandler implements AbstractGameEventListener {
     }
 
     private boolean isRelockSuppressedByCrosshairTarget(EntityPlayerSP player, EntityLivingBase target) {
+        return isRelockSuppressedByCrosshairTarget(player, target, null);
+    }
+
+    private boolean isRelockSuppressedByCrosshairTarget(EntityPlayerSP player, EntityLivingBase target,
+            AreaHuntOptions areaOptions) {
         return shouldUseRelockOnlyWhenNoCrosshairTarget()
                 && target != null
-                && canAttackTargetBeforeRotation(player, target)
+                && canAttackTargetBeforeRotation(player, target, areaOptions)
                 && getCrosshairHitDistanceSq(player, target) >= 0.0D;
     }
 
@@ -1545,23 +1906,44 @@ public class KillAuraHandler implements AbstractGameEventListener {
     }
 
     private boolean isValidTarget(EntityPlayerSP player, EntityLivingBase target) {
+        return isValidTarget(player, target, null);
+    }
+
+    private boolean isValidTarget(EntityPlayerSP player, EntityLivingBase target, AreaHuntOptions areaOptions) {
         double targetSearchRadius = getTargetSearchRadius();
-        return buildTargetCandidate(player, target, targetSearchRadius * targetSearchRadius,
-                enableNameWhitelist && nameWhitelist != null && !nameWhitelist.isEmpty(), false, false) != null;
+        return buildTargetCandidate(player, target,
+                areaOptions == null ? targetSearchRadius * targetSearchRadius : Double.MAX_VALUE,
+                areaOptions == null && enableNameWhitelist && nameWhitelist != null && !nameWhitelist.isEmpty(),
+                false, false, areaOptions) != null;
     }
 
     private boolean isTrackableTarget(EntityPlayerSP player, EntityLivingBase target, double targetSearchRadiusSq,
             boolean useWhitelistPriority) {
+        return isTrackableTarget(player, target, targetSearchRadiusSq, useWhitelistPriority, null);
+    }
+
+    private boolean isTrackableTarget(EntityPlayerSP player, EntityLivingBase target, double targetSearchRadiusSq,
+            boolean useWhitelistPriority, AreaHuntOptions areaOptions) {
         return buildTargetCandidate(player, target, targetSearchRadiusSq, useWhitelistPriority, false,
-                shouldAllowHuntTrackingWithoutLineOfSight()) != null;
+                shouldAllowHuntTrackingWithoutLineOfSight(), areaOptions) != null;
     }
 
     private TargetCandidate buildTargetCandidate(EntityPlayerSP player, EntityLivingBase target, double targetSearchRadiusSq,
             boolean useWhitelistPriority, boolean isCurrentTarget, boolean ignoreLineOfSightRequirement) {
+        return buildTargetCandidate(player, target, targetSearchRadiusSq, useWhitelistPriority, isCurrentTarget,
+                ignoreLineOfSightRequirement, null);
+    }
+
+    private TargetCandidate buildTargetCandidate(EntityPlayerSP player, EntityLivingBase target,
+            double targetSearchRadiusSq, boolean useWhitelistPriority, boolean isCurrentTarget,
+            boolean ignoreLineOfSightRequirement, AreaHuntOptions areaOptions) {
         if (player == null || target == null || target == player) {
             return null;
         }
         if (target.isDead || target.getHealth() <= 0.0F) {
+            return null;
+        }
+        if (isNoDamageExcludedTarget(target)) {
             return null;
         }
         if (target instanceof EntityArmorStand) {
@@ -1570,7 +1952,10 @@ public class KillAuraHandler implements AbstractGameEventListener {
         if (ignoreInvisible && target.isInvisible()) {
             return null;
         }
-        if (isHuntEnabled() && !isWithinConfiguredHuntVerticalRange(player, target)) {
+        if (areaOptions != null && (!areaOptions.contains(target) || !areaOptions.allows(target))) {
+            return null;
+        }
+        if (areaOptions == null && isHuntEnabled() && !isWithinConfiguredHuntVerticalRange(player, target)) {
             return null;
         }
         double distanceSq = getTargetSearchDistanceSq(player, target);
@@ -1586,17 +1971,19 @@ public class KillAuraHandler implements AbstractGameEventListener {
         }
 
         String targetName = getFilterableEntityName(target);
-        if (enableNameBlacklist && matchesNameList(targetName, nameBlacklist)) {
-            return null;
-        }
         int whitelistPriority = Integer.MAX_VALUE;
         boolean whitelistMatched = false;
-        if (enableNameWhitelist) {
-            whitelistPriority = getNormalizedNameListMatchIndex(targetName, nameWhitelist);
-            if (whitelistPriority == Integer.MAX_VALUE) {
+        if (areaOptions == null) {
+            if (enableNameBlacklist && matchesNameList(targetName, nameBlacklist)) {
                 return null;
             }
-            whitelistMatched = true;
+            if (enableNameWhitelist) {
+                whitelistPriority = getNormalizedNameListMatchIndex(targetName, nameWhitelist);
+                if (whitelistPriority == Integer.MAX_VALUE) {
+                    return null;
+                }
+                whitelistMatched = true;
+            }
         }
 
         if (!whitelistMatched && !matchesEnabledTargetGroup(target)) {
@@ -1652,24 +2039,33 @@ public class KillAuraHandler implements AbstractGameEventListener {
 
     private int attackTargets(Minecraft mc, EntityPlayerSP player, List<EntityLivingBase> targets,
             EntityLivingBase crosshairLockedTarget) {
+        return attackTargets(mc, player, targets, crosshairLockedTarget, null);
+    }
+
+    private int attackTargets(Minecraft mc, EntityPlayerSP player, List<EntityLivingBase> targets,
+            EntityLivingBase crosshairLockedTarget, AreaHuntOptions areaOptions) {
         if (mc == null || player == null || targets == null || targets.isEmpty()) {
             return 0;
         }
 
         int attackLimit = isMouseClickAttackMode() ? 1 : Math.max(1, targetsPerAttack);
+        int candidateLimit = shouldAttackPrimaryTargetOnly(crosshairLockedTarget)
+                ? 1
+                : targets.size();
         int attackedCount = 0;
-        for (EntityLivingBase target : targets) {
+        for (int i = 0; i < candidateLimit; i++) {
             if (attackedCount >= attackLimit) {
                 break;
             }
-            if (!canAttackTargetBeforeRotation(player, target)) {
+            EntityLivingBase target = targets.get(i);
+            if (!canAttackTargetBeforeRotation(player, target, areaOptions)) {
                 continue;
             }
             if (!prepareRotationForAttack(player, target, crosshairLockedTarget)) {
                 continue;
             }
             boolean teleportAttack = shouldUseTeleportAttack(player, target);
-            if (!canAttackTarget(player, target, !teleportAttack)) {
+            if (!canAttackTarget(player, target, !teleportAttack, areaOptions)) {
                 continue;
             }
 
@@ -1686,16 +2082,29 @@ public class KillAuraHandler implements AbstractGameEventListener {
             } else {
                 mc.playerController.attackEntity(player, target);
             }
+            recordNoDamageAttackAttempt(target);
             attackedCount++;
         }
         return attackedCount;
     }
 
+    private boolean shouldAttackPrimaryTargetOnly(EntityLivingBase crosshairLockedTarget) {
+        return focusSingleTarget
+                || crosshairLockedTarget != null
+                || rotateOnlyOnAttack
+                || isTargetSwitchSmoothingActive();
+    }
+
     private boolean canAttackTargetBeforeRotation(EntityPlayerSP player, EntityLivingBase target) {
+        return canAttackTargetBeforeRotation(player, target, null);
+    }
+
+    private boolean canAttackTargetBeforeRotation(EntityPlayerSP player, EntityLivingBase target,
+            AreaHuntOptions areaOptions) {
         if (target == null || target.isDead || target.getHealth() <= 0.0F) {
             return false;
         }
-        if (!isValidTarget(player, target)) {
+        if (!isValidTarget(player, target, areaOptions)) {
             return false;
         }
         if (requireLineOfSight && !player.canEntityBeSeen(target)) {
@@ -1708,23 +2117,33 @@ public class KillAuraHandler implements AbstractGameEventListener {
     }
 
     private boolean canAttackTarget(EntityPlayerSP player, EntityLivingBase target, boolean requireCrosshairHit) {
-        if (!canAttackTargetBeforeRotation(player, target)) {
+        return canAttackTarget(player, target, requireCrosshairHit, null);
+    }
+
+    private boolean canAttackTarget(EntityPlayerSP player, EntityLivingBase target, boolean requireCrosshairHit,
+            AreaHuntOptions areaOptions) {
+        if (!canAttackTargetBeforeRotation(player, target, areaOptions)) {
             return false;
         }
         float yawDiff = Math.abs(MathHelper.wrapDegrees(getDesiredAimRotation(player, target).getYaw() - player.rotationYaw));
         if (shouldRotateToTarget() && yawDiff > 100.0F) {
             return false;
         }
-        if (requireCrosshairHit && !isViewRayHittingAttackableTarget(player, target)) {
+        if (requireCrosshairHit && !isViewRayHittingAttackableTarget(player, target, areaOptions)) {
             return false;
         }
         return true;
     }
 
     private boolean isViewRayHittingAttackableTarget(EntityPlayerSP player, EntityLivingBase target) {
+        return isViewRayHittingAttackableTarget(player, target, null);
+    }
+
+    private boolean isViewRayHittingAttackableTarget(EntityPlayerSP player, EntityLivingBase target,
+            AreaHuntOptions areaOptions) {
         return player != null
                 && target != null
-                && canAttackTargetBeforeRotation(player, target)
+                && canAttackTargetBeforeRotation(player, target, areaOptions)
                 && getCrosshairHitDistanceSq(player, target) >= 0.0D;
     }
 
@@ -1752,6 +2171,164 @@ public class KillAuraHandler implements AbstractGameEventListener {
             this.currentTargetPriority = currentTargetPriority;
             this.yawDeltaAbs = yawDeltaAbs;
         }
+    }
+
+    public boolean isNoDamageExcludedTarget(Entity target) {
+        return isNoDamageExclusionEnabled()
+                && target != null
+                && noDamageExcludedEntityIds.contains(target.getEntityId());
+    }
+
+    public static boolean isNoDamageExclusionEnabled() {
+        return getNoDamageAttackLimit() > 0;
+    }
+
+    public static int getNoDamageAttackLimit() {
+        return MathHelper.clamp(noDamageAttackLimit, 0, MAX_NO_DAMAGE_ATTACK_LIMIT);
+    }
+
+    private void tickNoDamageAttackTrackers(EntityPlayerSP player) {
+        if (!isNoDamageExclusionEnabled() || player == null || player.world == null) {
+            clearNoDamageAttackTracking();
+            return;
+        }
+
+        int limit = getNoDamageAttackLimit();
+        List<Integer> trackerIds = new ArrayList<>(noDamageAttackTrackers.keySet());
+        for (Integer entityId : trackerIds) {
+            if (entityId == null) {
+                continue;
+            }
+            Entity entity = player.world.getEntityByID(entityId);
+            if (!(entity instanceof EntityLivingBase)) {
+                noDamageAttackTrackers.remove(entityId);
+                noDamageExcludedEntityIds.remove(entityId);
+                continue;
+            }
+            EntityLivingBase living = (EntityLivingBase) entity;
+            if (living.isDead || !living.isEntityAlive() || living.getHealth() <= 0.0F) {
+                noDamageAttackTrackers.remove(entityId);
+                noDamageExcludedEntityIds.remove(entityId);
+                continue;
+            }
+            NoDamageAttackTracker tracker = noDamageAttackTrackers.get(entityId);
+            if (tracker != null) {
+                updateNoDamageAttackTracker(entityId, living, tracker, limit);
+            }
+        }
+
+        pruneNoDamageExcludedTargets(player);
+    }
+
+    private void updateNoDamageAttackTracker(int entityId, EntityLivingBase target,
+            NoDamageAttackTracker tracker, int limit) {
+        float currentHealth = target.getHealth();
+        if (currentHealth + NO_DAMAGE_HEALTH_EPSILON < tracker.baselineHealth) {
+            tracker.baselineHealth = currentHealth;
+            tracker.pendingAttempts = 0;
+            tracker.observationTicks = 0;
+            tracker.confirmedNoDamageAttempts = 0;
+            return;
+        }
+
+        if (tracker.pendingAttempts <= 0) {
+            tracker.baselineHealth = currentHealth;
+            return;
+        }
+        if (tracker.observationTicks > 0) {
+            tracker.observationTicks--;
+            return;
+        }
+
+        tracker.confirmedNoDamageAttempts += tracker.pendingAttempts;
+        tracker.pendingAttempts = 0;
+        tracker.baselineHealth = currentHealth;
+        if (tracker.confirmedNoDamageAttempts >= limit) {
+            excludeNoDamageTarget(entityId, target);
+        }
+    }
+
+    private void recordNoDamageAttackAttempt(EntityLivingBase target) {
+        if (!isNoDamageExclusionEnabled() || target == null || target.getHealth() <= 0.0F) {
+            return;
+        }
+        int entityId = target.getEntityId();
+        if (noDamageExcludedEntityIds.contains(entityId)) {
+            return;
+        }
+
+        NoDamageAttackTracker tracker = noDamageAttackTrackers.get(entityId);
+        float currentHealth = target.getHealth();
+        if (tracker == null) {
+            tracker = new NoDamageAttackTracker(currentHealth);
+            noDamageAttackTrackers.put(entityId, tracker);
+        } else if (currentHealth + NO_DAMAGE_HEALTH_EPSILON < tracker.baselineHealth) {
+            tracker.baselineHealth = currentHealth;
+            tracker.pendingAttempts = 0;
+            tracker.observationTicks = 0;
+            tracker.confirmedNoDamageAttempts = 0;
+        }
+        if (tracker.pendingAttempts <= 0) {
+            tracker.baselineHealth = currentHealth;
+            tracker.observationTicks = NO_DAMAGE_OBSERVATION_DELAY_TICKS;
+        }
+        tracker.pendingAttempts++;
+        pruneNoDamageTrackingSize();
+    }
+
+    private void excludeNoDamageTarget(int entityId, EntityLivingBase target) {
+        if (!noDamageExcludedEntityIds.add(entityId)) {
+            return;
+        }
+        noDamageAttackTrackers.remove(entityId);
+        pruneNoDamageTrackingSize();
+        if (this.currentTargetEntityId == entityId) {
+            this.currentTargetEntityId = -1;
+            clearAimTargetTransition();
+            clearVisualRotationCache();
+            stopHuntNavigation();
+            this.attackSequenceExecutor.stop();
+        }
+        String targetName = target == null ? "" : getFilterableEntityName(target);
+        zszlScriptMod.LOGGER.info("杀戮光环无掉血排除目标: id={}, name={}, limit={}",
+                entityId, targetName, getNoDamageAttackLimit());
+    }
+
+    private void pruneNoDamageExcludedTargets(EntityPlayerSP player) {
+        if (player == null || player.world == null || noDamageExcludedEntityIds.isEmpty()) {
+            return;
+        }
+        List<Integer> excludedIds = new ArrayList<>(noDamageExcludedEntityIds);
+        for (Integer entityId : excludedIds) {
+            if (entityId == null) {
+                continue;
+            }
+            Entity entity = player.world.getEntityByID(entityId);
+            if (!(entity instanceof EntityLivingBase)) {
+                noDamageExcludedEntityIds.remove(entityId);
+                continue;
+            }
+            EntityLivingBase living = (EntityLivingBase) entity;
+            if (living.isDead || !living.isEntityAlive() || living.getHealth() <= 0.0F) {
+                noDamageExcludedEntityIds.remove(entityId);
+            }
+        }
+    }
+
+    private void pruneNoDamageTrackingSize() {
+        while (noDamageAttackTrackers.size() > NO_DAMAGE_MAX_TRACKED_TARGETS) {
+            Integer first = noDamageAttackTrackers.keySet().iterator().next();
+            noDamageAttackTrackers.remove(first);
+        }
+        while (noDamageExcludedEntityIds.size() > NO_DAMAGE_MAX_EXCLUDED_TARGETS) {
+            Integer first = noDamageExcludedEntityIds.iterator().next();
+            noDamageExcludedEntityIds.remove(first);
+        }
+    }
+
+    private void clearNoDamageAttackTracking() {
+        noDamageAttackTrackers.clear();
+        noDamageExcludedEntityIds.clear();
     }
 
     private boolean performTeleportAttack(EntityPlayerSP player, EntityLivingBase target) {
@@ -2860,6 +3437,11 @@ public class KillAuraHandler implements AbstractGameEventListener {
     }
 
     private boolean canTriggerAttackSequence(EntityPlayerSP player, EntityLivingBase target) {
+        return canTriggerAttackSequence(player, target, null);
+    }
+
+    private boolean canTriggerAttackSequence(EntityPlayerSP player, EntityLivingBase target,
+            AreaHuntOptions areaOptions) {
         if (player == null || target == null) {
             return false;
         }
@@ -2869,7 +3451,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
         if (!hasConfiguredAttackSequence()) {
             return false;
         }
-        return isValidTarget(player, target);
+        return isValidTarget(player, target, areaOptions);
     }
 
     private boolean triggerAttackSequence(EntityPlayerSP player, EntityLivingBase target) {
@@ -2892,7 +3474,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
         return !sequenceName.isEmpty() && PathSequenceManager.hasSequence(sequenceName);
     }
 
-    private static String getConfiguredAttackSequenceName() {
+    public static String getConfiguredAttackSequenceName() {
         return attackSequenceName == null ? "" : attackSequenceName.trim();
     }
 
@@ -4174,6 +4756,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
         preset.maxTurnSpeed = maxTurnSpeed;
         preset.minAttackIntervalTicks = minAttackIntervalTicks;
         preset.targetsPerAttack = targetsPerAttack;
+        preset.noDamageAttackLimit = noDamageAttackLimit;
         return normalizePreset(preset);
     }
 
@@ -4207,6 +4790,8 @@ public class KillAuraHandler implements AbstractGameEventListener {
                 normalizedPreset.minTurnSpeed, 60.0F);
         normalizedPreset.minAttackIntervalTicks = MathHelper.clamp(normalizedPreset.minAttackIntervalTicks, 0, 20);
         normalizedPreset.targetsPerAttack = MathHelper.clamp(normalizedPreset.targetsPerAttack, 1, 50);
+        normalizedPreset.noDamageAttackLimit = MathHelper.clamp(normalizedPreset.noDamageAttackLimit, 0,
+                MAX_NO_DAMAGE_ATTACK_LIMIT);
         TickRangeSpec.Range attackSequenceDelayRange = TickRangeSpec.parse(normalizedPreset.attackSequenceDelayTicksSpec,
                 normalizedPreset.attackSequenceDelayTicks, MIN_ATTACK_SEQUENCE_DELAY_TICKS,
                 MAX_ATTACK_SEQUENCE_DELAY_TICKS);
@@ -4269,6 +4854,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
         maxTurnSpeed = MathHelper.clamp(maxTurnSpeed, minTurnSpeed, 60.0F);
         minAttackIntervalTicks = MathHelper.clamp(minAttackIntervalTicks, 0, 20);
         targetsPerAttack = MathHelper.clamp(targetsPerAttack, 1, 50);
+        noDamageAttackLimit = MathHelper.clamp(noDamageAttackLimit, 0, MAX_NO_DAMAGE_ATTACK_LIMIT);
         TickRangeSpec.Range attackSequenceDelayRange = TickRangeSpec.parse(attackSequenceDelayTicksSpec,
                 attackSequenceDelayTicks, MIN_ATTACK_SEQUENCE_DELAY_TICKS, MAX_ATTACK_SEQUENCE_DELAY_TICKS);
         attackSequenceDelayTicks = attackSequenceDelayRange.getMin();

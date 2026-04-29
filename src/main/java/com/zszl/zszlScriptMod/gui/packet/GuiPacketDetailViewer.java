@@ -622,7 +622,7 @@ public class GuiPacketDetailViewer extends ThemedGuiScreen {
             case HEX:
                 return buildHexDump(packet.rawData);
             case DECODED:
-                return emptyIfBlank(packet.getDecodedData(), "未识别到可显示的概要解码结果。");
+                return emptyIfBlank(packet.getDecodedFullData(), "未识别到可显示的完整解码结果。");
             case DECODE_DETAIL:
             default:
                 return emptyIfBlank(packet.getDecodedDetailData(), "未识别到可显示的详细解码结果。");

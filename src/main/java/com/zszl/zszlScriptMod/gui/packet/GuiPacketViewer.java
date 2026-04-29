@@ -587,7 +587,7 @@ public class GuiPacketViewer extends ThemedGuiScreen {
             sb.append(I18n.format("gui.packet.viewer.copy.timestamp")).append(sdf.format(new Date(p.timestamp))).append('\n');
             sb.append(I18n.format("gui.packet.viewer.copy.class")).append(p.packetClassName).append('\n');
             sb.append("HEX Data: ").append(p.getHexData()).append("\n");
-            sb.append(I18n.format("gui.packet.viewer.copy.decoded")).append(p.getDecodedData()).append("\n\n");
+            sb.append(I18n.format("gui.packet.viewer.copy.decoded")).append(p.getDecodedFullData()).append("\n\n");
         }
         String content = sb.toString();
         if (content.length() <= 32767) {
@@ -983,7 +983,7 @@ public class GuiPacketViewer extends ThemedGuiScreen {
                 if (mouseButton == 1) copyTextWithToast(p.getHexData(), I18n.format("msg.packet.viewer.copied_hex"));
                 else if (mouseButton == 0) openPacketDetail(p, actual, GuiPacketDetailViewer.ViewSection.HEX);
             } else if (yInCard >= 5 + step * 3 && yInCard < 5 + step * 4) {
-                if (mouseButton == 1) copyTextWithToast(p.getDecodedData(), I18n.format("msg.packet.viewer.copied_decoded"));
+                if (mouseButton == 1) copyTextWithToast(p.getDecodedFullData(), I18n.format("msg.packet.viewer.copied_decoded"));
                 else if (mouseButton == 0) openPacketDetail(p, actual, GuiPacketDetailViewer.ViewSection.DECODE_DETAIL);
             }
             updateButtonStates();
