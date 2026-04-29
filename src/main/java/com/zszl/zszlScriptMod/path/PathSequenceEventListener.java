@@ -305,6 +305,8 @@ public class PathSequenceEventListener {
     private String huntAttackSequenceName = "";
     private boolean huntAimLockEnabled = true;
     private double huntTrackingDistanceSq; // 使用距离的平方以提高性能
+    private double huntUpRange = KillAuraHandler.DEFAULT_HUNT_UP_RANGE;
+    private double huntDownRange = KillAuraHandler.DEFAULT_HUNT_DOWN_RANGE;
     private Entity huntTargetEntity = null;
     private long lastHuntGotoTargetEntityId = -1L;
     private boolean huntMovementStopped = false;
@@ -1356,6 +1358,8 @@ public class PathSequenceEventListener {
                 : "";
         boolean aimLockEnabled = readHuntBooleanParam(params, "huntAimLockEnabled", true);
         double trackingDistance = readHuntDoubleParam(params, "trackingDistance", 1.0D);
+        double upRange = readHuntDoubleParam(params, "huntUpRange", KillAuraHandler.DEFAULT_HUNT_UP_RANGE);
+        double downRange = readHuntDoubleParam(params, "huntDownRange", KillAuraHandler.DEFAULT_HUNT_DOWN_RANGE);
         this.huntRadius = Math.max(0.0D, radius);
         this.huntAutoAttack = autoAttack;
         this.huntAttackMode = attackMode;
@@ -1363,6 +1367,8 @@ public class PathSequenceEventListener {
         this.huntAimLockEnabled = aimLockEnabled;
         this.huntPendingCompleteAfterSequence = false;
         this.huntTrackingDistanceSq = trackingDistance * trackingDistance;
+        this.huntUpRange = Math.max(0.0D, upRange);
+        this.huntDownRange = Math.max(0.0D, downRange);
         this.huntMode = readHuntModeParam(params, "huntMode", KillAuraHandler.HUNT_MODE_FIXED_DISTANCE);
         this.huntOrbitEnabled = KillAuraHandler.HUNT_MODE_FIXED_DISTANCE.equals(this.huntMode)
                 && readHuntBooleanParam(params, "huntOrbitEnabled", false);
@@ -1406,7 +1412,7 @@ public class PathSequenceEventListener {
         EmbeddedNavigationHandler.INSTANCE.stop();
         setStatus(getStatus().split(" \\| ")[0] + " | " + I18n.format("status.path.hunting"));
         zszlScriptMod.LOGGER.info(
-                "进入中心搜怪击杀: 半径={}, 自动攻击={}, 攻击方式={}, 攻击序列={}, 视角锁定={}, 追击模式={}, 距离={}, 自动绕圈={}, 追怪间隔={}, 攻击次数={}, 无目标跳过={}, 目标类型[敌对={}, 被动={}, 玩家={}], 白名单={}, 黑名单={}, 显示范围={}, 忽略隐身={}",
+                "进入中心搜怪击杀: 半径={}, 自动攻击={}, 攻击方式={}, 攻击序列={}, 视角锁定={}, 追击模式={}, 距离={}, 垂直范围=+{}/-{}, 自动绕圈={}, 追怪间隔={}, 攻击次数={}, 无目标跳过={}, 目标类型[敌对={}, 被动={}, 玩家={}], 白名单={}, 黑名单={}, 显示范围={}, 忽略隐身={}",
                 this.huntRadius,
                 this.huntAutoAttack,
                 this.huntAttackMode,
@@ -1414,6 +1420,8 @@ public class PathSequenceEventListener {
                 this.huntAimLockEnabled,
                 this.huntMode,
                 trackingDistance,
+                this.huntUpRange,
+                this.huntDownRange,
                 this.huntOrbitEnabled,
                 this.huntChaseIntervalEnabled ? (this.huntChaseIntervalTicks / 20.0D + "s") : "关闭",
                 this.huntAttackRemaining > 0 ? this.huntAttackRemaining : "不限",
@@ -3798,6 +3806,12 @@ public class PathSequenceEventListener {
             huntChaseCooldownTicks--;
         }
 
+        EntityLivingBase synchronizedKillAuraTarget = getKillAuraSynchronizedHuntTarget(player);
+        if (synchronizedKillAuraTarget != null && synchronizedKillAuraTarget != huntTargetEntity
+                && !huntPendingCompleteAfterSequence && !huntAttackSequenceExecutor.isRunning()) {
+            setHuntTarget(synchronizedKillAuraTarget);
+        }
+
         // 1. 检查当前目标是否仍然有效
         if (huntTargetEntity != null && (!(huntTargetEntity instanceof EntityLivingBase)
                 || !isLockedHuntTargetStillTrackable(player, (EntityLivingBase) huntTargetEntity))) {
@@ -3843,20 +3857,7 @@ public class PathSequenceEventListener {
                     .min((left, right) -> compareHuntTargets(player, left, right));
 
             if (nextTarget.isPresent()) {
-                huntTargetEntity = nextTarget.get();
-                lastHuntGotoTargetEntityId = -1L;
-                huntMovementStopped = false;
-                huntWasWithinDesiredDistance = false;
-                lastHuntGotoTargetX = Double.NaN;
-                lastHuntGotoTargetY = Double.NaN;
-                lastHuntGotoTargetZ = Double.NaN;
-                huntOrbitLoopNodeIndex = -1;
-                huntLastOrbitGotoTick = -99999;
-                huntOrbitStuckTicks = 0;
-                huntLastOrbitPlayerX = Double.NaN;
-                huntLastOrbitPlayerZ = Double.NaN;
-                huntOrbitController.stop();
-                zszlScriptMod.LOGGER.info(I18n.format("log.path.hunt_new_target") + getHuntFilterableEntityName(huntTargetEntity));
+                setHuntTarget(nextTarget.get());
             } else {
                 zszlScriptMod.LOGGER.info(I18n.format("log.path.hunt_no_monster_end"));
                 completeHuntAction(huntNoTargetSkipCount);
@@ -3933,6 +3934,37 @@ public class PathSequenceEventListener {
         }
     }
 
+    private EntityLivingBase getKillAuraSynchronizedHuntTarget(EntityPlayerSP player) {
+        if (!KillAuraHandler.enabled || player == null || player.world == null) {
+            return null;
+        }
+        Optional<EntityLivingBase> activeTarget = KillAuraHandler.INSTANCE.getActiveTarget(player);
+        if (!activeTarget.isPresent()) {
+            return null;
+        }
+        EntityLivingBase target = activeTarget.get();
+        return isValidHuntCandidate(player, target) ? target : null;
+    }
+
+    private void setHuntTarget(EntityLivingBase target) {
+        this.huntTargetEntity = target;
+        lastHuntGotoTargetEntityId = -1L;
+        huntMovementStopped = false;
+        huntWasWithinDesiredDistance = false;
+        lastHuntGotoTargetX = Double.NaN;
+        lastHuntGotoTargetY = Double.NaN;
+        lastHuntGotoTargetZ = Double.NaN;
+        huntOrbitLoopNodeIndex = -1;
+        huntLastOrbitGotoTick = -99999;
+        huntOrbitStuckTicks = 0;
+        huntLastOrbitPlayerX = Double.NaN;
+        huntLastOrbitPlayerZ = Double.NaN;
+        huntOrbitController.stop();
+        if (target != null) {
+            zszlScriptMod.LOGGER.info(I18n.format("log.path.hunt_new_target") + getHuntFilterableEntityName(target));
+        }
+    }
+
     private void resetHuntState() {
         this.huntAttackSequenceExecutor.stop();
         this.isHunting = false;
@@ -3942,6 +3974,8 @@ public class PathSequenceEventListener {
         this.huntAttackSequenceName = "";
         this.huntAimLockEnabled = true;
         this.huntTrackingDistanceSq = 0.0D;
+        this.huntUpRange = KillAuraHandler.DEFAULT_HUNT_UP_RANGE;
+        this.huntDownRange = KillAuraHandler.DEFAULT_HUNT_DOWN_RANGE;
         this.huntTargetEntity = null;
         this.lastHuntGotoTargetEntityId = -1L;
         this.huntMovementStopped = false;
@@ -4445,6 +4479,9 @@ public class PathSequenceEventListener {
         if (getDistanceSqToHuntCenter(entity) > getHuntRadiusSq()) {
             return false;
         }
+        if (!isWithinHuntVerticalRange(entity)) {
+            return false;
+        }
         // 检查是否忽略隐身目标
         if (huntIgnoreInvisible && entity.isInvisible()) {
             return false;
@@ -4469,7 +4506,16 @@ public class PathSequenceEventListener {
                 && entity != player
                 && entity.isEntityAlive()
                 && !entity.isDead
-                && entity.world == mc.world;
+                && entity.world == mc.world
+                && isWithinHuntVerticalRange(entity);
+    }
+
+    private boolean isWithinHuntVerticalRange(Entity entity) {
+        if (entity == null) {
+            return false;
+        }
+        double dy = entity.posY - huntCenterY;
+        return dy <= huntUpRange + 1.0E-6D && -dy <= huntDownRange + 1.0E-6D;
     }
 
     private boolean matchesHuntTargetGroup(EntityLivingBase entity) {
@@ -4519,6 +4565,13 @@ public class PathSequenceEventListener {
                 return Integer.compare(leftPriority, rightPriority);
             }
         }
+        if (KillAuraHandler.enabled) {
+            int compareByPlayer = Double.compare(getKillAuraStyleDistanceSq(player, left),
+                    getKillAuraStyleDistanceSq(player, right));
+            if (compareByPlayer != 0) {
+                return compareByPlayer;
+            }
+        }
         int compareByCenter = Double.compare(getDistanceSqToHuntCenter(left), getDistanceSqToHuntCenter(right));
         if (compareByCenter != 0) {
             return compareByCenter;
@@ -4526,10 +4579,22 @@ public class PathSequenceEventListener {
         return Double.compare(player.getDistanceSq(left), player.getDistanceSq(right));
     }
 
+    private double getKillAuraStyleDistanceSq(EntityPlayerSP player, Entity entity) {
+        if (player == null || entity == null) {
+            return Double.MAX_VALUE;
+        }
+        if (KillAuraHandler.isHuntEnabled()) {
+            double dx = entity.posX - player.posX;
+            double dz = entity.posZ - player.posZ;
+            return dx * dx + dz * dz;
+        }
+        return player.getDistanceSq(entity);
+    }
+
     private AxisAlignedBB getHuntSearchBounds() {
         return new AxisAlignedBB(
-                huntCenterX - huntRadius, huntCenterY - huntRadius, huntCenterZ - huntRadius,
-                huntCenterX + huntRadius, huntCenterY + huntRadius, huntCenterZ + huntRadius);
+                huntCenterX - huntRadius, huntCenterY - huntDownRange, huntCenterZ - huntRadius,
+                huntCenterX + huntRadius, huntCenterY + huntUpRange, huntCenterZ + huntRadius);
     }
 
     private double getDistanceSqToHuntCenter(Entity entity) {
@@ -4537,9 +4602,8 @@ public class PathSequenceEventListener {
             return Double.MAX_VALUE;
         }
         double dx = entity.posX - huntCenterX;
-        double dy = entity.posY - huntCenterY;
         double dz = entity.posZ - huntCenterZ;
-        return dx * dx + dy * dy + dz * dz;
+        return dx * dx + dz * dz;
     }
 
     private double getHuntRadiusSq() {

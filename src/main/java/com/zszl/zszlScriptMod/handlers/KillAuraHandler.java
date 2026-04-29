@@ -153,6 +153,10 @@ public class KillAuraHandler implements AbstractGameEventListener {
     public static boolean visualizeHuntRadius = false;
     public static float huntRadius = 8.0F;
     public static float huntFixedDistance = 4.2F;
+    public static final float DEFAULT_HUNT_UP_RANGE = 1.0F;
+    public static final float DEFAULT_HUNT_DOWN_RANGE = 1.0F;
+    public static float huntUpRange = DEFAULT_HUNT_UP_RANGE;
+    public static float huntDownRange = DEFAULT_HUNT_DOWN_RANGE;
     public static boolean huntOrbitEnabled = false;
     public static boolean huntJumpOrbitEnabled = true;
     public static final int MIN_HUNT_ORBIT_SAMPLE_POINTS = 3;
@@ -292,6 +296,8 @@ public class KillAuraHandler implements AbstractGameEventListener {
         public boolean visualizeHuntRadius = false;
         public float huntRadius = 8.0F;
         public float huntFixedDistance = 4.2F;
+        public float huntUpRange = DEFAULT_HUNT_UP_RANGE;
+        public float huntDownRange = DEFAULT_HUNT_DOWN_RANGE;
         public boolean huntOrbitEnabled = false;
         public boolean huntJumpOrbitEnabled = true;
         public int huntOrbitSamplePoints = DEFAULT_HUNT_ORBIT_SAMPLE_POINTS;
@@ -355,6 +361,8 @@ public class KillAuraHandler implements AbstractGameEventListener {
             this.visualizeHuntRadius = other.visualizeHuntRadius;
             this.huntRadius = other.huntRadius;
             this.huntFixedDistance = other.huntFixedDistance;
+            this.huntUpRange = other.huntUpRange;
+            this.huntDownRange = other.huntDownRange;
             this.huntOrbitEnabled = other.huntOrbitEnabled;
             this.huntJumpOrbitEnabled = other.huntJumpOrbitEnabled;
             this.huntOrbitSamplePoints = other.huntOrbitSamplePoints;
@@ -417,6 +425,8 @@ public class KillAuraHandler implements AbstractGameEventListener {
         visualizeHuntRadius = false;
         huntRadius = 8.0F;
         huntFixedDistance = 4.2F;
+        huntUpRange = DEFAULT_HUNT_UP_RANGE;
+        huntDownRange = DEFAULT_HUNT_DOWN_RANGE;
         huntOrbitEnabled = false;
         huntJumpOrbitEnabled = true;
         huntOrbitSamplePoints = DEFAULT_HUNT_ORBIT_SAMPLE_POINTS;
@@ -523,6 +533,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
             if (json.has("aimPitchOffsetSpec")) {
                 setAimPitchOffsetSpec(json.get("aimPitchOffsetSpec").getAsString());
             }
+            boolean migratedHuntVerticalDefaults = false;
             if (json.has("huntMode")) {
                 huntMode = json.get("huntMode").getAsString();
             } else if (json.has("huntEnabled")) {
@@ -540,6 +551,16 @@ public class KillAuraHandler implements AbstractGameEventListener {
             }
             if (hasHuntFixedDistance) {
                 huntFixedDistance = json.get("huntFixedDistance").getAsFloat();
+            }
+            if (json.has("huntUpRange") && !json.get("huntUpRange").isJsonNull()) {
+                huntUpRange = json.get("huntUpRange").getAsFloat();
+            } else {
+                migratedHuntVerticalDefaults = true;
+            }
+            if (json.has("huntDownRange") && !json.get("huntDownRange").isJsonNull()) {
+                huntDownRange = json.get("huntDownRange").getAsFloat();
+            } else {
+                migratedHuntVerticalDefaults = true;
             }
             if (json.has("huntOrbitEnabled")) {
                 huntOrbitEnabled = json.get("huntOrbitEnabled").getAsBoolean();
@@ -603,6 +624,9 @@ public class KillAuraHandler implements AbstractGameEventListener {
             }
 
             normalizeConfig();
+            if (migratedHuntVerticalDefaults) {
+                saveConfig();
+            }
         } catch (Exception e) {
             zszlScriptMod.LOGGER.error(I18n.format("log.kill_aura.load_failed"), e);
         }
@@ -652,6 +676,8 @@ public class KillAuraHandler implements AbstractGameEventListener {
             json.addProperty("visualizeHuntRadius", visualizeHuntRadius);
             json.addProperty("huntRadius", huntRadius);
             json.addProperty("huntFixedDistance", huntFixedDistance);
+            json.addProperty("huntUpRange", huntUpRange);
+            json.addProperty("huntDownRange", huntDownRange);
             json.addProperty("huntOrbitEnabled", huntOrbitEnabled);
             json.addProperty("huntJumpOrbitEnabled", huntJumpOrbitEnabled);
             json.addProperty("huntOrbitSamplePoints", huntOrbitSamplePoints);
@@ -830,6 +856,8 @@ public class KillAuraHandler implements AbstractGameEventListener {
         visualizeHuntRadius = safePreset.visualizeHuntRadius;
         huntRadius = safePreset.huntRadius;
         huntFixedDistance = safePreset.huntFixedDistance;
+        huntUpRange = safePreset.huntUpRange;
+        huntDownRange = safePreset.huntDownRange;
         huntOrbitEnabled = safePreset.huntOrbitEnabled;
         huntJumpOrbitEnabled = safePreset.huntJumpOrbitEnabled;
         huntOrbitSamplePoints = safePreset.huntOrbitSamplePoints;
@@ -882,12 +910,23 @@ public class KillAuraHandler implements AbstractGameEventListener {
     }
 
     public boolean hasActiveTarget(EntityPlayerSP player) {
+        return getActiveTarget(player).isPresent();
+    }
+
+    public Optional<EntityLivingBase> getActiveTarget(EntityPlayerSP player) {
         if (!enabled || player == null || player.world == null || this.currentTargetEntityId == -1) {
-            return false;
+            return Optional.empty();
         }
 
         Entity target = player.world.getEntityByID(this.currentTargetEntityId);
-        return target instanceof EntityLivingBase && isValidTarget(player, (EntityLivingBase) target);
+        double targetSearchRadius = getTargetSearchRadius();
+        boolean useWhitelistPriority = enableNameWhitelist && nameWhitelist != null && !nameWhitelist.isEmpty();
+        if (target instanceof EntityLivingBase
+                && isTrackableTarget(player, (EntityLivingBase) target, targetSearchRadius * targetSearchRadius,
+                        useWhitelistPriority)) {
+            return Optional.of((EntityLivingBase) target);
+        }
+        return Optional.empty();
     }
 
     public Optional<Rotation> getVisualTargetRotation(EntityPlayerSP player) {
@@ -1519,7 +1558,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
 
     private TargetCandidate buildTargetCandidate(EntityPlayerSP player, EntityLivingBase target, double targetSearchRadiusSq,
             boolean useWhitelistPriority, boolean isCurrentTarget, boolean ignoreLineOfSightRequirement) {
-        if (target == null || target == player) {
+        if (player == null || target == null || target == player) {
             return null;
         }
         if (target.isDead || target.getHealth() <= 0.0F) {
@@ -1531,7 +1570,10 @@ public class KillAuraHandler implements AbstractGameEventListener {
         if (ignoreInvisible && target.isInvisible()) {
             return null;
         }
-        double distanceSq = player.getDistanceSq(target);
+        if (isHuntEnabled() && !isWithinConfiguredHuntVerticalRange(player, target)) {
+            return null;
+        }
+        double distanceSq = getTargetSearchDistanceSq(player, target);
         if (distanceSq > targetSearchRadiusSq) {
             return null;
         }
@@ -1563,6 +1605,26 @@ public class KillAuraHandler implements AbstractGameEventListener {
         float yawDeltaAbs = Math.abs(MathHelper.wrapDegrees(getDesiredAimRotation(player, target).getYaw() - player.rotationYaw));
         return new TargetCandidate(target, distanceSq, useWhitelistPriority ? whitelistPriority : 0,
                 isCurrentTarget ? 0 : 1, yawDeltaAbs);
+    }
+
+    private static boolean isWithinConfiguredHuntVerticalRange(EntityPlayerSP player, Entity target) {
+        if (player == null || target == null) {
+            return false;
+        }
+        double dy = target.posY - player.posY;
+        return dy <= huntUpRange + 1.0E-6D && -dy <= huntDownRange + 1.0E-6D;
+    }
+
+    private double getTargetSearchDistanceSq(EntityPlayerSP player, Entity target) {
+        if (player == null || target == null) {
+            return Double.MAX_VALUE;
+        }
+        if (isHuntEnabled()) {
+            double dx = player.posX - target.posX;
+            double dz = player.posZ - target.posZ;
+            return dx * dx + dz * dz;
+        }
+        return player.getDistanceSq(target);
     }
 
     private boolean shouldAllowHuntTrackingWithoutLineOfSight() {
@@ -4096,6 +4158,8 @@ public class KillAuraHandler implements AbstractGameEventListener {
         preset.visualizeHuntRadius = visualizeHuntRadius;
         preset.huntRadius = huntRadius;
         preset.huntFixedDistance = huntFixedDistance;
+        preset.huntUpRange = huntUpRange;
+        preset.huntDownRange = huntDownRange;
         preset.huntOrbitEnabled = huntOrbitEnabled;
         preset.huntJumpOrbitEnabled = huntJumpOrbitEnabled;
         preset.huntOrbitSamplePoints = huntOrbitSamplePoints;
@@ -4158,6 +4222,8 @@ public class KillAuraHandler implements AbstractGameEventListener {
         normalizedPreset.aimPitchOffsetSpec = presetPitchOffsetRange.toSpec();
         normalizedPreset.huntRadius = MathHelper.clamp(normalizedPreset.huntRadius, normalizedPreset.attackRange, 100.0F);
         normalizedPreset.huntFixedDistance = MathHelper.clamp(normalizedPreset.huntFixedDistance, 0.5F, 100.0F);
+        normalizedPreset.huntUpRange = MathHelper.clamp(normalizedPreset.huntUpRange, 0.0F, 100.0F);
+        normalizedPreset.huntDownRange = MathHelper.clamp(normalizedPreset.huntDownRange, 0.0F, 100.0F);
         normalizedPreset.huntOrbitSamplePoints = MathHelper.clamp(normalizedPreset.huntOrbitSamplePoints,
                 MIN_HUNT_ORBIT_SAMPLE_POINTS, MAX_HUNT_ORBIT_SAMPLE_POINTS);
         normalizedPreset.nearbyEntityScanRange = MathHelper.clamp(normalizedPreset.nearbyEntityScanRange, 1.0F, 64.0F);
@@ -4215,6 +4281,8 @@ public class KillAuraHandler implements AbstractGameEventListener {
         aimPitchOffsetSpec = pitchOffsetRange.toSpec();
         huntRadius = MathHelper.clamp(huntRadius, attackRange, 100.0F);
         huntFixedDistance = MathHelper.clamp(huntFixedDistance, 0.5F, 100.0F);
+        huntUpRange = MathHelper.clamp(huntUpRange, 0.0F, 100.0F);
+        huntDownRange = MathHelper.clamp(huntDownRange, 0.0F, 100.0F);
         huntOrbitSamplePoints = MathHelper.clamp(huntOrbitSamplePoints,
                 MIN_HUNT_ORBIT_SAMPLE_POINTS, MAX_HUNT_ORBIT_SAMPLE_POINTS);
         fullBrightGamma = MathHelper.clamp(fullBrightGamma, 1.0F, 1000.0F);

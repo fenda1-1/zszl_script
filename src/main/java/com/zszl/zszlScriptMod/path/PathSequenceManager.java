@@ -299,18 +299,36 @@ public class PathSequenceManager {
         }
     }
 
+    private static boolean ensureHuntVerticalRangeDefaults(String actionType, JsonObject params) {
+        if (!"hunt".equalsIgnoreCase(actionType) || params == null) {
+            return false;
+        }
+        boolean changed = false;
+        if (!params.has("huntUpRange") || params.get("huntUpRange").isJsonNull()) {
+            params.addProperty("huntUpRange", KillAuraHandler.DEFAULT_HUNT_UP_RANGE);
+            changed = true;
+        }
+        if (!params.has("huntDownRange") || params.get("huntDownRange").isJsonNull()) {
+            params.addProperty("huntDownRange", KillAuraHandler.DEFAULT_HUNT_DOWN_RANGE);
+            changed = true;
+        }
+        return changed;
+    }
+
     public static class ActionData {
         public String type;
         public JsonObject params;
 
         public ActionData(String type, JsonObject params) {
             this.type = type;
-            this.params = params;
+            this.params = params == null ? new JsonObject() : params;
+            ensureHuntVerticalRangeDefaults(this.type, this.params);
         }
 
         public ActionData(ActionData other) {
             this.type = other.type;
             this.params = new JsonParser().parse(other.params.toString()).getAsJsonObject();
+            ensureHuntVerticalRangeDefaults(this.type, this.params);
             if (supportsPersistentActionUuid(this.type)) {
                 this.params.addProperty("uuid", java.util.UUID.randomUUID().toString());
             }
@@ -861,6 +879,10 @@ public class PathSequenceManager {
                                 || params.get("huntAimLockEnabled").getAsBoolean();
                         double trackDist = params.has("trackingDistance") ? params.get("trackingDistance").getAsDouble()
                                 : 1.0;
+                        double huntUpRange = params.has("huntUpRange") ? params.get("huntUpRange").getAsDouble()
+                                : KillAuraHandler.DEFAULT_HUNT_UP_RANGE;
+                        double huntDownRange = params.has("huntDownRange") ? params.get("huntDownRange").getAsDouble()
+                                : KillAuraHandler.DEFAULT_HUNT_DOWN_RANGE;
                         String huntMode = params.has("huntMode") ? params.get("huntMode").getAsString()
                                 : KillAuraHandler.HUNT_MODE_FIXED_DISTANCE;
                         boolean huntOrbitEnabled = params.has("huntOrbitEnabled")
@@ -892,6 +914,10 @@ public class PathSequenceManager {
                         huntDesc.append(", 模式 ")
                                 .append(KillAuraHandler.HUNT_MODE_APPROACH.equalsIgnoreCase(huntMode) ? "靠近目标"
                                         : "固定距离");
+                        huntDesc.append(", 垂直 +")
+                                .append(String.format(Locale.ROOT, "%.1f", Math.max(0.0D, huntUpRange)))
+                                .append("/-")
+                                .append(String.format(Locale.ROOT, "%.1f", Math.max(0.0D, huntDownRange)));
                         huntDesc.append(", 攻击 ")
                                 .append(KillAuraHandler.ATTACK_MODE_SEQUENCE.equalsIgnoreCase(attackMode) ? "序列"
                                         : "普通");
@@ -1659,6 +1685,7 @@ public class PathSequenceManager {
             JsonObject root = new JsonParser().parse(reader).getAsJsonObject();
             JsonArray sequencesArray = root.getAsJsonArray("sequences");
             int loadedCount = 0;
+            boolean migratedHuntVerticalDefaults = false;
             for (JsonElement seqElement : sequencesArray) {
                 try {
                     JsonObject seqObj = seqElement.getAsJsonObject();
@@ -1733,6 +1760,7 @@ public class PathSequenceManager {
                                 String type = actionObj.get("type").getAsString();
                                 JsonObject params = actionObj.has("params") ? actionObj.getAsJsonObject("params")
                                         : new JsonObject();
+                                migratedHuntVerticalDefaults |= ensureHuntVerticalRangeDefaults(type, params);
                                 step.addAction(new ActionData(type, params));
                             }
                         }
@@ -1746,6 +1774,9 @@ public class PathSequenceManager {
                 }
             }
             zszlScriptMod.LOGGER.info(I18n.format("log.path.loaded_count"), path.getFileName(), loadedCount);
+            if (isCustom && migratedHuntVerticalDefaults) {
+                saveSequencesToFile(path, new ArrayList<>(customSequences.values()));
+            }
         } catch (Exception e) {
             zszlScriptMod.LOGGER.error(I18n.format("log.path.load_file_failed"), path, e);
         }

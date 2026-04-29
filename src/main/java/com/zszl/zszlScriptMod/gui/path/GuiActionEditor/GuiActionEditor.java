@@ -2927,6 +2927,8 @@ public class GuiActionEditor extends ThemedGuiScreen {
         draft.addProperty("autoAttack", true);
         draft.addProperty("huntAimLockEnabled", true);
         draft.addProperty("trackingDistance", 1.2D);
+        draft.addProperty("huntUpRange", KillAuraHandler.DEFAULT_HUNT_UP_RANGE);
+        draft.addProperty("huntDownRange", KillAuraHandler.DEFAULT_HUNT_DOWN_RANGE);
         draft.addProperty("targetHostile", true);
         draft.addProperty("targetPassive", false);
         draft.addProperty("targetPlayers", false);

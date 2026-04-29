@@ -791,6 +791,10 @@ public final class PathConfigValidator {
                         variableContext, issues);
                 validatePositiveDoubleParam(sequenceName, stepIndex, actionIndex, params, "trackingDistance", "追踪距离",
                         false, variableContext, issues);
+                validatePositiveDoubleParam(sequenceName, stepIndex, actionIndex, params, "huntUpRange", "向上追击范围",
+                        true, variableContext, issues);
+                validatePositiveDoubleParam(sequenceName, stepIndex, actionIndex, params, "huntDownRange", "向下追击范围",
+                        true, variableContext, issues);
                 validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "attackCount", "攻击次数",
                         variableContext, issues);
                 validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "noTargetSkipCount",

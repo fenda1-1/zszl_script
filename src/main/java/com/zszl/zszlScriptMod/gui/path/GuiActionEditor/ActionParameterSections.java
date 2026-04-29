@@ -71,6 +71,12 @@ final class ActionParameterSections {
         editor.addTextField("追击距离", "trackingDistance",
                 "固定距离模式下作为半径；靠近目标模式下作为停止追怪距离。", fieldWidth, x, currentY, "1.0");
         currentY += 40;
+        editor.addTextField("向上追击范围", "huntUpRange",
+                "只追击比触发坐标高出该范围内的目标；旧动作默认 1 格。", fieldWidth, x, currentY, "1.0");
+        currentY += 40;
+        editor.addTextField("向下追击范围", "huntDownRange",
+                "只追击比触发坐标低出该范围内的目标；旧动作默认 1 格。", fieldWidth, x, currentY, "1.0");
+        currentY += 40;
         editor.addToggle("自动绕圈攻击", "huntOrbitEnabled",
                 "仅在追击模式=固定距离时生效。开启后会像杀戮光环一样沿目标周围闭环移动。", fieldWidth, x, currentY,
                 editor.currentParams.has("huntOrbitEnabled") && editor.currentParams.get("huntOrbitEnabled").getAsBoolean(),
