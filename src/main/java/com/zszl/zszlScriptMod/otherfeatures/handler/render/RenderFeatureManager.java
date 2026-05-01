@@ -142,6 +142,7 @@ public final class RenderFeatureManager {
         register(new FeatureState("trajectory_line", "轨迹线", "预估弓箭和投掷物的飞行轨迹。"));
         register(new FeatureState("custom_crosshair", "自定义十字准星", "使用可调颜色、大小和动态间距的准星。"));
         register(new FeatureState("anti_bob", "防抖动", "抑制走路视角晃动和受伤镜头抖动。"));
+        register(new FeatureState("ground_speed", "地速显示", "在屏幕右上角显示当前水平地速。"));
         register(new FeatureState("radar", "雷达", "在屏幕角落显示附近目标的相对位置。"));
         register(new FeatureState("player_skeleton", "玩家骨骼", "以骨架线条形式显示附近玩家站姿和朝向。"));
         register(new FeatureState("block_outline", "方块轮廓", "为当前选中的方块显示更清晰的边框。"));
@@ -359,6 +360,9 @@ public final class RenderFeatureManager {
                     : "未启用";
         case "anti_bob":
             return isEnabled(normalizedId) ? "已抑制镜头晃动" : "未启用";
+        case "ground_speed":
+            return isEnabled(normalizedId) ? "当前地速 " + formatFloat(getCurrentHorizontalSpeedBlocksPerSecond()) + " 格/秒"
+                    : "未启用";
         case "radar":
             return isEnabled(normalizedId) ? "雷达范围 " + formatFloat(radarMaxDistance) + " 格" : "未启用";
         case "player_skeleton":
@@ -551,6 +555,9 @@ public final class RenderFeatureManager {
         }
         if (isEnabled("custom_crosshair")) {
             RenderFeatureSupport.renderCrosshair(mc, event.getGuiGraphics());
+        }
+        if (isEnabled("ground_speed")) {
+            RenderFeatureSupport.renderGroundSpeed(mc, event.getGuiGraphics());
         }
         if (isEnabled("radar")) {
             RenderFeatureSupport.renderRadar(mc, event.getGuiGraphics());
@@ -1007,5 +1014,16 @@ public final class RenderFeatureManager {
 
     private static String formatFloat(float value) {
         return String.format(Locale.ROOT, "%.1f", value);
+    }
+
+    private static float getCurrentHorizontalSpeedBlocksPerSecond() {
+        Minecraft mc = Minecraft.getInstance();
+        LocalPlayer player = mc == null ? null : mc.player;
+        if (player == null) {
+            return 0.0F;
+        }
+        double deltaX = player.getX() - player.xo;
+        double deltaZ = player.getZ() - player.zo;
+        return (float) (Math.sqrt(deltaX * deltaX + deltaZ * deltaZ) * 20.0D);
     }
 }
