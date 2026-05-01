@@ -386,6 +386,24 @@
       "desc": "平滑视角"
     },
     {
+      "key": "smoothLookMinTurnSpeed",
+      "defaultValue": "4.0F",
+      "type": "float",
+      "desc": "平滑视角最小转速"
+    },
+    {
+      "key": "smoothLookMaxTurnSpeed",
+      "defaultValue": "18.0F",
+      "type": "float",
+      "desc": "平滑视角最大转速"
+    },
+    {
+      "key": "smoothLookMaxTurnStep",
+      "defaultValue": "24-60",
+      "type": "string",
+      "desc": "平滑视角单tick最大转角"
+    },
+    {
       "key": "elytraSmoothLook",
       "defaultValue": "true",
       "type": "boolean",
@@ -1056,12 +1074,6 @@
       "defaultValue": "3F",
       "type": "float",
       "desc": "目标线宽"
-    },
-    {
-      "key": "smoothLookTicks",
-      "defaultValue": "5",
-      "type": "int",
-      "desc": "平滑视角采样tick"
     },
     {
       "key": "cachedChunksOpacity",

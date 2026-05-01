@@ -118,6 +118,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
     public static String smoothMaxTurnStepSpec = DEFAULT_SMOOTH_MAX_TURN_STEP_SPEC;
     public static boolean rotateOnlyOnAttack = true;
     public static boolean relockOnlyWhenNoCrosshairTarget = true;
+    public static boolean onlyAttackWhenLookingAtTarget = true;
     public static boolean requireLineOfSight = true;
     public static boolean targetHostile = true;
     public static boolean targetPassive = false;
@@ -284,6 +285,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
         public String smoothMaxTurnStepSpec = DEFAULT_SMOOTH_MAX_TURN_STEP_SPEC;
         public boolean rotateOnlyOnAttack = true;
         public boolean relockOnlyWhenNoCrosshairTarget = true;
+        public boolean onlyAttackWhenLookingAtTarget = true;
         public boolean requireLineOfSight = true;
         public boolean targetHostile = true;
         public boolean targetPassive = false;
@@ -343,6 +345,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
                     : other.smoothMaxTurnStepSpec;
             this.rotateOnlyOnAttack = other.rotateOnlyOnAttack;
             this.relockOnlyWhenNoCrosshairTarget = other.relockOnlyWhenNoCrosshairTarget;
+            this.onlyAttackWhenLookingAtTarget = other.onlyAttackWhenLookingAtTarget;
             this.requireLineOfSight = other.requireLineOfSight;
             this.targetHostile = other.targetHostile;
             this.targetPassive = other.targetPassive;
@@ -503,6 +506,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
         smoothMaxTurnStepSpec = DEFAULT_SMOOTH_MAX_TURN_STEP_SPEC;
         rotateOnlyOnAttack = true;
         relockOnlyWhenNoCrosshairTarget = true;
+        onlyAttackWhenLookingAtTarget = true;
         requireLineOfSight = true;
         targetHostile = true;
         targetPassive = false;
@@ -577,6 +581,9 @@ public class KillAuraHandler implements AbstractGameEventListener {
             }
             if (json.has("relockOnlyWhenNoCrosshairTarget")) {
                 relockOnlyWhenNoCrosshairTarget = json.get("relockOnlyWhenNoCrosshairTarget").getAsBoolean();
+            }
+            if (json.has("onlyAttackWhenLookingAtTarget")) {
+                onlyAttackWhenLookingAtTarget = json.get("onlyAttackWhenLookingAtTarget").getAsBoolean();
             }
             if (json.has("requireLineOfSight")) {
                 requireLineOfSight = json.get("requireLineOfSight").getAsBoolean();
@@ -756,6 +763,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
             json.addProperty("smoothMaxTurnStepValue", smoothMaxTurnStep);
             json.addProperty("rotateOnlyOnAttack", rotateOnlyOnAttack);
             json.addProperty("relockOnlyWhenNoCrosshairTarget", relockOnlyWhenNoCrosshairTarget);
+            json.addProperty("onlyAttackWhenLookingAtTarget", onlyAttackWhenLookingAtTarget);
             json.addProperty("requireLineOfSight", requireLineOfSight);
             json.addProperty("targetHostile", targetHostile);
             json.addProperty("targetPassive", targetPassive);
@@ -943,6 +951,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
         setSmoothMaxTurnStepSpec(safePreset.smoothMaxTurnStepSpec);
         rotateOnlyOnAttack = safePreset.rotateOnlyOnAttack;
         relockOnlyWhenNoCrosshairTarget = safePreset.relockOnlyWhenNoCrosshairTarget;
+        onlyAttackWhenLookingAtTarget = safePreset.onlyAttackWhenLookingAtTarget;
         requireLineOfSight = safePreset.requireLineOfSight;
         targetHostile = safePreset.targetHostile;
         targetPassive = safePreset.targetPassive;
@@ -1103,7 +1112,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
         }
 
         boolean teleportAttack = shouldUseTeleportAttack(player, target);
-        if (!canAttackTarget(player, target, !teleportAttack)) {
+        if (!canAttackTarget(player, target, shouldRequireCrosshairHitForAttack(teleportAttack))) {
             decayTargetSwitchSmoothTicks();
             return false;
         }
@@ -2072,7 +2081,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
                 continue;
             }
             boolean teleportAttack = shouldUseTeleportAttack(player, target);
-            if (!canAttackTarget(player, target, !teleportAttack, areaOptions)) {
+            if (!canAttackTarget(player, target, shouldRequireCrosshairHitForAttack(teleportAttack), areaOptions)) {
                 continue;
             }
 
@@ -2140,6 +2149,16 @@ public class KillAuraHandler implements AbstractGameEventListener {
             return false;
         }
         return true;
+    }
+
+    private boolean shouldRequireCrosshairHitForAttack(boolean teleportAttack) {
+        if (teleportAttack) {
+            return false;
+        }
+        if (isMouseClickAttackMode()) {
+            return true;
+        }
+        return onlyAttackWhenLookingAtTarget && shouldRotateToTarget();
     }
 
     private boolean isViewRayHittingAttackableTarget(EntityPlayerSP player, EntityLivingBase target) {
@@ -3458,6 +3477,10 @@ public class KillAuraHandler implements AbstractGameEventListener {
         if (!hasConfiguredAttackSequence()) {
             return false;
         }
+        if (shouldRequireCrosshairHitForAttack(false)
+                && !isViewRayHittingAttackableTarget(player, target, areaOptions)) {
+            return false;
+        }
         return isValidTarget(player, target, areaOptions);
     }
 
@@ -4722,6 +4745,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
         preset.smoothMaxTurnStepSpec = smoothMaxTurnStepSpec;
         preset.rotateOnlyOnAttack = rotateOnlyOnAttack;
         preset.relockOnlyWhenNoCrosshairTarget = relockOnlyWhenNoCrosshairTarget;
+        preset.onlyAttackWhenLookingAtTarget = onlyAttackWhenLookingAtTarget;
         preset.requireLineOfSight = requireLineOfSight;
         preset.targetHostile = targetHostile;
         preset.targetPassive = targetPassive;

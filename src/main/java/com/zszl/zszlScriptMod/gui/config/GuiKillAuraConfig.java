@@ -70,6 +70,7 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
     private static final int BTN_HUNT_UP_RANGE = 47;
     private static final int BTN_HUNT_DOWN_RANGE = 48;
     private static final int BTN_NO_DAMAGE_ATTACK_LIMIT = 49;
+    private static final int BTN_ONLY_ATTACK_WHEN_LOOKING_AT_TARGET = 50;
 
     private static final int BTN_SAVE = 100;
     private static final int BTN_DEFAULT = 101;
@@ -102,6 +103,7 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
     private ToggleGuiButton smoothRotateButton;
     private ToggleGuiButton rotateOnlyOnAttackButton;
     private ToggleGuiButton relockOnlyWhenNoCrosshairTargetButton;
+    private ToggleGuiButton onlyAttackWhenLookingAtTargetButton;
     private ToggleGuiButton lineOfSightButton;
     private ToggleGuiButton hostileButton;
     private ToggleGuiButton passiveButton;
@@ -286,6 +288,8 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
                 KillAuraHandler.rotateOnlyOnAttack);
         relockOnlyWhenNoCrosshairTargetButton = new ToggleGuiButton(BTN_RELOCK_ONLY_WHEN_NO_CROSSHAIR_TARGET, 0, 0,
                 100, 20, "", KillAuraHandler.relockOnlyWhenNoCrosshairTarget);
+        onlyAttackWhenLookingAtTargetButton = new ToggleGuiButton(BTN_ONLY_ATTACK_WHEN_LOOKING_AT_TARGET, 0, 0, 100,
+                20, "", KillAuraHandler.onlyAttackWhenLookingAtTarget);
         lineOfSightButton = new ToggleGuiButton(BTN_LINE_OF_SIGHT, 0, 0, 100, 20, "",
                 KillAuraHandler.requireLineOfSight);
         onlyWeaponButton = new ToggleGuiButton(BTN_ONLY_WEAPON, 0, 0, 100, 20, "", KillAuraHandler.onlyWeapon);
@@ -355,6 +359,7 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
         this.buttonList.add(smoothRotateButton);
         this.buttonList.add(rotateOnlyOnAttackButton);
         this.buttonList.add(relockOnlyWhenNoCrosshairTargetButton);
+        this.buttonList.add(onlyAttackWhenLookingAtTargetButton);
         this.buttonList.add(lineOfSightButton);
         this.buttonList.add(onlyWeaponButton);
         this.buttonList.add(hostileButton);
@@ -443,6 +448,16 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
         relockOnlyWhenNoCrosshairTargetButton.displayString = "仅无怪时重新锁定: "
                 + stateText(KillAuraHandler.relockOnlyWhenNoCrosshairTarget);
         relockOnlyWhenNoCrosshairTargetButton.enabled = !packetMode && (aimOnly || KillAuraHandler.rotateToTarget);
+
+        onlyAttackWhenLookingAtTargetButton
+                .setEnabledState(mouseClickMode || KillAuraHandler.onlyAttackWhenLookingAtTarget);
+        onlyAttackWhenLookingAtTargetButton.displayString = mouseClickMode
+                ? "仅瞄准命中后攻击: §b点击模式强制"
+                : "仅瞄准命中后攻击: " + stateText(KillAuraHandler.onlyAttackWhenLookingAtTarget);
+        onlyAttackWhenLookingAtTargetButton.enabled = !packetMode
+                && !aimOnly
+                && KillAuraHandler.rotateToTarget
+                && !mouseClickMode;
 
         aimYawOffsetButton.displayString = "索敌水平偏移: "
                 + KillAuraHandler.getAimYawOffsetDisplayText() + "°";
@@ -722,6 +737,9 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
             currentY += rowStep;
             placeContentButton(smoothMaxTurnStepButton, leftX, currentY, fullButtonWidth, buttonHeight, layout);
             currentY += rowStep;
+            placeContentButton(onlyAttackWhenLookingAtTargetButton, leftX, currentY, fullButtonWidth, buttonHeight,
+                    layout);
+            currentY += rowStep;
             placeContentButton(relockOnlyWhenNoCrosshairTargetButton, leftX, currentY, fullButtonWidth, buttonHeight,
                     layout);
             currentY += rowStep;
@@ -734,6 +752,7 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
                 hideButton(rotateButton);
                 hideButton(smoothRotateButton);
                 hideButton(smoothMaxTurnStepButton);
+                hideButton(onlyAttackWhenLookingAtTargetButton);
                 hideButton(relockOnlyWhenNoCrosshairTargetButton);
                 hideButton(rotateOnlyOnAttackButton);
                 hideButton(aimYawOffsetButton);
@@ -887,6 +906,7 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
         hideButton(smoothMaxTurnStepButton);
         hideButton(rotateOnlyOnAttackButton);
         hideButton(relockOnlyWhenNoCrosshairTargetButton);
+        hideButton(onlyAttackWhenLookingAtTargetButton);
         hideButton(lineOfSightButton);
         hideButton(onlyWeaponButton);
         hideButton(hostileButton);
@@ -1431,6 +1451,9 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
         case BTN_RELOCK_ONLY_WHEN_NO_CROSSHAIR_TARGET:
             KillAuraHandler.relockOnlyWhenNoCrosshairTarget = !KillAuraHandler.relockOnlyWhenNoCrosshairTarget;
             break;
+        case BTN_ONLY_ATTACK_WHEN_LOOKING_AT_TARGET:
+            KillAuraHandler.onlyAttackWhenLookingAtTarget = !KillAuraHandler.onlyAttackWhenLookingAtTarget;
+            break;
         case BTN_AIM_YAW_OFFSET:
             openAimOffsetInput(true);
             return;
@@ -1906,6 +1929,12 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
                     "§7可以填固定值，也可以填 3-5 这种范围。",
                     "§7范围模式下每次转向都会随机抽取一个上限。",
                     "§7开启平滑转向后，目标切换和出手转向都会受这个上限保护。"), mouseX, mouseY);
+        } else if (onlyAttackWhenLookingAtTargetButton.visible
+                && isMouseOver(mouseX, mouseY, onlyAttackWhenLookingAtTargetButton)) {
+            drawHoveringText(Arrays.asList("§e仅瞄准命中后攻击", "§7开启后，自动转向时必须让准星射线命中目标才会攻击。",
+                    "§7关闭后，只要目标在攻击范围和过滤条件内，就可以边转向边出手。",
+                    "§7关闭自动转向时会自动忽略此限制，普通/数据包攻击可直接打周围目标。",
+                    "§7模拟鼠标点击模式需要真实点击准星目标，因此此项会强制生效。"), mouseX, mouseY);
         } else if (relockOnlyWhenNoCrosshairTargetButton.visible
                 && isMouseOver(mouseX, mouseY, relockOnlyWhenNoCrosshairTargetButton)) {
             drawHoveringText(Arrays.asList("§e仅无怪时重新锁定", "§7准星射线穿过目标碰撞箱时视为已经锁上。",
@@ -2445,6 +2474,7 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
         KillAuraHandler.setSmoothMaxTurnStepSpec(KillAuraHandler.DEFAULT_SMOOTH_MAX_TURN_STEP_SPEC);
         KillAuraHandler.rotateOnlyOnAttack = true;
         KillAuraHandler.relockOnlyWhenNoCrosshairTarget = true;
+        KillAuraHandler.onlyAttackWhenLookingAtTarget = true;
         KillAuraHandler.requireLineOfSight = true;
         KillAuraHandler.targetHostile = true;
         KillAuraHandler.targetPassive = false;

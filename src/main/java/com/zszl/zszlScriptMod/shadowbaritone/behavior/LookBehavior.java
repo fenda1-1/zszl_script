@@ -40,12 +40,19 @@ import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 
-import java.util.ArrayDeque;
-import java.util.Deque;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.ThreadLocalRandom;
 
 public final class LookBehavior extends Behavior implements ILookBehavior {
+
+    private static final float MIN_SMOOTH_LOOK_MAX_TURN_STEP = 0.5F;
+    private static final float MAX_SMOOTH_LOOK_MAX_TURN_STEP = 60.0F;
+    private static final float DEFAULT_SMOOTH_LOOK_MAX_TURN_STEP = 24.0F;
+    private static final float MIN_SMOOTH_LOOK_PITCH_SPEED = 0.6F;
+    private static final float SMOOTH_LOOK_PITCH_SPEED_RATIO = 0.62F;
+    private static final float SMOOTH_LOOK_OVERSHOOT_MAX_YAW = 2.15F;
+    private static final float SMOOTH_LOOK_OVERSHOOT_MAX_PITCH = 0.95F;
 
     /**
      * The current look target, may be {@code null}.
@@ -78,9 +85,6 @@ public final class LookBehavior extends Behavior implements ILookBehavior {
     private boolean killAuraVisualControlThisTick;
 
     private final AimProcessor processor;
-
-    private final Deque<Float> smoothYawBuffer;
-    private final Deque<Float> smoothPitchBuffer;
     private int junctionGlanceTicksRemaining;
     private float junctionGlanceYawOffset;
     private long lastJunctionGlanceKey;
@@ -88,8 +92,6 @@ public final class LookBehavior extends Behavior implements ILookBehavior {
     public LookBehavior(Baritone baritone) {
         super(baritone);
         this.processor = new AimProcessor(baritone.getPlayerContext());
-        this.smoothYawBuffer = new ArrayDeque<>();
-        this.smoothPitchBuffer = new ArrayDeque<>();
         this.junctionGlanceTicksRemaining = 0;
         this.junctionGlanceYawOffset = 0.0F;
         this.lastJunctionGlanceKey = Long.MIN_VALUE;
@@ -147,19 +149,28 @@ public final class LookBehavior extends Behavior implements ILookBehavior {
                         && HumanLikeMovementController.INSTANCE.isEnabled()
                         && baritone.getPathingBehavior().isPathing()
                         && !precisionCriticalParkour;
+                boolean smoothLookVisualControl = !this.killAuraVisualControlThisTick
+                        && !humanLikeVisualControl
+                        && isSmoothLookEnabled();
 
-                if (this.target.mode == Target.Mode.NONE && !humanLikeVisualControl && !this.killAuraVisualControlThisTick) {
+                if (this.target.mode == Target.Mode.NONE
+                        && !humanLikeVisualControl
+                        && !this.killAuraVisualControlThisTick
+                        && !smoothLookVisualControl) {
                     // Just return for PRE, we still want to set target to null on POST
                     return;
                 }
 
-                if (this.target.mode == Target.Mode.CLIENT || humanLikeVisualControl || this.killAuraVisualControlThisTick) {
+                if (this.target.mode == Target.Mode.CLIENT
+                        || humanLikeVisualControl
+                        || this.killAuraVisualControlThisTick
+                        || smoothLookVisualControl) {
                     this.prevRotation = new Rotation(ctx.player().rotationYaw, ctx.player().rotationPitch);
                     if (this.killAuraVisualControlThisTick) {
                         this.visualTargetThisTick = killAuraVisualTarget.orElse(this.prevRotation);
                         ctx.player().rotationYaw = this.visualTargetThisTick.getYaw();
                         ctx.player().rotationPitch = this.visualTargetThisTick.getPitch();
-                    } else {
+                    } else if (humanLikeVisualControl) {
                         this.visualTargetThisTick = getHumanLikeVisualTarget(this.target.rotation);
                         final Rotation actual = this.processor.peekRotation(this.visualTargetThisTick);
                         HumanLikeMovementController.RotationState smoothed = HumanLikeMovementController.INSTANCE
@@ -170,6 +181,13 @@ public final class LookBehavior extends Behavior implements ILookBehavior {
                                         actual.getPitch());
                         ctx.player().rotationYaw = smoothed.yaw;
                         ctx.player().rotationPitch = smoothed.pitch;
+                    } else if (this.target.mode == Target.Mode.CLIENT) {
+                        final Rotation actual = this.processor.peekRotation(this.target.rotation);
+                        this.visualTargetThisTick = actual;
+                        ctx.player().rotationYaw = actual.getYaw();
+                        ctx.player().rotationPitch = actual.getPitch();
+                    } else {
+                        this.visualTargetThisTick = this.target.rotation.normalizeAndClamp();
                     }
                 }
                 break;
@@ -183,28 +201,19 @@ public final class LookBehavior extends Behavior implements ILookBehavior {
                             && baritone.getPathingBehavior().isPathing()
                             && !precisionCriticalParkour;
 
-                    Rotation visualTarget = this.visualTargetThisTick != null ? this.visualTargetThisTick
-                            : this.target.rotation;
-                    this.smoothYawBuffer.addLast(visualTarget.getYaw());
-                    while (this.smoothYawBuffer.size() > Baritone.settings().smoothLookTicks.value) {
-                        this.smoothYawBuffer.removeFirst();
-                    }
-                    this.smoothPitchBuffer.addLast(visualTarget.getPitch());
-                    while (this.smoothPitchBuffer.size() > Baritone.settings().smoothLookTicks.value) {
-                        this.smoothPitchBuffer.removeFirst();
-                    }
                     if (humanLikeVisualControl || this.killAuraVisualControlThisTick) {
-                        // PRE 阶段已经把本地视角平滑到当前拟真目标，这里不要再用另一套
-                        // “目标平均值”覆盖一次，否则会出现同一 tick 内来回改角度的抖动感。
+                        // PRE 阶段已经把本地视角平滑到当前拟真目标，这里不要再叠一层
+                        // 额外平滑，否则会出现同一 tick 内来回改角度的抖动感。
+                    } else if (ctx.player().isElytraFlying() ? Baritone.settings().elytraSmoothLook.value
+                            : Baritone.settings().smoothLook.value) {
+                        Rotation visualTarget = this.visualTargetThisTick != null ? this.visualTargetThisTick
+                                : this.target.rotation;
+                        Rotation smoothedRotation = smoothLookLikeKillAura(this.prevRotation, visualTarget);
+                        ctx.player().rotationYaw = smoothedRotation.getYaw();
+                        ctx.player().rotationPitch = smoothedRotation.getPitch();
                     } else if (this.target.mode == Target.Mode.SERVER) {
                         ctx.player().rotationYaw = this.prevRotation.getYaw();
                         ctx.player().rotationPitch = this.prevRotation.getPitch();
-                    } else if (ctx.player().isElytraFlying() ? Baritone.settings().elytraSmoothLook.value
-                            : Baritone.settings().smoothLook.value) {
-                        ctx.player().rotationYaw = (float) this.smoothYawBuffer.stream().mapToDouble(d -> d).average()
-                                .orElse(this.prevRotation.getYaw());
-                        ctx.player().rotationPitch = (float) this.smoothPitchBuffer.stream().mapToDouble(d -> d)
-                                .average().orElse(this.prevRotation.getPitch());
                     }
 
                     this.prevRotation = null;
@@ -245,6 +254,7 @@ public final class LookBehavior extends Behavior implements ILookBehavior {
         this.target = null;
         this.visualTargetThisTick = null;
         this.killAuraVisualControlThisTick = false;
+        this.prevRotation = null;
         this.junctionGlanceTicksRemaining = 0;
         this.junctionGlanceYawOffset = 0.0F;
         this.lastJunctionGlanceKey = Long.MIN_VALUE;
@@ -264,8 +274,6 @@ public final class LookBehavior extends Behavior implements ILookBehavior {
         this.prevRotation = null;
         this.visualTargetThisTick = null;
         this.killAuraVisualControlThisTick = false;
-        this.smoothYawBuffer.clear();
-        this.smoothPitchBuffer.clear();
     }
 
     public Optional<Rotation> getEffectiveRotation() {
@@ -300,6 +308,163 @@ public final class LookBehavior extends Behavior implements ILookBehavior {
             return Optional.empty();
         }
         return KillAuraHandler.INSTANCE.getVisualTargetRotation(ctx.player());
+    }
+
+    private boolean isSmoothLookEnabled() {
+        return ctx.player() != null
+                && (ctx.player().isElytraFlying() ? Baritone.settings().elytraSmoothLook.value
+                        : Baritone.settings().smoothLook.value);
+    }
+
+    private Rotation smoothLookLikeKillAura(Rotation currentRotation, Rotation targetRotation) {
+        if (currentRotation == null || targetRotation == null) {
+            return targetRotation == null ? new Rotation(0.0F, 0.0F) : targetRotation.normalizeAndClamp();
+        }
+
+        Rotation desiredRotation = applySmoothLookOvershootCorrection(currentRotation, targetRotation.normalizeAndClamp());
+        float yawDelta = MathHelper.wrapDegrees(desiredRotation.getYaw() - currentRotation.getYaw());
+        float pitchDelta = desiredRotation.getPitch() - currentRotation.getPitch();
+        float yawSpeed = computeSmoothLookTurnSpeed(Math.abs(yawDelta));
+        float pitchSpeed = Math.max(MIN_SMOOTH_LOOK_PITCH_SPEED, yawSpeed * SMOOTH_LOOK_PITCH_SPEED_RATIO);
+        float turnLimit = sampleSmoothLookMaxTurnStep();
+
+        float maxYawStep = Math.min(yawSpeed, turnLimit);
+        float maxPitchStep = Math.min(pitchSpeed, turnLimit);
+        float yawStep = clampSigned(yawDelta, maxYawStep);
+        float pitchStep = clampSigned(pitchDelta, maxPitchStep);
+        float gcdStep = getMouseGcdStep();
+        yawStep = quantizeRotationStepForGcd(yawStep, maxYawStep, gcdStep);
+        pitchStep = quantizeRotationStepForGcd(pitchStep, maxPitchStep, gcdStep);
+
+        return new Rotation(
+                Rotation.normalizeYaw(currentRotation.getYaw() + yawStep),
+                MathHelper.clamp(currentRotation.getPitch() + pitchStep, -90.0F, 90.0F));
+    }
+
+    private Rotation applySmoothLookOvershootCorrection(Rotation currentRotation, Rotation targetRotation) {
+        float yawDelta = MathHelper.wrapDegrees(targetRotation.getYaw() - currentRotation.getYaw());
+        float pitchDelta = targetRotation.getPitch() - currentRotation.getPitch();
+        float absYaw = Math.abs(yawDelta);
+        float absPitch = Math.abs(pitchDelta);
+
+        float yawFade = MathHelper.clamp((absYaw - 1.35F) / 24.0F, 0.0F, 1.0F);
+        float pitchFade = MathHelper.clamp((absPitch - 1.0F) / 22.0F, 0.0F, 1.0F);
+        float yawOvershoot = MathHelper.clamp(absYaw * 0.045F, 0.0F, SMOOTH_LOOK_OVERSHOOT_MAX_YAW) * yawFade;
+        float pitchOvershoot = MathHelper.clamp(absPitch * 0.030F, 0.0F, SMOOTH_LOOK_OVERSHOOT_MAX_PITCH)
+                * pitchFade;
+
+        float correctedYaw = targetRotation.getYaw() + Math.copySign(yawOvershoot, yawDelta);
+        float correctedPitch = targetRotation.getPitch() + Math.copySign(pitchOvershoot, pitchDelta);
+        return new Rotation(
+                Rotation.normalizeYaw(correctedYaw),
+                MathHelper.clamp(correctedPitch, -90.0F, 90.0F));
+    }
+
+    private float computeSmoothLookTurnSpeed(float yawDeltaAbs) {
+        float configuredMin = MathHelper.clamp(Baritone.settings().smoothLookMinTurnSpeed.value, 0.05F, 180.0F);
+        float configuredMax = MathHelper.clamp(
+                Baritone.settings().smoothLookMaxTurnSpeed.value,
+                configuredMin,
+                180.0F);
+        float normalized = MathHelper.clamp(yawDeltaAbs / 120.0F, 0.0F, 1.0F);
+        float eased = normalized * normalized;
+        float effectiveMin = Math.max(0.65F, configuredMin * 0.58F);
+        float effectiveMax = Math.max(effectiveMin, configuredMax * 0.72F);
+        return effectiveMin + (effectiveMax - effectiveMin) * eased;
+    }
+
+    private float sampleSmoothLookMaxTurnStep() {
+        SmoothLookTurnStepRange range = parseSmoothLookMaxTurnStepRange(Baritone.settings().smoothLookMaxTurnStep.value);
+        if (!range.isRandom()) {
+            return range.min;
+        }
+        return (float) ThreadLocalRandom.current().nextDouble(range.min, range.max);
+    }
+
+    private SmoothLookTurnStepRange parseSmoothLookMaxTurnStepRange(String spec) {
+        String normalized = spec == null ? "" : spec.trim();
+        if (normalized.isEmpty()) {
+            return new SmoothLookTurnStepRange(
+                    DEFAULT_SMOOTH_LOOK_MAX_TURN_STEP,
+                    DEFAULT_SMOOTH_LOOK_MAX_TURN_STEP);
+        }
+
+        normalized = normalized.replace("°", "")
+                .replace("，", ",")
+                .replace("－", "-")
+                .replace("–", "-")
+                .replace("—", "-")
+                .replace("~", "-")
+                .replace("～", "-")
+                .replace("至", "-")
+                .replace("到", "-")
+                .replaceAll("\\s+", "");
+
+        String[] parts = normalized.split("-", -1);
+        try {
+            if (parts.length == 1) {
+                float value = clampSmoothLookTurnStep(Float.parseFloat(parts[0]));
+                return new SmoothLookTurnStepRange(value, value);
+            }
+            if (parts.length == 2 && !parts[0].isEmpty() && !parts[1].isEmpty()) {
+                float min = clampSmoothLookTurnStep(Float.parseFloat(parts[0]));
+                float max = clampSmoothLookTurnStep(Float.parseFloat(parts[1]));
+                if (max < min) {
+                    float swap = min;
+                    min = max;
+                    max = swap;
+                }
+                return new SmoothLookTurnStepRange(min, max);
+            }
+        } catch (NumberFormatException ignored) {
+        }
+
+        return new SmoothLookTurnStepRange(
+                DEFAULT_SMOOTH_LOOK_MAX_TURN_STEP,
+                DEFAULT_SMOOTH_LOOK_MAX_TURN_STEP);
+    }
+
+    private float clampSmoothLookTurnStep(float value) {
+        return MathHelper.clamp(value, MIN_SMOOTH_LOOK_MAX_TURN_STEP, MAX_SMOOTH_LOOK_MAX_TURN_STEP);
+    }
+
+    private float getMouseGcdStep() {
+        float sensitivity = MathHelper.clamp(ctx.minecraft().gameSettings.mouseSensitivity, 0.0F, 1.0F);
+        float factor = sensitivity * 0.6F + 0.2F;
+        return factor * factor * factor * 8.0F * 0.15F;
+    }
+
+    private float quantizeRotationStepForGcd(float step, float maxMagnitude, float gcdStep) {
+        if (step == 0.0F || gcdStep <= 1.0E-5F || maxMagnitude <= 0.0F) {
+            return step == 0.0F ? 0.0F : clampSigned(step, maxMagnitude);
+        }
+        float maxStep = Math.abs(maxMagnitude);
+        float absStep = Math.min(Math.abs(step), maxStep);
+        if (absStep <= 1.0E-5F) {
+            return 0.0F;
+        }
+        if (maxStep + 1.0E-5F < gcdStep) {
+            return Math.copySign(absStep, step);
+        }
+
+        float quantized = Math.round(absStep / gcdStep) * gcdStep;
+        if (quantized <= 1.0E-5F && absStep >= gcdStep * 0.45F) {
+            quantized = gcdStep;
+        }
+        if (quantized > maxStep) {
+            quantized = (float) Math.floor(maxStep / gcdStep) * gcdStep;
+        }
+        if (quantized <= 1.0E-5F) {
+            return 0.0F;
+        }
+        return Math.copySign(Math.min(quantized, maxStep), step);
+    }
+
+    private float clampSigned(float value, float maxMagnitude) {
+        if (maxMagnitude <= 0.0F) {
+            return 0.0F;
+        }
+        return Math.copySign(Math.min(Math.abs(value), maxMagnitude), value);
     }
 
     private static boolean shouldDecoupleMovementFromVisualYaw(Target.Mode mode, boolean blockInteract) {
@@ -633,6 +798,20 @@ public final class LookBehavior extends Behavior implements ILookBehavior {
         private UpcomingTurnLook(Rotation rotation, float weight) {
             this.rotation = rotation;
             this.weight = weight;
+        }
+    }
+
+    private static final class SmoothLookTurnStepRange {
+        private final float min;
+        private final float max;
+
+        private SmoothLookTurnStepRange(float min, float max) {
+            this.min = min;
+            this.max = max;
+        }
+
+        private boolean isRandom() {
+            return this.max > this.min + 1.0E-5F;
         }
     }
 
