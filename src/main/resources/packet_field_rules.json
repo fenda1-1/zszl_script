@@ -1,0 +1,68 @@
+{
+  "rules": [
+    {
+      "name": "quest_accept_command_hex",
+      "enabled": true,
+      "channel": "standard",
+      "direction": "inbound",
+      "source": "hex",
+      "extractMode": "regex",
+      "pattern": "(?is)(2F\\s*63\\s*73\\s*5F\\s*74\\s*72\\s*69\\s*67\\s*67\\s*65\\s*72\\s*69\\s*6E\\s*74\\s*65\\s*72\\s*66\\s*61\\s*63\\s*65\\s*20\\s*(?:(?!22\\s*)[0-9A-Fa-f]{2}\\s*)+)\\s*22\\s*7D\\s*2C\\s*22\\s*68\\s*6F\\s*76\\s*65\\s*72\\s*45\\s*76\\s*65\\s*6E\\s*74(?:(?!63\\s*6C\\s*69\\s*63\\s*6B\\s*45\\s*76\\s*65\\s*6E\\s*74).)*?E7\\s*82\\s*B9\\s*E5\\s*87\\s*BB\\s*E6\\s*8E\\s*A5\\s*E5\\s*8F\\s*97\\s*E8\\s*AF\\s*A5\\s*E4\\s*BB\\s*BB\\s*E5\\s*8A\\s*A1",
+      "group": 1,
+      "variableName": "quest_accept_command",
+      "valueType": "utf8-string",
+      "scope": "global",
+      "writeDefaultOnFailure": false,
+      "defaultValue": "",
+      "note": "从原始HEX兜底捕获“接受任务”的 run_command，适用于概要解码把 clickEvent/hoverEvent 切碎的情况。"
+    },
+    {
+      "name": "quest_reject_command_hex",
+      "enabled": true,
+      "channel": "standard",
+      "direction": "inbound",
+      "source": "hex",
+      "extractMode": "regex",
+      "pattern": "(?is)(2F\\s*63\\s*73\\s*5F\\s*74\\s*72\\s*69\\s*67\\s*67\\s*65\\s*72\\s*69\\s*6E\\s*74\\s*65\\s*72\\s*66\\s*61\\s*63\\s*65\\s*20\\s*(?:(?!22\\s*)[0-9A-Fa-f]{2}\\s*)+)\\s*22\\s*7D\\s*2C\\s*22\\s*68\\s*6F\\s*76\\s*65\\s*72\\s*45\\s*76\\s*65\\s*6E\\s*74(?:(?!63\\s*6C\\s*69\\s*63\\s*6B\\s*45\\s*76\\s*65\\s*6E\\s*74).)*?E7\\s*82\\s*B9\\s*E5\\s*87\\s*BB\\s*E6\\s*8B\\s*92\\s*E7\\s*BB\\s*9D\\s*E8\\s*AF\\s*A5\\s*E4\\s*BB\\s*BB\\s*E5\\s*8A\\s*A1",
+      "group": 1,
+      "variableName": "quest_reject_command",
+      "valueType": "utf8-string",
+      "scope": "global",
+      "writeDefaultOnFailure": false,
+      "defaultValue": "",
+      "note": "从原始HEX兜底捕获“拒绝任务”的 run_command，适用于概要解码把 clickEvent/hoverEvent 切碎的情况。"
+    },
+    {
+      "name": "quest_accept_command",
+      "enabled": true,
+      "channel": "standard",
+      "direction": "inbound",
+      "source": "decoded",
+      "extractMode": "regex",
+      "pattern": "(?is)\"clickEvent\"\\s*:\\s*\\{\\s*\"action\"\\s*:\\s*\"run_command\"\\s*,\\s*\"value\"\\s*:\\s*\"([^\"]+)\"\\s*\\}\\s*,\\s*\"hoverEvent\"\\s*:\\s*\\{\\s*\"action\"\\s*:\\s*\"show_text\"\\s*,\\s*\"value\"\\s*:\\s*\\{\\s*\"text\"\\s*:\\s*\"[^\"]*点击接受该任务",
+      "group": 1,
+      "variableName": "quest_accept_command",
+      "valueType": "string",
+      "scope": "global",
+      "writeDefaultOnFailure": false,
+      "defaultValue": "",
+      "note": "从任务书/任务指引解码文本中捕获“接受任务”的 run_command 命令，可在路径命令参数里用 global.quest_accept_command 或 ${global.quest_accept_command}。"
+    },
+    {
+      "name": "quest_reject_command",
+      "enabled": true,
+      "channel": "standard",
+      "direction": "inbound",
+      "source": "decoded",
+      "extractMode": "regex",
+      "pattern": "(?is)\"clickEvent\"\\s*:\\s*\\{\\s*\"action\"\\s*:\\s*\"run_command\"\\s*,\\s*\"value\"\\s*:\\s*\"([^\"]+)\"\\s*\\}\\s*,\\s*\"hoverEvent\"\\s*:\\s*\\{\\s*\"action\"\\s*:\\s*\"show_text\"\\s*,\\s*\"value\"\\s*:\\s*\\{\\s*\"text\"\\s*:\\s*\"[^\"]*点击拒绝该任务",
+      "group": 1,
+      "variableName": "quest_reject_command",
+      "valueType": "string",
+      "scope": "global",
+      "writeDefaultOnFailure": false,
+      "defaultValue": "",
+      "note": "从任务书/任务指引解码文本中捕获“拒绝任务”的 run_command 命令，可在路径命令参数里用 global.quest_reject_command 或 ${global.quest_reject_command}。"
+    }
+  ]
+}

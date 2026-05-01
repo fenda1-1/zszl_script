@@ -62,6 +62,9 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
     private static final int BTN_HUNT_ORBIT = 39;
     private static final int BTN_HUNT_JUMP_ORBIT = 40;
     private static final int BTN_HUNT_ORBIT_SAMPLE_POINTS = 41;
+    private static final int BTN_HUNT_UP_RANGE = 42;
+    private static final int BTN_HUNT_DOWN_RANGE = 43;
+    private static final int BTN_NO_DAMAGE_ATTACK_LIMIT = 44;
 
     private static final int BTN_SAVE = 100;
     private static final int BTN_DEFAULT = 101;
@@ -117,10 +120,13 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
     private GuiButton maxTurnSpeedButton;
     private GuiButton intervalButton;
     private GuiButton targetsPerAttackButton;
+    private GuiButton noDamageAttackLimitButton;
     private GuiButton attackSequenceButton;
     private GuiButton attackSequenceDelayButton;
     private GuiButton huntRadiusButton;
     private GuiButton huntFixedDistanceButton;
+    private GuiButton huntUpRangeButton;
+    private GuiButton huntDownRangeButton;
     private GuiButton huntOrbitSamplePointsButton;
     private GuiButton fullBrightGammaButton;
     private GuiButton scanRangeButton;
@@ -301,10 +307,13 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
         maxTurnSpeedButton = new ThemedButton(BTN_MAX_TURN_SPEED, 0, 0, 100, 20, "");
         intervalButton = new ThemedButton(BTN_INTERVAL, 0, 0, 100, 20, "");
         targetsPerAttackButton = new ThemedButton(BTN_TARGETS_PER_ATTACK, 0, 0, 100, 20, "");
+        noDamageAttackLimitButton = new ThemedButton(BTN_NO_DAMAGE_ATTACK_LIMIT, 0, 0, 100, 20, "");
         attackSequenceButton = new ThemedButton(BTN_ATTACK_SEQUENCE, 0, 0, 100, 20, "");
         attackSequenceDelayButton = new ThemedButton(BTN_ATTACK_SEQUENCE_DELAY, 0, 0, 100, 20, "");
         huntRadiusButton = new ThemedButton(BTN_HUNT_RADIUS, 0, 0, 100, 20, "");
         huntFixedDistanceButton = new ThemedButton(BTN_HUNT_FIXED_DISTANCE, 0, 0, 100, 20, "");
+        huntUpRangeButton = new ThemedButton(BTN_HUNT_UP_RANGE, 0, 0, 100, 20, "");
+        huntDownRangeButton = new ThemedButton(BTN_HUNT_DOWN_RANGE, 0, 0, 100, 20, "");
         huntOrbitSamplePointsButton = new ThemedButton(BTN_HUNT_ORBIT_SAMPLE_POINTS, 0, 0, 100, 20, "");
         fullBrightGammaButton = new ThemedButton(BTN_FULL_BRIGHT_GAMMA, 0, 0, 100, 20, "");
         scanRangeButton = new ThemedButton(BTN_SCAN_RANGE, 0, 0, 100, 20, "");
@@ -351,10 +360,13 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
         this.buttonList.add(maxTurnSpeedButton);
         this.buttonList.add(intervalButton);
         this.buttonList.add(targetsPerAttackButton);
+        this.buttonList.add(noDamageAttackLimitButton);
         this.buttonList.add(attackSequenceButton);
         this.buttonList.add(attackSequenceDelayButton);
         this.buttonList.add(huntRadiusButton);
         this.buttonList.add(huntFixedDistanceButton);
+        this.buttonList.add(huntUpRangeButton);
+        this.buttonList.add(huntDownRangeButton);
         this.buttonList.add(huntOrbitSamplePointsButton);
         this.buttonList.add(fullBrightGammaButton);
         this.buttonList.add(scanRangeButton);
@@ -385,6 +397,7 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
         boolean packetMode = KillAuraHandler.ATTACK_MODE_PACKET.equalsIgnoreCase(KillAuraHandler.attackMode);
         boolean teleportMode = KillAuraHandler.ATTACK_MODE_TELEPORT.equalsIgnoreCase(KillAuraHandler.attackMode);
         boolean sequenceMode = KillAuraHandler.ATTACK_MODE_SEQUENCE.equalsIgnoreCase(KillAuraHandler.attackMode);
+        boolean mouseClickMode = KillAuraHandler.ATTACK_MODE_MOUSE_CLICK.equalsIgnoreCase(KillAuraHandler.attackMode);
         boolean aimOnly = KillAuraHandler.aimOnlyMode;
         boolean huntEnabled = KillAuraHandler.isHuntEnabled();
 
@@ -452,8 +465,7 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
         nameBlacklistButton.setEnabledState(KillAuraHandler.enableNameBlacklist);
         nameBlacklistButton.displayString = "启用名称黑名单: " + stateText(KillAuraHandler.enableNameBlacklist);
 
-        String attackModeName = sequenceMode ? "执行序列"
-                : (packetMode ? "数据包攻击" : (teleportMode ? "TP攻击" : "普通攻击"));
+        String attackModeName = getAttackModeDisplayName(KillAuraHandler.attackMode);
         attackModeButton.displayString = aimOnly ? "攻击模式: 执行序列(只瞄准默认)" : "攻击模式: " + attackModeName;
         attackModeButton.enabled = !aimOnly;
         attackModeDropdown.syncFromCurrentMode();
@@ -479,8 +491,12 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
 
         huntRadiusButton.displayString = "追击半径: " + formatFloat(KillAuraHandler.huntRadius) + " 格";
         huntFixedDistanceButton.displayString = "固定距离: " + formatFloat(KillAuraHandler.huntFixedDistance) + " 格";
+        huntUpRangeButton.displayString = "向上追击范围: " + formatFloat(KillAuraHandler.huntUpRange) + " 格";
+        huntDownRangeButton.displayString = "向下追击范围: " + formatFloat(KillAuraHandler.huntDownRange) + " 格";
         huntRadiusButton.enabled = huntEnabled;
         huntFixedDistanceButton.enabled = huntEnabled && KillAuraHandler.isHuntFixedDistanceMode();
+        huntUpRangeButton.enabled = huntEnabled;
+        huntDownRangeButton.enabled = huntEnabled;
         huntOrbitButton.enabled = huntEnabled && KillAuraHandler.isHuntFixedDistanceMode();
         huntJumpOrbitButton.enabled = huntEnabled
                 && KillAuraHandler.isHuntFixedDistanceMode()
@@ -497,9 +513,13 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
         maxTurnSpeedButton.displayString = "最大转速: " + formatFloat(KillAuraHandler.maxTurnSpeed);
         intervalButton.displayString = "最小攻击间隔: " + KillAuraHandler.minAttackIntervalTicks + " Tick";
         targetsPerAttackButton.displayString = "单次攻击目标数: " + KillAuraHandler.targetsPerAttack + " 个";
+        noDamageAttackLimitButton.displayString = KillAuraHandler.getNoDamageAttackLimit() > 0
+                ? "无伤排除: " + KillAuraHandler.getNoDamageAttackLimit() + " 次"
+                : "无伤排除: 关闭";
         minStrengthButton.enabled = !aimOnly && !sequenceMode;
         intervalButton.enabled = !aimOnly && !sequenceMode;
         targetsPerAttackButton.enabled = !aimOnly && !sequenceMode;
+        noDamageAttackLimitButton.enabled = !aimOnly;
 
         scanRangeButton.displayString = "获取范围: " + formatFloat(KillAuraHandler.nearbyEntityScanRange) + " 格";
         scanNearbyButton.displayString = "获取周围实体名称";
@@ -541,15 +561,17 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
         int rightX = leftX + buttonW + columnGap;
         boolean packetMode = KillAuraHandler.ATTACK_MODE_PACKET.equalsIgnoreCase(KillAuraHandler.attackMode);
         boolean sequenceMode = KillAuraHandler.ATTACK_MODE_SEQUENCE.equalsIgnoreCase(KillAuraHandler.attackMode);
+        boolean mouseClickMode = KillAuraHandler.ATTACK_MODE_MOUSE_CLICK.equalsIgnoreCase(KillAuraHandler.attackMode);
 
         int totalContentHeight = layoutSelectedGroup(leftX, rightX, fullWidth, buttonW, buttonHeight, rowStep,
-                packetMode, sequenceMode, false);
+                packetMode, sequenceMode, mouseClickMode, false);
         int visibleContentHeight = Math.max(24, this.contentBottom - this.contentTop);
         this.contentMaxScroll = Math.max(0, totalContentHeight - visibleContentHeight);
         this.contentScroll = clampInt(this.contentScroll, 0, this.contentMaxScroll);
 
         hideAllContentButtons();
-        layoutSelectedGroup(leftX, rightX, fullWidth, buttonW, buttonHeight, rowStep, packetMode, sequenceMode, true);
+        layoutSelectedGroup(leftX, rightX, fullWidth, buttonW, buttonHeight, rowStep, packetMode, sequenceMode,
+                mouseClickMode, true);
 
         int footerY = this.panelY + this.panelHeight - 28;
         int footerGap = 6;
@@ -572,12 +594,13 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
     }
 
     private int layoutSelectedGroup(int leftX, int rightX, int fullWidth, int buttonW, int buttonHeight, int rowStep,
-            boolean packetMode, boolean sequenceMode, boolean layout) {
+            boolean packetMode, boolean sequenceMode, boolean mouseClickMode, boolean layout) {
         switch (this.selectedGroup) {
         case PRESET:
             return layoutPresetGroup(leftX, fullWidth, buttonHeight, rowStep, layout);
         case ATTACK:
-            return layoutAttackGroup(leftX, rightX, buttonW, buttonHeight, rowStep, packetMode, sequenceMode, layout);
+            return layoutAttackGroup(leftX, rightX, buttonW, buttonHeight, rowStep, packetMode, sequenceMode,
+                    mouseClickMode, layout);
         case TARGET:
             return layoutTargetGroup(leftX, rightX, buttonW, buttonHeight, rowStep, layout);
         case NAME_FILTER:
@@ -619,7 +642,7 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
     }
 
     private int layoutAttackGroup(int leftX, int rightX, int buttonW, int buttonHeight, int rowStep, boolean packetMode,
-            boolean sequenceMode, boolean layout) {
+            boolean sequenceMode, boolean mouseClickMode, boolean layout) {
         boolean showRotationControls = !packetMode || KillAuraHandler.aimOnlyMode;
         int currentY = 0;
         int fullButtonWidth = rightX + buttonW - leftX;
@@ -640,6 +663,10 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
         } else {
             placeContentButton(onlyWeaponButton, leftX, currentY, buttonW, buttonHeight, layout);
             placeContentButton(aimOnlyButton, rightX, currentY, buttonW, buttonHeight, layout);
+            if (mouseClickMode) {
+                currentY += rowStep;
+                placeContentButton(attackSequenceDelayButton, leftX, currentY, fullButtonWidth, buttonHeight, layout);
+            }
         }
 
         currentY += rowStep;
@@ -663,12 +690,16 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
 
     private int layoutTargetGroup(int leftX, int rightX, int buttonW, int buttonHeight, int rowStep, boolean layout) {
         int currentY = 0;
+        int fullWidth = Math.max(buttonW, rightX + buttonW - leftX);
         placeContentButton(hostileButton, leftX, currentY, buttonW, buttonHeight, layout);
         placeContentButton(passiveButton, rightX, currentY, buttonW, buttonHeight, layout);
 
         currentY += rowStep;
         placeContentButton(playersButton, leftX, currentY, buttonW, buttonHeight, layout);
         placeContentButton(ignoreInvisibleButton, rightX, currentY, buttonW, buttonHeight, layout);
+
+        currentY += rowStep;
+        placeContentButton(noDamageAttackLimitButton, leftX, currentY, fullWidth, buttonHeight, layout);
         return currentY + buttonHeight + 4;
     }
 
@@ -750,6 +781,10 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
         placeContentButton(huntRadiusButton, leftX, currentY, fullWidth, buttonHeight, layout);
 
         currentY += rowStep;
+        placeContentButton(huntUpRangeButton, leftX, currentY, buttonW, buttonHeight, layout);
+        placeContentButton(huntDownRangeButton, rightX, currentY, buttonW, buttonHeight, layout);
+
+        currentY += rowStep;
         placeContentButton(huntPickupButton, leftX, currentY, buttonW, buttonHeight, layout);
         placeContentButton(huntVisualizeButton, rightX, currentY, buttonW, buttonHeight, layout);
         return currentY + buttonHeight + 4;
@@ -816,10 +851,13 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
         hideButton(maxTurnSpeedButton);
         hideButton(intervalButton);
         hideButton(targetsPerAttackButton);
+        hideButton(noDamageAttackLimitButton);
         hideButton(attackSequenceButton);
         hideButton(attackSequenceDelayButton);
         hideButton(huntRadiusButton);
         hideButton(huntFixedDistanceButton);
+        hideButton(huntUpRangeButton);
+        hideButton(huntDownRangeButton);
         hideButton(huntOrbitSamplePointsButton);
         hideButton(fullBrightGammaButton);
         hideButton(scanRangeButton);
@@ -1370,6 +1408,8 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
                 applyAttackMode(KillAuraHandler.ATTACK_MODE_TELEPORT);
             } else if (KillAuraHandler.ATTACK_MODE_TELEPORT.equalsIgnoreCase(KillAuraHandler.attackMode)) {
                 applyAttackMode(KillAuraHandler.ATTACK_MODE_SEQUENCE);
+            } else if (KillAuraHandler.ATTACK_MODE_SEQUENCE.equalsIgnoreCase(KillAuraHandler.attackMode)) {
+                applyAttackMode(KillAuraHandler.ATTACK_MODE_MOUSE_CLICK);
             } else {
                 applyAttackMode(KillAuraHandler.ATTACK_MODE_NORMAL);
             }
@@ -1479,6 +1519,21 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
                         } catch (Exception ignored) {
                         }
                         KillAuraHandler.targetsPerAttack = clampInt(parsed, 1, 50);
+                        refreshButtonTexts();
+                        mc.setScreen(this);
+                    }));
+            return;
+        case BTN_NO_DAMAGE_ATTACK_LIMIT:
+            mc.setScreen(new GuiTextInput(this,
+                    "输入无伤排除攻击次数 (0 - " + KillAuraHandler.MAX_NO_DAMAGE_ATTACK_LIMIT + "，0 关闭)",
+                    String.valueOf(KillAuraHandler.noDamageAttackLimit), value -> {
+                        int parsed = KillAuraHandler.noDamageAttackLimit;
+                        try {
+                            parsed = Integer.parseInt(value.trim());
+                        } catch (Exception ignored) {
+                        }
+                        KillAuraHandler.setNoDamageAttackLimit(parsed);
+                        KillAuraHandler.INSTANCE.resetRuntimeState();
                         refreshButtonTexts();
                         mc.setScreen(this);
                     }));
@@ -1722,6 +1777,7 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
                             "§7数据包攻击：直接发送攻击包，不移动视角。",
                             "§7TP攻击：当攻击范围大于 6 格时，分段发送位置包贴近目标攻击后返回原位。",
                             "§7执行序列：命中触发条件后，独立执行你选定的攻击序列。",
+                            "§7模拟鼠标点击：命中准星碰撞箱后，在屏幕中心模拟一次左键点击。",
                             "§7开启只瞄准后，会默认切到执行序列模式。", "§7切到数据包模式后会自动关闭并隐藏转向相关选项。"),
                     mouseX, mouseY);
         } else if (attackSequenceButton.visible && isMouseOver(mouseX, mouseY, attackSequenceButton)) {
@@ -1752,6 +1808,12 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
                     "§7例如设为 3 时，会按三角形节点绕圈进场；数值越大越接近圆。", "§7最小值为 3。"), mouseX, mouseY);
         } else if (huntRadiusButton.visible && isMouseOver(mouseX, mouseY, huntRadiusButton)) {
             drawHoveringText(Arrays.asList("§e追击半径", "§7用于决定在多大范围内主动搜怪并追击。", "§7该值不能小于攻击范围。"), mouseX, mouseY);
+        } else if (huntUpRangeButton.visible && isMouseOver(mouseX, mouseY, huntUpRangeButton)) {
+            drawHoveringText(Arrays.asList("§e向上追击范围", "§7只会追击比你脚底高出该范围内的目标。", "§7默认 1 格，可避免锁到头顶但打不到的目标。"),
+                    mouseX, mouseY);
+        } else if (huntDownRangeButton.visible && isMouseOver(mouseX, mouseY, huntDownRangeButton)) {
+            drawHoveringText(Arrays.asList("§e向下追击范围", "§7只会追击比你脚底低出该范围内的目标。", "§7默认 1 格，可避免锁到楼下但打不到的目标。"),
+                    mouseX, mouseY);
         } else if (huntPickupButton.visible && isMouseOver(mouseX, mouseY, huntPickupButton)) {
             drawHoveringText(Arrays.asList("§e优先拾取掉落物", "§7默认关闭。", "§7开启后，Hunt 在追击半径内发现掉落物时会先去捡，再继续追怪。",
                     "§7如果你当前就在自动拾取规则范围内，会优先让自动拾取规则管理器接管，不会互相抢导航。"), mouseX, mouseY);
@@ -1760,12 +1822,15 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
                     mouseY);
         } else if (rangeButton.visible && isMouseOver(mouseX, mouseY, rangeButton)) {
             drawHoveringText(Arrays.asList("§e攻击范围", "§7现已支持 1 ~ 100 格。", "§7超过 6 格时，建议切换到 TP攻击 模式。",
-                    "§7普通攻击 / 数据包攻击在超远距离下通常无法稳定命中。"), mouseX, mouseY);
+                    "§7普通攻击 / 数据包攻击 / 模拟鼠标点击在超远距离下通常无法稳定命中。"), mouseX, mouseY);
         } else if (minStrengthButton.visible && isMouseOver(mouseX, mouseY, minStrengthButton)) {
             drawHoveringText(Arrays.asList("§e最小攻击蓄力", "§70.0 表示见到就打。", "§71.0 表示完全冷却后再打。"), mouseX, mouseY);
         } else if (targetsPerAttackButton.visible && isMouseOver(mouseX, mouseY, targetsPerAttackButton)) {
             drawHoveringText(Arrays.asList("§e单次攻击目标数", "§71 表示每次只攻击一个目标。", "§7大于 1 时，会在一次出手里依次攻击多个符合条件的目标。",
                     "§7同样会受黑白名单、攻击范围和可见性限制。", "§7执行序列模式不会使用这个选项。"), mouseX, mouseY);
+        } else if (noDamageAttackLimitButton.visible && isMouseOver(mouseX, mouseY, noDamageAttackLimitButton)) {
+            drawHoveringText(Arrays.asList("§e无伤排除", "§7连续攻击同一个目标达到次数后，若血量没有降低，",
+                    "§7会按实体ID临时排除该目标并重新索敌。", "§70 表示关闭，默认 5 次。"), mouseX, mouseY);
         } else if (onlyWeaponButton.visible && isMouseOver(mouseX, mouseY, onlyWeaponButton)) {
             drawHoveringText(Arrays.asList("§e仅持武器生效", "§7开启后必须主手拿剑或斧头才会自动攻击。", "§7可避免误拿工具、食物或其他物品时乱打。"), mouseX,
                     mouseY);
@@ -2222,6 +2287,9 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
         if (KillAuraHandler.ATTACK_MODE_SEQUENCE.equalsIgnoreCase(mode)) {
             return "执行序列";
         }
+        if (KillAuraHandler.ATTACK_MODE_MOUSE_CLICK.equalsIgnoreCase(mode)) {
+            return "模拟鼠标点击";
+        }
         return "普通攻击";
     }
 
@@ -2257,6 +2325,8 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
         KillAuraHandler.visualizeHuntRadius = false;
         KillAuraHandler.huntRadius = 8.0F;
         KillAuraHandler.huntFixedDistance = 4.2F;
+        KillAuraHandler.huntUpRange = KillAuraHandler.DEFAULT_HUNT_UP_RANGE;
+        KillAuraHandler.huntDownRange = KillAuraHandler.DEFAULT_HUNT_DOWN_RANGE;
         KillAuraHandler.huntOrbitEnabled = false;
         KillAuraHandler.huntJumpOrbitEnabled = true;
         KillAuraHandler.huntOrbitSamplePoints = KillAuraHandler.DEFAULT_HUNT_ORBIT_SAMPLE_POINTS;
@@ -2272,6 +2342,7 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
         KillAuraHandler.maxTurnSpeed = 18.0F;
         KillAuraHandler.minAttackIntervalTicks = 2;
         KillAuraHandler.targetsPerAttack = 1;
+        KillAuraHandler.noDamageAttackLimit = KillAuraHandler.DEFAULT_NO_DAMAGE_ATTACK_LIMIT;
         KillAuraHandler.attackSequenceName = "";
         KillAuraHandler.attackSequenceDelayTicks = 2;
         this.whitelistListScroll = 0;
@@ -2358,7 +2429,8 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
                 KillAuraHandler.ATTACK_MODE_NORMAL,
                 KillAuraHandler.ATTACK_MODE_PACKET,
                 KillAuraHandler.ATTACK_MODE_TELEPORT,
-                KillAuraHandler.ATTACK_MODE_SEQUENCE);
+                KillAuraHandler.ATTACK_MODE_SEQUENCE,
+                KillAuraHandler.ATTACK_MODE_MOUSE_CLICK);
         private int x;
         private int y;
         private int width;

@@ -7,6 +7,7 @@ import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
 import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiTextField;
 import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
 import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Keyboard;
+import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Mouse;
 
 import java.io.IOException;
 import java.util.function.Consumer;
@@ -90,8 +91,48 @@ public class GuiTextInput extends ThemedGuiScreen {
 
     @Override
     protected void mouseClicked(int mouseX, int mouseY, int mouseButton) throws IOException {
-        super.mouseClicked(mouseX, mouseY, mouseButton);
+        handleMousePressed(mouseX, mouseY, mouseButton);
+    }
+
+    @Override
+    public void handleMouseInput() throws IOException {
+        int mouseX = Mouse.getEventX() * this.width / Math.max(1, this.mc.getWindow().getWidth());
+        int mouseY = this.height - Mouse.getEventY() * this.height / Math.max(1, this.mc.getWindow().getHeight()) - 1;
+
+        int button = Mouse.getEventButton();
+        if (button == -1) {
+            return;
+        }
+
+        if (Mouse.getEventButtonState()) {
+            handleMousePressed(mouseX, mouseY, button);
+        } else {
+            mouseReleased(mouseX, mouseY, button);
+        }
+    }
+
+    private boolean handleMousePressed(int mouseX, int mouseY, int mouseButton) throws IOException {
+        if (mouseButton == 0 && handleButtonActivation(mouseX, mouseY)) {
+            return true;
+        }
         this.inputField.mouseClicked(mouseX, mouseY, mouseButton);
+        return false;
+    }
+
+    private boolean handleButtonActivation(int mouseX, int mouseY) throws IOException {
+        for (GuiButton button : this.buttonList) {
+            if (button == null || !button.visible || !button.enabled) {
+                continue;
+            }
+            if (mouseX < button.x || mouseX >= button.x + button.width
+                    || mouseY < button.y || mouseY >= button.y + button.height) {
+                continue;
+            }
+            button.playPressSound(this.mc.getSoundManager());
+            actionPerformed(button);
+            return true;
+        }
+        return false;
     }
 
     @Override

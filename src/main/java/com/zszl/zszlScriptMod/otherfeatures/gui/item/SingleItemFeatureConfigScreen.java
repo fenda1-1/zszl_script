@@ -125,8 +125,8 @@ public class SingleItemFeatureConfigScreen extends ThemedGuiScreen {
         case "attack_no_cooldown":
             return "触发方式 : 按住左键自动满蓄力出刀";
         case "drop_all":
-            return "丢弃关键词 : " + (ItemFeatureManager.getDropAllKeywordsText().isEmpty()
-                    ? "未配置" : ItemFeatureManager.getDropAllKeywordsText());
+            String summary = ItemFeatureManager.getDropAllExpressionSummary();
+            return "丢弃表达式 : " + (summary.isEmpty() ? "未配置" : summary);
         case "inventory_sort":
             return "整理范围 : 主背包 9-35 格";
         case "shulker_preview":
@@ -142,7 +142,7 @@ public class SingleItemFeatureConfigScreen extends ThemedGuiScreen {
 
     private String buildSecondaryOptionLabel() {
         if ("drop_all".equals(this.featureId)) {
-            return "丢弃间隔 : " + ItemFeatureManager.getDropAllDelayTicks() + " tick";
+            return "扔出物品间隔 : " + ItemFeatureManager.getDropAllDelayTicks() + " tick";
         }
         return "";
     }
@@ -211,7 +211,7 @@ public class SingleItemFeatureConfigScreen extends ThemedGuiScreen {
         if (!"drop_all".equals(this.featureId)) {
             return;
         }
-        openIntegerInput("输入丢弃间隔 (0 - 20 tick)", ItemFeatureManager.getDropAllDelayTicks(), 0, 20,
+        openIntegerInput("输入扔出物品间隔 (0 - 20 tick)", ItemFeatureManager.getDropAllDelayTicks(), 0, 20,
                 ItemFeatureManager::setDropAllDelayTicks);
     }
 

@@ -372,7 +372,7 @@ public final class ActionEditorDisplayConverters {
         if (KillAuraHandler.ATTACK_MODE_SEQUENCE.equalsIgnoreCase(mode)) {
             return "执行序列攻击";
         }
-        return "普通攻击";
+        return "杀戮当前配置";
     }
 
     public static String displayToHuntAttackMode(String display) {

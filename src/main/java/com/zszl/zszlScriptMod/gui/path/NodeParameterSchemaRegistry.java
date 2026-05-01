@@ -522,7 +522,11 @@ public final class NodeParameterSchemaRegistry {
                                         "使用当前主手物品前的延迟。", ">= 0", "0"));
                 } else if ("hunt".equals(normalized)) {
                         schemas.add(FieldSchema.paramsField("radius", "搜索半径", FieldType.NUMBER, false,
-                                        "狩猎范围半径。", ">= 0", "3"));
+                                        "中心搜怪固定范围半径。", ">= 0", "3"));
+                        schemas.add(FieldSchema.paramsField("huntUpRange", "向上追击范围", FieldType.NUMBER, false,
+                                        "只允许选择比动作触发坐标高出该范围内的目标。", ">= 0", "1"));
+                        schemas.add(FieldSchema.paramsField("huntDownRange", "向下追击范围", FieldType.NUMBER, false,
+                                        "只允许选择比动作触发坐标低出该范围内的目标。", ">= 0", "1"));
                         schemas.add(FieldSchema.paramsField("scanRadius", "扫描半径", FieldType.NUMBER, false,
                                         "“扫描附近实体”按钮使用的范围。", ">= 0", "10"));
                         schemas.add(FieldSchema.paramsField("attackCount", "攻击次数", FieldType.NUMBER, false,
@@ -538,11 +542,11 @@ public final class NodeParameterSchemaRegistry {
                         schemas.add(FieldSchema.paramsField("targetPlayers", "玩家", FieldType.BOOLEAN, false,
                                         "是否匹配玩家。", "true / false", "false"));
                         schemas.add(FieldSchema.paramsField("enableNameWhitelist", "启用名称白名单", FieldType.BOOLEAN, false,
-                                        "启用后仅匹配名称包含白名单关键字的实体。", "true / false", "false"));
+                                        "启用后仅匹配中心搜怪动作自己的白名单，不读取杀戮光环名称白名单。", "true / false", "false"));
                         schemas.add(FieldSchema.paramsField("nameWhitelistText", "名称白名单", FieldType.TEXTAREA, false,
                                         "每行或逗号分隔一个关键字，按包含匹配。", "可为空", ""));
                         schemas.add(FieldSchema.paramsField("enableNameBlacklist", "启用名称黑名单", FieldType.BOOLEAN, false,
-                                        "启用后忽略名称包含黑名单关键字的实体。", "true / false", "false"));
+                                        "启用后忽略中心搜怪动作自己的黑名单，不读取杀戮光环名称黑名单。", "true / false", "false"));
                         schemas.add(FieldSchema.paramsField("nameBlacklistText", "名称黑名单", FieldType.TEXTAREA, false,
                                         "每行或逗号分隔一个关键字，按包含匹配。", "可为空", ""));
                 } else if ("send_packet".equals(normalized)) {

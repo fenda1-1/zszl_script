@@ -65,6 +65,7 @@ public class PacketCaptureHandler extends ChannelDuplexHandler {
     private static final long MAX_BUSINESS_TASK_NANOS_PER_TICK = 1_500_000L;
     private static final int DEFAULT_MAX_CAPTURED_PACKETS = 3000;
     private static final int CAPTURE_TRIM_BATCH = 120;
+    private static final int MAX_RECENT_TEXT_DECODE_BYTES = 64 * 1024;
     private static final long UI_SNAPSHOT_INTERVAL_MS = 500L;
     private static final long RECENT_PACKET_TEXT_TRACKING_GRACE_MS = 15000L;
     private static volatile long lastUiSnapshotAt = 0L;
@@ -98,6 +99,7 @@ public class PacketCaptureHandler extends ChannelDuplexHandler {
         private volatile String hexData;
         private volatile String decodedData;
         private volatile String decodedDetailData;
+        private volatile String decodedFullData;
         private long lastTimestamp;
         private int occurrenceCount;
         private int totalPayloadBytes;
@@ -149,6 +151,18 @@ public class PacketCaptureHandler extends ChannelDuplexHandler {
                 decodedDetailData = local == null ? "" : local;
             }
             return decodedDetailData == null ? "" : decodedDetailData;
+        }
+
+        public String getDecodedFullData() {
+            String local = decodedFullData;
+            if (local == null) {
+                local = PacketPayloadDecoder.decodeFull(rawData);
+                if ((local == null || local.trim().isEmpty()) && decodedData != null) {
+                    local = decodedData;
+                }
+                decodedFullData = local == null ? "" : local;
+            }
+            return decodedFullData == null ? "" : decodedFullData;
         }
 
         public long getLastTimestamp() {
@@ -528,6 +542,12 @@ public class PacketCaptureHandler extends ChannelDuplexHandler {
                 boolean needRawPacketProcessing = isRawPacketProcessingNeeded(false, captureFeatureEnabled,
                         interceptEnabled);
                 effectivePacket = (Packet<?>) msg;
+                if (needRawPacketProcessing
+                        && !(captureFeatureEnabled && isCapturing)
+                        && !interceptEnabled
+                        && shouldSkipBusinessPayload(effectivePacket)) {
+                    needRawPacketProcessing = false;
+                }
                 String decodedText = "";
                 if (needRawPacketProcessing) {
                     meta = inspectPacket(effectivePacket, false);
@@ -584,8 +604,9 @@ public class PacketCaptureHandler extends ChannelDuplexHandler {
     private static String processPacket(boolean sent, String packetClassName, boolean isFmlPacket, Integer packetId,
             String channel, byte[] rawData, boolean decodePayloadText, boolean collectRecentPacketText) {
         byte[] safeRawData = rawData == null ? new byte[0] : rawData;
-        String decodedText = decodePayloadText ? decodePayload(channel, safeRawData) : "";
-        if (collectRecentPacketText) {
+        boolean skipPayloadDecode = shouldSkipPayloadDecode(packetClassName, safeRawData);
+        String decodedText = decodePayloadText && !skipPayloadDecode ? decodePayload(channel, safeRawData) : "";
+        if (collectRecentPacketText && !skipPayloadDecode) {
             appendRecentPacketText(packetClassName, channel, decodedText);
         }
 
@@ -596,7 +617,7 @@ public class PacketCaptureHandler extends ChannelDuplexHandler {
             }
         }
 
-        if (isBusinessProcessingEnabled()) {
+        if (isBusinessProcessingEnabled() && !isWorldStreamingPacket(packetClassName)) {
             if (hasPacketTriggerConsumers()) {
                 dispatchPacketTrigger(packetClassName, packetId, channel, decodedText, sent);
             }
@@ -1128,6 +1149,26 @@ public class PacketCaptureHandler extends ChannelDuplexHandler {
             return true;
         }
         return PacketFieldRuleManager.hasDecodedRulesForDirection(outbound);
+    }
+
+    private static boolean shouldSkipBusinessPayload(Packet<?> packet) {
+        return packet == null || isWorldStreamingPacket(packet.getClass().getSimpleName());
+    }
+
+    private static boolean shouldSkipPayloadDecode(String packetClassName, byte[] rawData) {
+        return rawData == null
+                || rawData.length == 0
+                || rawData.length > MAX_RECENT_TEXT_DECODE_BYTES
+                || isWorldStreamingPacket(packetClassName);
+    }
+
+    private static boolean isWorldStreamingPacket(String packetClassName) {
+        String name = packetClassName == null ? "" : packetClassName.toLowerCase(Locale.ROOT);
+        return name.contains("chunk")
+                || name.contains("lightupdate")
+                || name.contains("levelchunk")
+                || name.contains("forgetlevelchunk")
+                || name.contains("chunksbiomes");
     }
 
     private static String normalizeHexText(String text) {

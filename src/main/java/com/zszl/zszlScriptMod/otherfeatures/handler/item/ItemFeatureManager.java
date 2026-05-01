@@ -1,9 +1,12 @@
 package com.zszl.zszlScriptMod.otherfeatures.handler.item;
 
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.inventory.ItemStackHelper;
 import com.zszl.zszlScriptMod.otherfeatures.handler.movement.MovementFeatureManager;
+import com.zszl.zszlScriptMod.path.InventoryItemFilterExpressionEngine;
 import com.zszl.zszlScriptMod.system.ProfileManager;
 import com.zszl.zszlScriptMod.zszlScriptMod;
 import net.minecraft.client.Minecraft;
@@ -45,7 +48,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -71,6 +76,7 @@ public final class ItemFeatureManager {
     private static int autoEquipIntervalTicks = DEFAULT_AUTO_EQUIP_INTERVAL_TICKS;
     private static int dropAllDelayTicks = DEFAULT_DROP_ALL_DELAY_TICKS;
     private static String dropAllKeywordsText = "";
+    private static final List<String> dropAllItemFilterExpressions = new ArrayList<>();
 
     private int inventorySortCooldownTicks;
     private int chestStealCooldownTicks;
@@ -165,6 +171,26 @@ public final class ItemFeatureManager {
         saveConfig();
     }
 
+    public static List<String> getDropAllItemFilterExpressions() {
+        List<String> expressions = normalizeDropAllExpressions(dropAllItemFilterExpressions);
+        if (!expressions.isEmpty()) {
+            return expressions;
+        }
+        return buildLegacyDropAllKeywordExpressions();
+    }
+
+    public static void setDropAllItemFilterExpressions(List<String> expressions) {
+        dropAllItemFilterExpressions.clear();
+        dropAllItemFilterExpressions.addAll(normalizeDropAllExpressions(expressions));
+        dropAllKeywordsText = "";
+        saveConfig();
+    }
+
+    public static String getDropAllExpressionSummary() {
+        List<String> expressions = getDropAllItemFilterExpressions();
+        return expressions.isEmpty() ? "" : InventoryItemFilterExpressionEngine.summarizeExpressions(expressions);
+    }
+
     public static void setFeatureStatusHudEnabled(String featureId, boolean enabled) {
         FeatureState state = getFeature(featureId);
         if (state == null) {
@@ -188,6 +214,7 @@ public final class ItemFeatureManager {
         } else if ("drop_all".equals(state.id)) {
             dropAllDelayTicks = DEFAULT_DROP_ALL_DELAY_TICKS;
             dropAllKeywordsText = "";
+            dropAllItemFilterExpressions.clear();
         }
         saveConfig();
     }
@@ -292,6 +319,48 @@ public final class ItemFeatureManager {
 
     public static String getFeatureRuntimeSummary(String featureId) {
         return INSTANCE.buildFeatureRuntimeSummary(normalizeId(featureId));
+    }
+
+    private static List<String> normalizeDropAllExpressions(List<String> expressions) {
+        List<String> normalized = new ArrayList<>();
+        if (expressions == null) {
+            return normalized;
+        }
+        LinkedHashSet<String> seen = new LinkedHashSet<>();
+        for (String expression : expressions) {
+            String text = safe(expression);
+            if (text.isEmpty()) {
+                continue;
+            }
+            if (seen.add(text.toLowerCase(Locale.ROOT))) {
+                normalized.add(text);
+            }
+        }
+        return normalized;
+    }
+
+    private static List<String> buildLegacyDropAllKeywordExpressions() {
+        List<String> expressions = new ArrayList<>();
+        for (String keyword : INSTANCE.getDropAllKeywords()) {
+            String expression = InventoryItemFilterExpressionEngine.buildLegacyCompatibleExpression(keyword,
+                    "CONTAINS", Collections.emptyList(), "");
+            if (!expression.isEmpty()) {
+                expressions.add(expression);
+            }
+        }
+        return expressions;
+    }
+
+    private static boolean matchesAnyDropAllExpression(ItemStack stack, int actualInvSlot, List<String> expressions) {
+        for (String expression : expressions) {
+            try {
+                if (InventoryItemFilterExpressionEngine.matches(stack, actualInvSlot, expression)) {
+                    return true;
+                }
+            } catch (RuntimeException ignored) {
+            }
+        }
+        return false;
     }
 
     public static List<String> getStatusLines() {

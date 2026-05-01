@@ -98,6 +98,7 @@ public abstract class AbstractThreePaneRuleManager<T> extends ThemedGuiScreen {
         Keyboard.enableRepeatEvents(true);
         this.buttonList.clear();
         this.statusMessage = safe(getGuideText());
+        applyReadableUiScaleForLargeScreen(1180, 660);
 
         recalcLayout();
         initCoreButtons();
@@ -885,22 +886,29 @@ public abstract class AbstractThreePaneRuleManager<T> extends ThemedGuiScreen {
 
     @Override
     public void drawScreen(int mouseX, int mouseY, float partialTicks) {
-        drawDefaultBackground();
+        mouseX = toReadableMouseX(mouseX);
+        mouseY = toReadableMouseY(mouseY);
+        pushReadableUiScale();
+        try {
+            drawDefaultBackground();
 
-        GuiTheme.drawPanel(panelX, panelY, panelWidth, panelHeight);
-        GuiTheme.drawTitleBar(panelX, panelY, panelWidth, getScreenTitle(), this.fontRenderer);
+            GuiTheme.drawPanel(panelX, panelY, panelWidth, panelHeight);
+            GuiTheme.drawTitleBar(panelX, panelY, panelWidth, getScreenTitle(), this.fontRenderer);
 
-        GuiTheme.drawInputFrameSafe(panelX + 10, panelY + 22, panelWidth - 20, 18, false, true);
-        drawString(this.fontRenderer, statusMessage, panelX + 14, panelY + 27, statusColor);
+            GuiTheme.drawInputFrameSafe(panelX + 10, panelY + 22, panelWidth - 20, 18, false, true);
+            drawString(this.fontRenderer, statusMessage, panelX + 14, panelY + 27, statusColor);
 
-        drawTreePanel(mouseX, mouseY);
-        drawCardPanel(mouseX, mouseY);
-        drawEditorPanel(mouseX, mouseY, partialTicks);
+            drawTreePanel(mouseX, mouseY);
+            drawCardPanel(mouseX, mouseY);
+            drawEditorPanel(mouseX, mouseY, partialTicks);
 
-        super.drawScreen(mouseX, mouseY, partialTicks);
+            super.drawScreen(mouseX, mouseY, partialTicks);
 
-        if (contextMenuVisible) {
-            drawContextMenu(mouseX, mouseY);
+            if (contextMenuVisible) {
+                drawContextMenu(mouseX, mouseY);
+            }
+        } finally {
+            popReadableUiScale();
         }
     }
 

@@ -75,6 +75,8 @@ public final class ModUtils {
     private static final String LEGACY_CHANNEL_NAMESPACE = "legacy";
     private static final String DEFAULT_CUSTOM_PAYLOAD_PATH = "unnamed";
     private static volatile boolean disconnectScheduled = false;
+    private static final Pattern CHAT_COMMAND_PLACEHOLDER_PATTERN = Pattern
+            .compile("\\{\\s*([a-zA-Z0-9_\\.]+)\\s*\\}");
 
     private ModUtils() {
     }

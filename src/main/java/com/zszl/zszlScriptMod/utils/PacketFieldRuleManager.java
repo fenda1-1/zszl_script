@@ -7,6 +7,8 @@ import com.zszl.zszlScriptMod.system.ProfileManager;
 import com.zszl.zszlScriptMod.zszlScriptMod;
 
 import java.io.Reader;
+import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.io.Writer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -25,6 +27,7 @@ import java.util.regex.Pattern;
 public final class PacketFieldRuleManager {
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
+    private static final String RESOURCE_NAME = "packet_field_rules.json";
     private static final List<FieldRule> RULES = new CopyOnWriteArrayList<>();
     private static final Map<String, CapturedFieldSnapshot> LAST_CAPTURED_FIELDS = new ConcurrentHashMap<>();
     private static volatile CapturedFieldSnapshot lastCapturedField = null;
@@ -179,52 +182,118 @@ public final class PacketFieldRuleManager {
         outboundDecodedRuleCount = 0;
         Path path = getConfigPath();
         ensureConfigExists(path);
-        try (Reader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
-            ConfigRoot root = GSON.fromJson(reader, ConfigRoot.class);
-            if (root == null || root.rules == null) {
+        loadRulesFromResource();
+        loadRulesFromFile(path, true);
+    }
+
+    private static void loadRulesFromResource() {
+        try (InputStream in = PacketFieldRuleManager.class.getClassLoader().getResourceAsStream(RESOURCE_NAME)) {
+            if (in == null) {
                 return;
             }
-            for (FieldRule rule : root.rules) {
-                if (rule == null || isBlank(rule.variableName)) {
-                    continue;
-                }
-                try {
-                    rule.direction = normalizeDirection(rule.direction);
-                    rule.source = normalizeSource(rule.source);
-                    rule.extractMode = normalizeExtractMode(rule.extractMode);
-                    rule.valueType = normalizeValueType(rule.valueType);
-                    rule.scope = normalizeScope(rule.scope);
-                    rule.group = Math.max(1, rule.group);
-                    if ("regex".equals(rule.extractMode)) {
-                        if (isBlank(rule.pattern)) {
-                            continue;
-                        }
-                        rule.compiledPattern = Pattern.compile(rule.pattern, Pattern.CASE_INSENSITIVE);
-                    }
-                    RULES.add(rule);
-                    if (rule.enabled) {
-                        boolean inbound = matchesDirection(rule.direction, "inbound");
-                        boolean outbound = matchesDirection(rule.direction, "outbound");
-                        boolean decoded = "decoded".equals(rule.source);
-                        if (inbound) {
-                            inboundEnabledRuleCount++;
-                            if (decoded) {
-                                inboundDecodedRuleCount++;
-                            }
-                        }
-                        if (outbound) {
-                            outboundEnabledRuleCount++;
-                            if (decoded) {
-                                outboundDecodedRuleCount++;
-                            }
-                        }
-                    }
-                } catch (Exception e) {
-                    zszlScriptMod.LOGGER.error("[PacketFieldRule] 编译规则失败: {}", rule.name, e);
-                }
+            try (Reader reader = new InputStreamReader(in, StandardCharsets.UTF_8)) {
+                loadRulesFromReader(reader, false);
             }
         } catch (Exception e) {
+            zszlScriptMod.LOGGER.error("[PacketFieldRule] 加载内置规则失败", e);
+        }
+    }
+
+    private static void loadRulesFromFile(Path path, boolean overrideExisting) {
+        try (Reader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
+            loadRulesFromReader(reader, overrideExisting);
+        } catch (Exception e) {
             zszlScriptMod.LOGGER.error("[PacketFieldRule] 加载规则失败", e);
+        }
+    }
+
+    private static void loadRulesFromReader(Reader reader, boolean overrideExisting) {
+        ConfigRoot root = GSON.fromJson(reader, ConfigRoot.class);
+        if (root == null || root.rules == null) {
+            return;
+        }
+        for (FieldRule rule : root.rules) {
+            FieldRule prepared = prepareRule(rule);
+            if (prepared == null) {
+                continue;
+            }
+            if (overrideExisting && !isBlank(prepared.name)) {
+                removeRuleByName(prepared.name);
+            } else if (!overrideExisting && hasRuleName(prepared.name)) {
+                continue;
+            }
+            RULES.add(prepared);
+            recordEnabledRuleCounters(prepared);
+        }
+    }
+
+    private static FieldRule prepareRule(FieldRule rule) {
+        if (rule == null || isBlank(rule.variableName)) {
+            return null;
+        }
+        try {
+            rule.direction = normalizeDirection(rule.direction);
+            rule.source = normalizeSource(rule.source);
+            rule.extractMode = normalizeExtractMode(rule.extractMode);
+            rule.valueType = normalizeValueType(rule.valueType);
+            rule.scope = normalizeScope(rule.scope);
+            rule.group = Math.max(1, rule.group);
+            if ("regex".equals(rule.extractMode)) {
+                if (isBlank(rule.pattern)) {
+                    return null;
+                }
+                rule.compiledPattern = Pattern.compile(rule.pattern, Pattern.CASE_INSENSITIVE);
+            }
+            return rule;
+        } catch (Exception e) {
+            zszlScriptMod.LOGGER.error("[PacketFieldRule] 编译规则失败: {}", rule.name, e);
+            return null;
+        }
+    }
+
+    private static void removeRuleByName(String name) {
+        String normalized = normalizeLookupKey(name);
+        if (normalized.isEmpty()) {
+            return;
+        }
+        for (FieldRule rule : new ArrayList<>(RULES)) {
+            if (rule != null && normalized.equals(normalizeLookupKey(rule.name))) {
+                RULES.remove(rule);
+            }
+        }
+    }
+
+    private static boolean hasRuleName(String name) {
+        String normalized = normalizeLookupKey(name);
+        if (normalized.isEmpty()) {
+            return false;
+        }
+        for (FieldRule rule : RULES) {
+            if (rule != null && normalized.equals(normalizeLookupKey(rule.name))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static void recordEnabledRuleCounters(FieldRule rule) {
+        if (rule == null || !rule.enabled) {
+            return;
+        }
+        boolean inbound = matchesDirection(rule.direction, "inbound");
+        boolean outbound = matchesDirection(rule.direction, "outbound");
+        boolean decoded = "decoded".equals(rule.source);
+        if (inbound) {
+            inboundEnabledRuleCount++;
+            if (decoded) {
+                inboundDecodedRuleCount++;
+            }
+        }
+        if (outbound) {
+            outboundEnabledRuleCount++;
+            if (decoded) {
+                outboundDecodedRuleCount++;
+            }
         }
     }
 
@@ -517,7 +586,14 @@ public final class PacketFieldRuleManager {
         String safeRaw = safe(rawValue).trim();
         String normalizedType = normalizeValueType(valueType);
         if ("string".equals(normalizedType)) {
-            return safeRaw;
+            return unescapeCapturedString(safeRaw);
+        }
+        if ("utf8-string".equals(normalizedType)) {
+            byte[] bytes = parseHexBytes(safeRaw);
+            if (bytes != null && bytes.length > 0) {
+                return unescapeCapturedString(new String(bytes, StandardCharsets.UTF_8).trim());
+            }
+            return unescapeCapturedString(safeRaw);
         }
         if ("hex".equals(normalizedType)) {
             return safeRaw.replaceAll("\\s+", "");
@@ -559,6 +635,83 @@ public final class PacketFieldRuleManager {
         return safeRaw;
     }
 
+    private static byte[] parseHexBytes(String hexText) {
+        if (isBlank(hexText)) {
+            return null;
+        }
+        String normalized = hexText.replaceAll("[^0-9A-Fa-f]", "");
+        if (normalized.isEmpty() || normalized.length() % 2 != 0) {
+            return null;
+        }
+        byte[] out = new byte[normalized.length() / 2];
+        for (int i = 0; i < out.length; i++) {
+            int idx = i * 2;
+            try {
+                out[i] = (byte) Integer.parseInt(normalized.substring(idx, idx + 2), 16);
+            } catch (NumberFormatException ignored) {
+                return null;
+            }
+        }
+        return out;
+    }
+
+    private static String unescapeCapturedString(String text) {
+        String value = safe(text);
+        if (value.indexOf('\\') < 0) {
+            return value;
+        }
+        StringBuilder builder = new StringBuilder(value.length());
+        for (int i = 0; i < value.length(); i++) {
+            char ch = value.charAt(i);
+            if (ch != '\\' || i + 1 >= value.length()) {
+                builder.append(ch);
+                continue;
+            }
+            char next = value.charAt(++i);
+            switch (next) {
+                case 'u':
+                    if (i + 4 < value.length()) {
+                        String hex = value.substring(i + 1, i + 5);
+                        try {
+                            builder.append((char) Integer.parseInt(hex, 16));
+                            i += 4;
+                            break;
+                        } catch (NumberFormatException ignored) {
+                            builder.append('\\').append(next);
+                            break;
+                        }
+                    }
+                    builder.append('\\').append(next);
+                    break;
+                case 'n':
+                    builder.append('\n');
+                    break;
+                case 'r':
+                    builder.append('\r');
+                    break;
+                case 't':
+                    builder.append('\t');
+                    break;
+                case 'b':
+                    builder.append('\b');
+                    break;
+                case 'f':
+                    builder.append('\f');
+                    break;
+                case '\\':
+                    builder.append('\\');
+                    break;
+                case '"':
+                    builder.append('"');
+                    break;
+                default:
+                    builder.append(next);
+                    break;
+            }
+        }
+        return builder.toString();
+    }
+
     private static String resolveSourceText(String source, String channel, String decodedText, String packetClassName,
             byte[] rawData) {
         String normalizedSource = normalizeSource(source);
@@ -571,12 +724,24 @@ public final class PacketFieldRuleManager {
                 return bytesToHex(rawData);
             case "decoded":
             default:
-                return safe(decodedText);
+                String decoded = safe(decodedText);
+                if (!isBlank(decoded)) {
+                    return decoded;
+                }
+                return rawData == null || rawData.length == 0 ? "" : PacketPayloadDecoder.decodeFull(rawData);
         }
     }
 
     private static boolean matchesChannel(String expected, String actual) {
-        return isBlank(expected) || safe(expected).equalsIgnoreCase(safe(actual));
+        String expectedText = safe(expected).trim();
+        String actualText = safe(actual).trim();
+        if (isBlank(expectedText)) {
+            return true;
+        }
+        if ("standard".equalsIgnoreCase(expectedText) || "N/A".equalsIgnoreCase(expectedText)) {
+            return actualText.isEmpty() || "N/A".equalsIgnoreCase(actualText);
+        }
+        return expectedText.equalsIgnoreCase(actualText);
     }
 
     private static boolean matchesDirection(String expected, String actual) {
@@ -645,7 +810,10 @@ public final class PacketFieldRuleManager {
     private static String normalizeValueType(String valueType) {
         String value = safe(valueType).trim().toLowerCase(Locale.ROOT);
         if ("string".equals(value) || "number".equals(value) || "boolean".equals(value) || "hex".equals(value)
-                || "auto".equals(value)) {
+                || "auto".equals(value) || "utf8-string".equals(value) || "utf8".equals(value)) {
+            if ("utf8".equals(value)) {
+                return "utf8-string";
+            }
             return value;
         }
         return "auto";
