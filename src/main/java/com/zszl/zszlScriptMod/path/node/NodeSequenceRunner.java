@@ -4,6 +4,7 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.zszl.zszlScriptMod.handlers.ItemFilterHandler;
+import com.zszl.zszlScriptMod.handlers.ItemSpreadHandler;
 import com.zszl.zszlScriptMod.handlers.WarehouseEventHandler;
 import com.zszl.zszlScriptMod.path.PathSequenceManager;
 import java.util.ArrayList;
@@ -538,6 +539,7 @@ public class NodeSequenceRunner {
         String normalized = normalize(actionType);
         if (!"transferitemstowarehouse".equals(normalized)
                 && !"move_inventory_items_to_chest_slots".equals(normalized)
+                && !"spread_inventory_item".equals(normalized)
                 && !"warehouse_auto_deposit".equals(normalized)) {
             return false;
         }
@@ -586,6 +588,9 @@ public class NodeSequenceRunner {
         }
         if ("move_inventory_items_to_chest_slots".equals(actionType)) {
             return ItemFilterHandler.isWarehouseTransferInProgress();
+        }
+        if ("spread_inventory_item".equals(actionType)) {
+            return ItemSpreadHandler.isSpreadInProgress();
         }
         if ("warehouse_auto_deposit".equals(actionType)) {
             return WarehouseEventHandler.isAutoDepositRouteRunning();

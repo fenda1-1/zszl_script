@@ -1,6 +1,7 @@
 package com.zszl.zszlScriptMod.gui.path.GuiActionEditor.util;
 
 import com.zszl.zszlScriptMod.handlers.ItemFilterHandler;
+import com.zszl.zszlScriptMod.handlers.ItemSpreadHandler;
 import com.zszl.zszlScriptMod.handlers.KillAuraHandler;
 import com.zszl.zszlScriptMod.utils.ModUtils;
 import com.zszl.zszlScriptMod.utils.locator.ActionTargetLocator;
@@ -193,6 +194,92 @@ public final class ActionEditorDisplayConverters {
         return I18n.format("gui.path.action_editor.option.nbt_tag_mode.not_contains").equals(display)
                 ? "NOT_CONTAINS"
                 : "CONTAINS";
+    }
+
+    public static String spreadSourceScopeToDisplay(String scope) {
+        if (ItemSpreadHandler.SOURCE_SCOPE_MAIN.equalsIgnoreCase(scope)) {
+            return I18n.format("gui.path.action_editor.option.spread_source.main");
+        }
+        if (ItemSpreadHandler.SOURCE_SCOPE_HOTBAR.equalsIgnoreCase(scope)) {
+            return I18n.format("gui.path.action_editor.option.spread_source.hotbar");
+        }
+        if (ItemSpreadHandler.SOURCE_SCOPE_CONTAINER.equalsIgnoreCase(scope)) {
+            return I18n.format("gui.path.action_editor.option.spread_source.container");
+        }
+        return I18n.format("gui.path.action_editor.option.spread_source.inventory");
+    }
+
+    public static String displayToSpreadSourceScope(String display) {
+        if (I18n.format("gui.path.action_editor.option.spread_source.main").equals(display)) {
+            return ItemSpreadHandler.SOURCE_SCOPE_MAIN;
+        }
+        if (I18n.format("gui.path.action_editor.option.spread_source.hotbar").equals(display)) {
+            return ItemSpreadHandler.SOURCE_SCOPE_HOTBAR;
+        }
+        if (I18n.format("gui.path.action_editor.option.spread_source.container").equals(display)) {
+            return ItemSpreadHandler.SOURCE_SCOPE_CONTAINER;
+        }
+        return ItemSpreadHandler.SOURCE_SCOPE_INVENTORY;
+    }
+
+    public static String spreadTargetScopeToDisplay(String scope) {
+        if (ItemSpreadHandler.TARGET_SCOPE_MAIN.equalsIgnoreCase(scope)) {
+            return I18n.format("gui.path.action_editor.option.spread_target.main");
+        }
+        if (ItemSpreadHandler.TARGET_SCOPE_HOTBAR.equalsIgnoreCase(scope)) {
+            return I18n.format("gui.path.action_editor.option.spread_target.hotbar");
+        }
+        return I18n.format("gui.path.action_editor.option.spread_target.inventory");
+    }
+
+    public static String displayToSpreadTargetScope(String display) {
+        if (I18n.format("gui.path.action_editor.option.spread_target.main").equals(display)) {
+            return ItemSpreadHandler.TARGET_SCOPE_MAIN;
+        }
+        if (I18n.format("gui.path.action_editor.option.spread_target.hotbar").equals(display)) {
+            return ItemSpreadHandler.TARGET_SCOPE_HOTBAR;
+        }
+        return ItemSpreadHandler.TARGET_SCOPE_INVENTORY;
+    }
+
+    public static String spreadModeToDisplay(String mode) {
+        if (ItemSpreadHandler.MODE_EVEN_SPLIT.equalsIgnoreCase(mode)) {
+            return I18n.format("gui.path.action_editor.option.spread_mode.even");
+        }
+        if (ItemSpreadHandler.MODE_FIXED_PER_SLOT.equalsIgnoreCase(mode)) {
+            return I18n.format("gui.path.action_editor.option.spread_mode.fixed");
+        }
+        return I18n.format("gui.path.action_editor.option.spread_mode.one");
+    }
+
+    public static String displayToSpreadMode(String display) {
+        if (I18n.format("gui.path.action_editor.option.spread_mode.even").equals(display)) {
+            return ItemSpreadHandler.MODE_EVEN_SPLIT;
+        }
+        if (I18n.format("gui.path.action_editor.option.spread_mode.fixed").equals(display)) {
+            return ItemSpreadHandler.MODE_FIXED_PER_SLOT;
+        }
+        return ItemSpreadHandler.MODE_ONE_PER_SLOT;
+    }
+
+    public static String spreadRemainderModeToDisplay(String mode) {
+        if (ItemSpreadHandler.REMAINDER_FIRST_EMPTY.equalsIgnoreCase(mode)) {
+            return I18n.format("gui.path.action_editor.option.spread_remainder.first_empty");
+        }
+        if (ItemSpreadHandler.REMAINDER_KEEP_CURSOR.equalsIgnoreCase(mode)) {
+            return I18n.format("gui.path.action_editor.option.spread_remainder.keep_cursor");
+        }
+        return I18n.format("gui.path.action_editor.option.spread_remainder.source");
+    }
+
+    public static String displayToSpreadRemainderMode(String display) {
+        if (I18n.format("gui.path.action_editor.option.spread_remainder.first_empty").equals(display)) {
+            return ItemSpreadHandler.REMAINDER_FIRST_EMPTY;
+        }
+        if (I18n.format("gui.path.action_editor.option.spread_remainder.keep_cursor").equals(display)) {
+            return ItemSpreadHandler.REMAINDER_KEEP_CURSOR;
+        }
+        return ItemSpreadHandler.REMAINDER_RETURN_SOURCE;
     }
 
     public static String captureSlotAreaToDisplay(String area) {

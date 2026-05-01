@@ -19,6 +19,7 @@ import com.zszl.zszlScriptMod.handlers.AutoFollowHandler;
 import com.zszl.zszlScriptMod.handlers.EmbeddedNavigationHandler;
 import com.zszl.zszlScriptMod.handlers.HuntOrbitController;
 import com.zszl.zszlScriptMod.handlers.ItemFilterHandler;
+import com.zszl.zszlScriptMod.handlers.ItemSpreadHandler;
 import com.zszl.zszlScriptMod.handlers.KillAuraHandler;
 import com.zszl.zszlScriptMod.handlers.WarehouseEventHandler;
 import com.zszl.zszlScriptMod.path.runtime.ScopedRuntimeVariables;
@@ -1288,6 +1289,7 @@ public class PathSequenceEventListener {
             Consumer<LocalPlayer> parsedAction) {
         String type = normalize(action.type);
         if (!"transferitemstowarehouse".equals(type) && !"move_inventory_items_to_chest_slots".equals(type)
+                && !"spread_inventory_item".equals(type)
                 && !"warehouse_auto_deposit".equals(type)) {
             return false;
         }
@@ -1328,6 +1330,9 @@ public class PathSequenceEventListener {
         }
         if ("move_inventory_items_to_chest_slots".equals(actionType)) {
             return ItemFilterHandler.isWarehouseTransferInProgress();
+        }
+        if ("spread_inventory_item".equals(actionType)) {
+            return ItemSpreadHandler.isSpreadInProgress();
         }
         if ("warehouse_auto_deposit".equals(actionType)) {
             return WarehouseEventHandler.isAutoDepositRouteRunning();
@@ -1771,6 +1776,7 @@ public class PathSequenceEventListener {
             case "dropfiltereditems":
             case "autochestclick":
             case "move_inventory_items_to_chest_slots":
+            case "spread_inventory_item":
             case "warehouse_auto_deposit":
             case "transferitemstowarehouse":
             case "move_inventory_item_to_hotbar":

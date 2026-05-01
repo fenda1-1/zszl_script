@@ -18,6 +18,7 @@ public final class ItemsActionLibraryGroup {
                         itemFactory.apply("use_hotbar_item"),
                         itemFactory.apply("use_held_item"),
                         itemFactory.apply("move_inventory_item_to_hotbar"),
+                        itemFactory.apply("spread_inventory_item"),
                         itemFactory.apply("switch_hotbar_slot"),
                         itemFactory.apply("silentuse"),
                         itemFactory.apply("autoeat"),

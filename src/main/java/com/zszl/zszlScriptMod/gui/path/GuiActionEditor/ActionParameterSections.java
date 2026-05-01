@@ -1,6 +1,7 @@
 package com.zszl.zszlScriptMod.gui.path.GuiActionEditor;
 
 import com.zszl.zszlScriptMod.gui.components.ThemedButton;
+import com.zszl.zszlScriptMod.handlers.ItemSpreadHandler;
 import com.zszl.zszlScriptMod.handlers.KillAuraHandler;
 
 import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
@@ -240,6 +241,104 @@ final class ActionParameterSections {
         currentY += 40;
         editor.addTextField(I18n.format("gui.path.action_editor.label.target_hotbar_slot"), "targetHotbarSlot",
                 I18n.format("gui.path.action_editor.help.target_hotbar_slot"), fieldWidth, x, currentY, "1");
+    }
+
+    static void buildSpreadInventoryItemSection(GuiActionEditor editor, int x, int currentY, int fieldWidth) {
+        editor.initializeInventoryItemFilterExpressionEditorState();
+        editor.addSectionTitle("§b§l━━━ 物品过滤表达式 ━━━", x, currentY);
+        currentY += 25;
+        currentY += editor.addInventoryItemFilterExpressionCardEditor(fieldWidth, x, currentY);
+
+        editor.addSectionTitle("§b§l━━━ 来源和目标 ━━━", x, currentY);
+        currentY += 25;
+        editor.addDropdown(I18n.format("gui.path.action_editor.label.spread_source_scope"), "sourceScope",
+                I18n.format("gui.path.action_editor.help.spread_source_scope"), fieldWidth, x, currentY,
+                new String[] {
+                        I18n.format("gui.path.action_editor.option.spread_source.inventory"),
+                        I18n.format("gui.path.action_editor.option.spread_source.main"),
+                        I18n.format("gui.path.action_editor.option.spread_source.hotbar"),
+                        I18n.format("gui.path.action_editor.option.spread_source.container")
+                },
+                spreadSourceScopeToDisplay(editor.currentParams.has("sourceScope")
+                        ? editor.currentParams.get("sourceScope").getAsString()
+                        : ItemSpreadHandler.SOURCE_SCOPE_INVENTORY));
+        currentY += 40;
+        editor.addTextField(I18n.format("gui.path.action_editor.label.spread_source_slots"), "sourceSlotsText",
+                I18n.format("gui.path.action_editor.help.spread_source_slots"), fieldWidth, x, currentY, "");
+        currentY += 40;
+        editor.addDropdown(I18n.format("gui.path.action_editor.label.spread_target_scope"), "targetScope",
+                I18n.format("gui.path.action_editor.help.spread_target_scope"), fieldWidth, x, currentY,
+                new String[] {
+                        I18n.format("gui.path.action_editor.option.spread_target.inventory"),
+                        I18n.format("gui.path.action_editor.option.spread_target.main"),
+                        I18n.format("gui.path.action_editor.option.spread_target.hotbar")
+                },
+                spreadTargetScopeToDisplay(editor.currentParams.has("targetScope")
+                        ? editor.currentParams.get("targetScope").getAsString()
+                        : ItemSpreadHandler.TARGET_SCOPE_INVENTORY));
+        currentY += 40;
+        editor.addTextField(I18n.format("gui.path.action_editor.label.spread_target_slots"), "targetSlotsText",
+                I18n.format("gui.path.action_editor.help.spread_target_slots"), fieldWidth, x, currentY, "");
+        currentY += 40;
+
+        editor.addSectionTitle("§b§l━━━ 平摊策略 ━━━", x, currentY);
+        currentY += 25;
+        editor.addDropdown(I18n.format("gui.path.action_editor.label.spread_mode"), "spreadMode",
+                I18n.format("gui.path.action_editor.help.spread_mode"), fieldWidth, x, currentY,
+                new String[] {
+                        I18n.format("gui.path.action_editor.option.spread_mode.one"),
+                        I18n.format("gui.path.action_editor.option.spread_mode.even"),
+                        I18n.format("gui.path.action_editor.option.spread_mode.fixed")
+                },
+                spreadModeToDisplay(editor.currentParams.has("spreadMode")
+                        ? editor.currentParams.get("spreadMode").getAsString()
+                        : ItemSpreadHandler.MODE_ONE_PER_SLOT));
+        currentY += 40;
+        editor.addTextField(I18n.format("gui.path.action_editor.label.spread_per_slot_count"), "perSlotCount",
+                I18n.format("gui.path.action_editor.help.spread_per_slot_count"), fieldWidth, x, currentY, "1");
+        currentY += 40;
+        editor.addToggle(I18n.format("gui.path.action_editor.label.spread_only_empty_slots"), "onlyEmptySlots",
+                I18n.format("gui.path.action_editor.help.spread_only_empty_slots"), fieldWidth, x, currentY,
+                !editor.currentParams.has("onlyEmptySlots")
+                        || editor.currentParams.get("onlyEmptySlots").getAsBoolean(),
+                I18n.format("path.common.on"), I18n.format("path.common.off"));
+        currentY += 40;
+        editor.addToggle(I18n.format("gui.path.action_editor.label.spread_preserve_source_slot"), "preserveSourceSlot",
+                I18n.format("gui.path.action_editor.help.spread_preserve_source_slot"), fieldWidth, x, currentY,
+                !editor.currentParams.has("preserveSourceSlot")
+                        || editor.currentParams.get("preserveSourceSlot").getAsBoolean(),
+                I18n.format("path.common.on"), I18n.format("path.common.off"));
+        currentY += 40;
+        editor.addToggle(I18n.format("gui.path.action_editor.label.spread_continue_insufficient"),
+                "continueOnInsufficient",
+                I18n.format("gui.path.action_editor.help.spread_continue_insufficient"), fieldWidth, x, currentY,
+                editor.currentParams.has("continueOnInsufficient")
+                        && editor.currentParams.get("continueOnInsufficient").getAsBoolean(),
+                I18n.format("path.common.on"), I18n.format("path.common.off"));
+        currentY += 40;
+
+        editor.addSectionTitle("§b§l━━━ 执行和残留处理 ━━━", x, currentY);
+        currentY += 25;
+        editor.addTextField(I18n.format("gui.path.action_editor.label.delay_ticks"), "delayTicks",
+                I18n.format("gui.path.action_editor.help.spread_delay_ticks"), fieldWidth, x, currentY, "1");
+        currentY += 40;
+        editor.addDropdown(I18n.format("gui.path.action_editor.label.spread_remainder_mode"), "remainderMode",
+                I18n.format("gui.path.action_editor.help.spread_remainder_mode"), fieldWidth, x, currentY,
+                new String[] {
+                        I18n.format("gui.path.action_editor.option.spread_remainder.source"),
+                        I18n.format("gui.path.action_editor.option.spread_remainder.first_empty"),
+                        I18n.format("gui.path.action_editor.option.spread_remainder.keep_cursor")
+                },
+                spreadRemainderModeToDisplay(editor.currentParams.has("remainderMode")
+                        ? editor.currentParams.get("remainderMode").getAsString()
+                        : ItemSpreadHandler.REMAINDER_RETURN_SOURCE));
+        currentY += 40;
+        editor.addToggle(I18n.format("gui.path.action_editor.label.normalize_delay_to_20tps"),
+                "normalizeDelayTo20Tps",
+                I18n.format("gui.path.action_editor.help.normalize_delay_to_20tps"), fieldWidth, x, currentY,
+                !editor.currentParams.has("normalizeDelayTo20Tps")
+                        || editor.currentParams.get("normalizeDelayTo20Tps").getAsBoolean(),
+                I18n.format("path.common.on"), I18n.format("path.common.off"));
     }
 
     static void buildSilentUseSection(GuiActionEditor editor, int x, int currentY, int fieldWidth) {
