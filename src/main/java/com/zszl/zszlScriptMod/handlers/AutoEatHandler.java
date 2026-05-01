@@ -1,6 +1,7 @@
 package com.zszl.zszlScriptMod.handlers;
 
 import com.google.gson.JsonObject;
+import com.mojang.blaze3d.platform.InputConstants;
 import com.zszl.zszlScriptMod.config.DebugModule;
 import com.zszl.zszlScriptMod.config.ModConfig;
 import com.zszl.zszlScriptMod.path.PathSequenceEventListener;
@@ -8,6 +9,7 @@ import com.zszl.zszlScriptMod.system.ProfileManager;
 import com.zszl.zszlScriptMod.utils.JsonConfigCharsetCompat;
 import com.zszl.zszlScriptMod.utils.ModUtils;
 import com.zszl.zszlScriptMod.zszlScriptMod;
+import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.world.InteractionHand;
@@ -129,7 +131,17 @@ public final class AutoEatHandler {
     }
 
     public static void checkAutoEat(LocalPlayer player) {
-        if (player == null || !autoEatEnabled) {
+        if (player == null) {
+            if (isEating) {
+                resetEatingState();
+                EmbeddedNavigationHandler.INSTANCE.resume("自动进食因玩家状态缺失而恢复导航");
+            }
+            return;
+        }
+        if (!autoEatEnabled) {
+            if (isEating) {
+                finalizeEating(player, true);
+            }
             return;
         }
         if (isEating) {
@@ -168,7 +180,7 @@ public final class AutoEatHandler {
         }
 
         ModUtils.switchToHotbarSlot(hotbarFoodSlot + 1);
-        useCurrentFood(player);
+        tryStartEatingUse(player);
 
         if (ModConfig.isDebugFlagEnabled(DebugModule.AUTO_EAT)) {
             ItemStack stack = player.getInventory().getItem(hotbarFoodSlot);
@@ -192,9 +204,9 @@ public final class AutoEatHandler {
         }
 
         applyLookDownPitch(player);
-        if (!player.isUsingItem()) {
-            useCurrentFood(player);
-        } else {
+        setUseKeyState(true);
+        tryStartEatingUse(player);
+        if (player.isUsingItem()) {
             eatStartedUsingHand = true;
         }
 
@@ -211,11 +223,15 @@ public final class AutoEatHandler {
         }
     }
 
-    private static void useCurrentFood(LocalPlayer player) {
+    private static void tryStartEatingUse(LocalPlayer player) {
         Minecraft mc = Minecraft.getInstance();
-        if (mc.gameMode != null) {
+        if (player == null || mc.gameMode == null) {
+            return;
+        }
+        if (!player.isUsingItem()) {
             mc.gameMode.useItem(player, InteractionHand.MAIN_HAND);
         }
+        setUseKeyState(true);
     }
 
     private static void finalizeEating(LocalPlayer player, boolean interrupted) {
@@ -225,6 +241,7 @@ public final class AutoEatHandler {
         if (player != null && pitchAdjusted) {
             player.setXRot(originalPitch);
         }
+        setUseKeyState(false);
         if (player != null && originalHotbarSlot >= 0) {
             ModUtils.switchToHotbarSlot(originalHotbarSlot + 1);
         }
@@ -235,6 +252,31 @@ public final class AutoEatHandler {
         if (interrupted && player != null && ModConfig.isDebugFlagEnabled(DebugModule.AUTO_EAT)) {
             player.sendSystemMessage(new TextComponentString("§d[调试] §7自动进食被中断。"));
         }
+    }
+
+    private static void setUseKeyState(boolean pressed) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc == null || mc.options == null || mc.options.keyUse == null) {
+            return;
+        }
+        InputConstants.Key key = mc.options.keyUse.getKey();
+        if (key == null || key.equals(InputConstants.UNKNOWN)) {
+            return;
+        }
+        KeyMapping.set(key, pressed || isPhysicalUseKeyDown(mc, key));
+    }
+
+    private static boolean isPhysicalUseKeyDown(Minecraft mc, InputConstants.Key key) {
+        if (mc == null || mc.getWindow() == null || key == null || key.equals(InputConstants.UNKNOWN)) {
+            return false;
+        }
+        if (key.getType() == InputConstants.Type.KEYSYM) {
+            return InputConstants.isKeyDown(mc.getWindow().getWindow(), key.getValue());
+        }
+        if (key.getType() == InputConstants.Type.MOUSE) {
+            return com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Mouse.isButtonDown(key.getValue());
+        }
+        return false;
     }
 
     private static int findBestFoodInHotbar(LocalPlayer player) {
@@ -314,6 +356,7 @@ public final class AutoEatHandler {
     }
 
     private static void resetEatingState() {
+        setUseKeyState(false);
         isEating = false;
         originalHotbarSlot = -1;
         swappedItem = ItemStack.EMPTY;
@@ -353,7 +396,7 @@ public final class AutoEatHandler {
                 ? player.getInventory().getItem(eatActiveHotbarSlot)
                 : ItemStack.EMPTY;
         eatStartStackCount = current.isEmpty() ? 0 : current.getCount();
-        useCurrentFood(player);
+        tryStartEatingUse(player);
     }
 
     private static void applyLookDownPitch(LocalPlayer player) {
