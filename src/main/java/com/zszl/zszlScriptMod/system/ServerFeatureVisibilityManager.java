@@ -43,7 +43,7 @@ public final class ServerFeatureVisibilityManager {
     }
 
     private static void ensureDefaults() {
-        // 1.20.1 迁移阶段已移除服务器定制分组，保留配置文件结构但不再注入默认规则。
+        // 1.21.11 迁移阶段已移除服务器定制分组，保留配置文件结构但不再注入默认规则。
     }
 
     public static void loadConfig() {

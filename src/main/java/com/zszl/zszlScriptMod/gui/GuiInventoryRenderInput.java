@@ -3,7 +3,7 @@ package com.zszl.zszlScriptMod.gui;
 import java.io.IOException;
 
 /**
- * 参考版的渲染/输入桥接层在 1.20.1 中直接委托给 {@link GuiInventory} 的统一实现。
+ * 参考版的渲染/输入桥接层在 1.21.11 中直接委托给 {@link GuiInventory} 的统一实现。
  */
 final class GuiInventoryRenderInput extends GuiInventoryFeatureScreens {
 
