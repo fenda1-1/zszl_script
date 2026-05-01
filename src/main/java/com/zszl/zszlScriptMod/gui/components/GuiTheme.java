@@ -404,10 +404,12 @@ public final class GuiTheme {
         int groupSampleWidth = Math.max(1, Math.min(textureWidth, Math.round(groupWidth * scaleFactor)));
         int groupSampleHeight = Math.max(1, Math.min(textureHeight, Math.round(groupHeight * scaleFactor)));
 
-        int segmentOffsetX = Math.max(0, Math.round((x - groupX) * scaleFactor));
-        int segmentOffsetY = Math.max(0, Math.round((y - groupY) * scaleFactor));
-        int segmentSampleWidth = Math.max(1, Math.round(width * scaleFactor));
-        int segmentSampleHeight = Math.max(1, Math.round(height * scaleFactor));
+        float groupSafeWidth = Math.max(1.0F, groupWidth);
+        float groupSafeHeight = Math.max(1.0F, groupHeight);
+        int segmentOffsetX = Math.max(0, Math.round(((x - groupX) / groupSafeWidth) * groupSampleWidth));
+        int segmentOffsetY = Math.max(0, Math.round(((y - groupY) / groupSafeHeight) * groupSampleHeight));
+        int segmentSampleWidth = Math.max(1, Math.round((width / groupSafeWidth) * groupSampleWidth));
+        int segmentSampleHeight = Math.max(1, Math.round((height / groupSafeHeight) * groupSampleHeight));
 
         int baseU = Math.max(0, cropX);
         int baseV = Math.max(0, cropY);
@@ -420,6 +422,12 @@ public final class GuiTheme {
 
         int sampleU = baseU + segmentOffsetX;
         int sampleV = baseV + segmentOffsetY;
+        if (segmentOffsetX + segmentSampleWidth > groupSampleWidth) {
+            segmentSampleWidth = Math.max(1, groupSampleWidth - segmentOffsetX);
+        }
+        if (segmentOffsetY + segmentSampleHeight > groupSampleHeight) {
+            segmentSampleHeight = Math.max(1, groupSampleHeight - segmentOffsetY);
+        }
         if (sampleU + segmentSampleWidth > textureWidth) {
             segmentSampleWidth = Math.max(1, textureWidth - sampleU);
         }

@@ -4384,7 +4384,7 @@ public class GuiInventory {
             closeContextMenu();
             closeOverlay();
             Minecraft.getInstance()
-                    .setScreen(GuiPathManager.openForSequence(sequence.getCategory(), sequence.getName()));
+                    .setScreen(GuiPathManager.openForSequenceActionPane(sequence.getCategory(), sequence.getName()));
         }));
         return items;
     }
