@@ -92,6 +92,7 @@ dependencies {
 }
 
 def generatedLegacyLangDir = layout.buildDirectory.dir('generated/resources/legacyLangJson')
+def projectRootDir = layout.projectDirectory.asFile
 
 tasks.register('generateLegacyLangJson') {
     def legacyLangFiles = fileTree('src/main/resources') {
@@ -103,7 +104,8 @@ tasks.register('generateLegacyLangJson') {
 
     doLast {
         def outputRoot = generatedLegacyLangDir.get().asFile
-        delete(outputRoot)
+        outputRoot.deleteDir()
+        outputRoot.mkdirs()
 
         legacyLangFiles.files.each { langFile ->
             def props = new Properties()
@@ -116,7 +118,7 @@ tasks.register('generateLegacyLangJson') {
                 ordered.put(String.valueOf(key), String.valueOf(value))
             }
 
-            def relativePath = project.relativePath(langFile).replace('\\', '/')
+            def relativePath = projectRootDir.toPath().relativize(langFile.toPath()).toString().replace('\\', '/')
             def targetRelativePath = relativePath
                     .replaceFirst(/^src\/main\/resources\//, '')
                     .replaceFirst(/\.lang$/, '.json')
@@ -159,6 +161,15 @@ tasks.named('jar', Jar).configure {
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     metadataCharset = 'UTF-8'
 
+    from({
+        configurations.embeddedLib.collect { zipTree(it) }
+    }) {
+        exclude 'META-INF/MANIFEST.MF'
+        exclude 'META-INF/*.SF'
+        exclude 'META-INF/*.DSA'
+        exclude 'META-INF/*.RSA'
+    }
+
     manifest {
         attributes([
                 'MixinConfigs'            : 'mixins.shadowbaritone.json',
@@ -172,42 +183,6 @@ tasks.named('jar', Jar).configure {
         ])
     }
 
-}
-
-def embeddedJarOutput = tasks.named('jar', Jar).flatMap { it.archiveFile }
-
-tasks.register('embedEmbeddedLibs') {
-    dependsOn tasks.named('jar')
-    inputs.files(configurations.embeddedLib)
-    outputs.file(embeddedJarOutput)
-
-    doLast {
-        def targetJar = embeddedJarOutput.get().asFile
-        def tempDir = layout.buildDirectory.dir('tmp/embedEmbeddedLibs').get().asFile
-        delete(tempDir)
-        mkdir(tempDir)
-
-        copy {
-            from(configurations.embeddedLib.collect { zipTree(it) })
-            into(tempDir)
-            exclude 'META-INF/MANIFEST.MF'
-            exclude 'META-INF/*.SF'
-            exclude 'META-INF/*.DSA'
-            exclude 'META-INF/*.RSA'
-        }
-
-        ant.zip(destfile: targetJar, update: 'true') {
-            fileset(dir: tempDir)
-        }
-    }
-}
-
-tasks.named('build').configure {
-    dependsOn tasks.named('embedEmbeddedLibs')
-}
-
-tasks.named('jar').configure {
-    finalizedBy tasks.named('embedEmbeddedLibs')
 }
 
 publishing {
