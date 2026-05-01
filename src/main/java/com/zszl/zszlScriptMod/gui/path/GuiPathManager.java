@@ -14,6 +14,7 @@ import java.nio.file.Path;
 
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import com.google.gson.JsonElement;
 import com.zszl.zszlScriptMod.gui.path.GuiActionEditor.GuiActionEditor;
 import net.minecraft.client.gui.GuiButton;
 import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
@@ -334,7 +335,7 @@ public class GuiPathManager extends ThemedGuiScreen {
     private GuiButton btnNodeEditor;
     private GuiButton btnLegacyTriggerRules;
     private GuiButton btnExecutionLogs;
-    private GuiButton btnSafetySettings;
+    private GuiButton btnActionTemplates;
     private GuiButton btnActionVariableManager;
     private GuiButton btnToggleStepHeader;
     private GuiButton btnToolbarPrev;
@@ -781,7 +782,7 @@ public class GuiPathManager extends ThemedGuiScreen {
     }
 
     private List<GuiButton> getHeaderToolbarButtons() {
-        return Arrays.asList(btnSafetySettings, btnExecutionLogs, btnDebugPanel, btnLegacyTriggerRules,
+        return Arrays.asList(btnActionTemplates, btnExecutionLogs, btnDebugPanel, btnLegacyTriggerRules,
                 btnActionVariableManager, btnNodeEditor);
     }
 
@@ -1166,6 +1167,118 @@ public class GuiPathManager extends ThemedGuiScreen {
         };
     }
 
+    public List<ActionData> copySelectedActionsForTemplateDraft() {
+        List<ActionData> copied = new ArrayList<>();
+        if (selectedStep == null || selectedStep.getActions() == null || selectedStep.getActions().isEmpty()) {
+            return copied;
+        }
+        List<Integer> indices = new ArrayList<>(selectedActionIndices);
+        if (indices.isEmpty() && selectedActionIndex >= 0) {
+            indices.add(selectedActionIndex);
+        }
+        Collections.sort(indices);
+        for (Integer index : indices) {
+            if (index == null || index < 0 || index >= selectedStep.getActions().size()) {
+                continue;
+            }
+            copied.add(new ActionData(selectedStep.getActions().get(index)));
+        }
+        return copied;
+    }
+
+    public List<ActionData> copySelectedStepActionsForTemplateDraft() {
+        List<ActionData> copied = new ArrayList<>();
+        if (selectedStep == null || selectedStep.getActions() == null) {
+            return copied;
+        }
+        for (ActionData action : selectedStep.getActions()) {
+            if (action != null) {
+                copied.add(new ActionData(action));
+            }
+        }
+        return copied;
+    }
+
+    public String getTemplateDraftSourceText() {
+        if (selectedSequence == null) {
+            return "未选择序列";
+        }
+        if (selectedStep == null) {
+            return "序列: " + safeText(selectedSequence.getName()) + " / 未选择步骤";
+        }
+        int selectedActionCount = selectedActionIndices.isEmpty() ? (selectedActionIndex >= 0 ? 1 : 0)
+                : selectedActionIndices.size();
+        return "序列: " + safeText(selectedSequence.getName()) + " / 步骤 #" + (selectedStepIndex + 1)
+                + " / 已选动作 " + selectedActionCount + " / 步骤动作 " + selectedStep.getActions().size();
+    }
+
+    public boolean insertTemplateActionsIntoSelectedStep(List<ActionData> templateActions, String templateName) {
+        if (selectedSequence == null || selectedStep == null || templateActions == null || templateActions.isEmpty()) {
+            return false;
+        }
+        int insertionBaseIndex = selectedStep.getActions().size();
+        pushUndoHistory("insert-template-actions");
+        for (ActionData action : templateActions) {
+            if (action != null) {
+                selectedStep.addAction(cloneTemplateActionForInsertion(action, insertionBaseIndex));
+            }
+        }
+        if (selectedStep.getActions().size() > insertionBaseIndex) {
+            selectAction(selectedStep.getActions().size() - 1);
+        }
+        markDirty();
+        updateButtonStates();
+        return true;
+    }
+
+    public boolean insertTemplateAsNewStep(List<ActionData> templateActions, String templateName) {
+        if (selectedSequence == null || templateActions == null || templateActions.isEmpty()) {
+            return false;
+        }
+        int insertIndex = selectedStepIndex >= 0 && selectedStepIndex < selectedSequence.getSteps().size()
+                ? selectedStepIndex + 1
+                : selectedSequence.getSteps().size();
+        PathStep newStep = new PathStep(captureCurrentSafeGotoPoint());
+        String note = templateName == null || templateName.trim().isEmpty()
+                ? "动作模板"
+                : "动作模板: " + templateName.trim();
+        newStep.setNote(note);
+        for (ActionData action : templateActions) {
+            if (action != null) {
+                newStep.addAction(cloneTemplateActionForInsertion(action, 0));
+            }
+        }
+        if (newStep.getActions().isEmpty()) {
+            return false;
+        }
+        pushUndoHistory("insert-template-step");
+        selectedSequence.getSteps().add(insertIndex, newStep);
+        selectStep(insertIndex);
+        selectAction(newStep.getActions().size() - 1);
+        markDirty();
+        updateButtonStates();
+        return true;
+    }
+
+    private ActionData cloneTemplateActionForInsertion(ActionData action, int actionIndexOffset) {
+        ActionData copied = new ActionData(action);
+        if (actionIndexOffset <= 0 || copied == null || copied.type == null
+                || !"goto_action".equalsIgnoreCase(copied.type) || copied.params == null
+                || !copied.params.has("targetActionIndex")) {
+            return copied;
+        }
+        JsonElement target = copied.params.get("targetActionIndex");
+        if (target == null || target.isJsonNull()) {
+            return copied;
+        }
+        try {
+            int targetIndex = Integer.parseInt(target.getAsString().trim());
+            copied.params.addProperty("targetActionIndex", targetIndex + actionIndexOffset);
+        } catch (Exception ignored) {
+        }
+        return copied;
+    }
+
     private void reloadData() {
         PathSequenceManager.initializePathSequences();
         MainUiLayoutManager.ensureLoaded();
@@ -1407,7 +1520,7 @@ public class GuiPathManager extends ThemedGuiScreen {
                 "§c" + I18n.format("gui.path.manager.delete"));
         btnMoveSeq = new ThemedButton(3, sequenceCardInnerX, seqBtnRow3Y, sequenceCardInnerWidth, s(20),
                 "§e" + I18n.format("gui.path.manager.move_to_category"));
-        btnSafetySettings = new ThemedButton(44, 0, 0, s(88), s(18), "§6安全模式");
+        btnActionTemplates = new ThemedButton(44, 0, 0, s(88), s(18), "§6动作模板");
         btnExecutionLogs = new ThemedButton(43, 0, 0, s(88), s(18), "§a执行日志");
         btnLegacyTriggerRules = new ThemedButton(40, 0, 0, s(98), s(18), "§d触发器规则");
         btnNodeEditor = new ThemedButton(34, 0, 0, s(96), s(18), "§b节点编辑区");
@@ -1420,7 +1533,7 @@ public class GuiPathManager extends ThemedGuiScreen {
         this.buttonList.add(btnRenameSeq);
         this.buttonList.add(btnDeleteSeq);
         this.buttonList.add(btnMoveSeq);
-        this.buttonList.add(btnSafetySettings);
+        this.buttonList.add(btnActionTemplates);
         this.buttonList.add(btnExecutionLogs);
         this.buttonList.add(btnLegacyTriggerRules);
         this.buttonList.add(btnNodeEditor);
@@ -2017,7 +2130,7 @@ public class GuiPathManager extends ThemedGuiScreen {
                 mc.displayGuiScreen(new GuiExecutionLogViewer(this));
                 break;
             case 44:
-                mc.displayGuiScreen(new GuiPathSafetySettings(this));
+                mc.displayGuiScreen(new GuiActionTemplateLibrary(this, selectedSequence, selectedStep, selectedStepIndex));
                 break;
             case 46:
                 mc.displayGuiScreen(new GuiActionVariableManager(this, this.allSequences));
@@ -2694,10 +2807,10 @@ public class GuiPathManager extends ThemedGuiScreen {
         if (tooltip != null) {
             return tooltip;
         }
-        tooltip = tooltipForButton(btnSafetySettings, mouseX, mouseY,
-                "安全模式",
-                "配置危险动作的安全限制与模拟执行策略。",
-                "可控制发包、背包写入、丢弃物品、后台序列等是否允许。");
+        tooltip = tooltipForButton(btnActionTemplates, mouseX, mouseY,
+                "动作模板",
+                "打开内置动作模板库，查看备注、使用场景与动作链。",
+                "可把模板动作填入当前步骤，或作为新步骤加入当前序列。");
         if (tooltip != null) {
             return tooltip;
         }
