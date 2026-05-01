@@ -17,6 +17,7 @@ import com.google.gson.JsonParser;
 import com.google.gson.JsonElement;
 import com.zszl.zszlScriptMod.gui.path.GuiActionEditor.GuiActionEditor;
 import net.minecraft.client.gui.GuiButton;
+import net.minecraft.client.gui.ScaledResolution;
 import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
 import net.minecraft.client.gui.GuiTextField;
 import net.minecraft.client.entity.EntityPlayerSP;
@@ -26,6 +27,7 @@ import net.minecraft.util.math.AxisAlignedBB;
 import net.minecraft.util.text.TextFormatting;
 import org.lwjgl.input.Keyboard;
 import org.lwjgl.input.Mouse;
+import org.lwjgl.opengl.GL11;
 
 import com.zszl.zszlScriptMod.gui.MainUiLayoutManager;
 import com.zszl.zszlScriptMod.gui.components.GuiTextInput;
@@ -348,6 +350,8 @@ public class GuiPathManager extends ThemedGuiScreen {
     private ActionData actionDetailPopupAction = null;
     private int actionDetailPopupIndex = -1;
     private Rectangle actionDetailPopupBounds = null;
+    private int actionDetailPopupScroll = 0;
+    private int maxActionDetailPopupScroll = 0;
     private boolean debugMonitorVisible = false;
     private boolean debugMonitorMinimized = false;
     private boolean draggingDebugMonitor = false;
@@ -1014,9 +1018,7 @@ public class GuiPathManager extends ThemedGuiScreen {
             stepScrollOffset = state.stepScrollOffset;
             actionScrollOffset = state.actionScrollOffset;
             closeStepNotePopup();
-            actionDetailPopupAction = null;
-            actionDetailPopupIndex = -1;
-            actionDetailPopupBounds = null;
+            closeActionDetailPopup();
             markDirty();
             updateButtonStates();
         } finally {
@@ -2389,6 +2391,14 @@ public class GuiPathManager extends ThemedGuiScreen {
         return lines;
     }
 
+    private void closeActionDetailPopup() {
+        actionDetailPopupAction = null;
+        actionDetailPopupIndex = -1;
+        actionDetailPopupBounds = null;
+        actionDetailPopupScroll = 0;
+        maxActionDetailPopupScroll = 0;
+    }
+
     private void drawActionDetailPopup(int mouseX, int mouseY) {
         List<String> rawLines = buildActionDetailLines(actionDetailPopupAction);
         int popupWidth = Math.min(Math.max(260, actionPaneWidth + stepPaneWidth / 2), this.width - 60);
@@ -2402,12 +2412,10 @@ public class GuiPathManager extends ThemedGuiScreen {
                 wrapped.addAll(lineParts);
             }
         }
-        int maxLines = Math.max(6, maxContentHeight / (this.fontRenderer.FONT_HEIGHT + 2));
-        if (wrapped.size() > maxLines) {
-            wrapped = new ArrayList<>(wrapped.subList(0, maxLines - 1));
-            wrapped.add("§7...");
-        }
-        int popupHeight = Math.min(maxContentHeight, 36 + wrapped.size() * (this.fontRenderer.FONT_HEIGHT + 2));
+        int lineHeight = this.fontRenderer.FONT_HEIGHT + 2;
+        int contentHeight = Math.max(lineHeight, wrapped.size() * lineHeight);
+        int viewportHeight = Math.min(Math.max(72, maxContentHeight - 50), contentHeight);
+        int popupHeight = Math.min(maxContentHeight, 48 + viewportHeight);
         int popupX = (this.width - popupWidth) / 2;
         int popupY = (this.height - popupHeight) / 2;
         actionDetailPopupBounds = new Rectangle(popupX, popupY, popupWidth, popupHeight);
@@ -2415,12 +2423,28 @@ public class GuiPathManager extends ThemedGuiScreen {
         drawRect(0, 0, this.width, this.height, 0x7A000000);
         drawCardShell(popupX, popupY, popupWidth, popupHeight, 0xFF6AA7D9, mouseX, mouseY);
         drawString(fontRenderer, "动作详情 #" + (actionDetailPopupIndex + 1), popupX + 10, popupY + 8, 0xFFFFFFFF);
-        drawString(fontRenderer, "右键动作行打开，Esc / 点击外部关闭", popupX + 10, popupY + 20, 0xFF9FC5E3);
+        int viewportX = popupX + 10;
+        int viewportY = popupY + 38;
+        int viewportWidth = popupWidth - 20;
+        maxActionDetailPopupScroll = Math.max(0, contentHeight - viewportHeight);
+        actionDetailPopupScroll = MathHelper.clamp(actionDetailPopupScroll, 0, maxActionDetailPopupScroll);
+        String hint = maxActionDetailPopupScroll > 0 ? "滚轮查看更多，Esc / 点击外部关闭" : "Esc / 点击外部关闭";
+        drawString(fontRenderer, hint, popupX + 10, popupY + 20, 0xFF9FC5E3);
 
-        int drawY = popupY + 38;
+        drawRect(viewportX - 2, viewportY - 2, viewportX + viewportWidth + 2,
+                viewportY + viewportHeight + 2, 0x33101820);
+        beginScissor(viewportX, viewportY, viewportWidth, viewportHeight);
+        int drawY = viewportY - actionDetailPopupScroll;
         for (String line : wrapped) {
-            drawString(fontRenderer, line, popupX + 10, drawY, 0xFFFFFFFF);
-            drawY += this.fontRenderer.FONT_HEIGHT + 2;
+            if (drawY + lineHeight >= viewportY && drawY <= viewportY + viewportHeight) {
+                drawString(fontRenderer, line, viewportX, drawY, 0xFFFFFFFF);
+            }
+            drawY += lineHeight;
+        }
+        endScissor();
+        if (maxActionDetailPopupScroll > 0) {
+            drawScrollbar(popupX + popupWidth - 12, viewportY, viewportHeight, actionDetailPopupScroll,
+                    maxActionDetailPopupScroll, contentHeight, viewportHeight);
         }
     }
 
@@ -3876,9 +3900,7 @@ public class GuiPathManager extends ThemedGuiScreen {
         } else {
             selectAction(MathHelper.clamp(nextSelectionIndex, 0, selectedStep.getActions().size() - 1));
         }
-        actionDetailPopupAction = null;
-        actionDetailPopupIndex = -1;
-        actionDetailPopupBounds = null;
+        closeActionDetailPopup();
         markDirty();
         return true;
     }
@@ -3911,9 +3933,7 @@ public class GuiPathManager extends ThemedGuiScreen {
         } else {
             selectStep(MathHelper.clamp(nextSelectionIndex, 0, selectedSequence.getSteps().size() - 1));
         }
-        actionDetailPopupAction = null;
-        actionDetailPopupIndex = -1;
-        actionDetailPopupBounds = null;
+        closeActionDetailPopup();
         markDirty();
         return true;
     }
@@ -4045,6 +4065,20 @@ public class GuiPathManager extends ThemedGuiScreen {
         return mouseX >= x && mouseX <= x + width && mouseY >= y && mouseY <= y + height;
     }
 
+    private void beginScissor(int x, int y, int width, int height) {
+        if (width <= 0 || height <= 0) {
+            return;
+        }
+        ScaledResolution scaledResolution = new ScaledResolution(this.mc);
+        int scale = scaledResolution.getScaleFactor();
+        GL11.glEnable(GL11.GL_SCISSOR_TEST);
+        GL11.glScissor(x * scale, (this.height - (y + height)) * scale, width * scale, height * scale);
+    }
+
+    private void endScissor() {
+        GL11.glDisable(GL11.GL_SCISSOR_TEST);
+    }
+
     private CategoryTreeRow findCategoryRowAt(int mouseX, int mouseY) {
         for (CategoryTreeRow row : visibleCategoryRows) {
             if (row.bounds != null && row.bounds.contains(mouseX, mouseY)) {
@@ -4090,9 +4124,7 @@ public class GuiPathManager extends ThemedGuiScreen {
         if (actionDetailPopupAction != null) {
             if (mouseButton == 0 || mouseButton == 1) {
                 if (actionDetailPopupBounds == null || !actionDetailPopupBounds.contains(mouseX, mouseY)) {
-                    actionDetailPopupAction = null;
-                    actionDetailPopupIndex = -1;
-                    actionDetailPopupBounds = null;
+                    closeActionDetailPopup();
                 }
             }
             return;
@@ -4304,6 +4336,8 @@ public class GuiPathManager extends ThemedGuiScreen {
                 actionDetailPopupAction = selectedStep.getActions().get(actualIndex);
                 actionDetailPopupIndex = actualIndex;
                 actionDetailPopupBounds = null;
+                actionDetailPopupScroll = 0;
+                maxActionDetailPopupScroll = 0;
                 updateButtonStates();
                 return;
             }
@@ -4488,9 +4522,7 @@ public class GuiPathManager extends ThemedGuiScreen {
         }
         if (actionDetailPopupAction != null) {
             if (keyCode == Keyboard.KEY_ESCAPE) {
-                actionDetailPopupAction = null;
-                actionDetailPopupIndex = -1;
-                actionDetailPopupBounds = null;
+                closeActionDetailPopup();
             }
             return;
         }
@@ -4732,6 +4764,16 @@ public class GuiPathManager extends ThemedGuiScreen {
         if (dWheel != 0) {
             int mouseX = Mouse.getX() * this.width / this.mc.displayWidth;
             int mouseY = this.height - Mouse.getY() * this.height / this.mc.displayHeight - 1;
+
+            if (actionDetailPopupAction != null) {
+                if (actionDetailPopupBounds != null && actionDetailPopupBounds.contains(mouseX, mouseY)
+                        && maxActionDetailPopupScroll > 0) {
+                    int delta = dWheel > 0 ? -24 : 24;
+                    actionDetailPopupScroll = MathHelper.clamp(actionDetailPopupScroll + delta, 0,
+                            maxActionDetailPopupScroll);
+                }
+                return;
+            }
 
             if (debugMonitorVisible && debugMonitorBounds != null && debugMonitorBounds.contains(mouseX, mouseY)) {
                 if (!debugMonitorMinimized && debugMonitorMaxScroll > 0) {
