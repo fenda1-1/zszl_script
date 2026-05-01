@@ -1828,7 +1828,7 @@ public class GuiPathManager extends ThemedGuiScreen {
                 break;
             case 26:
                 if (btnEditStepFailure.enabled && selectedStep != null) {
-                    mc.setScreen(new GuiStepFailureEditor(this, selectedStep));
+                    mc.setScreen(new GuiStepFailureEditor(this, getSelectedStepTargets(), selectedStep));
                 }
                 break;
             case 17: // 获取坐标
@@ -3680,6 +3680,19 @@ public class GuiPathManager extends ThemedGuiScreen {
         return indices;
     }
 
+    private List<PathStep> getSelectedStepTargets() {
+        List<PathStep> targets = new ArrayList<>();
+        if (selectedSequence == null) {
+            return targets;
+        }
+        for (int index : getSelectedStepIndicesForCopy()) {
+            if (index >= 0 && index < selectedSequence.getSteps().size()) {
+                targets.add(selectedSequence.getSteps().get(index));
+            }
+        }
+        return targets;
+    }
+
     private List<Integer> getSelectedActionIndicesForCopy() {
         List<Integer> indices = new ArrayList<>(selectedActionIndices);
         if (indices.isEmpty() && selectedActionIndex >= 0) {
@@ -3718,6 +3731,29 @@ public class GuiPathManager extends ThemedGuiScreen {
         actionDetailPopupBounds = null;
         markDirty();
         return true;
+    }
+
+    void applyStepFailureSettings(List<PathStep> steps, int retryCount, int timeoutSeconds, int arrivalToleranceBlocks,
+            String policy, String targetSequenceName) {
+        List<PathStep> targets = steps == null ? Collections.emptyList() : steps;
+        if (targets.isEmpty() && selectedStep != null) {
+            targets = Collections.singletonList(selectedStep);
+        }
+        if (targets.isEmpty()) {
+            return;
+        }
+        pushUndoHistory("step-failure");
+        for (PathStep target : targets) {
+            if (target == null) {
+                continue;
+            }
+            target.setRetryCount(retryCount);
+            target.setPathRetryTimeoutSeconds(timeoutSeconds);
+            target.setArrivalToleranceBlocks(arrivalToleranceBlocks);
+            target.setRetryExhaustedPolicy(policy);
+            target.setRetryExhaustedSequenceName(targetSequenceName);
+        }
+        markDirty();
     }
 
     private void copySelectedStepsToClipboard() {

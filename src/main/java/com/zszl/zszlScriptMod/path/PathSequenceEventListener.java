@@ -104,6 +104,7 @@ public class PathSequenceEventListener {
     private boolean pausedByGui;
     private boolean debugStepArmed;
     private boolean atTarget;
+    private boolean waitingForNavigationToFinishAtTarget;
     private boolean registered;
     private java.util.Collection<net.minecraftforge.eventbus.api.listener.EventListener> registeredListeners;
 
@@ -145,6 +146,8 @@ public class PathSequenceEventListener {
 
     private boolean isHunting;
     private double huntRadius;
+    private double huntUpRange = KillAuraHandler.DEFAULT_HUNT_UP_RANGE;
+    private double huntDownRange = KillAuraHandler.DEFAULT_HUNT_DOWN_RANGE;
     private boolean huntAutoAttack;
     private String huntAttackMode = KillAuraHandler.ATTACK_MODE_NORMAL;
     private String huntAttackSequenceName = "";
@@ -578,6 +581,7 @@ public class PathSequenceEventListener {
         currentSequence = null;
         status = "";
         atTarget = false;
+        waitingForNavigationToFinishAtTarget = false;
         currentActionDescription = "";
         debugStepArmed = false;
         pendingAsyncActionType = "";
@@ -628,10 +632,25 @@ public class PathSequenceEventListener {
         return true;
     }
 
+    public boolean isAutoEatStepPathingActive() {
+        if (!tracking || paused || currentSequence == null || atTarget || waitingForNavigationToFinishAtTarget) {
+            return false;
+        }
+        if (currentSequence.getSteps() == null || stepIndex < 0 || stepIndex >= currentSequence.getSteps().size()) {
+            return false;
+        }
+        PathSequenceManager.PathStep step = currentSequence.getSteps().get(stepIndex);
+        return step != null && step.hasGotoTarget() && EmbeddedNavigationHandler.INSTANCE.isPathingOrCalculating();
+    }
+
     public void startHunting(JsonObject params) {
         resetHuntState();
         this.isHunting = true;
         this.huntRadius = Math.max(0.0D, getDouble(params, "radius", 3.0D));
+        this.huntUpRange = Math.max(0.0D,
+                getDouble(params, "huntUpRange", KillAuraHandler.DEFAULT_HUNT_UP_RANGE));
+        this.huntDownRange = Math.max(0.0D,
+                getDouble(params, "huntDownRange", KillAuraHandler.DEFAULT_HUNT_DOWN_RANGE));
         this.huntAutoAttack = params == null || !params.has("autoAttack") || params.get("autoAttack").getAsBoolean();
         this.huntAttackMode = normalizeHuntAttackMode(getString(params, "attackMode"));
         this.huntAttackSequenceName = getString(params, "attackSequenceName");
@@ -743,13 +762,24 @@ public class PathSequenceEventListener {
         PathSequenceManager.PathStep step = steps.get(stepIndex);
         if (!atTarget) {
             if (step != null && step.hasGotoTarget()) {
-                if (!hasReachedGotoTarget(player, step.getGotoPoint())) {
+                if (!hasReachedGotoTarget(player, step, step.getGotoPoint())) {
                     if (handleCurrentStepPathRetry(player, step)) {
                         return;
                     }
                     return;
                 }
+                if (EmbeddedNavigationHandler.INSTANCE.isPathingOrCalculating()) {
+                    if (!waitingForNavigationToFinishAtTarget) {
+                        waitingForNavigationToFinishAtTarget = true;
+                        recordDebugTrace("已到达步骤目标范围，等待寻路自然结束: " + stepIndex);
+                    }
+                    return;
+                }
+                if (waitingForNavigationToFinishAtTarget) {
+                    recordDebugTrace("寻路已结束，继续执行步骤动作: " + stepIndex);
+                }
             }
+            waitingForNavigationToFinishAtTarget = false;
             atTarget = true;
             actionIndex = 0;
             stepRetryUsed = 0;
@@ -926,6 +956,7 @@ public class PathSequenceEventListener {
         stepIndex++;
         actionIndex = 0;
         atTarget = false;
+        waitingForNavigationToFinishAtTarget = false;
         stepRetryUsed = 0;
         resetStepPathRetryMonitor();
         repeatActionRunning = false;
@@ -946,6 +977,7 @@ public class PathSequenceEventListener {
         PathSequenceManager.PathStep step = currentSequence.getSteps().get(stepIndex);
         if (step == null || !step.hasGotoTarget()) {
             atTarget = true;
+            waitingForNavigationToFinishAtTarget = false;
             EmbeddedNavigationHandler.INSTANCE.stopOwned(EmbeddedNavigationHandler.NavigationOwner.PATH_SEQUENCE,
                     "当前步骤没有 goto 目标，停止路径序列导航");
             resetStepPathRetryMonitor();
@@ -957,9 +989,19 @@ public class PathSequenceEventListener {
         initializeStepPathRetryMonitor(Minecraft.getInstance().player);
     }
 
-    private boolean hasReachedGotoTarget(LocalPlayer player, double[] target) {
+    private boolean hasReachedGotoTarget(LocalPlayer player, PathSequenceManager.PathStep step, double[] target) {
         if (player == null || target == null || target.length < 3 || Double.isNaN(target[0])) {
             return true;
+        }
+        int tolerance = step == null ? 0 : step.getArrivalToleranceBlocks();
+        if (tolerance > 0) {
+            double dx = player.getX() - (target[0] + 0.5D);
+            double dz = player.getZ() - (target[2] + 0.5D);
+            if (Double.isNaN(target[1])) {
+                return dx * dx + dz * dz <= tolerance * tolerance;
+            }
+            double dy = player.getY() - target[1];
+            return dx * dx + dy * dy + dz * dz <= tolerance * tolerance;
         }
         int playerX = (int) Math.floor(player.getX());
         int playerY = (int) Math.floor(player.getY());
@@ -2270,6 +2312,8 @@ public class PathSequenceEventListener {
         huntOrbitController.stop();
         isHunting = false;
         huntRadius = 0.0D;
+        huntUpRange = KillAuraHandler.DEFAULT_HUNT_UP_RANGE;
+        huntDownRange = KillAuraHandler.DEFAULT_HUNT_DOWN_RANGE;
         huntAutoAttack = false;
         huntAttackMode = KillAuraHandler.ATTACK_MODE_NORMAL;
         huntAttackSequenceName = "";
@@ -2664,6 +2708,9 @@ public class PathSequenceEventListener {
         if (getDistanceSqToHuntCenter(entity) > getHuntRadiusSq()) {
             return false;
         }
+        if (!isWithinHuntVerticalRange(entity)) {
+            return false;
+        }
         if (huntIgnoreInvisible && entity.isInvisible()) {
             return false;
         }
@@ -2740,8 +2787,8 @@ public class PathSequenceEventListener {
 
     private AABB getHuntSearchBounds() {
         return new AABB(
-                huntCenterX - huntRadius, huntCenterY - huntRadius, huntCenterZ - huntRadius,
-                huntCenterX + huntRadius, huntCenterY + huntRadius, huntCenterZ + huntRadius);
+                huntCenterX - huntRadius, huntCenterY - huntDownRange, huntCenterZ - huntRadius,
+                huntCenterX + huntRadius, huntCenterY + huntUpRange, huntCenterZ + huntRadius);
     }
 
     private double getDistanceSqToHuntCenter(Entity entity) {
@@ -2749,9 +2796,16 @@ public class PathSequenceEventListener {
             return Double.MAX_VALUE;
         }
         double dx = entity.getX() - huntCenterX;
-        double dy = entity.getY() - huntCenterY;
         double dz = entity.getZ() - huntCenterZ;
-        return dx * dx + dy * dy + dz * dz;
+        return dx * dx + dz * dz;
+    }
+
+    private boolean isWithinHuntVerticalRange(Entity entity) {
+        if (entity == null) {
+            return false;
+        }
+        double dy = entity.getY() - huntCenterY;
+        return dy <= huntUpRange && dy >= -huntDownRange;
     }
 
     private double getHuntRadiusSq() {

@@ -149,6 +149,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
 
     public static boolean enabled = false;
     public static boolean rotateToTarget = true;
+    public static boolean onlyAttackWhenLookingAtTarget = true;
     public static boolean smoothRotation = true;
     public static boolean requireLineOfSight = true;
     public static boolean targetHostile = true;
@@ -223,6 +224,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
     public static class KillAuraPreset {
         public String name = "";
         public boolean rotateToTarget = true;
+        public boolean onlyAttackWhenLookingAtTarget = true;
         public boolean smoothRotation = true;
         public boolean requireLineOfSight = true;
         public boolean targetHostile = true;
@@ -272,6 +274,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
             }
             this.name = other.name == null ? "" : other.name;
             this.rotateToTarget = other.rotateToTarget;
+            this.onlyAttackWhenLookingAtTarget = other.onlyAttackWhenLookingAtTarget;
             this.smoothRotation = other.smoothRotation;
             this.requireLineOfSight = other.requireLineOfSight;
             this.targetHostile = other.targetHostile;
@@ -337,6 +340,8 @@ public class KillAuraHandler implements AbstractGameEventListener {
             JsonObject json = JsonParser.parseReader(reader).getAsJsonObject();
             enabled = readBoolean(json, "enabled", enabled);
             rotateToTarget = readBoolean(json, "rotateToTarget", rotateToTarget);
+            onlyAttackWhenLookingAtTarget = readBoolean(json, "onlyAttackWhenLookingAtTarget",
+                    onlyAttackWhenLookingAtTarget);
             smoothRotation = readBoolean(json, "smoothRotation", smoothRotation);
             requireLineOfSight = readBoolean(json, "requireLineOfSight", requireLineOfSight);
             targetHostile = readBoolean(json, "targetHostile", targetHostile);
@@ -409,6 +414,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
             JsonObject json = new JsonObject();
             json.addProperty("enabled", enabled);
             json.addProperty("rotateToTarget", rotateToTarget);
+            json.addProperty("onlyAttackWhenLookingAtTarget", onlyAttackWhenLookingAtTarget);
             json.addProperty("smoothRotation", smoothRotation);
             json.addProperty("requireLineOfSight", requireLineOfSight);
             json.addProperty("targetHostile", targetHostile);
@@ -1170,12 +1176,13 @@ public class KillAuraHandler implements AbstractGameEventListener {
             if (attackedCount >= attackLimit) {
                 break;
             }
-            if (!canAttackTarget(player, target)) {
+            boolean teleportAttack = shouldUseTeleportAttack(player, target);
+            if (!canAttackTarget(player, target, shouldRequireCrosshairHitForAttack(teleportAttack))) {
                 continue;
             }
 
             boolean attacked = false;
-            if (shouldUseTeleportAttack(player, target)) {
+            if (teleportAttack) {
                 attacked = performTeleportAttack(player, target);
             } else if (isMouseClickAttackMode()) {
                 attacked = performMouseClickAttack(mc);
@@ -1197,6 +1204,10 @@ public class KillAuraHandler implements AbstractGameEventListener {
     }
 
     private boolean canAttackTarget(LocalPlayer player, LivingEntity target) {
+        return canAttackTarget(player, target, false);
+    }
+
+    private boolean canAttackTarget(LocalPlayer player, LivingEntity target, boolean requireCrosshairHit) {
         if (player == null || target == null || !target.isAlive() || !isValidTarget(player, target)) {
             return false;
         }
@@ -1207,7 +1218,36 @@ public class KillAuraHandler implements AbstractGameEventListener {
             return false;
         }
         float yawDiff = Math.abs(Mth.wrapDegrees(getDesiredAimRotation(player, target).getYaw() - player.getYRot()));
-        return !shouldRotateToTarget() || yawDiff <= 100.0F;
+        if (shouldRotateToTarget() && yawDiff > 100.0F) {
+            return false;
+        }
+        return !requireCrosshairHit || isViewRayHittingAttackableTarget(player, target);
+    }
+
+    private boolean shouldRequireCrosshairHitForAttack(boolean teleportAttack) {
+        if (teleportAttack) {
+            return false;
+        }
+        if (isMouseClickAttackMode()) {
+            return true;
+        }
+        return onlyAttackWhenLookingAtTarget && shouldRotateToTarget();
+    }
+
+    private boolean isViewRayHittingAttackableTarget(LocalPlayer player, LivingEntity target) {
+        if (player == null || target == null || !target.isAlive()) {
+            return false;
+        }
+        Vec3 eyePos = player.getEyePosition();
+        AABB hitBox = target.getBoundingBox().inflate(Math.max(0.1D, target.getPickRadius()));
+        if (hitBox.contains(eyePos)) {
+            return true;
+        }
+        Vec3 look = player.getViewVector(1.0F);
+        double reach = Math.max(attackRange, player.distanceTo(target) + target.getBbWidth() + 0.25D);
+        Vec3 endPos = eyePos.add(look.x * reach, look.y * reach, look.z * reach);
+        Optional<Vec3> hit = hitBox.clip(eyePos, endPos);
+        return hit.isPresent() && eyePos.distanceToSqr(hit.get()) <= reach * reach;
     }
 
     private boolean performMouseClickAttack(Minecraft mc) {
@@ -2462,6 +2502,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
         KillAuraPreset preset = new KillAuraPreset();
         preset.name = normalizePresetName(name);
         preset.rotateToTarget = rotateToTarget;
+        preset.onlyAttackWhenLookingAtTarget = onlyAttackWhenLookingAtTarget;
         preset.smoothRotation = smoothRotation;
         preset.requireLineOfSight = requireLineOfSight;
         preset.targetHostile = targetHostile;
@@ -2547,6 +2588,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
             return;
         }
         rotateToTarget = safePreset.rotateToTarget;
+        onlyAttackWhenLookingAtTarget = safePreset.onlyAttackWhenLookingAtTarget;
         smoothRotation = safePreset.smoothRotation;
         requireLineOfSight = safePreset.requireLineOfSight;
         targetHostile = safePreset.targetHostile;
@@ -2640,6 +2682,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
     private static void resetDefaults() {
         enabled = false;
         rotateToTarget = true;
+        onlyAttackWhenLookingAtTarget = true;
         smoothRotation = true;
         requireLineOfSight = true;
         targetHostile = true;

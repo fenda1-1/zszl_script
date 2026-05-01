@@ -433,6 +433,18 @@ public class EmbeddedNavigationHandler {
         }
     }
 
+    public boolean isPathingOrCalculating() {
+        try {
+            IBaritone baritone = getPrimaryBaritone();
+            return baritone.getPathingBehavior().isPathing()
+                    || baritone.getPathingBehavior().hasPath()
+                    || baritone.getPathingBehavior().getCurrent() != null
+                    || baritone.getPathingBehavior().getInProgress().isPresent();
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
     public void startGoto(NavigationOwner owner, double x, double y, double z) {
         startGoto(owner, x, y, z, false, null);
     }

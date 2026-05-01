@@ -5,7 +5,9 @@ import com.google.gson.JsonParser;
 import com.zszl.zszlScriptMod.compat.ItemComponentCompat;
 import com.zszl.zszlScriptMod.config.DebugModule;
 import com.zszl.zszlScriptMod.config.ModConfig;
+import com.zszl.zszlScriptMod.path.PathSequenceEventListener;
 import com.zszl.zszlScriptMod.system.ProfileManager;
+import com.zszl.zszlScriptMod.utils.ModUtils;
 import com.zszl.zszlScriptMod.zszlScriptMod;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
@@ -27,6 +29,8 @@ public final class AutoEatHandler {
     public static int foodLevelThreshold = 12;
     public static boolean autoMoveFoodEnabled = true;
     public static boolean eatWithLookDown = false;
+    public static boolean smoothLookDown = true;
+    public static boolean onlyDuringSequenceStepPathing = true;
     public static int targetHotbarSlot = 9;
     public static final List<String> DEFAULT_FOOD_KEYWORDS = Arrays.asList("牛排", "面包", "苹果", "曲奇饼");
     public static List<String> foodKeywords = new ArrayList<>(DEFAULT_FOOD_KEYWORDS);
@@ -37,8 +41,17 @@ public final class AutoEatHandler {
 
     private static int eatTimeoutTicks = 0;
     private static int eatStartFoodLevel = 20;
+    private static boolean eatStartedUsingHand = false;
     private static boolean pitchAdjusted = false;
     private static float originalPitch = 0.0F;
+    private static int eatRetryAttempts = 0;
+    private static int eatActiveHotbarSlot = -1;
+    private static int eatStartStackCount = 0;
+    private static final int EAT_ATTEMPT_TIMEOUT_TICKS = 100;
+    private static final int MAX_EAT_RETRY_ATTEMPTS = 4;
+    private static final float EAT_LOOKDOWN_TARGET_PITCH = 80.0F;
+    private static final float EAT_LOOKDOWN_MIN_STEP = 3.0F;
+    private static final float EAT_LOOKDOWN_MAX_STEP = 14.0F;
 
     private AutoEatHandler() {
     }
@@ -57,6 +70,9 @@ public final class AutoEatHandler {
                 autoMoveFoodEnabled = !json.has("autoMoveFoodEnabled")
                         || json.get("autoMoveFoodEnabled").getAsBoolean();
                 eatWithLookDown = json.has("eatWithLookDown") && json.get("eatWithLookDown").getAsBoolean();
+                smoothLookDown = !json.has("smoothLookDown") || json.get("smoothLookDown").getAsBoolean();
+                onlyDuringSequenceStepPathing = !json.has("onlyDuringSequenceStepPathing")
+                        || json.get("onlyDuringSequenceStepPathing").getAsBoolean();
                 targetHotbarSlot = json.has("targetHotbarSlot") ? json.get("targetHotbarSlot").getAsInt() : 9;
                 foodKeywords = new ArrayList<>();
                 if (json.has("foodKeywords") && json.get("foodKeywords").isJsonArray()) {
@@ -88,6 +104,8 @@ public final class AutoEatHandler {
             json.addProperty("foodLevelThreshold", foodLevelThreshold);
             json.addProperty("autoMoveFoodEnabled", autoMoveFoodEnabled);
             json.addProperty("eatWithLookDown", eatWithLookDown);
+            json.addProperty("smoothLookDown", smoothLookDown);
+            json.addProperty("onlyDuringSequenceStepPathing", onlyDuringSequenceStepPathing);
             json.addProperty("targetHotbarSlot", targetHotbarSlot);
             com.google.gson.JsonArray keywords = new com.google.gson.JsonArray();
             for (String keyword : foodKeywords) {
@@ -115,6 +133,9 @@ public final class AutoEatHandler {
         if (ModConfig.isGuiOpen() || player.getFoodData().getFoodLevel() > foodLevelThreshold) {
             return;
         }
+        if (onlyDuringSequenceStepPathing && !PathSequenceEventListener.instance.isAutoEatStepPathingActive()) {
+            return;
+        }
 
         int hotbarFoodSlot = findBestFoodInHotbar(player);
         if (hotbarFoodSlot < 0) {
@@ -123,7 +144,12 @@ public final class AutoEatHandler {
 
         originalHotbarSlot = player.getInventory().getSelectedSlot();
         eatStartFoodLevel = player.getFoodData().getFoodLevel();
-        eatTimeoutTicks = 80;
+        eatTimeoutTicks = EAT_ATTEMPT_TIMEOUT_TICKS;
+        eatStartedUsingHand = false;
+        eatRetryAttempts = 0;
+        eatActiveHotbarSlot = hotbarFoodSlot;
+        ItemStack startingStack = player.getInventory().getItem(hotbarFoodSlot);
+        eatStartStackCount = startingStack.isEmpty() ? 0 : startingStack.getCount();
         isEating = true;
         pitchAdjusted = false;
 
@@ -131,11 +157,11 @@ public final class AutoEatHandler {
 
         if (eatWithLookDown) {
             originalPitch = player.getXRot();
-            player.setXRot(80.0F);
             pitchAdjusted = true;
+            applyLookDownPitch(player);
         }
 
-        player.getInventory().setSelectedSlot(hotbarFoodSlot);
+        ModUtils.switchToHotbarSlot(hotbarFoodSlot + 1);
         useCurrentFood(player);
 
         if (ModConfig.isDebugFlagEnabled(DebugModule.AUTO_EAT)) {
@@ -155,15 +181,27 @@ public final class AutoEatHandler {
             return;
         }
 
+        if (eatActiveHotbarSlot >= 0 && player.getInventory().getSelectedSlot() != eatActiveHotbarSlot) {
+            ModUtils.switchToHotbarSlot(eatActiveHotbarSlot + 1);
+        }
+
+        applyLookDownPitch(player);
         if (!player.isUsingItem()) {
             useCurrentFood(player);
+        } else {
+            eatStartedUsingHand = true;
         }
 
         eatTimeoutTicks--;
         boolean hungerRecovered = player.getFoodData().getFoodLevel() > eatStartFoodLevel;
-        boolean timedOut = eatTimeoutTicks <= 0;
-        if (hungerRecovered || timedOut) {
+        boolean stackConsumed = hasConsumedFoodStack(player);
+        boolean finishedUseWithoutSuccess = eatStartedUsingHand && !player.isUsingItem() && !hungerRecovered
+                && !stackConsumed;
+        boolean timedOut = eatTimeoutTicks <= 0 && !hungerRecovered && !stackConsumed;
+        if (hungerRecovered || stackConsumed) {
             finalizeEating(player, false);
+        } else if (finishedUseWithoutSuccess || timedOut) {
+            retryEatingUse(player);
         }
     }
 
@@ -182,7 +220,7 @@ public final class AutoEatHandler {
             player.setXRot(originalPitch);
         }
         if (player != null && originalHotbarSlot >= 0) {
-            player.getInventory().setSelectedSlot(originalHotbarSlot);
+            ModUtils.switchToHotbarSlot(originalHotbarSlot + 1);
         }
 
         EmbeddedNavigationHandler.INSTANCE.resume(interrupted ? "自动进食被打断后恢复导航" : "自动进食完成后恢复导航");
@@ -263,7 +301,110 @@ public final class AutoEatHandler {
         swappedItem = ItemStack.EMPTY;
         eatTimeoutTicks = 0;
         eatStartFoodLevel = 20;
+        eatStartedUsingHand = false;
         pitchAdjusted = false;
+        eatRetryAttempts = 0;
+        eatActiveHotbarSlot = -1;
+        eatStartStackCount = 0;
+    }
+
+    private static boolean hasConsumedFoodStack(LocalPlayer player) {
+        if (player == null || eatActiveHotbarSlot < 0 || eatActiveHotbarSlot > 8) {
+            return false;
+        }
+        ItemStack current = player.getInventory().getItem(eatActiveHotbarSlot);
+        if (current == null || current.isEmpty()) {
+            return eatStartedUsingHand;
+        }
+        return current.getCount() < eatStartStackCount;
+    }
+
+    private static void retryEatingUse(LocalPlayer player) {
+        if (player == null) {
+            finalizeEating(null, true);
+            return;
+        }
+        if (eatRetryAttempts >= MAX_EAT_RETRY_ATTEMPTS) {
+            finalizeEating(player, true);
+            return;
+        }
+        eatRetryAttempts++;
+        eatTimeoutTicks = EAT_ATTEMPT_TIMEOUT_TICKS;
+        eatStartedUsingHand = false;
+        ItemStack current = eatActiveHotbarSlot >= 0 && eatActiveHotbarSlot <= 8
+                ? player.getInventory().getItem(eatActiveHotbarSlot)
+                : ItemStack.EMPTY;
+        eatStartStackCount = current.isEmpty() ? 0 : current.getCount();
+        useCurrentFood(player);
+    }
+
+    private static void applyLookDownPitch(LocalPlayer player) {
+        if (player == null || !eatWithLookDown || !pitchAdjusted) {
+            return;
+        }
+        if (!smoothLookDown) {
+            player.setXRot(EAT_LOOKDOWN_TARGET_PITCH);
+            return;
+        }
+        float delta = EAT_LOOKDOWN_TARGET_PITCH - player.getXRot();
+        float absDelta = Math.abs(delta);
+        if (absDelta <= 0.001F) {
+            player.setXRot(EAT_LOOKDOWN_TARGET_PITCH);
+            return;
+        }
+        float stepLimit = Math.min(EAT_LOOKDOWN_MAX_STEP,
+                Math.max(EAT_LOOKDOWN_MIN_STEP, EAT_LOOKDOWN_MIN_STEP + absDelta * 0.35F));
+        float step = clampSigned(delta, stepLimit);
+        float gcdStep = getMouseGcdStep();
+        step = quantizeRotationStepForGcd(step, stepLimit, gcdStep);
+        if (Math.abs(step) <= 0.001F) {
+            step = Math.copySign(Math.min(stepLimit, absDelta), delta);
+        }
+        player.setXRot(clampPitch(player.getXRot() + step));
+    }
+
+    private static float clampSigned(float value, float limit) {
+        float safeLimit = Math.max(0.0F, Math.abs(limit));
+        return Math.copySign(Math.min(Math.abs(value), safeLimit), value);
+    }
+
+    private static float clampPitch(float pitch) {
+        return Math.max(-90.0F, Math.min(90.0F, pitch));
+    }
+
+    private static float getMouseGcdStep() {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc == null || mc.options == null) {
+            return 0.0F;
+        }
+        float sensitivity = (float) Math.max(0.0D, Math.min(1.0D, mc.options.sensitivity().get()));
+        float f = sensitivity * 0.6F + 0.2F;
+        return f * f * f * 8.0F * 0.15F;
+    }
+
+    private static float quantizeRotationStepForGcd(float step, float maxMagnitude, float gcdStep) {
+        if (step == 0.0F || gcdStep <= 1.0E-5F || maxMagnitude <= 0.0F) {
+            return step == 0.0F ? 0.0F : clampSigned(step, maxMagnitude);
+        }
+        float maxStep = Math.abs(maxMagnitude);
+        float absStep = Math.min(Math.abs(step), maxStep);
+        if (absStep <= 1.0E-5F) {
+            return 0.0F;
+        }
+        if (maxStep + 1.0E-5F < gcdStep) {
+            return Math.copySign(absStep, step);
+        }
+        float quantized = Math.round(absStep / gcdStep) * gcdStep;
+        if (quantized <= 1.0E-5F && absStep >= gcdStep * 0.45F) {
+            quantized = gcdStep;
+        }
+        if (quantized > maxStep) {
+            quantized = (float) Math.floor(maxStep / gcdStep) * gcdStep;
+        }
+        if (quantized <= 1.0E-5F) {
+            return 0.0F;
+        }
+        return Math.copySign(Math.min(quantized, maxStep), step);
     }
 }
 

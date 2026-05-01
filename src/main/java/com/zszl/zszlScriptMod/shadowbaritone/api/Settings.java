@@ -775,7 +775,7 @@ public final class Settings {
     public final Setting<Boolean> elytraFreeLook = new Setting<>(false);
 
     /**
-     * Forces the client-sided yaw rotation to an average of the last {@link #smoothLookTicks} of server-sided rotations.
+     * Smooths the client-sided visual rotation while Baritone is steering server-sided rotations.
      */
     public final Setting<Boolean> smoothLook = new Setting<>(false);
 
@@ -785,7 +785,22 @@ public final class Settings {
     public final Setting<Boolean> elytraSmoothLook = new Setting<>(true);
 
     /**
-     * The number of ticks to average across for {@link #smoothLook};
+     * Minimum turn speed for {@link #smoothLook}.
+     */
+    public final Setting<Float> smoothLookMinTurnSpeed = new Setting<>(4.0F);
+
+    /**
+     * Maximum turn speed for {@link #smoothLook}.
+     */
+    public final Setting<Float> smoothLookMaxTurnSpeed = new Setting<>(18.0F);
+
+    /**
+     * Maximum turn step per tick for {@link #smoothLook}. Accepts a single value or a range such as {@code 24-60}.
+     */
+    public final Setting<String> smoothLookMaxTurnStep = new Setting<>("24-60");
+
+    /**
+     * Legacy compatibility setting retained for older configs.
      */
     public final Setting<Integer> smoothLookTicks = new Setting<>(5);
 
