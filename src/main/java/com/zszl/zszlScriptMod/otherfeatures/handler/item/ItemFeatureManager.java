@@ -1,10 +1,13 @@
 package com.zszl.zszlScriptMod.otherfeatures.handler.item;
 
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.inventory.ItemStackHelper;
 import com.zszl.zszlScriptMod.compat.ItemComponentCompat;
 import com.zszl.zszlScriptMod.otherfeatures.handler.movement.MovementFeatureManager;
+import com.zszl.zszlScriptMod.path.InventoryItemFilterExpressionEngine;
 import com.zszl.zszlScriptMod.system.ProfileManager;
 import com.zszl.zszlScriptMod.zszlScriptMod;
 import net.minecraft.client.Minecraft;
@@ -43,8 +46,10 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -70,6 +75,7 @@ public final class ItemFeatureManager {
     private static int autoEquipIntervalTicks = DEFAULT_AUTO_EQUIP_INTERVAL_TICKS;
     private static int dropAllDelayTicks = DEFAULT_DROP_ALL_DELAY_TICKS;
     private static String dropAllKeywordsText = "";
+    private static final List<String> dropAllItemFilterExpressions = new ArrayList<>();
     private static boolean modernListenersRegistered;
 
     private int inventorySortCooldownTicks;
@@ -174,6 +180,26 @@ public final class ItemFeatureManager {
         saveConfig();
     }
 
+    public static List<String> getDropAllItemFilterExpressions() {
+        List<String> expressions = normalizeDropAllExpressions(dropAllItemFilterExpressions);
+        if (!expressions.isEmpty()) {
+            return expressions;
+        }
+        return buildLegacyDropAllKeywordExpressions();
+    }
+
+    public static void setDropAllItemFilterExpressions(List<String> expressions) {
+        dropAllItemFilterExpressions.clear();
+        dropAllItemFilterExpressions.addAll(normalizeDropAllExpressions(expressions));
+        dropAllKeywordsText = "";
+        saveConfig();
+    }
+
+    public static String getDropAllExpressionSummary() {
+        List<String> expressions = getDropAllItemFilterExpressions();
+        return expressions.isEmpty() ? "" : InventoryItemFilterExpressionEngine.summarizeExpressions(expressions);
+    }
+
     public static void setFeatureStatusHudEnabled(String featureId, boolean enabled) {
         FeatureState state = getFeature(featureId);
         if (state == null) {
@@ -197,6 +223,7 @@ public final class ItemFeatureManager {
         } else if ("drop_all".equals(state.id)) {
             dropAllDelayTicks = DEFAULT_DROP_ALL_DELAY_TICKS;
             dropAllKeywordsText = "";
+            dropAllItemFilterExpressions.clear();
         }
         saveConfig();
     }
@@ -364,6 +391,17 @@ public final class ItemFeatureManager {
                     ? clampInt(root.get("dropAllDelayTicks").getAsInt(), 0, 20)
                     : DEFAULT_DROP_ALL_DELAY_TICKS;
             dropAllKeywordsText = root.has("dropAllKeywordsText") ? root.get("dropAllKeywordsText").getAsString() : "";
+            dropAllItemFilterExpressions.clear();
+            if (root.has("dropAllExpressions") && root.get("dropAllExpressions").isJsonArray()) {
+                for (JsonElement element : root.getAsJsonArray("dropAllExpressions")) {
+                    if (element != null && element.isJsonPrimitive()) {
+                        String expression = safe(element.getAsString());
+                        if (!expression.isEmpty()) {
+                            dropAllItemFilterExpressions.add(expression);
+                        }
+                    }
+                }
+            }
 
             for (FeatureState state : FEATURES.values()) {
                 if (!features.has(state.id) || !features.get(state.id).isJsonObject()) {
@@ -392,6 +430,11 @@ public final class ItemFeatureManager {
             root.addProperty("autoEquipIntervalTicks", autoEquipIntervalTicks);
             root.addProperty("dropAllDelayTicks", dropAllDelayTicks);
             root.addProperty("dropAllKeywordsText", getDropAllKeywordsText());
+            JsonArray dropAllExpressions = new JsonArray();
+            for (String expression : normalizeDropAllExpressions(dropAllItemFilterExpressions)) {
+                dropAllExpressions.add(expression);
+            }
+            root.add("dropAllExpressions", dropAllExpressions);
             for (FeatureState state : FEATURES.values()) {
                 JsonObject json = new JsonObject();
                 json.addProperty("enabled", state.enabled);
@@ -540,29 +583,25 @@ public final class ItemFeatureManager {
     }
 
     private void handleDropAll(Minecraft mc, LocalPlayer player) {
-        if (!isEnabled("drop_all") || dropAllCooldownTicks > 0 || getDropAllKeywordsText().trim().isEmpty()) {
+        if (!isEnabled("drop_all") || dropAllCooldownTicks > 0) {
             return;
         }
         if (player.containerMenu != player.inventoryMenu) {
             return;
         }
 
-        List<String> keywords = getDropAllKeywords();
-        for (int invIndex = 0; invIndex < player.getInventory().getNonEquipmentItems().size(); invIndex++) {
-            ItemStack stack = player.getInventory().getNonEquipmentItems().get(invIndex);
+        List<String> expressions = getDropAllItemFilterExpressions();
+        if (expressions.isEmpty()) {
+            return;
+        }
+
+        List<ItemStack> items = player.getInventory().getNonEquipmentItems();
+        for (int invIndex = 0; invIndex < items.size(); invIndex++) {
+            ItemStack stack = items.get(invIndex);
             if (stack.isEmpty()) {
                 continue;
             }
-
-            String display = stack.getHoverName().getString().toLowerCase(Locale.ROOT);
-            boolean matched = false;
-            for (String keyword : keywords) {
-                if (!keyword.isEmpty() && display.contains(keyword.toLowerCase(Locale.ROOT))) {
-                    matched = true;
-                    break;
-                }
-            }
-            if (!matched) {
+            if (!matchesAnyDropAllExpression(stack, invIndex, expressions)) {
                 continue;
             }
 
@@ -793,6 +832,48 @@ public final class ItemFeatureManager {
         return keywords;
     }
 
+    private static List<String> normalizeDropAllExpressions(List<String> expressions) {
+        List<String> normalized = new ArrayList<>();
+        if (expressions == null || expressions.isEmpty()) {
+            return normalized;
+        }
+        LinkedHashSet<String> seen = new LinkedHashSet<>();
+        for (String expression : expressions) {
+            String text = safe(expression);
+            if (text.isEmpty()) {
+                continue;
+            }
+            if (seen.add(text.toLowerCase(Locale.ROOT))) {
+                normalized.add(text);
+            }
+        }
+        return normalized;
+    }
+
+    private static List<String> buildLegacyDropAllKeywordExpressions() {
+        List<String> expressions = new ArrayList<>();
+        for (String keyword : INSTANCE.getDropAllKeywords()) {
+            String expression = InventoryItemFilterExpressionEngine.buildLegacyCompatibleExpression(keyword,
+                    "CONTAINS", Collections.emptyList(), "");
+            if (!expression.isEmpty()) {
+                expressions.add(expression);
+            }
+        }
+        return expressions;
+    }
+
+    private static boolean matchesAnyDropAllExpression(ItemStack stack, int actualInvSlot, List<String> expressions) {
+        for (String expression : expressions) {
+            try {
+                if (InventoryItemFilterExpressionEngine.matches(stack, actualInvSlot, expression)) {
+                    return true;
+                }
+            } catch (RuntimeException ignored) {
+            }
+        }
+        return false;
+    }
+
     private boolean hasShulkerPreviewContents(ItemStack stack) {
         return getShulkerPreviewItems(stack) != null;
     }
@@ -892,7 +973,7 @@ public final class ItemFeatureManager {
             parts.add("§e箱窃:" + chestStealDelayTicks + "t");
         }
         if (isEnabled("drop_all") && getFeature("drop_all").statusHudEnabled) {
-            parts.add("§c丢弃词:" + getDropAllKeywords().size());
+            parts.add("§c丢弃表达式:" + getDropAllItemFilterExpressions().size());
         }
         if (isEnabled("force_no_hunger") && getFeature("force_no_hunger").statusHudEnabled) {
             parts.add("§a锁饥饿");
@@ -936,8 +1017,8 @@ public final class ItemFeatureManager {
                 if (!isEnabled(featureId)) {
                     return "未启用";
                 }
-                List<String> keywords = getDropAllKeywords();
-                return keywords.isEmpty() ? "已启用，但尚未配置丢弃关键词" : "丢弃关键词: " + String.join(" / ", keywords);
+                String summary = getDropAllExpressionSummary();
+                return summary.isEmpty() ? "已启用，但尚未配置丢弃表达式" : summary;
             case "shulker_preview":
                 return isEnabled(featureId) ? "悬停潜影盒时显示内容预览" : "未启用";
             default:

@@ -98,6 +98,8 @@ public class KillAuraHandler implements AbstractGameEventListener {
     public static final String ATTACK_MODE_PACKET = "PACKET";
     public static final String ATTACK_MODE_TELEPORT = "TELEPORT";
     public static final String ATTACK_MODE_SEQUENCE = "SEQUENCE";
+    public static final String ATTACK_MODE_MOUSE_CLICK = "MOUSE_CLICK";
+    public static final String DEFAULT_ATTACK_MODE = ATTACK_MODE_MOUSE_CLICK;
 
     public static final String HUNT_MODE_OFF = "OFF";
     public static final String HUNT_MODE_APPROACH = "APPROACH";
@@ -160,7 +162,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
     public static boolean enableAntiKnockback = true;
     public static boolean enableFullBrightVision = false;
     public static float fullBrightGamma = 1000.0F;
-    public static String attackMode = ATTACK_MODE_NORMAL;
+    public static String attackMode = DEFAULT_ATTACK_MODE;
     public static String attackSequenceName = "";
     public static int attackSequenceDelayTicks = 2;
     public static float aimYawOffset = 0.0F;
@@ -170,6 +172,10 @@ public class KillAuraHandler implements AbstractGameEventListener {
     public static boolean visualizeHuntRadius = false;
     public static float huntRadius = 8.0F;
     public static float huntFixedDistance = 4.2F;
+    public static final float DEFAULT_HUNT_UP_RANGE = 1.0F;
+    public static final float DEFAULT_HUNT_DOWN_RANGE = 1.0F;
+    public static float huntUpRange = DEFAULT_HUNT_UP_RANGE;
+    public static float huntDownRange = DEFAULT_HUNT_DOWN_RANGE;
     public static boolean huntOrbitEnabled = false;
     public static boolean huntJumpOrbitEnabled = true;
     public static int huntOrbitSamplePoints = DEFAULT_HUNT_ORBIT_SAMPLE_POINTS;
@@ -185,6 +191,9 @@ public class KillAuraHandler implements AbstractGameEventListener {
     public static float maxTurnSpeed = 18.0F;
     public static int minAttackIntervalTicks = 2;
     public static int targetsPerAttack = 1;
+    public static final int DEFAULT_NO_DAMAGE_ATTACK_LIMIT = 5;
+    public static final int MAX_NO_DAMAGE_ATTACK_LIMIT = 100;
+    public static int noDamageAttackLimit = DEFAULT_NO_DAMAGE_ATTACK_LIMIT;
 
     private int attackCooldownTicks = 0;
     private int sequenceCooldownTicks = 0;
@@ -227,7 +236,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
         public boolean enableAntiKnockback = true;
         public boolean enableFullBrightVision = false;
         public float fullBrightGamma = 1000.0F;
-        public String attackMode = ATTACK_MODE_NORMAL;
+        public String attackMode = DEFAULT_ATTACK_MODE;
         public String attackSequenceName = "";
         public int attackSequenceDelayTicks = 2;
         public float aimYawOffset = 0.0F;
@@ -236,6 +245,8 @@ public class KillAuraHandler implements AbstractGameEventListener {
         public boolean visualizeHuntRadius = false;
         public float huntRadius = 8.0F;
         public float huntFixedDistance = 4.2F;
+        public float huntUpRange = DEFAULT_HUNT_UP_RANGE;
+        public float huntDownRange = DEFAULT_HUNT_DOWN_RANGE;
         public boolean huntOrbitEnabled = false;
         public boolean huntJumpOrbitEnabled = true;
         public int huntOrbitSamplePoints = DEFAULT_HUNT_ORBIT_SAMPLE_POINTS;
@@ -250,6 +261,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
         public float maxTurnSpeed = 18.0F;
         public int minAttackIntervalTicks = 2;
         public int targetsPerAttack = 1;
+        public int noDamageAttackLimit = DEFAULT_NO_DAMAGE_ATTACK_LIMIT;
 
         public KillAuraPreset() {
         }
@@ -282,6 +294,8 @@ public class KillAuraHandler implements AbstractGameEventListener {
             this.visualizeHuntRadius = other.visualizeHuntRadius;
             this.huntRadius = other.huntRadius;
             this.huntFixedDistance = other.huntFixedDistance;
+            this.huntUpRange = other.huntUpRange;
+            this.huntDownRange = other.huntDownRange;
             this.huntOrbitEnabled = other.huntOrbitEnabled;
             this.huntJumpOrbitEnabled = other.huntJumpOrbitEnabled;
             this.huntOrbitSamplePoints = other.huntOrbitSamplePoints;
@@ -296,6 +310,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
             this.maxTurnSpeed = other.maxTurnSpeed;
             this.minAttackIntervalTicks = other.minAttackIntervalTicks;
             this.targetsPerAttack = other.targetsPerAttack;
+            this.noDamageAttackLimit = other.noDamageAttackLimit;
         }
     }
 
@@ -346,6 +361,8 @@ public class KillAuraHandler implements AbstractGameEventListener {
             visualizeHuntRadius = readBoolean(json, "visualizeHuntRadius", visualizeHuntRadius);
             huntRadius = readFloat(json, "huntRadius", huntRadius);
             huntFixedDistance = readFloat(json, "huntFixedDistance", huntFixedDistance);
+            huntUpRange = readFloat(json, "huntUpRange", huntUpRange);
+            huntDownRange = readFloat(json, "huntDownRange", huntDownRange);
             huntOrbitEnabled = readBoolean(json, "huntOrbitEnabled", huntOrbitEnabled);
             huntJumpOrbitEnabled = readBoolean(json, "huntJumpOrbitEnabled", huntJumpOrbitEnabled);
             huntOrbitSamplePoints = readInt(json, "huntOrbitSamplePoints", huntOrbitSamplePoints);
@@ -358,6 +375,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
             maxTurnSpeed = readFloat(json, "maxTurnSpeed", maxTurnSpeed);
             minAttackIntervalTicks = readInt(json, "minAttackIntervalTicks", minAttackIntervalTicks);
             targetsPerAttack = readInt(json, "targetsPerAttack", targetsPerAttack);
+            noDamageAttackLimit = readInt(json, "noDamageAttackLimit", noDamageAttackLimit);
 
             if (json.has("nameWhitelist") && json.get("nameWhitelist").isJsonArray()) {
                 nameWhitelist = normalizeNameList(GSON.fromJson(json.get("nameWhitelist"), STRING_LIST_TYPE));
@@ -414,6 +432,8 @@ public class KillAuraHandler implements AbstractGameEventListener {
             json.addProperty("visualizeHuntRadius", visualizeHuntRadius);
             json.addProperty("huntRadius", huntRadius);
             json.addProperty("huntFixedDistance", huntFixedDistance);
+            json.addProperty("huntUpRange", huntUpRange);
+            json.addProperty("huntDownRange", huntDownRange);
             json.addProperty("huntOrbitEnabled", huntOrbitEnabled);
             json.addProperty("huntJumpOrbitEnabled", huntJumpOrbitEnabled);
             json.addProperty("huntOrbitSamplePoints", huntOrbitSamplePoints);
@@ -429,6 +449,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
             json.addProperty("maxTurnSpeed", maxTurnSpeed);
             json.addProperty("minAttackIntervalTicks", minAttackIntervalTicks);
             json.addProperty("targetsPerAttack", targetsPerAttack);
+            json.addProperty("noDamageAttackLimit", noDamageAttackLimit);
 
             try (BufferedWriter writer = Files.newBufferedWriter(file, StandardCharsets.UTF_8)) {
                 writer.write(json.toString());
@@ -1089,6 +1110,9 @@ public class KillAuraHandler implements AbstractGameEventListener {
         if (ignoreInvisible && target.isInvisible()) {
             return null;
         }
+        if (isHuntEnabled() && !isWithinConfiguredHuntVerticalRange(player, target)) {
+            return null;
+        }
         double distanceSq = player.distanceToSqr(target);
         if (distanceSq > targetSearchRadiusSq) {
             return null;
@@ -1106,15 +1130,13 @@ public class KillAuraHandler implements AbstractGameEventListener {
             return null;
         }
         int whitelistPriority = Integer.MAX_VALUE;
-        boolean whitelistMatched = false;
         if (enableNameWhitelist) {
             whitelistPriority = getNormalizedNameListMatchIndex(targetName, nameWhitelist);
             if (whitelistPriority == Integer.MAX_VALUE) {
                 return null;
             }
-            whitelistMatched = true;
         }
-        if (!whitelistMatched && !matchesEnabledTargetGroup(target)) {
+        if (!matchesEnabledTargetGroup(target)) {
             return null;
         }
 
@@ -1142,7 +1164,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
             return 0;
         }
 
-        int attackLimit = Math.max(1, targetsPerAttack);
+        int attackLimit = isMouseClickAttackMode() ? 1 : Math.max(1, targetsPerAttack);
         int attackedCount = 0;
         for (LivingEntity target : targets) {
             if (attackedCount >= attackLimit) {
@@ -1155,6 +1177,8 @@ public class KillAuraHandler implements AbstractGameEventListener {
             boolean attacked = false;
             if (shouldUseTeleportAttack(player, target)) {
                 attacked = performTeleportAttack(player, target);
+            } else if (isMouseClickAttackMode()) {
+                attacked = performMouseClickAttack(mc);
             } else if (isPacketAttackMode()) {
                 if (player.connection != null) {
                     player.connection.send(ServerboundInteractPacket.createAttackPacket(target, player.isShiftKeyDown()));
@@ -1184,6 +1208,16 @@ public class KillAuraHandler implements AbstractGameEventListener {
         }
         float yawDiff = Math.abs(Mth.wrapDegrees(getDesiredAimRotation(player, target).getYaw() - player.getYRot()));
         return !shouldRotateToTarget() || yawDiff <= 100.0F;
+    }
+
+    private boolean performMouseClickAttack(Minecraft mc) {
+        if (mc == null || mc.screen != null) {
+            return false;
+        }
+        int screenWidth = Math.max(1, mc.getWindow().getScreenWidth());
+        int screenHeight = Math.max(1, mc.getWindow().getScreenHeight());
+        ModUtils.simulateMouseClick(screenWidth / 2, screenHeight / 2, true, screenWidth, screenHeight);
+        return true;
     }
 
     private boolean shouldUseTeleportAttack(LocalPlayer player, LivingEntity target) {
@@ -2052,6 +2086,10 @@ public class KillAuraHandler implements AbstractGameEventListener {
         return ATTACK_MODE_SEQUENCE.equalsIgnoreCase(attackMode);
     }
 
+    private boolean isMouseClickAttackMode() {
+        return ATTACK_MODE_MOUSE_CLICK.equalsIgnoreCase(attackMode);
+    }
+
     private boolean shouldRotateToTarget() {
         return aimOnlyMode || (!isPacketAttackMode() && rotateToTarget);
     }
@@ -2446,6 +2484,8 @@ public class KillAuraHandler implements AbstractGameEventListener {
         preset.visualizeHuntRadius = visualizeHuntRadius;
         preset.huntRadius = huntRadius;
         preset.huntFixedDistance = huntFixedDistance;
+        preset.huntUpRange = huntUpRange;
+        preset.huntDownRange = huntDownRange;
         preset.huntOrbitEnabled = huntOrbitEnabled;
         preset.huntJumpOrbitEnabled = huntJumpOrbitEnabled;
         preset.huntOrbitSamplePoints = huntOrbitSamplePoints;
@@ -2460,6 +2500,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
         preset.maxTurnSpeed = maxTurnSpeed;
         preset.minAttackIntervalTicks = minAttackIntervalTicks;
         preset.targetsPerAttack = targetsPerAttack;
+        preset.noDamageAttackLimit = noDamageAttackLimit;
         return normalizePreset(preset);
     }
 
@@ -2479,6 +2520,8 @@ public class KillAuraHandler implements AbstractGameEventListener {
         normalized.huntMode = normalizeHuntModeValue(normalized.huntMode);
         normalized.huntRadius = Math.max(Math.max(1.0F, normalized.attackRange), normalized.huntRadius);
         normalized.huntFixedDistance = Mth.clamp(normalized.huntFixedDistance, 0.5F, 100.0F);
+        normalized.huntUpRange = Mth.clamp(normalized.huntUpRange, 0.0F, 100.0F);
+        normalized.huntDownRange = Mth.clamp(normalized.huntDownRange, 0.0F, 100.0F);
         normalized.huntOrbitSamplePoints = Mth.clamp(normalized.huntOrbitSamplePoints,
                 MIN_HUNT_ORBIT_SAMPLE_POINTS, MAX_HUNT_ORBIT_SAMPLE_POINTS);
         normalized.nameWhitelist = normalizeNameList(normalized.nameWhitelist);
@@ -2490,6 +2533,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
         normalized.maxTurnSpeed = Mth.clamp(normalized.maxTurnSpeed, normalized.minTurnSpeed, 60.0F);
         normalized.minAttackIntervalTicks = Mth.clamp(normalized.minAttackIntervalTicks, 0, 20);
         normalized.targetsPerAttack = Mth.clamp(normalized.targetsPerAttack, 1, 50);
+        normalized.noDamageAttackLimit = Mth.clamp(normalized.noDamageAttackLimit, 0, MAX_NO_DAMAGE_ATTACK_LIMIT);
         normalized.fullBrightGamma = Mth.clamp(normalized.fullBrightGamma, 1.0F, 1000.0F);
         if (!normalized.targetHostile && !normalized.targetPassive && !normalized.targetPlayers) {
             normalized.targetHostile = true;
@@ -2525,6 +2569,8 @@ public class KillAuraHandler implements AbstractGameEventListener {
         visualizeHuntRadius = safePreset.visualizeHuntRadius;
         huntRadius = safePreset.huntRadius;
         huntFixedDistance = safePreset.huntFixedDistance;
+        huntUpRange = safePreset.huntUpRange;
+        huntDownRange = safePreset.huntDownRange;
         huntOrbitEnabled = safePreset.huntOrbitEnabled;
         huntJumpOrbitEnabled = safePreset.huntJumpOrbitEnabled;
         huntOrbitSamplePoints = safePreset.huntOrbitSamplePoints;
@@ -2539,6 +2585,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
         maxTurnSpeed = safePreset.maxTurnSpeed;
         minAttackIntervalTicks = safePreset.minAttackIntervalTicks;
         targetsPerAttack = safePreset.targetsPerAttack;
+        noDamageAttackLimit = safePreset.noDamageAttackLimit;
         normalizeConfig();
         INSTANCE.resetRuntimeState();
         saveConfig();
@@ -2560,8 +2607,11 @@ public class KillAuraHandler implements AbstractGameEventListener {
         huntEnabled = !HUNT_MODE_OFF.equals(huntMode);
         huntRadius = Mth.clamp(Math.max(huntRadius, attackRange), attackRange, 100.0F);
         huntFixedDistance = Mth.clamp(huntFixedDistance, 0.5F, 100.0F);
+        huntUpRange = Mth.clamp(huntUpRange, 0.0F, 100.0F);
+        huntDownRange = Mth.clamp(huntDownRange, 0.0F, 100.0F);
         huntOrbitSamplePoints = Mth.clamp(huntOrbitSamplePoints,
                 MIN_HUNT_ORBIT_SAMPLE_POINTS, MAX_HUNT_ORBIT_SAMPLE_POINTS);
+        noDamageAttackLimit = Mth.clamp(noDamageAttackLimit, 0, MAX_NO_DAMAGE_ATTACK_LIMIT);
         nearbyEntityScanRange = Mth.clamp(nearbyEntityScanRange, 1.0F, 64.0F);
         nameWhitelist = normalizeNameList(nameWhitelist);
         nameBlacklist = normalizeNameList(nameBlacklist);
@@ -2580,6 +2630,9 @@ public class KillAuraHandler implements AbstractGameEventListener {
         }
         if (ATTACK_MODE_SEQUENCE.equals(normalized)) {
             return ATTACK_MODE_SEQUENCE;
+        }
+        if (ATTACK_MODE_MOUSE_CLICK.equals(normalized)) {
+            return ATTACK_MODE_MOUSE_CLICK;
         }
         return ATTACK_MODE_NORMAL;
     }
@@ -2600,7 +2653,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
         enableAntiKnockback = true;
         enableFullBrightVision = false;
         fullBrightGamma = 1000.0F;
-        attackMode = ATTACK_MODE_NORMAL;
+        attackMode = DEFAULT_ATTACK_MODE;
         attackSequenceName = "";
         attackSequenceDelayTicks = 2;
         aimYawOffset = 0.0F;
@@ -2610,6 +2663,8 @@ public class KillAuraHandler implements AbstractGameEventListener {
         visualizeHuntRadius = false;
         huntRadius = 8.0F;
         huntFixedDistance = 4.2F;
+        huntUpRange = DEFAULT_HUNT_UP_RANGE;
+        huntDownRange = DEFAULT_HUNT_DOWN_RANGE;
         huntOrbitEnabled = false;
         huntJumpOrbitEnabled = true;
         huntOrbitSamplePoints = DEFAULT_HUNT_ORBIT_SAMPLE_POINTS;
@@ -2625,6 +2680,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
         maxTurnSpeed = 18.0F;
         minAttackIntervalTicks = 2;
         targetsPerAttack = 1;
+        noDamageAttackLimit = DEFAULT_NO_DAMAGE_ATTACK_LIMIT;
     }
 
     private static boolean readBoolean(JsonObject json, String key, boolean defaultValue) {
@@ -2641,6 +2697,22 @@ public class KillAuraHandler implements AbstractGameEventListener {
 
     private static String readString(JsonObject json, String key, String defaultValue) {
         return json.has(key) ? json.get(key).getAsString() : defaultValue;
+    }
+
+    public static int getNoDamageAttackLimit() {
+        return Mth.clamp(noDamageAttackLimit, 0, MAX_NO_DAMAGE_ATTACK_LIMIT);
+    }
+
+    public static void setNoDamageAttackLimit(int value) {
+        noDamageAttackLimit = Mth.clamp(value, 0, MAX_NO_DAMAGE_ATTACK_LIMIT);
+    }
+
+    private static boolean isWithinConfiguredHuntVerticalRange(LocalPlayer player, Entity target) {
+        if (player == null || target == null) {
+            return true;
+        }
+        double dy = target.getY() - player.getY();
+        return dy <= huntUpRange + 1.0E-6D && -dy <= huntDownRange + 1.0E-6D;
     }
 
     private static Vec3 getMovementHeading(LocalPlayer player) {

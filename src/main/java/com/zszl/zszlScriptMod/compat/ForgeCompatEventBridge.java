@@ -102,9 +102,14 @@ public class ForgeCompatEventBridge {
     public void onScreenRenderPost(ScreenEvent.Render.Post event) {
         GuiScreen wrapped = wrap(event.getScreen());
         if (wrapped != null) {
-            com.zszl.zszlScriptMod.compat.legacy.net.minecraftforge.client.event.GuiScreenEvent.DrawScreenEvent.Post.BUS.post(
-                    new com.zszl.zszlScriptMod.compat.legacy.net.minecraftforge.client.event.GuiScreenEvent.DrawScreenEvent.Post(
-                            wrapped, event.getMouseX(), event.getMouseY(), event.getPartialTick()));
+            GuiCompatContext.push(event.getGuiGraphics());
+            try {
+                com.zszl.zszlScriptMod.compat.legacy.net.minecraftforge.client.event.GuiScreenEvent.DrawScreenEvent.Post.BUS.post(
+                        new com.zszl.zszlScriptMod.compat.legacy.net.minecraftforge.client.event.GuiScreenEvent.DrawScreenEvent.Post(
+                                wrapped, event.getMouseX(), event.getMouseY(), event.getPartialTick()));
+            } finally {
+                GuiCompatContext.clear();
+            }
         }
     }
 

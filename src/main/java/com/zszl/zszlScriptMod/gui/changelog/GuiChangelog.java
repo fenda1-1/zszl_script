@@ -20,6 +20,7 @@ import com.vladsch.flexmark.ast.Text;
 import com.vladsch.flexmark.ast.ThematicBreak;
 import com.vladsch.flexmark.parser.Parser;
 import com.vladsch.flexmark.util.ast.Node;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.Gui;
 import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiButton;
 import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
 import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
@@ -633,7 +634,8 @@ public class GuiChangelog extends ThemedGuiScreen {
                 }
                 GuiGraphics graphics = com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiCompatContext.current();
                 if (graphics != null && entry.sequence != null) {
-                    graphics.drawString(this.fontRenderer.unwrap(), entry.sequence, contentX + 8, yCursor, 0xFFFFFF);
+                    graphics.drawString(this.fontRenderer.unwrap(), entry.sequence, contentX + 8, yCursor,
+                            Gui.withDefaultTextAlpha(0xFFFFFF));
                 }
             }
             yCursor += entryHeight;

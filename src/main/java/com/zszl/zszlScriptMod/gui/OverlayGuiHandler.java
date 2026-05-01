@@ -8,6 +8,7 @@ import java.util.List;
 import com.zszl.zszlScriptMod.compat.legacy.net.minecraftforge.client.event.GuiScreenEvent;
 import com.zszl.zszlScriptMod.compat.legacy.net.minecraftforge.client.event.MouseEvent;
 import com.zszl.zszlScriptMod.compat.legacy.net.minecraftforge.client.event.RenderGameOverlayEvent;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.Gui;
 import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiCompatContext;
 import com.zszl.zszlScriptMod.compat.legacy.net.minecraftforge.fml.common.gameevent.InputEvent;
 import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Keyboard;
@@ -154,7 +155,7 @@ public class OverlayGuiHandler {
 
         int drawY = baseY;
         for (String line : lines) {
-            graphics.drawString(mc.font, line, baseX, drawY, 0xFFFFFF, true);
+            graphics.drawString(mc.font, line, baseX, drawY, Gui.withDefaultTextAlpha(0xFFFFFF), true);
             drawY += lineHeight;
         }
         GuiInventory.updateMasterStatusHudEditorBounds(hudBounds, exitBounds);
@@ -210,7 +211,8 @@ public class OverlayGuiHandler {
             return;
         }
         GuiGraphics graphics = context.graphics;
-        graphics.drawString(mc.font, coordText, (screenWidth - textWidth) / 2, 5, 0xFFFFFF, true);
+        graphics.drawString(mc.font, coordText, (screenWidth - textWidth) / 2, 5,
+                Gui.withDefaultTextAlpha(0xFFFFFF), true);
     }
 
     private static List<String> buildMasterStatusHudLines(boolean editingPreview) {

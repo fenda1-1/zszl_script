@@ -46,7 +46,7 @@ public class PacketSnapshotManager {
             sp.packetId = packet.packetId;
             sp.channel = packet.channel;
             sp.rawHex = packet.getHexData();
-            sp.decodedData = packet.getDecodedData();
+            sp.decodedData = packet.getDecodedFullData();
             sp.lastTimestamp = packet.getLastTimestamp();
             sp.occurrenceCount = packet.getOccurrenceCount();
             sp.totalPayloadBytes = packet.getTotalPayloadBytes();

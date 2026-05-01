@@ -13,10 +13,11 @@ final class ActionParameterSections {
     }
 
     static void buildHuntSection(GuiActionEditor editor, int x, int currentY, int fieldWidth) {
+        editor.initializeHuntWhitelistCardState();
         editor.addSectionTitle("§d§l━━━ 常用预设 ━━━", x, currentY);
         currentY += 25;
         currentY += editor.addPresetButtons(GuiActionEditor.BTN_ID_APPLY_HUNT_PRESET_BASE,
-                new String[] { "基础清怪", "绕圈攻击", "序列攻击" }, x, currentY, fieldWidth);
+                new String[] { "小范围", "中范围", "大范围" }, x, currentY, fieldWidth);
 
         editor.addSectionTitle("§b§l━━━ 基础参数 ━━━", x, currentY);
         currentY += 25;
@@ -24,101 +25,21 @@ final class ActionParameterSections {
         editor.addTextField(I18n.format("gui.path.action_editor.label.search_radius"), "radius",
                 I18n.format("gui.path.action_editor.help.search_radius"), fieldWidth, x, currentY, "3.0");
         currentY += 40;
-        editor.addTextField(I18n.format("gui.path.action_editor.label.attack_count"), "attackCount",
-                I18n.format("gui.path.action_editor.help.attack_count"), fieldWidth, x, currentY,
-                editor.currentParams.has("attackCount") ? editor.currentParams.get("attackCount").getAsString()
-                        : "0");
-        currentY += 40;
         if (editor.shouldShowAdvancedOptions()) {
             editor.addTextField("无目标时跳过动作数", "noTargetSkipCount",
                     "搜不到任何目标时，额外跳过后续几个动作。0 表示不跳过。", fieldWidth, x, currentY, "0");
             currentY += 40;
         }
-        editor.addToggle(I18n.format("gui.path.action_editor.label.auto_attack"), "autoAttack",
-                I18n.format("gui.path.action_editor.help.auto_attack"), fieldWidth, x, currentY,
-                editor.currentParams.has("autoAttack") && editor.currentParams.get("autoAttack").getAsBoolean(),
-                I18n.format("path.common.on"), I18n.format("path.common.off"));
+        editor.addTextField("向上追击范围", "huntUpRange",
+                "只追击比触发坐标高出该范围内的目标；旧动作默认 1 格。", fieldWidth, x, currentY, "1.0");
         currentY += 40;
-        editor.addDropdown("攻击方式", "attackMode",
-                "普通攻击：直接左键攻击；执行序列攻击：触发时执行你选择的攻击序列。", fieldWidth, x, currentY,
-                new String[] { "普通攻击", "执行序列攻击" },
-                huntAttackModeToDisplay(editor.currentParams.has("attackMode")
-                        ? editor.currentParams.get("attackMode").getAsString()
-                        : KillAuraHandler.ATTACK_MODE_NORMAL));
-        currentY += 50;
-        editor.selectedHuntAttackSequenceName = editor.currentParams.has("attackSequenceName")
-                ? editor.currentParams.get("attackSequenceName").getAsString()
-                : "";
-        editor.btnSelectHuntAttackSequence = new ThemedButton(GuiActionEditor.BTN_ID_SELECT_HUNT_ATTACK_SEQUENCE, x,
-                currentY, fieldWidth, 20, editor.getHuntAttackSequenceButtonText());
-        editor.addEditorButton(editor.btnSelectHuntAttackSequence);
-        editor.registerScrollableButton(editor.btnSelectHuntAttackSequence, currentY);
+        editor.addTextField("向下追击范围", "huntDownRange",
+                "只追击比触发坐标低出该范围内的目标；旧动作默认 1 格。", fieldWidth, x, currentY, "1.0");
         currentY += 40;
-        editor.addToggle("攻击时瞄准目标", "huntAimLockEnabled",
-                "默认开启。开启后会在攻击或触发攻击序列前自动瞄准当前目标；关闭后不转头。", fieldWidth, x, currentY,
-                !editor.currentParams.has("huntAimLockEnabled")
-                        || editor.currentParams.get("huntAimLockEnabled").getAsBoolean(),
-                I18n.format("path.common.on"), I18n.format("path.common.off"));
-        currentY += 40;
-        editor.addDropdown("追击模式", "huntMode",
-                "固定距离：以你设置的追击距离为半径追怪；靠近目标：追到追击距离内就停。默认固定距离。",
-                fieldWidth, x, currentY,
-                new String[] { "固定距离", "靠近目标" },
-                huntModeToDisplay(editor.currentParams.has("huntMode")
-                        ? editor.currentParams.get("huntMode").getAsString()
-                        : KillAuraHandler.HUNT_MODE_FIXED_DISTANCE));
-        currentY += 50;
-        editor.addTextField("追击距离", "trackingDistance",
-                "固定距离模式下作为半径；靠近目标模式下作为停止追怪距离。", fieldWidth, x, currentY, "1.0");
-        currentY += 40;
-        editor.addToggle("自动绕圈攻击", "huntOrbitEnabled",
-                "仅在追击模式=固定距离时生效。开启后会像杀戮光环一样沿目标周围闭环移动。", fieldWidth, x, currentY,
-                editor.currentParams.has("huntOrbitEnabled") && editor.currentParams.get("huntOrbitEnabled").getAsBoolean(),
-                I18n.format("path.common.on"), I18n.format("path.common.off"));
-        currentY += 40;
-        if (editor.shouldShowAdvancedOptions()) {
-            editor.addToggle("启用追怪间隔", "huntChaseIntervalEnabled",
-                    "追到追击距离后暂停追怪，等待指定秒数后再继续追怪；期间攻击不会中断。", fieldWidth, x, currentY,
-                    editor.currentParams.has("huntChaseIntervalEnabled")
-                            && editor.currentParams.get("huntChaseIntervalEnabled").getAsBoolean(),
-                    I18n.format("path.common.on"), I18n.format("path.common.off"));
-            currentY += 40;
-            editor.addTextField("追怪间隔秒数", "huntChaseIntervalSeconds",
-                    "启用追怪间隔后生效，可填写小数秒。", fieldWidth, x, currentY, "0");
-            currentY += 50;
-        } else {
-            currentY += 10;
-        }
+        editor.addSectionTitle("§7战斗/索敌/转向/追击使用杀戮光环当前配置", x, currentY);
+        currentY += 30;
 
-        editor.addSectionTitle("§b§l━━━ 目标筛选 ━━━", x, currentY);
-        currentY += 25;
-
-        editor.addToggle(I18n.format("gui.path.action_editor.label.hunt_target_hostile"), "targetHostile",
-                I18n.format("gui.path.action_editor.help.hunt_target_hostile"), fieldWidth, x, currentY,
-                !editor.currentParams.has("targetHostile") || editor.currentParams.get("targetHostile").getAsBoolean(),
-                I18n.format("path.common.on"), I18n.format("path.common.off"));
-        currentY += 40;
-        editor.addToggle(I18n.format("gui.path.action_editor.label.hunt_target_passive"), "targetPassive",
-                I18n.format("gui.path.action_editor.help.hunt_target_passive"), fieldWidth, x, currentY,
-                editor.currentParams.has("targetPassive") && editor.currentParams.get("targetPassive").getAsBoolean(),
-                I18n.format("path.common.on"), I18n.format("path.common.off"));
-        currentY += 40;
-        editor.addToggle(I18n.format("gui.path.action_editor.label.hunt_target_players"), "targetPlayers",
-                I18n.format("gui.path.action_editor.help.hunt_target_players"), fieldWidth, x, currentY,
-                editor.currentParams.has("targetPlayers") && editor.currentParams.get("targetPlayers").getAsBoolean(),
-                I18n.format("path.common.on"), I18n.format("path.common.off"));
-        currentY += 40;
-        if (editor.shouldShowAdvancedOptions()) {
-            editor.addToggle("忽略隐身目标", "ignoreInvisible",
-                    "开启后将不会攻击隐身状态的实体", fieldWidth, x, currentY,
-                    editor.currentParams.has("ignoreInvisible") && editor.currentParams.get("ignoreInvisible").getAsBoolean(),
-                    I18n.format("path.common.on"), I18n.format("path.common.off"));
-            currentY += 50;
-        } else {
-            currentY += 10;
-        }
-
-        editor.addSectionTitle("§b§l━━━ 名单过滤 ━━━", x, currentY);
+        editor.addSectionTitle("§b§l━━━ 动作名单过滤 ━━━", x, currentY);
         currentY += 25;
 
         editor.addToggle(I18n.format("gui.path.action_editor.label.hunt_enable_whitelist"), "enableNameWhitelist",
@@ -127,10 +48,26 @@ final class ActionParameterSections {
                         && editor.currentParams.get("enableNameWhitelist").getAsBoolean(),
                 I18n.format("path.common.on"), I18n.format("path.common.off"));
         currentY += 40;
-        editor.addTextField(I18n.format("gui.path.action_editor.label.hunt_name_whitelist"), "nameWhitelistText",
-                I18n.format("gui.path.action_editor.help.hunt_name_whitelist"), fieldWidth, x, currentY,
-                editor.getJoinedStringParam(editor.currentParams, "nameWhitelist", "nameWhitelistText"));
+        editor.addTextField("白名单目标", "__ui_hunt_whitelist_name",
+                "实体名称关键字，按包含匹配；可手动输入，也可用下方扫描后加入。", fieldWidth, x, currentY, "");
         currentY += 40;
+        editor.addTextField("击杀数量", "__ui_hunt_whitelist_kill_count",
+                "可空；大于 0 时该目标击杀到数量后计入完成。空或 0 表示清完所有匹配目标。", fieldWidth, x, currentY, "");
+        currentY += 40;
+        int whitelistButtonGap = 6;
+        int whitelistButtonWidth = Math.max(80, (fieldWidth - whitelistButtonGap) / 2);
+        editor.btnAddHuntWhitelistCard = new ThemedButton(GuiActionEditor.BTN_ID_ADD_HUNT_WHITELIST_CARD,
+                x, currentY, whitelistButtonWidth, 20, "添加/更新白名单");
+        editor.btnDeleteHuntWhitelistCard = new ThemedButton(GuiActionEditor.BTN_ID_DELETE_HUNT_WHITELIST_CARD,
+                x + whitelistButtonWidth + whitelistButtonGap, currentY,
+                Math.max(80, fieldWidth - whitelistButtonWidth - whitelistButtonGap), 20, "删除选中");
+        editor.addEditorButton(editor.btnAddHuntWhitelistCard);
+        editor.addEditorButton(editor.btnDeleteHuntWhitelistCard);
+        editor.registerScrollableButton(editor.btnAddHuntWhitelistCard, currentY);
+        editor.registerScrollableButton(editor.btnDeleteHuntWhitelistCard, currentY);
+        currentY += 32;
+        currentY += editor.addHuntWhitelistCardList(fieldWidth, x, currentY);
+        currentY += 16;
         editor.addToggle(I18n.format("gui.path.action_editor.label.hunt_enable_blacklist"), "enableNameBlacklist",
                 I18n.format("gui.path.action_editor.help.hunt_enable_blacklist"), fieldWidth, x, currentY,
                 editor.currentParams.has("enableNameBlacklist")

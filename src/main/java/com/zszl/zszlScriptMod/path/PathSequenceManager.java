@@ -39,7 +39,6 @@ import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.core.BlockPos;
 import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.util.text.TextComponentString;
-import net.minecraftforge.common.MinecraftForge;
 
 import java.io.*;
 import java.lang.reflect.Type;
@@ -2997,8 +2996,6 @@ public class PathSequenceManager {
                 initialSequenceVariables);
 
         PathSequenceEventListener.instance.resume();
-
-        MinecraftForge.EVENT_BUS.register(PathSequenceEventListener.instance);
         zszlScriptMod.LOGGER.info(I18n.format("log.path.start_running") + sequenceName);
     }
 

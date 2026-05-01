@@ -47,11 +47,11 @@ public final class PacketPayloadDecoder {
     private static final Gson PRETTY_GSON = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
     private static final Charset GBK = Charset.forName("GBK");
     private static final int MAX_INPUT_BYTES = 64 * 1024;
-    private static final int MAX_OUTPUT_CHARS = 8192;
+    private static final int MAX_OUTPUT_CHARS = 1024 * 1024;
     private static final int MAX_INFLATED_BYTES = 128 * 1024;
-    private static final int MAX_SEGMENTS = 8;
-    private static final int MAX_EMBEDDED_STRING_BYTES = 4096;
-    private static final int MAX_SCAN_BYTES = 4096;
+    private static final int MAX_SEGMENTS = 256;
+    private static final int MAX_EMBEDDED_STRING_BYTES = 64 * 1024;
+    private static final int MAX_SCAN_BYTES = 64 * 1024;
     private static final int MAX_RECURSION = 2;
 
     private PacketPayloadDecoder() {
@@ -65,6 +65,37 @@ public final class PacketPayloadDecoder {
     public static String decodeDetailed(byte[] data) {
         DecodeReport report = inspect(data);
         return report == null ? "" : report.detailText;
+    }
+
+    public static String decodeFull(byte[] data) {
+        AnnotatedDecodeReport report = inspectAnnotated(data);
+        StringBuilder builder = new StringBuilder();
+        if (report.summaryText != null && !report.summaryText.trim().isEmpty()) {
+            builder.append(report.summaryText.trim());
+        }
+        if (report.chunks != null && !report.chunks.isEmpty()) {
+            if (builder.length() > 0) {
+                builder.append("\n\n");
+            }
+            builder.append("通用解码块");
+            for (int i = 0; i < report.chunks.size(); i++) {
+                DecodedChunk chunk = report.chunks.get(i);
+                if (chunk == null || chunk.text == null || chunk.text.trim().isEmpty()) {
+                    continue;
+                }
+                builder.append("\n\n#").append(i + 1).append(' ');
+                builder.append(String.format(Locale.ROOT, "[%04X-%04X]", chunk.startOffset,
+                        Math.max(chunk.startOffset, chunk.endOffset - 1)));
+                if (chunk.label != null && !chunk.label.trim().isEmpty()) {
+                    builder.append(' ').append(chunk.label.trim());
+                }
+                builder.append('\n').append(chunk.text.trim());
+            }
+        }
+        if (builder.length() == 0 && report.detailText != null) {
+            builder.append(report.detailText.trim());
+        }
+        return capOutput(builder.toString());
     }
 
     public static AnnotatedDecodeReport inspectAnnotated(byte[] data) {
@@ -178,6 +209,8 @@ public final class PacketPayloadDecoder {
         collectDirectTextDecodes(collector, data, sourceLabel, depth, visitedBinary);
         collectLeadingMinecraftStrings(collector, data, sourceLabel, depth, visitedBinary);
         collectEmbeddedVarIntStrings(collector, data, sourceLabel, depth, visitedBinary);
+        collectEmbeddedFixedLengthStrings(collector, data, sourceLabel, depth, visitedBinary, "U16字符串", 2, 150);
+        collectEmbeddedFixedLengthStrings(collector, data, sourceLabel, depth, visitedBinary, "I32字符串", 4, 124);
         collectUtf8Segments(collector, data, sourceLabel, depth, visitedBinary);
         collectAsciiSegments(collector, data, sourceLabel, depth, visitedBinary);
 
@@ -278,6 +311,49 @@ public final class PacketPayloadDecoder {
         }
 
         addPartsCandidate(collector, new ArrayList<>(parts), appendLabel(sourceLabel, "嵌入字符串"), 132, depth,
+                visitedBinary);
+    }
+
+    private static void collectEmbeddedFixedLengthStrings(CandidateCollector collector, byte[] data, String sourceLabel,
+            int depth, Set<String> visitedBinary, String label, int prefixBytes, int baseScore) {
+        if (collector == null || data == null || data.length == 0 || prefixBytes <= 0) {
+            return;
+        }
+        LinkedHashSet<String> parts = new LinkedHashSet<>();
+        int scanLimit = Math.min(data.length, MAX_SCAN_BYTES);
+
+        for (int offset = 0; offset + prefixBytes < scanLimit && parts.size() < MAX_SEGMENTS; offset++) {
+            int textLength = 0;
+            for (int i = 0; i < prefixBytes; i++) {
+                textLength = (textLength << 8) | (data[offset + i] & 0xFF);
+            }
+            if (textLength < 2 || textLength > MAX_EMBEDDED_STRING_BYTES) {
+                continue;
+            }
+
+            int textStart = offset + prefixBytes;
+            int textEnd = textStart + textLength;
+            if (textStart < 0 || textEnd > data.length) {
+                continue;
+            }
+
+            byte[] textBytes = Arrays.copyOfRange(data, textStart, textEnd);
+            String decoded = tryDecodeStrict(textBytes, StandardCharsets.UTF_8);
+            if (decoded == null && containsHighBytes(textBytes)) {
+                decoded = tryDecodeStrict(textBytes, GBK);
+            }
+
+            String normalized = normalizeDisplayText(decoded);
+            if (!isLikelyHumanText(normalized, 2) && !looksStructuredText(normalized)
+                    && splitEmbeddedEncodedTokens(normalized).isEmpty()) {
+                continue;
+            }
+
+            parts.add(normalized);
+            offset = textEnd - 1;
+        }
+
+        addPartsCandidate(collector, new ArrayList<>(parts), appendLabel(sourceLabel, label), baseScore, depth,
                 visitedBinary);
     }
 

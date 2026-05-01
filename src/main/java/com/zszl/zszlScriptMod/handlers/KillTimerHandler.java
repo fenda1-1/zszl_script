@@ -2,6 +2,7 @@ package com.zszl.zszlScriptMod.handlers;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.Gui;
 import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.ScaledResolution;
 import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiCompatContext;
 import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
@@ -729,7 +730,7 @@ public class KillTimerHandler {
     }
 
     private static void drawShadow(GuiGraphics graphics, String text, int x, int y, int color) {
-        graphics.drawString(mc.font, text == null ? "" : text, x, y, color, true);
+        graphics.drawString(mc.font, text == null ? "" : text, x, y, Gui.withDefaultTextAlpha(color), true);
     }
 
     private static void drawMetricField(GuiGraphics graphics, String key, String value, int x, int y, int width) {
