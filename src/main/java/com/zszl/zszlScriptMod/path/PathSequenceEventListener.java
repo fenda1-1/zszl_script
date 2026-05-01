@@ -388,6 +388,11 @@ public class PathSequenceEventListener {
 
     public static boolean startBackgroundSequence(PathSequenceManager.PathSequence sequence, int remainingLoops,
             Map<String, Object> initialSequenceVariables) {
+        return startBackgroundSequence(sequence, remainingLoops, initialSequenceVariables, 0);
+    }
+
+    public static boolean startBackgroundSequence(PathSequenceManager.PathSequence sequence, int remainingLoops,
+            Map<String, Object> initialSequenceVariables, int startStepIndex) {
         if (sequence == null || sequence.getSteps() == null || sequence.getSteps().isEmpty()) {
             return false;
         }
@@ -398,7 +403,8 @@ public class PathSequenceEventListener {
         stopAllBackgroundRunners();
         PathSequenceEventListener runner = new PathSequenceEventListener(true);
         BACKGROUND_RUNNERS.add(runner);
-        runner.startTracking(sequence, remainingLoops <= 0 ? -1 : remainingLoops, initialSequenceVariables);
+        runner.startTracking(sequence, remainingLoops <= 0 ? -1 : remainingLoops, initialSequenceVariables,
+                startStepIndex);
         runner.setStatus(sequence.getName() + " | 后台执行");
         runner.resume();
         return true;
@@ -520,13 +526,18 @@ public class PathSequenceEventListener {
 
     public void startTracking(PathSequenceManager.PathSequence sequence, int remainingLoops,
             Map<String, Object> initialSequenceVariables) {
+        startTracking(sequence, remainingLoops, initialSequenceVariables, 0);
+    }
+
+    public void startTracking(PathSequenceManager.PathSequence sequence, int remainingLoops,
+            Map<String, Object> initialSequenceVariables, int startStepIndex) {
         this.currentSequence = sequence;
         this.remainingLoops = remainingLoops == 0 ? 1 : remainingLoops;
         this.tracking = sequence != null;
         this.paused = false;
         this.pausedByGui = false;
         this.debugStepArmed = false;
-        this.stepIndex = 0;
+        this.stepIndex = clampStartStepIndex(sequence, startStepIndex);
         this.actionIndex = 0;
         this.tickDelay = 0;
         this.explicitDelay = false;
@@ -561,11 +572,18 @@ public class PathSequenceEventListener {
                 this.runtimeVariables.putSequence(entry.getKey().trim(), entry.getValue());
             }
         }
-        this.runtimeVariables.enterStep(0);
+        this.runtimeVariables.enterStep(this.stepIndex);
         startExecutionLogSession();
         restartCurrentStepTarget();
         ensureRegistered();
         recordDebugTrace("序列开始: " + this.status);
+    }
+
+    private int clampStartStepIndex(PathSequenceManager.PathSequence sequence, int startStepIndex) {
+        if (sequence == null || sequence.getSteps() == null || sequence.getSteps().isEmpty()) {
+            return 0;
+        }
+        return Math.max(0, Math.min(startStepIndex, sequence.getSteps().size() - 1));
     }
 
     public void stopTracking() {

@@ -2748,6 +2748,10 @@ public class PathSequenceManager {
         runPathSequenceInternal(sequenceName, false, null, null);
     }
 
+    public static void runPathSequenceFromStep(String sequenceName, int startStepIndex) {
+        runPathSequenceInternal(sequenceName, false, null, null, startStepIndex);
+    }
+
     public static void runPathSequenceWithLoopCount(String sequenceName, int loopCount) {
         runPathSequenceInternal(sequenceName, false, loopCount, null);
     }
@@ -2768,6 +2772,11 @@ public class PathSequenceManager {
 
     private static void runPathSequenceInternal(String sequenceName, boolean preserveCallerStack,
             Integer explicitLoopCount, Map<String, Object> initialSequenceVariables) {
+        runPathSequenceInternal(sequenceName, preserveCallerStack, explicitLoopCount, initialSequenceVariables, 0);
+    }
+
+    private static void runPathSequenceInternal(String sequenceName, boolean preserveCallerStack,
+            Integer explicitLoopCount, Map<String, Object> initialSequenceVariables, int startStepIndex) {
 
         if (!preserveCallerStack) {
             clearRunSequenceCallStack();
@@ -2784,6 +2793,7 @@ public class PathSequenceManager {
             return;
         }
 
+        int effectiveStartStepIndex = clampStartStepIndex(sequence, startStepIndex);
         int effectiveLoopCount = sequence.isSingleExecution()
                 ? 1
                 : (explicitLoopCount != null ? explicitLoopCount : GuiInventory.loopCount);
@@ -2792,7 +2802,8 @@ public class PathSequenceManager {
             if (effectiveLoopCount != 0) {
                 PathSequenceEventListener.startBackgroundSequence(sequence,
                         effectiveLoopCount < 0 ? -1 : effectiveLoopCount,
-                        initialSequenceVariables);
+                        initialSequenceVariables,
+                        effectiveStartStepIndex);
             }
             return;
         }
@@ -2801,8 +2812,15 @@ public class PathSequenceManager {
         GuiInventory.isLooping = true;
 
         if (effectiveLoopCount != 0) {
-            startNextLoopInternal(sequenceName, explicitLoopCount, initialSequenceVariables);
+            startNextLoopInternal(sequenceName, explicitLoopCount, initialSequenceVariables, effectiveStartStepIndex);
         }
+    }
+
+    private static int clampStartStepIndex(PathSequence sequence, int startStepIndex) {
+        if (sequence == null || sequence.getSteps() == null || sequence.getSteps().isEmpty()) {
+            return 0;
+        }
+        return Math.max(0, Math.min(startStepIndex, sequence.getSteps().size() - 1));
     }
 
     public static synchronized void clearRunSequenceCallStack() {
@@ -3114,6 +3132,11 @@ public class PathSequenceManager {
 
     private static void startNextLoopInternal(String sequenceName, Integer explicitLoopCount,
             Map<String, Object> initialSequenceVariables) {
+        startNextLoopInternal(sequenceName, explicitLoopCount, initialSequenceVariables, 0);
+    }
+
+    private static void startNextLoopInternal(String sequenceName, Integer explicitLoopCount,
+            Map<String, Object> initialSequenceVariables, int startStepIndex) {
         if (!GuiInventory.isLooping) {
             zszlScriptMod.LOGGER.info(I18n.format("log.path.looping_false_skip"));
             return;
@@ -3134,10 +3157,11 @@ public class PathSequenceManager {
                 explicitLoopCount == null ? "<default>" : explicitLoopCount,
                 GuiInventory.loopCount);
 
-        double[] firstTarget = sequence.getSteps().get(0).getGotoPoint();
-        PathStep firstStep = sequence.getSteps().get(0);
+        int effectiveStartStepIndex = clampStartStepIndex(sequence, startStepIndex);
+        double[] firstTarget = sequence.getSteps().get(effectiveStartStepIndex).getGotoPoint();
+        PathStep firstStep = sequence.getSteps().get(effectiveStartStepIndex);
 
-        if (isStopSequenceName(sequence.getName())) {
+        if (effectiveStartStepIndex == 0 && isStopSequenceName(sequence.getName())) {
             LocalPlayer player = Minecraft.getInstance().player;
             if (player != null &&
                     (player.getX() < -1702 && player.getX() > -1888 &&
@@ -3176,7 +3200,8 @@ public class PathSequenceManager {
 
         PathSequenceEventListener.instance.startTracking(sequence,
                 effectiveLoopCount < 0 ? -1 : effectiveLoopCount + 1 - GuiInventory.loopCounter,
-                initialSequenceVariables);
+                initialSequenceVariables,
+                effectiveStartStepIndex);
 
         PathSequenceEventListener.instance.resume();
         zszlScriptMod.LOGGER.info(I18n.format("log.path.start_running") + sequenceName);
