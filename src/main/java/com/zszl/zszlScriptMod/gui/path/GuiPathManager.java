@@ -109,6 +109,7 @@ public class GuiPathManager extends ThemedGuiScreen {
     private static int selectedActionIndex = -1;
     private static String pendingFocusCategory = null;
     private static String pendingFocusSequenceName = null;
+    private static boolean pendingFocusActionPane = false;
     private List<PathSequence> sequencesInCategory;
     private final List<CategoryTreeRow> visibleCategoryRows = new ArrayList<>();
     private final List<SequenceListRow> sequenceRows = new ArrayList<>();
@@ -902,7 +903,14 @@ public class GuiPathManager extends ThemedGuiScreen {
         actionScrollOffset = 0;
         pendingFocusCategory = selectedCategory;
         pendingFocusSequenceName = sequenceName == null ? "" : sequenceName.trim();
+        pendingFocusActionPane = false;
         return new GuiPathManager();
+    }
+
+    public static GuiPathManager openForSequenceActionPane(String category, String sequenceName) {
+        GuiPathManager screen = openForSequence(category, sequenceName);
+        pendingFocusActionPane = true;
+        return screen;
     }
 
     public void markDirty() {
@@ -1658,6 +1666,7 @@ public class GuiPathManager extends ThemedGuiScreen {
         }
 
         if (pendingFocusSequenceName == null || pendingFocusSequenceName.trim().isEmpty()) {
+            pendingFocusActionPane = false;
             return;
         }
 
@@ -1670,10 +1679,37 @@ public class GuiPathManager extends ThemedGuiScreen {
                 int targetIndex = rowIndex >= 0 ? rowIndex : i;
                 sequenceScrollOffset = MathHelper.clamp(targetIndex - visibleItemCount / 2, 0, Math.max(0,
                         sequenceRows.size() - visibleItemCount));
+                if (pendingFocusActionPane) {
+                    focusFirstEditableAction();
+                }
                 break;
             }
         }
         pendingFocusSequenceName = null;
+        pendingFocusActionPane = false;
+    }
+
+    private void focusFirstEditableAction() {
+        if (selectedSequence == null || selectedSequence.getSteps().isEmpty()) {
+            return;
+        }
+        int stepIndex = 0;
+        for (int i = 0; i < selectedSequence.getSteps().size(); i++) {
+            PathStep step = selectedSequence.getSteps().get(i);
+            if (step != null && step.getActions() != null && !step.getActions().isEmpty()) {
+                stepIndex = i;
+                break;
+            }
+        }
+        selectStep(stepIndex);
+        int itemHeight = getStepActionCardItemHeight();
+        int visibleSteps = Math.max(1, Math.max(itemHeight, stepListHeight - 10) / itemHeight);
+        stepScrollOffset = MathHelper.clamp(stepIndex - visibleSteps / 2, 0,
+                Math.max(0, selectedSequence.getSteps().size() - visibleSteps));
+        if (selectedStep != null && selectedStep.getActions() != null && !selectedStep.getActions().isEmpty()) {
+            selectAction(0);
+            actionScrollOffset = 0;
+        }
     }
 
     private void updateButtonStates() {
