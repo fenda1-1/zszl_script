@@ -1,12 +1,12 @@
 package com.zszl.zszlScriptMod.handlers;
 
 import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
 import com.zszl.zszlScriptMod.zszlScriptMod;
 import com.zszl.zszlScriptMod.config.DebugModule;
 import com.zszl.zszlScriptMod.config.ModConfig;
 import com.zszl.zszlScriptMod.path.PathSequenceEventListener;
 import com.zszl.zszlScriptMod.system.ProfileManager;
+import com.zszl.zszlScriptMod.utils.JsonConfigCharsetCompat;
 import com.zszl.zszlScriptMod.utils.ModUtils;
 
 import net.minecraft.client.Minecraft;
@@ -22,8 +22,6 @@ import net.minecraft.util.EnumHand;
 import net.minecraft.util.text.TextComponentString;
 
 import java.io.File;
-import java.io.FileReader;
-import java.io.FileWriter;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -66,10 +64,14 @@ public class AutoEatHandler {
     }
 
     public static void loadAutoEatConfig() {
+        boolean needsRewrite = false;
         try {
             File configFile = getConfigFile();
             if (configFile.exists()) {
-                JsonObject json = new JsonParser().parse(new FileReader(configFile)).getAsJsonObject();
+                JsonConfigCharsetCompat.ReadResult readResult = JsonConfigCharsetCompat
+                        .readJsonObject(configFile.toPath());
+                JsonObject json = readResult.getRoot();
+                needsRewrite = readResult.usedLegacyCharset();
                 autoEatEnabled = json.has("enabled") && json.get("enabled").getAsBoolean();
                 foodLevelThreshold = json.has("foodLevelThreshold") ? json.get("foodLevelThreshold").getAsInt() : 12;
                 autoMoveFoodEnabled = !json.has("autoMoveFoodEnabled")
@@ -92,7 +94,14 @@ public class AutoEatHandler {
                     });
                 }
 
+                if (shouldResetToDefaultKeywords(foodKeywords)) {
+                    foodKeywords = new ArrayList<>(DEFAULT_FOOD_KEYWORDS);
+                    needsRewrite = true;
+                }
                 normalizeConfigValues();
+                if (needsRewrite) {
+                    saveAutoEatConfig();
+                }
             }
         } catch (Exception e) {
             zszlScriptMod.LOGGER.error("加载自动进食配置失败", e);
@@ -106,25 +115,23 @@ public class AutoEatHandler {
             if (!configFile.getParentFile().exists()) {
                 configFile.getParentFile().mkdirs();
             }
-            try (FileWriter writer = new FileWriter(configFile)) {
-                JsonObject json = new JsonObject();
-                json.addProperty("enabled", autoEatEnabled);
-                json.addProperty("foodLevelThreshold", foodLevelThreshold);
-                json.addProperty("autoMoveFoodEnabled", autoMoveFoodEnabled);
-                json.addProperty("eatWithLookDown", eatWithLookDown);
-                json.addProperty("smoothLookDown", smoothLookDown);
-                json.addProperty("onlyDuringSequenceStepPathing", onlyDuringSequenceStepPathing);
-                json.addProperty("targetHotbarSlot", targetHotbarSlot);
+            JsonObject json = new JsonObject();
+            json.addProperty("enabled", autoEatEnabled);
+            json.addProperty("foodLevelThreshold", foodLevelThreshold);
+            json.addProperty("autoMoveFoodEnabled", autoMoveFoodEnabled);
+            json.addProperty("eatWithLookDown", eatWithLookDown);
+            json.addProperty("smoothLookDown", smoothLookDown);
+            json.addProperty("onlyDuringSequenceStepPathing", onlyDuringSequenceStepPathing);
+            json.addProperty("targetHotbarSlot", targetHotbarSlot);
 
-                com.google.gson.JsonArray keywordArray = new com.google.gson.JsonArray();
-                for (String keyword : foodKeywords) {
-                    if (keyword != null && !keyword.trim().isEmpty()) {
-                        keywordArray.add(keyword.trim());
-                    }
+            com.google.gson.JsonArray keywordArray = new com.google.gson.JsonArray();
+            for (String keyword : foodKeywords) {
+                if (keyword != null && !keyword.trim().isEmpty()) {
+                    keywordArray.add(keyword.trim());
                 }
-                json.add("foodKeywords", keywordArray);
-                writer.write(json.toString());
             }
+            json.add("foodKeywords", keywordArray);
+            JsonConfigCharsetCompat.writeJsonObject(configFile.toPath(), json);
         } catch (Exception e) {
             zszlScriptMod.LOGGER.error("保存自动进食配置失败", e);
         }
@@ -193,6 +200,18 @@ public class AutoEatHandler {
             normalized.addAll(DEFAULT_FOOD_KEYWORDS);
         }
         foodKeywords = normalized;
+    }
+
+    private static boolean shouldResetToDefaultKeywords(List<String> keywords) {
+        if (keywords == null || keywords.isEmpty()) {
+            return false;
+        }
+        for (String keyword : keywords) {
+            if (!JsonConfigCharsetCompat.looksLikeMojibake(keyword)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static int findBestFoodInHotbar(EntityPlayerSP player) {

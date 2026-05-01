@@ -2,7 +2,6 @@ package com.zszl.zszlScriptMod.handlers;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
 import com.google.gson.reflect.TypeToken;
 import com.zszl.zszlScriptMod.config.DebugModule;
 import com.zszl.zszlScriptMod.config.ModConfig;
@@ -27,6 +26,7 @@ import com.zszl.zszlScriptMod.shadowbaritone.api.utils.RotationUtils;
 import com.zszl.zszlScriptMod.shadowbaritone.process.KillAuraOrbitProcess;
 import com.zszl.zszlScriptMod.shadowbaritone.utils.PathRenderer;
 import com.zszl.zszlScriptMod.system.ProfileManager;
+import com.zszl.zszlScriptMod.utils.JsonConfigCharsetCompat;
 import com.zszl.zszlScriptMod.utils.ModUtils;
 import com.zszl.zszlScriptMod.utils.TickRangeSpec;
 import com.zszl.zszlScriptMod.zszlScriptMod;
@@ -71,8 +71,6 @@ import net.minecraftforge.fml.common.gameevent.TickEvent;
 import org.lwjgl.opengl.GL11;
 
 import java.io.File;
-import java.io.FileReader;
-import java.io.FileWriter;
 import java.lang.reflect.Type;
 import java.awt.Color;
 import java.util.ArrayList;
@@ -560,7 +558,9 @@ public class KillAuraHandler implements AbstractGameEventListener {
                 return;
             }
 
-            JsonObject json = new JsonParser().parse(new FileReader(configFile)).getAsJsonObject();
+            JsonConfigCharsetCompat.ReadResult readResult = JsonConfigCharsetCompat.readJsonObject(configFile.toPath());
+            JsonObject json = readResult.getRoot();
+            boolean needsRewrite = readResult.usedLegacyCharset();
             if (json.has("enabled")) {
                 enabled = json.get("enabled").getAsBoolean();
             }
@@ -739,7 +739,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
             }
 
             normalizeConfig();
-            if (migratedHuntVerticalDefaults) {
+            if (migratedHuntVerticalDefaults || needsRewrite) {
                 saveConfig();
             }
         } catch (Exception e) {
@@ -811,9 +811,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
             json.addProperty("targetsPerAttack", targetsPerAttack);
             json.addProperty("noDamageAttackLimit", noDamageAttackLimit);
 
-            try (FileWriter writer = new FileWriter(configFile)) {
-                writer.write(json.toString());
-            }
+            JsonConfigCharsetCompat.writeJsonObject(configFile.toPath(), json);
         } catch (Exception e) {
             zszlScriptMod.LOGGER.error(I18n.format("log.kill_aura.save_failed"), e);
         }
