@@ -1991,6 +1991,9 @@ public class GuiActionEditor extends ThemedGuiScreen {
             case "move_inventory_item_to_hotbar":
                 ActionParameterSections.buildMoveInventoryItemToHotbarSection(this, x, currentY, fieldWidth);
                 break;
+            case "spread_inventory_item":
+                ActionParameterSections.buildSpreadInventoryItemSection(this, x, currentY, fieldWidth);
+                break;
             case "silentuse":
                 ActionParameterSections.buildSilentUseSection(this, x, currentY, fieldWidth);
                 break;
@@ -2308,12 +2311,20 @@ public class GuiActionEditor extends ThemedGuiScreen {
                 newParams.addProperty(key, displayToWaitCombinedMode(value));
             } else if ("executeMode".equals(key)) {
                 newParams.addProperty(key, displayToRunSequenceExecuteMode(value));
-            } else if ("targetScope".equals(key)) {
+            } else if ("targetScope".equals(key) && "stop_current_sequence".equalsIgnoreCase(selectedType)) {
                 newParams.addProperty(key, displayToStopCurrentSequenceScope(value));
             } else if ("moveDirection".equals(key)) {
                 newParams.addProperty(key, displayToMoveChestDirection(value));
             } else if ("requiredNbtTagsMode".equals(key)) {
                 newParams.addProperty(key, displayToMoveChestNbtMode(value));
+            } else if ("sourceScope".equals(key)) {
+                newParams.addProperty(key, displayToSpreadSourceScope(value));
+            } else if ("targetScope".equals(key) && "spread_inventory_item".equalsIgnoreCase(selectedType)) {
+                newParams.addProperty(key, displayToSpreadTargetScope(value));
+            } else if ("spreadMode".equals(key)) {
+                newParams.addProperty(key, displayToSpreadMode(value));
+            } else if ("remainderMode".equals(key)) {
+                newParams.addProperty(key, displayToSpreadRemainderMode(value));
             } else if ("slotArea".equals(key)) {
                 newParams.addProperty(key, displayToCaptureSlotArea(value));
             } else if ("lookupMode".equals(key)) {
@@ -2410,6 +2421,15 @@ public class GuiActionEditor extends ThemedGuiScreen {
             newParams.remove("requiredNbtTagsText");
             newParams.remove("requiredNbtTagsMode");
             newParams.remove("moveChestRules");
+        }
+
+        if ("spread_inventory_item".equalsIgnoreCase(selectedType)) {
+            InventoryItemFilterExpressionEngine.writeExpressions(newParams, getInventoryItemFilterExpressionList());
+            newParams.remove("itemName");
+            newParams.remove("matchMode");
+            newParams.remove("requiredNbtTags");
+            newParams.remove("requiredNbtTagsText");
+            newParams.remove("requiredNbtTagsMode");
         }
 
         if ("toggle_other_feature".equalsIgnoreCase(actionTypeToSave)) {
@@ -3631,7 +3651,9 @@ public class GuiActionEditor extends ThemedGuiScreen {
     }
 
     boolean supportsInventoryItemFilterExpressionEditor() {
-        return isConditionInventoryActionSelected() || isMoveChestActionSelected();
+        return isConditionInventoryActionSelected()
+                || isMoveChestActionSelected()
+                || "spread_inventory_item".equalsIgnoreCase(getSelectedActionType());
     }
 
     void initializeInventoryItemFilterExpressionEditorState() {
