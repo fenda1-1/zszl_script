@@ -204,6 +204,36 @@ final class RenderFeatureSupport {
         }
     }
 
+    static void renderGroundSpeed(Minecraft mc) {
+        if (mc == null || mc.player == null || mc.fontRenderer == null) {
+            return;
+        }
+
+        ScaledResolution scaledResolution = new ScaledResolution(mc);
+        int radarSize = RenderFeatureManager.isEnabled("radar")
+                ? clampInt(RenderFeatureManager.radarSize, 60, 180)
+                : 0;
+        double deltaX = mc.player.posX - mc.player.lastTickPosX;
+        double deltaZ = mc.player.posZ - mc.player.lastTickPosZ;
+        float groundSpeed = (float) (Math.sqrt(deltaX * deltaX + deltaZ * deltaZ) * 20.0D);
+        String title = "地速";
+        String value = formatFloat(groundSpeed) + " 格/秒";
+        int panelWidth = Math.max(86,
+                Math.max(mc.fontRenderer.getStringWidth(title), mc.fontRenderer.getStringWidth(value)) + 10);
+        int panelHeight = mc.fontRenderer.FONT_HEIGHT * 2 + 10;
+        int x = scaledResolution.getScaledWidth() - panelWidth - 12;
+        int y = 12 + (radarSize > 0 ? radarSize + 8 : 0);
+        y = Math.min(y, Math.max(12, scaledResolution.getScaledHeight() - panelHeight - 12));
+
+        Gui.drawRect(x, y, x + panelWidth, y + panelHeight, 0x8A0E141C);
+        Gui.drawRect(x, y, x + panelWidth, y + 1, 0xFF5FB8FF);
+        Gui.drawRect(x, y + panelHeight - 1, x + panelWidth, y + panelHeight, 0xFF35536C);
+        Gui.drawRect(x, y, x + 1, y + panelHeight, 0xFF35536C);
+        Gui.drawRect(x + panelWidth - 1, y, x + panelWidth, y + panelHeight, 0xFF35536C);
+        mc.fontRenderer.drawStringWithShadow(title, x + 5, y + 3, 0xFFEAF6FF);
+        mc.fontRenderer.drawStringWithShadow(value, x + 5, y + 5 + mc.fontRenderer.FONT_HEIGHT, 0xFFFFFFFF);
+    }
+
     static void renderEntityInfo(Minecraft mc) {
         if (mc == null || mc.player == null || mc.fontRenderer == null || mc.objectMouseOver == null) {
             return;

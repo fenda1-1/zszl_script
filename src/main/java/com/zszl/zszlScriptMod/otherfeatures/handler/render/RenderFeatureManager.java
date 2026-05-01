@@ -164,6 +164,8 @@ public class RenderFeatureManager {
                 "使用可调颜色、大小和动态间距的十字准星替换原版准星。左键快速开关，右键打开渲染设置。"));
         register(new FeatureState("anti_bob", "防抖动",
                 "减少走路视角晃动和受伤镜头抖动，让画面更稳定。左键快速开关，右键打开渲染设置。"));
+        register(new FeatureState("ground_speed", "地速显示",
+                "在屏幕右上角显示当前水平地速，便于观察移动状态和速度变化。左键快速开关，右键打开渲染设置。"));
         register(new FeatureState("radar", "雷达",
                 "在屏幕角落显示附近玩家、怪物和动物的相对位置，方便快速判断周边目标分布。左键快速开关，右键打开渲染设置。"));
         register(new FeatureState("player_skeleton", "玩家骨骼",
@@ -430,6 +432,9 @@ public class RenderFeatureManager {
                     : "未启用";
         case "anti_bob":
             return isEnabled(normalizedId) ? "已抑制镜头晃动" : "未启用";
+        case "ground_speed":
+            return isEnabled(normalizedId) ? "当前地速 " + formatFloat(getCurrentHorizontalSpeedBlocksPerSecond()) + " 格/秒"
+                    : "未启用";
         case "radar":
             return isEnabled(normalizedId) ? "雷达范围 " + formatFloat(radarMaxDistance) + " 格" : "未启用";
         case "player_skeleton":
@@ -574,6 +579,9 @@ public class RenderFeatureManager {
         }
         if (isEnabled("custom_crosshair")) {
             RenderFeatureSupport.renderCrosshair(mc);
+        }
+        if (isEnabled("ground_speed")) {
+            RenderFeatureSupport.renderGroundSpeed(mc);
         }
         if (isEnabled("radar")) {
             RenderFeatureSupport.renderRadar(mc);
@@ -942,6 +950,17 @@ public class RenderFeatureManager {
 
     private static String formatFloat(float value) {
         return String.format(Locale.ROOT, "%.1f", value);
+    }
+
+    private static float getCurrentHorizontalSpeedBlocksPerSecond() {
+        Minecraft mc = Minecraft.getMinecraft();
+        EntityPlayerSP player = mc == null ? null : mc.player;
+        if (player == null) {
+            return 0.0F;
+        }
+        double deltaX = player.posX - player.lastTickPosX;
+        double deltaZ = player.posZ - player.lastTickPosZ;
+        return (float) (Math.sqrt(deltaX * deltaX + deltaZ * deltaZ) * 20.0D);
     }
 
     private static void resetXrayVisibleBlocksToDefaultInternal() {
