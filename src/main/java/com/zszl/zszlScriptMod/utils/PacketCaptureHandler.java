@@ -1152,7 +1152,13 @@ public class PacketCaptureHandler extends ChannelDuplexHandler {
     }
 
     private static boolean shouldSkipBusinessPayload(Packet<?> packet) {
-        return packet == null || isWorldStreamingPacket(packet.getClass().getSimpleName());
+        if (packet == null) {
+            return true;
+        }
+        String packetClassName = packet.getClass().getSimpleName();
+        return "ClientboundAddPlayerPacket".equals(packetClassName)
+                || "ClientboundAddEntityPacket".equals(packetClassName)
+                || isWorldStreamingPacket(packetClassName);
     }
 
     private static boolean shouldSkipPayloadDecode(String packetClassName, byte[] rawData) {

@@ -65,6 +65,7 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
     private static final int BTN_HUNT_UP_RANGE = 42;
     private static final int BTN_HUNT_DOWN_RANGE = 43;
     private static final int BTN_NO_DAMAGE_ATTACK_LIMIT = 44;
+    private static final int BTN_ONLY_ATTACK_WHEN_LOOKING_AT_TARGET = 45;
 
     private static final int BTN_SAVE = 100;
     private static final int BTN_DEFAULT = 101;
@@ -95,6 +96,7 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
 
     private ToggleGuiButton rotateButton;
     private ToggleGuiButton smoothRotateButton;
+    private ToggleGuiButton onlyAttackWhenLookingAtTargetButton;
     private ToggleGuiButton lineOfSightButton;
     private ToggleGuiButton hostileButton;
     private ToggleGuiButton passiveButton;
@@ -272,6 +274,8 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
     private void initButtons() {
         rotateButton = new ToggleGuiButton(BTN_ROTATE, 0, 0, 100, 20, "", KillAuraHandler.rotateToTarget);
         smoothRotateButton = new ToggleGuiButton(BTN_SMOOTH_ROTATE, 0, 0, 100, 20, "", KillAuraHandler.smoothRotation);
+        onlyAttackWhenLookingAtTargetButton = new ToggleGuiButton(BTN_ONLY_ATTACK_WHEN_LOOKING_AT_TARGET, 0, 0, 100,
+                20, "", KillAuraHandler.onlyAttackWhenLookingAtTarget);
         lineOfSightButton = new ToggleGuiButton(BTN_LINE_OF_SIGHT, 0, 0, 100, 20, "",
                 KillAuraHandler.requireLineOfSight);
         onlyWeaponButton = new ToggleGuiButton(BTN_ONLY_WEAPON, 0, 0, 100, 20, "", KillAuraHandler.onlyWeapon);
@@ -336,6 +340,7 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
 
         this.buttonList.add(rotateButton);
         this.buttonList.add(smoothRotateButton);
+        this.buttonList.add(onlyAttackWhenLookingAtTargetButton);
         this.buttonList.add(lineOfSightButton);
         this.buttonList.add(onlyWeaponButton);
         this.buttonList.add(hostileButton);
@@ -409,6 +414,12 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
         smoothRotateButton.setEnabledState(KillAuraHandler.smoothRotation);
         smoothRotateButton.displayString = "平滑转向: " + stateText(KillAuraHandler.smoothRotation);
         smoothRotateButton.enabled = !packetMode || aimOnly;
+
+        onlyAttackWhenLookingAtTargetButton.setEnabledState(KillAuraHandler.onlyAttackWhenLookingAtTarget);
+        onlyAttackWhenLookingAtTargetButton.displayString = "仅瞄准命中后攻击: "
+                + stateText(KillAuraHandler.onlyAttackWhenLookingAtTarget);
+        onlyAttackWhenLookingAtTargetButton.enabled = !packetMode && !sequenceMode && !mouseClickMode
+                && (aimOnly || KillAuraHandler.rotateToTarget);
 
         lineOfSightButton.setEnabledState(KillAuraHandler.requireLineOfSight);
         lineOfSightButton.displayString = "必须可见: " + stateText(KillAuraHandler.requireLineOfSight);
@@ -677,10 +688,14 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
         if (showRotationControls) {
             placeContentButton(rotateButton, leftX, currentY, buttonW, buttonHeight, layout);
             placeContentButton(smoothRotateButton, rightX, currentY, buttonW, buttonHeight, layout);
+            currentY += rowStep;
+            placeContentButton(onlyAttackWhenLookingAtTargetButton, leftX, currentY, fullButtonWidth, buttonHeight,
+                    layout);
         } else {
             if (layout) {
                 hideButton(rotateButton);
                 hideButton(smoothRotateButton);
+                hideButton(onlyAttackWhenLookingAtTargetButton);
             }
             currentY -= rowStep;
         }
@@ -827,6 +842,7 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
     private void hideAllContentButtons() {
         hideButton(rotateButton);
         hideButton(smoothRotateButton);
+        hideButton(onlyAttackWhenLookingAtTargetButton);
         hideButton(lineOfSightButton);
         hideButton(onlyWeaponButton);
         hideButton(hostileButton);
@@ -1355,6 +1371,9 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
             break;
         case BTN_SMOOTH_ROTATE:
             KillAuraHandler.smoothRotation = !KillAuraHandler.smoothRotation;
+            break;
+        case BTN_ONLY_ATTACK_WHEN_LOOKING_AT_TARGET:
+            KillAuraHandler.onlyAttackWhenLookingAtTarget = !KillAuraHandler.onlyAttackWhenLookingAtTarget;
             break;
         case BTN_LINE_OF_SIGHT:
             KillAuraHandler.requireLineOfSight = !KillAuraHandler.requireLineOfSight;
@@ -2306,6 +2325,7 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
     private void applyDefaultValues() {
         KillAuraHandler.rotateToTarget = true;
         KillAuraHandler.smoothRotation = true;
+        KillAuraHandler.onlyAttackWhenLookingAtTarget = true;
         KillAuraHandler.requireLineOfSight = true;
         KillAuraHandler.targetHostile = true;
         KillAuraHandler.targetPassive = false;

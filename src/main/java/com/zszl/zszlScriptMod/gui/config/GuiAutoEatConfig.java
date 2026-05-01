@@ -20,6 +20,8 @@ public class GuiAutoEatConfig extends ThemedGuiScreen {
 
     private ToggleGuiButton autoMoveButton;
     private ToggleGuiButton lookDownButton;
+    private ToggleGuiButton smoothLookDownButton;
+    private ToggleGuiButton onlyDuringPathingButton;
     private GuiTextField thresholdField;
     private GuiTextField hotbarSlotField;
     private GuiTextField foodKeywordsField;
@@ -33,7 +35,7 @@ public class GuiAutoEatConfig extends ThemedGuiScreen {
         Keyboard.enableRepeatEvents(true);
         this.buttonList.clear();
         int panelWidth = 340;
-        int panelHeight = 250;
+        int panelHeight = 310;
         int panelX = (this.width - panelWidth) / 2;
         int panelY = (this.height - panelHeight) / 2;
         int currentY = panelY + 25;
@@ -55,6 +57,19 @@ public class GuiAutoEatConfig extends ThemedGuiScreen {
                 I18n.format("gui.autoeat.toggle_lookdown", stateText(AutoEatHandler.eatWithLookDown)),
                 AutoEatHandler.eatWithLookDown);
         this.buttonList.add(lookDownButton);
+        currentY += 30;
+
+        smoothLookDownButton = new ToggleGuiButton(6, panelX + 10, currentY, panelWidth - 20, 20,
+                I18n.format("gui.autoeat.toggle_smooth_lookdown", stateText(AutoEatHandler.smoothLookDown)),
+                AutoEatHandler.smoothLookDown);
+        this.buttonList.add(smoothLookDownButton);
+        currentY += 30;
+
+        onlyDuringPathingButton = new ToggleGuiButton(7, panelX + 10, currentY, panelWidth - 20, 20,
+                I18n.format("gui.autoeat.toggle_only_during_pathing",
+                        stateText(AutoEatHandler.onlyDuringSequenceStepPathing)),
+                AutoEatHandler.onlyDuringSequenceStepPathing);
+        this.buttonList.add(onlyDuringPathingButton);
         currentY += 30;
 
         // 3) 目标快捷栏数字框
@@ -88,6 +103,16 @@ public class GuiAutoEatConfig extends ThemedGuiScreen {
             lookDownButton.displayString = I18n.format("gui.autoeat.toggle_lookdown",
                     stateText(AutoEatHandler.eatWithLookDown));
             lookDownButton.setEnabledState(AutoEatHandler.eatWithLookDown);
+        } else if (button.id == 6) {
+            AutoEatHandler.smoothLookDown = !AutoEatHandler.smoothLookDown;
+            smoothLookDownButton.displayString = I18n.format("gui.autoeat.toggle_smooth_lookdown",
+                    stateText(AutoEatHandler.smoothLookDown));
+            smoothLookDownButton.setEnabledState(AutoEatHandler.smoothLookDown);
+        } else if (button.id == 7) {
+            AutoEatHandler.onlyDuringSequenceStepPathing = !AutoEatHandler.onlyDuringSequenceStepPathing;
+            onlyDuringPathingButton.displayString = I18n.format("gui.autoeat.toggle_only_during_pathing",
+                    stateText(AutoEatHandler.onlyDuringSequenceStepPathing));
+            onlyDuringPathingButton.setEnabledState(AutoEatHandler.onlyDuringSequenceStepPathing);
         } else if (button.id == 100) {
             try {
                 int threshold = Integer.parseInt(thresholdField.getText());
@@ -129,7 +154,7 @@ public class GuiAutoEatConfig extends ThemedGuiScreen {
     public void drawScreen(int mouseX, int mouseY, float partialTicks) {
         this.drawDefaultBackground();
         int panelWidth = 340;
-        int panelHeight = 250;
+        int panelHeight = 310;
         int panelX = (this.width - panelWidth) / 2;
         int panelY = (this.height - panelHeight) / 2;
 
@@ -175,6 +200,21 @@ public class GuiAutoEatConfig extends ThemedGuiScreen {
                     I18n.format("gui.autoeat.lookdown.tip.title"),
                     I18n.format("gui.autoeat.lookdown.tip.line1"),
                     I18n.format("gui.autoeat.lookdown.tip.line2")), mouseX, mouseY);
+        } else if (smoothLookDownButton != null && mouseX >= smoothLookDownButton.x
+                && mouseX <= smoothLookDownButton.x + smoothLookDownButton.width
+                && mouseY >= smoothLookDownButton.y && mouseY <= smoothLookDownButton.y + smoothLookDownButton.height) {
+            drawHoveringText(Arrays.asList(
+                    I18n.format("gui.autoeat.smooth.tip.title"),
+                    I18n.format("gui.autoeat.smooth.tip.line1"),
+                    I18n.format("gui.autoeat.smooth.tip.line2")), mouseX, mouseY);
+        } else if (onlyDuringPathingButton != null && mouseX >= onlyDuringPathingButton.x
+                && mouseX <= onlyDuringPathingButton.x + onlyDuringPathingButton.width
+                && mouseY >= onlyDuringPathingButton.y && mouseY <= onlyDuringPathingButton.y + onlyDuringPathingButton.height) {
+            drawHoveringText(Arrays.asList(
+                    I18n.format("gui.autoeat.pathing.tip.title"),
+                    I18n.format("gui.autoeat.pathing.tip.line1"),
+                    I18n.format("gui.autoeat.pathing.tip.line2"),
+                    I18n.format("gui.autoeat.pathing.tip.line3")), mouseX, mouseY);
         }
     }
 

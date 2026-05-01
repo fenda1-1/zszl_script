@@ -775,7 +775,7 @@ public final class Settings {
     public final Setting<Boolean> elytraFreeLook = new Setting<>(false);
 
     /**
-     * Forces the client-sided yaw rotation to an average of the last {@link #smoothLookTicks} of server-sided rotations.
+     * Smooth the visible camera turn using the same turn-speed curve style as KillAura.
      */
     public final Setting<Boolean> smoothLook = new Setting<>(false);
 
@@ -785,7 +785,22 @@ public final class Settings {
     public final Setting<Boolean> elytraSmoothLook = new Setting<>(true);
 
     /**
-     * The number of ticks to average across for {@link #smoothLook};
+     * Minimum turn speed for {@link #smoothLook}.
+     */
+    public final Setting<Float> smoothLookMinTurnSpeed = new Setting<>(4.0F);
+
+    /**
+     * Maximum turn speed for {@link #smoothLook}.
+     */
+    public final Setting<Float> smoothLookMaxTurnSpeed = new Setting<>(18.0F);
+
+    /**
+     * Maximum turn step per tick for {@link #smoothLook}. Accepts a single value or a range such as {@code 24-60}.
+     */
+    public final Setting<String> smoothLookMaxTurnStep = new Setting<>("24-60");
+
+    /**
+     * Legacy averaging window retained for backwards-compatible config loading.
      */
     public final Setting<Integer> smoothLookTicks = new Setting<>(5);
 

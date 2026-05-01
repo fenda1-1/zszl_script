@@ -137,34 +137,10 @@ public class GuiItemFilterExpressionEditor extends ThemedGuiScreen {
 
     @Override
     protected void keyTyped(char typedChar, int keyCode) throws IOException {
-        if (keyCode == Keyboard.KEY_ESCAPE) {
-            cancel();
+        if (processKeyStroke(typedChar, keyCode)) {
             return;
         }
-        if (keyCode == Keyboard.KEY_TAB) {
-            boolean searchFocused = this.searchField != null && this.searchField.isFocused();
-            if (this.searchField != null) {
-                this.searchField.setFocused(!searchFocused);
-            }
-            if (this.inputField != null) {
-                this.inputField.setFocused(searchFocused);
-            }
-            return;
-        }
-        if (keyCode == Keyboard.KEY_RETURN || keyCode == Keyboard.KEY_NUMPADENTER) {
-            commit();
-            return;
-        }
-
-        if (this.searchField != null && this.searchField.isFocused()) {
-            if (this.searchField.textboxKeyTyped(typedChar, keyCode)) {
-                this.scrollOffset = 0;
-            }
-            return;
-        }
-        if (this.inputField != null) {
-            this.inputField.textboxKeyTyped(typedChar, keyCode);
-        }
+        super.keyTyped(typedChar, keyCode);
     }
 
     @Override
@@ -210,12 +186,28 @@ public class GuiItemFilterExpressionEditor extends ThemedGuiScreen {
 
         if (this.searchField != null) {
             this.searchField.mouseClicked(mouseX, mouseY, mouseButton);
+            if (this.searchField.isFocused() && this.inputField != null) {
+                this.inputField.setFocused(false);
+            }
         }
         if (this.inputField != null) {
             this.inputField.mouseClicked(mouseX, mouseY, mouseButton);
+            if (this.inputField.isFocused() && this.searchField != null) {
+                this.searchField.setFocused(false);
+            }
         }
         if (mouseButton != 0) {
             return false;
+        }
+
+        if (this.inputField != null
+                && isInside(mouseX, mouseY, this.inputField.x, this.inputField.y,
+                        this.inputField.width, this.inputField.height)) {
+            this.inputField.setFocused(true);
+            if (this.searchField != null) {
+                this.searchField.setFocused(false);
+            }
+            return true;
         }
 
         if (isInside(mouseX, mouseY, this.confirmX, this.buttonY, getButtonWidth(), getButtonHeight())) {
@@ -240,6 +232,38 @@ public class GuiItemFilterExpressionEditor extends ThemedGuiScreen {
             if (this.searchField != null) {
                 this.searchField.setFocused(false);
             }
+            return true;
+        }
+        return false;
+    }
+
+    private boolean processKeyStroke(char typedChar, int keyCode) {
+        if (keyCode == Keyboard.KEY_ESCAPE) {
+            cancel();
+            return true;
+        }
+        if (keyCode == Keyboard.KEY_TAB) {
+            boolean searchFocused = this.searchField != null && this.searchField.isFocused();
+            if (this.searchField != null) {
+                this.searchField.setFocused(!searchFocused);
+            }
+            if (this.inputField != null) {
+                this.inputField.setFocused(searchFocused);
+            }
+            return true;
+        }
+        if (keyCode == Keyboard.KEY_RETURN || keyCode == Keyboard.KEY_NUMPADENTER) {
+            commit();
+            return true;
+        }
+
+        if (this.searchField != null && this.searchField.isFocused()
+                && this.searchField.textboxKeyTyped(typedChar, keyCode)) {
+            this.scrollOffset = 0;
+            return true;
+        }
+        if (this.inputField != null && this.inputField.isFocused()
+                && this.inputField.textboxKeyTyped(typedChar, keyCode)) {
             return true;
         }
         return false;

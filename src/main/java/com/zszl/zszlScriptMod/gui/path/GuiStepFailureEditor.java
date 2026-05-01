@@ -3,6 +3,7 @@ package com.zszl.zszlScriptMod.gui.path;
 import com.zszl.zszlScriptMod.gui.components.GuiTheme;
 import com.zszl.zszlScriptMod.gui.components.ThemedButton;
 import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
+import com.zszl.zszlScriptMod.path.PathSequenceManager;
 import com.zszl.zszlScriptMod.path.PathSequenceManager.PathStep;
 
 import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.Gui;
@@ -12,12 +13,16 @@ import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiTextFiel
 import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Keyboard;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 
 public class GuiStepFailureEditor extends ThemedGuiScreen {
 
     private static final int BTN_SAVE = 1;
     private static final int BTN_BACK = 2;
     private static final int BTN_SELECT_SEQUENCE = 11;
+    private static final int BTN_RESTORE_DEFAULTS = 12;
     private static final String[] EXHAUSTED_POLICIES = new String[] {
             "END_SEQUENCE",
             "RESTART_SEQUENCE",
@@ -30,21 +35,39 @@ public class GuiStepFailureEditor extends ThemedGuiScreen {
     };
 
     private final GuiScreen parent;
-    private final PathStep step;
+    private final List<PathStep> targetSteps = new ArrayList<>();
+    private final PathStep displayStep;
 
     private GuiTextField retryCountField;
     private GuiTextField retryTimeoutField;
+    private GuiTextField arrivalToleranceField;
     private GuiButton selectSequenceButton;
     private SimpleDropdown exhaustedPolicyDropdown;
     private String selectedSequenceName = "";
     private String draftRetryCount = null;
     private String draftRetryTimeout = null;
+    private String draftArrivalTolerance = null;
     private String draftPolicy = null;
     private String draftSequenceName = null;
 
     public GuiStepFailureEditor(GuiScreen parent, PathStep step) {
+        this(parent,
+                step == null ? Collections.emptyList() : Collections.singletonList(step),
+                step);
+    }
+
+    public GuiStepFailureEditor(GuiScreen parent, List<PathStep> steps, PathStep displayStep) {
         this.parent = parent;
-        this.step = step;
+        if (steps != null) {
+            for (PathStep step : steps) {
+                if (step != null) {
+                    this.targetSteps.add(step);
+                }
+            }
+        }
+        this.displayStep = displayStep != null
+                ? displayStep
+                : (this.targetSteps.isEmpty() ? null : this.targetSteps.get(0));
     }
 
     @Override
@@ -53,35 +76,52 @@ public class GuiStepFailureEditor extends ThemedGuiScreen {
         buttonList.clear();
 
         int panelW = Math.min(420, this.width - 24);
-        int panelH = 274;
+        int panelH = 338;
         int panelX = (this.width - panelW) / 2;
         int panelY = (this.height - panelH) / 2;
         int fieldX = panelX + 14;
         int fieldW = panelW - 28;
         int y = panelY + 38;
 
+        PathStep referenceStep = getReferenceStep();
+        int defaultRetryCount = referenceStep == null
+                ? PathSequenceManager.getDefaultStepRetryCount()
+                : referenceStep.getRetryCount();
+        int defaultTimeout = referenceStep == null
+                ? PathSequenceManager.getDefaultStepPathRetryTimeoutSeconds()
+                : referenceStep.getPathRetryTimeoutSeconds();
+        int defaultArrivalTolerance = referenceStep == null
+                ? PathSequenceManager.getDefaultStepArrivalToleranceBlocks()
+                : referenceStep.getArrivalToleranceBlocks();
+
         retryCountField = new GuiTextField(4001, fontRenderer, fieldX, y, fieldW, 18);
-        retryCountField.setText(draftRetryCount != null ? draftRetryCount : String.valueOf(step == null ? 3 : step.getRetryCount()));
+        retryCountField.setText(draftRetryCount != null ? draftRetryCount : String.valueOf(defaultRetryCount));
         y += 34;
 
         retryTimeoutField = new GuiTextField(4002, fontRenderer, fieldX, y, fieldW, 18);
-        retryTimeoutField
-                .setText(draftRetryTimeout != null ? draftRetryTimeout : String.valueOf(step == null ? 5 : step.getPathRetryTimeoutSeconds()));
+        retryTimeoutField.setText(draftRetryTimeout != null ? draftRetryTimeout : String.valueOf(defaultTimeout));
+        y += 34;
+
+        arrivalToleranceField = new GuiTextField(4003, fontRenderer, fieldX, y, fieldW, 18);
+        arrivalToleranceField.setText(draftArrivalTolerance != null
+                ? draftArrivalTolerance
+                : String.valueOf(defaultArrivalTolerance));
         y += 34;
 
         exhaustedPolicyDropdown = new SimpleDropdown(fieldX, y, fieldW, 20, EXHAUSTED_POLICY_LABELS);
         exhaustedPolicyDropdown.setValue(policyToDisplay(draftPolicy != null
                 ? draftPolicy
-                : (step == null ? "END_SEQUENCE" : step.getRetryExhaustedPolicy())));
+                : (referenceStep == null ? "END_SEQUENCE" : referenceStep.getRetryExhaustedPolicy())));
         y += 40;
 
         selectedSequenceName = draftSequenceName != null
                 ? draftSequenceName
-                : (step == null ? "" : step.getRetryExhaustedSequenceName());
+                : (referenceStep == null ? "" : referenceStep.getRetryExhaustedSequenceName());
         selectSequenceButton = new ThemedButton(BTN_SELECT_SEQUENCE, fieldX, y, fieldW, 20, "");
         buttonList.add(selectSequenceButton);
 
         int btnY = panelY + panelH - 28;
+        buttonList.add(new ThemedButton(BTN_RESTORE_DEFAULTS, panelX + 14, btnY, 92, 20, "§e恢复默认值"));
         buttonList.add(new ThemedButton(BTN_SAVE, panelX + panelW - 184, btnY, 80, 20, "保存"));
         buttonList.add(new ThemedButton(BTN_BACK, panelX + panelW - 94, btnY, 80, 20, "返回"));
         refreshControls();
@@ -91,7 +131,7 @@ public class GuiStepFailureEditor extends ThemedGuiScreen {
     protected void actionPerformed(GuiButton button) throws IOException {
         switch (button.id) {
             case BTN_SAVE:
-                saveToStep();
+                applySavedSettings();
                 mc.setScreen(parent);
                 break;
             case BTN_BACK:
@@ -109,6 +149,9 @@ public class GuiStepFailureEditor extends ThemedGuiScreen {
                     refreshControls();
                 }));
                 break;
+            case BTN_RESTORE_DEFAULTS:
+                populateBuiltInDefaults();
+                break;
             default:
                 break;
         }
@@ -118,7 +161,7 @@ public class GuiStepFailureEditor extends ThemedGuiScreen {
     public void drawScreen(int mouseX, int mouseY, float partialTicks) {
         drawDefaultBackground();
         int panelW = Math.min(420, this.width - 24);
-        int panelH = 274;
+        int panelH = 338;
         int panelX = (this.width - panelW) / 2;
         int panelY = (this.height - panelH) / 2;
         GuiTheme.drawPanel(panelX, panelY, panelW, panelH);
@@ -126,21 +169,19 @@ public class GuiStepFailureEditor extends ThemedGuiScreen {
 
         drawString(fontRenderer, "重试次数", retryCountField.x, retryCountField.y - 10, 0xFFFFFF);
         drawString(fontRenderer, "停留尝试限时(秒)", retryTimeoutField.x, retryTimeoutField.y - 10, 0xFFFFFF);
+        drawString(fontRenderer, "到达目的地范围判定", arrivalToleranceField.x, arrivalToleranceField.y - 10, 0xFFFFFF);
         drawString(fontRenderer, "重试耗尽后", exhaustedPolicyDropdown.x, exhaustedPolicyDropdown.y - 10, 0xFFFFFF);
         if (isRunSequenceSelected()) {
             drawString(fontRenderer, "目标序列", selectSequenceButton.x, selectSequenceButton.y - 10, 0xFFFFFF);
         }
 
         int noteY = isRunSequenceSelected() ? selectSequenceButton.y + 30 : exhaustedPolicyDropdown.y + 30;
-        fontRenderer.drawSplitString(
-                "说明：当前步骤有坐标寻路时，会监测人物是否长时间原地不动。超时后会重新发送寻路命令并扣减重试次数。"
-                        + "重试次数默认 3，停留尝试限时默认 5 秒；填写 0 表示该步骤不进行自动重试。"
-                        + "选择“执行指定序列”后，失败时会按目标序列自身配置决定前台或后台执行。",
-                panelX + 14, noteY, panelW - 28, 0xFFB8C7D9);
+        fontRenderer.drawSplitString(buildHelpText(), panelX + 14, noteY, panelW - 28, 0xFFB8C7D9);
 
         super.drawScreen(mouseX, mouseY, partialTicks);
         drawThemedTextField(retryCountField);
         drawThemedTextField(retryTimeoutField);
+        drawThemedTextField(arrivalToleranceField);
         exhaustedPolicyDropdown.draw(mouseX, mouseY);
     }
 
@@ -157,6 +198,7 @@ public class GuiStepFailureEditor extends ThemedGuiScreen {
         super.keyTyped(typedChar, keyCode);
         retryCountField.textboxKeyTyped(typedChar, keyCode);
         retryTimeoutField.textboxKeyTyped(typedChar, keyCode);
+        arrivalToleranceField.textboxKeyTyped(typedChar, keyCode);
     }
 
     @Override
@@ -168,22 +210,42 @@ public class GuiStepFailureEditor extends ThemedGuiScreen {
         super.mouseClicked(mouseX, mouseY, mouseButton);
         retryCountField.mouseClicked(mouseX, mouseY, mouseButton);
         retryTimeoutField.mouseClicked(mouseX, mouseY, mouseButton);
+        arrivalToleranceField.mouseClicked(mouseX, mouseY, mouseButton);
     }
 
-    private void saveToStep() {
-        if (step == null) {
+    private void applySavedSettings() {
+        PathStep referenceStep = getReferenceStep();
+        String policy = getSelectedPolicy();
+        int retryCount = parseInt(retryCountField,
+                referenceStep == null ? PathSequenceManager.getDefaultStepRetryCount() : referenceStep.getRetryCount());
+        int timeoutSeconds = parseInt(retryTimeoutField, referenceStep == null
+                ? PathSequenceManager.getDefaultStepPathRetryTimeoutSeconds()
+                : referenceStep.getPathRetryTimeoutSeconds());
+        int arrivalToleranceBlocks = parseInt(arrivalToleranceField, referenceStep == null
+                ? PathSequenceManager.getDefaultStepArrivalToleranceBlocks()
+                : referenceStep.getArrivalToleranceBlocks());
+        String targetSequenceName = "RUN_SEQUENCE".equals(policy) ? selectedSequenceName : "";
+
+        PathSequenceManager.updateDefaultStepRetrySettings(retryCount, timeoutSeconds, arrivalToleranceBlocks);
+        if (parent instanceof GuiPathManager) {
+            ((GuiPathManager) parent).applyStepFailureSettings(targetSteps, retryCount, timeoutSeconds,
+                    arrivalToleranceBlocks, policy,
+                    targetSequenceName);
             return;
         }
-        String policy = getSelectedPolicy();
-        step.setRetryCount(parseInt(retryCountField, step.getRetryCount()));
-        step.setPathRetryTimeoutSeconds(parseInt(retryTimeoutField, step.getPathRetryTimeoutSeconds()));
-        step.setRetryExhaustedPolicy(policy);
-        step.setRetryExhaustedSequenceName("RUN_SEQUENCE".equals(policy) ? selectedSequenceName : "");
+        for (PathStep targetStep : getTargetSteps()) {
+            targetStep.setRetryCount(retryCount);
+            targetStep.setPathRetryTimeoutSeconds(timeoutSeconds);
+            targetStep.setArrivalToleranceBlocks(arrivalToleranceBlocks);
+            targetStep.setRetryExhaustedPolicy(policy);
+            targetStep.setRetryExhaustedSequenceName(targetSequenceName);
+        }
     }
 
     private void captureDraftState() {
         draftRetryCount = retryCountField == null ? draftRetryCount : retryCountField.getText();
         draftRetryTimeout = retryTimeoutField == null ? draftRetryTimeout : retryTimeoutField.getText();
+        draftArrivalTolerance = arrivalToleranceField == null ? draftArrivalTolerance : arrivalToleranceField.getText();
         draftPolicy = getSelectedPolicy();
         draftSequenceName = selectedSequenceName == null ? "" : selectedSequenceName.trim();
     }
@@ -194,6 +256,24 @@ public class GuiStepFailureEditor extends ThemedGuiScreen {
         } catch (Exception ignored) {
             return fallback;
         }
+    }
+
+    private void populateBuiltInDefaults() {
+        if (retryCountField != null) {
+            retryCountField.setText(String.valueOf(PathSequenceManager.getBuiltinStepRetryCount()));
+        }
+        if (retryTimeoutField != null) {
+            retryTimeoutField.setText(String.valueOf(PathSequenceManager.getBuiltinStepPathRetryTimeoutSeconds()));
+        }
+        if (arrivalToleranceField != null) {
+            arrivalToleranceField.setText(String.valueOf(PathSequenceManager.getBuiltinStepArrivalToleranceBlocks()));
+        }
+        selectedSequenceName = "";
+        draftSequenceName = "";
+        if (exhaustedPolicyDropdown != null) {
+            exhaustedPolicyDropdown.setValue(policyToDisplay("END_SEQUENCE"));
+        }
+        refreshControls();
     }
 
     private void refreshControls() {
@@ -215,6 +295,45 @@ public class GuiStepFailureEditor extends ThemedGuiScreen {
         selectSequenceButton.displayString = trimmed.length() > 20
                 ? "目标序列: " + trimmed.substring(0, 20) + "..."
                 : "目标序列: " + trimmed;
+    }
+
+    private String buildHelpText() {
+        StringBuilder text = new StringBuilder();
+        if (getTargetStepCount() > 1) {
+            text.append("当前会批量修改选中的 ")
+                    .append(getTargetStepCount())
+                    .append(" 个步骤。");
+        }
+        text.append("说明：当前步骤有坐标寻路时，会监测人物是否长时间原地不动。超时后会重新发送寻路命令并扣减重试次数。")
+                .append("新建步骤会沿用最近一次保存的重试次数和停留限时；点击“恢复默认值”可回到 ")
+                .append(PathSequenceManager.getBuiltinStepRetryCount())
+                .append(" / ")
+                .append(PathSequenceManager.getBuiltinStepPathRetryTimeoutSeconds())
+                .append("，到达范围默认 ")
+                .append(PathSequenceManager.getBuiltinStepArrivalToleranceBlocks())
+                .append("。")
+                .append("到达范围表示目标方块向外扩几圈；进入范围后会等待寻路自然结束，再执行动作。")
+                .append("填写 0 表示该步骤不进行自动重试。")
+                .append("选择“执行指定序列”后，失败时会按目标序列自身配置决定前台或后台执行。");
+        return text.toString();
+    }
+
+    private PathStep getReferenceStep() {
+        return displayStep;
+    }
+
+    private List<PathStep> getTargetSteps() {
+        if (!targetSteps.isEmpty()) {
+            return targetSteps;
+        }
+        if (displayStep == null) {
+            return Collections.emptyList();
+        }
+        return Collections.singletonList(displayStep);
+    }
+
+    private int getTargetStepCount() {
+        return getTargetSteps().size();
     }
 
     private boolean isRunSequenceSelected() {
