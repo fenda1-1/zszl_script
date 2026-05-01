@@ -92,6 +92,7 @@ import com.zszl.zszlScriptMod.otherfeatures.handler.world.WorldFeatureManager;
 import com.zszl.zszlScriptMod.path.PathSequenceEventListener;
 import com.zszl.zszlScriptMod.path.PathSequenceManager;
 import com.zszl.zszlScriptMod.path.PathSequenceManager.PathSequence;
+import com.zszl.zszlScriptMod.path.PathSequenceManager.PathStep;
 import com.zszl.zszlScriptMod.system.ProfileManager;
 import com.zszl.zszlScriptMod.system.ServerFeatureVisibilityManager;
 import com.zszl.zszlScriptMod.utils.AdExpListManager;
@@ -3891,6 +3892,19 @@ public class GuiInventory {
         PathSequenceManager.runPathSequence(sequence.getName());
     }
 
+    private static void activateSequenceFromStep(PathSequence sequence, int stepIndex) {
+        if (sequence == null) {
+            return;
+        }
+        if (sequence.isCustom()) {
+            MainUiLayoutManager.recordSequenceOpened(sequence.getName());
+        }
+        if (sequence.shouldCloseGuiAfterStart()) {
+            closeOverlay();
+        }
+        PathSequenceManager.runPathSequenceFromStep(sequence.getName(), stepIndex);
+    }
+
     private static void clearPressedCustomSequence() {
         pressedCustomSequence = null;
         pressedCustomSequenceRect = null;
@@ -4291,6 +4305,7 @@ public class GuiInventory {
         })));
         items.add(buildSequenceDestinationMenu("移动到", sequence, false));
         items.add(buildSequenceDestinationMenu("复制到", sequence, true));
+        items.add(buildSequenceJumpExecutionMenu(sequence));
         items.add(menuItem("编辑", () -> {
             closeContextMenu();
             closeOverlay();
@@ -4298,6 +4313,67 @@ public class GuiInventory {
                     .setScreen(GuiPathManager.openForSequenceActionPane(sequence.getCategory(), sequence.getName()));
         }));
         return items;
+    }
+
+    private static ContextMenuItem buildSequenceJumpExecutionMenu(PathSequence sequence) {
+        ContextMenuItem root = menuItem("跳转执行", null);
+        if (sequence == null || sequence.getSteps() == null || sequence.getSteps().isEmpty()) {
+            return root.enabled(false);
+        }
+
+        final int groupSize = 25;
+        int stepCount = sequence.getSteps().size();
+        if (stepCount <= groupSize) {
+            appendSequenceJumpStepItems(root, sequence, 0, stepCount);
+            return root;
+        }
+
+        for (int start = 0; start < stepCount; start += groupSize) {
+            int end = Math.min(stepCount, start + groupSize);
+            ContextMenuItem group = menuItem((start + 1) + "-" + end, null);
+            appendSequenceJumpStepItems(group, sequence, start, end);
+            root.child(group);
+        }
+        return root;
+    }
+
+    private static void appendSequenceJumpStepItems(ContextMenuItem parent, PathSequence sequence, int startIndex,
+            int endIndex) {
+        List<PathStep> steps = sequence.getSteps();
+        for (int i = Math.max(0, startIndex); i < endIndex && i < steps.size(); i++) {
+            final int stepIndex = i;
+            parent.child(menuItem(buildSequenceJumpStepLabel(steps.get(i), i), () -> {
+                closeContextMenu();
+                activateSequenceFromStep(sequence, stepIndex);
+            }));
+        }
+    }
+
+    private static String buildSequenceJumpStepLabel(PathStep step, int stepIndex) {
+        String label = "第 " + (stepIndex + 1) + " 步";
+        String note = step == null ? "" : sanitizeContextMenuLabelPart(step.getNote());
+        if (!note.isEmpty()) {
+            return limitContextMenuLabel(label + " - " + note, 48);
+        }
+
+        double[] target = step == null ? null : step.getGotoPoint();
+        if (target != null && target.length >= 3 && !Double.isNaN(target[0])) {
+            String coords = String.format(Locale.ROOT, "%.1f, %.1f, %.1f", target[0], target[1], target[2]);
+            return limitContextMenuLabel(label + " - " + coords, 48);
+        }
+        return label + " - 无坐标";
+    }
+
+    private static String sanitizeContextMenuLabelPart(String text) {
+        return normalizeText(text).replace('\r', ' ').replace('\n', ' ');
+    }
+
+    private static String limitContextMenuLabel(String label, int maxLength) {
+        String text = label == null ? "" : label;
+        if (text.length() <= maxLength) {
+            return text;
+        }
+        return text.substring(0, Math.max(1, maxLength - 1)) + "...";
     }
 
     private static void handleCustomToolbarAction(CustomButtonRenderInfo button, int mouseX, int mouseY) {
