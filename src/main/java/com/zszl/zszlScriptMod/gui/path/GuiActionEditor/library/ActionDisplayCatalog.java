@@ -71,6 +71,8 @@ public final class ActionDisplayCatalog {
         ACTION_DISPLAY_KEYS.put("toggle_autofishing", "gui.path.action_editor.type.toggle_autofishing");
         ACTION_DISPLAY_KEYS.put("toggle_kill_aura", "gui.path.action_editor.type.toggle_kill_aura");
         ACTION_DISPLAY_KEYS.put("toggle_fly", "gui.path.action_editor.type.toggle_fly");
+        ACTION_DISPLAY_KEYS.put("toggle_conditional_execution", "gui.path.action_editor.type.toggle_conditional_execution");
+        ACTION_DISPLAY_KEYS.put("toggle_auto_escape", "gui.path.action_editor.type.toggle_auto_escape");
         ACTION_DISPLAY_KEYS.put("toggle_other_feature", "gui.path.action_editor.type.toggle_other_feature");
         ACTION_DISPLAY_KEYS.put("hunt", "gui.path.action_editor.type.hunt");
         ACTION_DISPLAY_KEYS.put("follow_entity", "gui.path.action_editor.type.follow_entity");

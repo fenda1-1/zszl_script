@@ -1827,8 +1827,7 @@ public class GuiPathManager extends ThemedGuiScreen {
             case 11:
                 if (btnDeleteStep.enabled) {
                     pushUndoHistory("delete-step");
-                    selectedSequence.getSteps().remove(selectedStepIndex);
-                    selectStep(-1);
+                    deleteSelectedSteps();
                 }
                 break;
             case 19: // 复制步骤
@@ -1856,7 +1855,7 @@ public class GuiPathManager extends ThemedGuiScreen {
                 break;
             case 26:
                 if (btnEditStepFailure.enabled && selectedStep != null) {
-                    mc.displayGuiScreen(new GuiStepFailureEditor(this, selectedStep));
+                    mc.displayGuiScreen(new GuiStepFailureEditor(this, getSelectedStepTargets(), selectedStep));
                 }
                 break;
             case 17: // 获取坐标
@@ -2745,7 +2744,7 @@ public class GuiPathManager extends ThemedGuiScreen {
         }
         tooltip = tooltipForButton(btnDeleteStep, mouseX, mouseY,
                 "删除步骤",
-                "删除当前选中的步骤。");
+                "删除当前选中的步骤，支持多选后批量删除。");
         if (tooltip != null) {
             return tooltip;
         }
@@ -2769,7 +2768,7 @@ public class GuiPathManager extends ThemedGuiScreen {
         }
         tooltip = tooltipForButton(btnEditStepFailure, mouseX, mouseY,
                 "寻路重试",
-                "配置当前步骤寻路失败后的重试与后续处理逻辑。");
+                "配置当前步骤或多选步骤的寻路失败重试与后续处理逻辑。");
         if (tooltip != null) {
             return tooltip;
         }
@@ -3342,6 +3341,7 @@ public class GuiPathManager extends ThemedGuiScreen {
         } else if (step.getPathRetryTimeoutSeconds() <= 0 || step.getRetryCount() <= 0) {
             suffix.append(" §7| §8不重试");
         }
+        suffix.append(" §7| §b到达±").append(step.getArrivalToleranceBlocks());
         if ("RESTART_SEQUENCE".equalsIgnoreCase(step.getRetryExhaustedPolicy())) {
             suffix.append(" §7| §b耗尽后重头");
         } else if ("RUN_SEQUENCE".equalsIgnoreCase(step.getRetryExhaustedPolicy())) {
@@ -3717,6 +3717,19 @@ public class GuiPathManager extends ThemedGuiScreen {
         return indices;
     }
 
+    private List<PathStep> getSelectedStepTargets() {
+        List<PathStep> targets = new ArrayList<>();
+        if (selectedSequence == null) {
+            return targets;
+        }
+        for (int index : getSelectedStepIndicesForCopy()) {
+            if (index >= 0 && index < selectedSequence.getSteps().size()) {
+                targets.add(selectedSequence.getSteps().get(index));
+            }
+        }
+        return targets;
+    }
+
     private List<Integer> getSelectedActionIndicesForCopy() {
         List<Integer> indices = new ArrayList<>(selectedActionIndices);
         if (indices.isEmpty() && selectedActionIndex >= 0) {
@@ -3755,6 +3768,64 @@ public class GuiPathManager extends ThemedGuiScreen {
         actionDetailPopupBounds = null;
         markDirty();
         return true;
+    }
+
+    private boolean deleteSelectedSteps() {
+        if (selectedSequence == null) {
+            return false;
+        }
+        List<Integer> indices = getSelectedStepIndicesForCopy();
+        if (indices.isEmpty()) {
+            return false;
+        }
+        int nextSelectionIndex = indices.get(0);
+        for (int i = indices.size() - 1; i >= 0; i--) {
+            int index = indices.get(i);
+            if (index < 0 || index >= selectedSequence.getSteps().size()) {
+                continue;
+            }
+            PathStep deletingStep = selectedSequence.getSteps().get(index);
+            if (deletingStep != null) {
+                for (ActionData action : deletingStep.getActions()) {
+                    PathSequenceManager.removePersistentActionRecord(action);
+                }
+            }
+            selectedSequence.getSteps().remove(index);
+        }
+        selectedStepIndices.clear();
+        if (selectedSequence.getSteps().isEmpty()) {
+            selectStep(-1);
+        } else {
+            selectStep(MathHelper.clamp(nextSelectionIndex, 0, selectedSequence.getSteps().size() - 1));
+        }
+        actionDetailPopupAction = null;
+        actionDetailPopupIndex = -1;
+        actionDetailPopupBounds = null;
+        markDirty();
+        return true;
+    }
+
+    void applyStepFailureSettings(List<PathStep> steps, int retryCount, int timeoutSeconds, int arrivalToleranceBlocks,
+            String policy, String targetSequenceName) {
+        List<PathStep> targets = steps == null ? Collections.emptyList() : steps;
+        if (targets.isEmpty() && selectedStep != null) {
+            targets = Collections.singletonList(selectedStep);
+        }
+        if (targets.isEmpty()) {
+            return;
+        }
+        pushUndoHistory("step-failure");
+        for (PathStep target : targets) {
+            if (target == null) {
+                continue;
+            }
+            target.setRetryCount(retryCount);
+            target.setPathRetryTimeoutSeconds(timeoutSeconds);
+            target.setArrivalToleranceBlocks(arrivalToleranceBlocks);
+            target.setRetryExhaustedPolicy(policy);
+            target.setRetryExhaustedSequenceName(targetSequenceName);
+        }
+        markDirty();
     }
 
     private void copySelectedStepsToClipboard() {

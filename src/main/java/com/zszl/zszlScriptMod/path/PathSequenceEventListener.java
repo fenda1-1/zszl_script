@@ -71,6 +71,7 @@ import com.zszl.zszlScriptMod.config.ModConfig;
 import com.zszl.zszlScriptMod.gui.GuiInventory;
 import com.zszl.zszlScriptMod.utils.guiinspect.GuiElementInspector;
 import com.zszl.zszlScriptMod.handlers.AutoFollowHandler;
+import com.zszl.zszlScriptMod.handlers.AutoEatHandler;
 import com.zszl.zszlScriptMod.handlers.AutoUseItemHandler;
 import com.zszl.zszlScriptMod.handlers.EmbeddedNavigationHandler;
 import com.zszl.zszlScriptMod.handlers.HuntOrbitController;
@@ -271,6 +272,7 @@ public class PathSequenceEventListener {
     private boolean tracking = false;
     private int tickDelay = 0;
     private boolean atTarget = false;
+    private boolean waitingForNavigationToFinishAtTarget = false;
     private int remainingLoops = 0;
     private String status = "";
     private volatile boolean isPaused = false;
@@ -896,6 +898,17 @@ public class PathSequenceEventListener {
         return tracking;
     }
 
+    public boolean isAutoEatStepPathingActive() {
+        if (!tracking || isPaused || currentSequence == null || atTarget || waitingForNavigationToFinishAtTarget) {
+            return false;
+        }
+        if (currentStepIndex < 0 || currentStepIndex >= currentSequence.getSteps().size()) {
+            return false;
+        }
+        PathStep step = currentSequence.getSteps().get(currentStepIndex);
+        return stepHasGotoTarget(step) && EmbeddedNavigationHandler.INSTANCE.isPathingOrCalculating();
+    }
+
     public void setStatus(String s) {
         String next = s == null ? "" : s;
         if (next.equals(status)) {
@@ -1448,6 +1461,19 @@ public class PathSequenceEventListener {
                 this.huntEnableNameWhitelist ? formatHuntWhitelistForLog() : "关闭",
                 this.huntEnableNameBlacklist ? this.huntNameBlacklist : "关闭",
                 this.huntShowRange);
+        recordDebugTrace("hunt config: 中心=("
+                + String.format(Locale.ROOT, "%.2f, %.2f, %.2f", this.huntCenterX, this.huntCenterY, this.huntCenterZ)
+                + "), 半径=" + String.format(Locale.ROOT, "%.1f", this.huntRadius)
+                + ", 垂直=+" + String.format(Locale.ROOT, "%.1f", this.huntUpRange)
+                + "/-" + String.format(Locale.ROOT, "%.1f", this.huntDownRange)
+                + ", 目标类型[敌对=" + this.huntTargetHostile
+                + ", 被动=" + this.huntTargetPassive
+                + ", 玩家=" + this.huntTargetPlayers
+                + "], 动作白名单="
+                + (this.huntEnableNameWhitelist ? formatHuntWhitelistForLog() : "关闭")
+                + ", 动作黑名单="
+                + (this.huntEnableNameBlacklist ? this.huntNameBlacklist : "关闭")
+                + ", 忽略隐身=" + this.huntIgnoreInvisible);
     }
     // --- 新增结束 ---
 
@@ -1614,17 +1640,38 @@ public class PathSequenceEventListener {
             if (!ensureResources(resolveMovementResources(target), "move_to_step_target")) {
                 return;
             }
-            if (hasReachedGotoTarget(player, target)) {
+            if (AutoEatHandler.isEating) {
+                return;
+            }
+            if (hasReachedGotoTarget(player, currentStep, target)) {
+                if (EmbeddedNavigationHandler.INSTANCE.isPathingOrCalculating()) {
+                    if (!waitingForNavigationToFinishAtTarget) {
+                        waitingForNavigationToFinishAtTarget = true;
+                        recordDebugTrace("进入到达范围，等待寻路自然结束");
+                        setStatus(currentSequence.getName() + (backgroundRunner ? " | 后台执行" : "")
+                                + " | 到达范围内，等待寻路完成");
+                    }
+                    resetStepPathRetryMonitor();
+                    return;
+                }
                 if (ModConfig.isDebugFlagEnabled(DebugModule.PATH_SEQUENCE) && !atTarget && mc.player != null) {
                     mc.player.sendMessage(new TextComponentString(
                             I18n.format("msg.path.debug.reached_step_target", currentStepIndex)));
                 }
                 zszlScriptMod.LOGGER.info(I18n.format("log.path.reached_target"), currentStepIndex,
                         currentSequence.getName());
+                if (waitingForNavigationToFinishAtTarget) {
+                    recordDebugTrace("寻路自然结束，开始执行步骤动作");
+                    restoreSequenceBaseStatus();
+                }
+                waitingForNavigationToFinishAtTarget = false;
                 atTarget = true;
                 currentStepRetryUsed = 0;
                 resetStepPathRetryMonitor();
                 actionIndex = 0;
+            } else if (waitingForNavigationToFinishAtTarget) {
+                waitingForNavigationToFinishAtTarget = false;
+                restoreSequenceBaseStatus();
             } else if (handleCurrentStepPathRetry(player, currentStep)) {
                 return;
             }
@@ -1649,6 +1696,7 @@ public class PathSequenceEventListener {
                     currentStepIndex++;
                     actionIndex = 0;
                     atTarget = false;
+                    resetStepArrivalWaitState();
                     currentStepRetryUsed = 0;
                     resetStepPathRetryMonitor();
                     releaseResources();
@@ -1931,6 +1979,10 @@ public class PathSequenceEventListener {
         this.currentStepLastMovementZ = Double.NaN;
     }
 
+    private void resetStepArrivalWaitState() {
+        this.waitingForNavigationToFinishAtTarget = false;
+    }
+
     private boolean stepHasGotoTarget(PathStep step) {
         return step != null && step.hasGotoTarget();
     }
@@ -2024,6 +2076,7 @@ public class PathSequenceEventListener {
         this.currentStepIndex = 0;
         this.actionIndex = 0;
         this.atTarget = false;
+        resetStepArrivalWaitState();
         this.tickDelay = 1;
         this.isPerformingExplicitDelay = false;
         this.explicitDelayNormalizeTo20Tps = false;
@@ -3663,6 +3716,7 @@ public class PathSequenceEventListener {
 
     private void restartCurrentStepTarget(PathStep step) {
         resetStepPathRetryMonitor();
+        resetStepArrivalWaitState();
         if (step == null) {
             atTarget = true;
             if (shouldStopNavigationForStepTransition()) {
@@ -3690,6 +3744,7 @@ public class PathSequenceEventListener {
 
     private void moveToStepTargetOrFinish() {
         resetStepPathRetryMonitor();
+        resetStepArrivalWaitState();
         if (currentSequence == null) {
             return;
         }
@@ -3700,7 +3755,7 @@ public class PathSequenceEventListener {
         restartCurrentStepTarget(currentSequence.getSteps().get(currentStepIndex));
     }
 
-    private boolean hasReachedGotoTarget(EntityPlayerSP player, double[] target) {
+    private boolean hasReachedGotoTarget(EntityPlayerSP player, PathStep step, double[] target) {
         if (player == null || target == null || target.length < 3) {
             return true;
         }
@@ -3708,6 +3763,8 @@ public class PathSequenceEventListener {
         if (Double.isNaN(target[0])) {
             return true;
         }
+
+        int toleranceBlocks = step == null ? 0 : Math.max(0, step.getArrivalToleranceBlocks());
 
         int playerBlockX = MathHelper.floor(player.posX);
         int playerBlockY = MathHelper.floor(player.posY);
@@ -3717,13 +3774,14 @@ public class PathSequenceEventListener {
         int targetBlockZ = MathHelper.floor(target[2]);
 
         if (Double.isNaN(target[1])) {
-            return playerBlockX == targetBlockX && playerBlockZ == targetBlockZ;
+            return Math.abs(playerBlockX - targetBlockX) <= toleranceBlocks
+                    && Math.abs(playerBlockZ - targetBlockZ) <= toleranceBlocks;
         }
 
         int targetBlockY = MathHelper.floor(target[1]);
-        return playerBlockX == targetBlockX
-                && playerBlockY == targetBlockY
-                && playerBlockZ == targetBlockZ;
+        return Math.abs(playerBlockX - targetBlockX) <= toleranceBlocks
+                && Math.abs(playerBlockY - targetBlockY) <= toleranceBlocks
+                && Math.abs(playerBlockZ - targetBlockZ) <= toleranceBlocks;
     }
 
     private void handleUseHotbarItemAction(EntityPlayerSP player, ActionData actionData) {
@@ -3861,6 +3919,7 @@ public class PathSequenceEventListener {
         }
 
         if (!result.hasTarget()) {
+            recordHuntNoTargetDiagnostics(player);
             zszlScriptMod.LOGGER.info(I18n.format("log.path.hunt_no_monster_end"));
             completeHuntAction(huntNoTargetSkipCount);
         }
@@ -3868,7 +3927,7 @@ public class PathSequenceEventListener {
 
     private KillAuraHandler.AreaHuntOptions buildKillAuraAreaHuntOptions() {
         return new KillAuraHandler.AreaHuntOptions(huntCenterX, huntCenterY, huntCenterZ, huntRadius,
-                huntUpRange, huntDownRange, this::isAllowedByHuntActionNameFilters);
+                huntUpRange, huntDownRange, this::isAllowedByHuntActionNameFilters, huntEnableNameWhitelist);
     }
 
     private boolean isAllowedByHuntActionNameFilters(EntityLivingBase entity) {
@@ -3884,6 +3943,96 @@ public class PathSequenceEventListener {
             return getActiveHuntWhitelistMatchIndex(filterName) != Integer.MAX_VALUE;
         }
         return true;
+    }
+
+    private void recordHuntNoTargetDiagnostics(EntityPlayerSP player) {
+        if (player == null || player.world == null) {
+            recordDebugTrace("hunt scan: 玩家或世界为空，无法输出搜怪诊断");
+            return;
+        }
+        List<String> detailLines = new ArrayList<>();
+        int inRangeCount = 0;
+        int whitelistMatchedCount = 0;
+        int groupMatchedCount = 0;
+        int finalCandidateCount = 0;
+
+        for (Entity entity : player.world.loadedEntityList) {
+            if (!(entity instanceof EntityLivingBase)) {
+                continue;
+            }
+            EntityLivingBase living = (EntityLivingBase) entity;
+            if (living == player || living.isDead || !living.isEntityAlive() || living.getHealth() <= 0.0F) {
+                continue;
+            }
+            if (!isWithinHuntArea(living) || !isWithinHuntVerticalRange(living)) {
+                continue;
+            }
+            inRangeCount++;
+            String name = getHuntFilterableEntityName(living);
+            boolean blacklistHit = huntEnableNameBlacklist
+                    && KillAuraHandler.getNameListMatchIndex(name, huntNameBlacklist) != Integer.MAX_VALUE;
+            boolean whitelistMatched = !huntEnableNameWhitelist
+                    || getActiveHuntWhitelistMatchIndex(name) != Integer.MAX_VALUE;
+            boolean groupMatched = matchesHuntTargetGroup(living);
+            boolean invisibleBlocked = huntIgnoreInvisible && living.isInvisible();
+            boolean finalCandidate = !blacklistHit && whitelistMatched && (huntEnableNameWhitelist || groupMatched)
+                    && !invisibleBlocked;
+            if (whitelistMatched) {
+                whitelistMatchedCount++;
+            }
+            if (groupMatched) {
+                groupMatchedCount++;
+            }
+            if (finalCandidate) {
+                finalCandidateCount++;
+            }
+            if (detailLines.size() < 8) {
+                detailLines.add(name
+                        + " [类型=" + getHuntEntityGroupLabel(living)
+                        + ", 白名单=" + whitelistMatched
+                        + ", 黑名单=" + blacklistHit
+                        + ", 分组=" + groupMatched
+                        + ", 隐身拦截=" + invisibleBlocked
+                        + ", 最终可选=" + finalCandidate + "]");
+            }
+        }
+
+        recordDebugTrace("hunt scan: 范围内实体=" + inRangeCount
+                + ", 白名单命中=" + whitelistMatchedCount
+                + ", 分组命中=" + groupMatchedCount
+                + ", 最终可选=" + finalCandidateCount);
+        if (detailLines.isEmpty()) {
+            recordDebugTrace("hunt scan detail: 范围内没有找到任何存活实体");
+            return;
+        }
+        for (String line : detailLines) {
+            recordDebugTrace("hunt scan detail: " + line);
+        }
+    }
+
+    private boolean isWithinHuntArea(EntityLivingBase entity) {
+        if (entity == null) {
+            return false;
+        }
+        double dx = entity.posX - huntCenterX;
+        double dz = entity.posZ - huntCenterZ;
+        return dx * dx + dz * dz <= huntRadius * huntRadius + 1.0E-6D;
+    }
+
+    private String getHuntEntityGroupLabel(EntityLivingBase entity) {
+        if (entity == null) {
+            return "unknown";
+        }
+        if (entity instanceof net.minecraft.entity.player.EntityPlayer) {
+            return "player";
+        }
+        if (isHostileHuntTarget(entity)) {
+            return "hostile";
+        }
+        if (isPassiveHuntTarget(entity)) {
+            return "passive";
+        }
+        return "other";
     }
 
     private EntityLivingBase getKillAuraSynchronizedHuntTarget(EntityPlayerSP player) {
@@ -3914,6 +4063,7 @@ public class PathSequenceEventListener {
         huntOrbitController.stop();
         if (target != null) {
             zszlScriptMod.LOGGER.info(I18n.format("log.path.hunt_new_target") + getHuntFilterableEntityName(target));
+            recordDebugTrace("hunt target -> " + getHuntFilterableEntityName(target));
         }
     }
 
@@ -4635,9 +4785,6 @@ public class PathSequenceEventListener {
         if (huntIgnoreInvisible && entity.isInvisible()) {
             return false;
         }
-        if (!matchesHuntTargetGroup(entity)) {
-            return false;
-        }
         String filterName = getHuntFilterableEntityName(entity);
         if (huntEnableNameBlacklist
                 && KillAuraHandler.getNameListMatchIndex(filterName, huntNameBlacklist) != Integer.MAX_VALUE) {
@@ -4645,6 +4792,9 @@ public class PathSequenceEventListener {
         }
         if (huntEnableNameWhitelist) {
             return getActiveHuntWhitelistMatchIndex(filterName) != Integer.MAX_VALUE;
+        }
+        if (!matchesHuntTargetGroup(entity)) {
+            return false;
         }
         return true;
     }

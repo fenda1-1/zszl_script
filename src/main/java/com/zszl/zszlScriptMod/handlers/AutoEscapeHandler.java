@@ -54,6 +54,7 @@ public class AutoEscapeHandler {
     private static final List<AutoEscapeRule> rules = new CopyOnWriteArrayList<>();
     private static final List<String> categories = new CopyOnWriteArrayList<>();
     private static final String CATEGORY_DEFAULT = "默认";
+    private static boolean masterEnabled = true;
 
     private enum RuntimeState {
         IDLE,
@@ -75,6 +76,7 @@ public class AutoEscapeHandler {
     public static synchronized void loadConfig() {
         rules.clear();
         categories.clear();
+        masterEnabled = true;
 
         Path configFile = getConfigFile();
         if (!Files.exists(configFile)) {
@@ -90,6 +92,9 @@ public class AutoEscapeHandler {
 
             if (parsed != null && parsed.isJsonObject()) {
                 JsonObject root = parsed.getAsJsonObject();
+                if (root.has("masterEnabled") && root.get("masterEnabled").isJsonPrimitive()) {
+                    masterEnabled = root.get("masterEnabled").getAsBoolean();
+                }
                 if (root.has("categories") && root.get("categories").isJsonArray()) {
                     JsonArray categoryArray = root.getAsJsonArray("categories");
                     for (JsonElement element : categoryArray) {
@@ -138,6 +143,7 @@ public class AutoEscapeHandler {
             Files.createDirectories(configFile.getParent());
 
             JsonObject root = new JsonObject();
+            root.addProperty("masterEnabled", masterEnabled);
             root.add("categories", GSON.toJsonTree(new ArrayList<>(categories)));
             root.add("rules", GSON.toJsonTree(snapshotRules()));
 
@@ -156,6 +162,20 @@ public class AutoEscapeHandler {
     public static synchronized List<String> getCategoriesSnapshot() {
         ensureCategoriesSynced();
         return new ArrayList<>(categories);
+    }
+
+    public static synchronized boolean isMasterEnabled() {
+        return masterEnabled;
+    }
+
+    public static synchronized void setMasterEnabled(boolean enabled) {
+        masterEnabled = enabled;
+        if (!enabled) {
+            resetRuntimeState();
+        }
+        saveConfig();
+        notifyPlayer(TextFormatting.AQUA + "[自动逃离] "
+                + (enabled ? TextFormatting.GREEN + "总开关已开启。" : TextFormatting.RED + "总开关已关闭。"));
     }
 
     public static synchronized void replaceCategoryOrder(List<String> orderedCategories) {
@@ -283,6 +303,13 @@ public class AutoEscapeHandler {
     @SubscribeEvent
     public void onPlayerTick(TickEvent.PlayerTickEvent event) {
         if (event.phase != TickEvent.Phase.START || mc.player == null || mc.world == null || event.player != mc.player) {
+            return;
+        }
+
+        if (!isMasterEnabled()) {
+            if (runtimeState != RuntimeState.IDLE) {
+                resetRuntimeState();
+            }
             return;
         }
 

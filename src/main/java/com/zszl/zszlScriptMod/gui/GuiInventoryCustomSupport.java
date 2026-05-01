@@ -36,6 +36,7 @@ import com.zszl.zszlScriptMod.gui.config.GuiServerFeatureVisibilityConfig;
 import com.zszl.zszlScriptMod.gui.dungeon.GuiWarehouseManager;
 import com.zszl.zszlScriptMod.gui.path.GuiPathManager;
 import com.zszl.zszlScriptMod.handlers.AutoEatHandler;
+import com.zszl.zszlScriptMod.handlers.AutoEscapeHandler;
 import com.zszl.zszlScriptMod.handlers.AutoFishingHandler;
 import com.zszl.zszlScriptMod.handlers.AutoFollowHandler;
 import com.zszl.zszlScriptMod.handlers.AutoPickupHandler;
@@ -908,6 +909,8 @@ abstract class GuiInventoryCustomSupport extends GuiInventoryBase {
             active = AutoPickupHandler.globalEnabled;
         } else if ("conditional_execution".equals(command)) {
             active = ConditionalExecutionHandler.isGloballyEnabled();
+        } else if ("auto_escape".equals(command)) {
+            active = AutoEscapeHandler.isMasterEnabled();
         } else if ("toggle_auto_use_item".equals(command)) {
             active = AutoUseItemHandler.globalEnabled;
         } else if ("toggle_server_feature_visibility".equals(command)) {
@@ -2628,8 +2631,12 @@ abstract class GuiInventoryCustomSupport extends GuiInventoryBase {
             }
             return true;
         } else if ("auto_escape".equals(command)) {
-            closeOverlay();
-            mc.displayGuiScreen(new GuiAutoEscapeManager(null));
+            if (mouseButton == 0) {
+                AutoEscapeHandler.setMasterEnabled(!AutoEscapeHandler.isMasterEnabled());
+            } else if (mouseButton == 1) {
+                closeOverlay();
+                mc.displayGuiScreen(new GuiAutoEscapeManager(null));
+            }
             return true;
         } else if ("keybind_manager".equals(command)) {
             closeOverlay();

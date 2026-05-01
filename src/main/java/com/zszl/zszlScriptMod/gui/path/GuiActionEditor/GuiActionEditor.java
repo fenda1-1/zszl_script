@@ -1990,6 +1990,8 @@ public class GuiActionEditor extends ThemedGuiScreen {
             case "toggle_autofishing":
             case "toggle_kill_aura":
             case "toggle_fly":
+            case "toggle_conditional_execution":
+            case "toggle_auto_escape":
                 ActionUtilitySections.buildSimpleToggleSection(this, x, currentY, fieldWidth);
                 break;
             case "toggle_other_feature":

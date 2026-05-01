@@ -8,9 +8,11 @@ import com.zszl.zszlScriptMod.config.ModConfig;
 import com.zszl.zszlScriptMod.gui.GuiInventory;
 import com.zszl.zszlScriptMod.gui.MainUiLayoutManager;
 import com.zszl.zszlScriptMod.handlers.AutoEatHandler;
+import com.zszl.zszlScriptMod.handlers.AutoEscapeHandler;
 import com.zszl.zszlScriptMod.handlers.AutoEquipHandler;
 import com.zszl.zszlScriptMod.handlers.AutoFishingHandler;
 import com.zszl.zszlScriptMod.handlers.AutoPickupHandler;
+import com.zszl.zszlScriptMod.handlers.ConditionalExecutionHandler;
 import com.zszl.zszlScriptMod.handlers.EmbeddedNavigationHandler;
 import com.zszl.zszlScriptMod.handlers.FlyHandler;
 import com.zszl.zszlScriptMod.handlers.GuiBlockerHandler;
@@ -87,6 +89,10 @@ public class PathSequenceManager {
             "window_click_uuid_map.json");
     private static final Path RUN_SEQUENCE_ACTION_STATE_PATH = Paths.get(ModConfig.CONFIG_DIR,
             "run_sequence_action_state.json");
+    private static final String STEP_RETRY_DEFAULTS_FILE_NAME = "path_step_retry_defaults.json";
+    private static final int BUILTIN_STEP_RETRY_COUNT = 3;
+    private static final int BUILTIN_STEP_PATH_RETRY_TIMEOUT_SECONDS = 5;
+    private static final int BUILTIN_STEP_ARRIVAL_TOLERANCE_BLOCKS = 1;
 
     private static final Gson GSON = new GsonBuilder()
             .serializeSpecialFloatingPointValues()
@@ -97,6 +103,11 @@ public class PathSequenceManager {
     private static volatile boolean windowClickMapLoaded = false;
     private static final Map<String, Integer> runSequenceActionCountByUuid = new ConcurrentHashMap<>();
     private static volatile boolean runSequenceActionStateLoaded = false;
+    private static volatile boolean stepRetryDefaultsLoaded = false;
+    private static volatile Path stepRetryDefaultsProfileDir = null;
+    private static volatile int defaultStepRetryCount = BUILTIN_STEP_RETRY_COUNT;
+    private static volatile int defaultStepPathRetryTimeoutSeconds = BUILTIN_STEP_PATH_RETRY_TIMEOUT_SECONDS;
+    private static volatile int defaultStepArrivalToleranceBlocks = BUILTIN_STEP_ARRIVAL_TOLERANCE_BLOCKS;
 
     private static final String BUILTIN_SEQUENCES_RESOURCE = "pathsequences.json";
     private static List<String> categories = new ArrayList<>(Arrays.asList(I18n.format("path.category.default")));
@@ -218,6 +229,107 @@ public class PathSequenceManager {
         if (runSequenceActionCountByUuid.remove(uuid) != null) {
             saveRunSequenceActionState();
         }
+    }
+
+    private static Path getStepRetryDefaultsPath() {
+        Path profileDir = ProfileManager.getCurrentProfileDir();
+        return profileDir == null
+                ? Paths.get(ModConfig.CONFIG_DIR, STEP_RETRY_DEFAULTS_FILE_NAME)
+                : profileDir.resolve(STEP_RETRY_DEFAULTS_FILE_NAME);
+    }
+
+    private static void resetStepRetryDefaultsToBuiltinInternal() {
+        defaultStepRetryCount = BUILTIN_STEP_RETRY_COUNT;
+        defaultStepPathRetryTimeoutSeconds = BUILTIN_STEP_PATH_RETRY_TIMEOUT_SECONDS;
+        defaultStepArrivalToleranceBlocks = BUILTIN_STEP_ARRIVAL_TOLERANCE_BLOCKS;
+    }
+
+    private static synchronized void ensureStepRetryDefaultsLoaded() {
+        Path currentProfileDir = ProfileManager.getCurrentProfileDir();
+        if (stepRetryDefaultsLoaded && Objects.equals(stepRetryDefaultsProfileDir, currentProfileDir)) {
+            return;
+        }
+        stepRetryDefaultsLoaded = true;
+        stepRetryDefaultsProfileDir = currentProfileDir;
+        resetStepRetryDefaultsToBuiltinInternal();
+
+        Path defaultsPath = getStepRetryDefaultsPath();
+        if (!Files.exists(defaultsPath)) {
+            return;
+        }
+        try (Reader reader = Files.newBufferedReader(defaultsPath, StandardCharsets.UTF_8)) {
+            JsonObject root = new JsonParser().parse(reader).getAsJsonObject();
+            if (root.has("retryCount")) {
+                defaultStepRetryCount = Math.max(0, root.get("retryCount").getAsInt());
+            }
+            if (root.has("pathRetryTimeoutSeconds")) {
+                defaultStepPathRetryTimeoutSeconds = Math.max(0, root.get("pathRetryTimeoutSeconds").getAsInt());
+            }
+            if (root.has("arrivalToleranceBlocks")) {
+                defaultStepArrivalToleranceBlocks = Math.max(0, root.get("arrivalToleranceBlocks").getAsInt());
+            }
+        } catch (Exception e) {
+            zszlScriptMod.LOGGER.warn("[path_retry] 读取步骤寻路重试默认值失败: {}", defaultsPath, e);
+            resetStepRetryDefaultsToBuiltinInternal();
+        }
+    }
+
+    private static synchronized void saveStepRetryDefaults() {
+        Path defaultsPath = getStepRetryDefaultsPath();
+        try {
+            Files.createDirectories(defaultsPath.getParent());
+            JsonObject root = new JsonObject();
+            root.addProperty("retryCount", Math.max(0, defaultStepRetryCount));
+            root.addProperty("pathRetryTimeoutSeconds", Math.max(0, defaultStepPathRetryTimeoutSeconds));
+            root.addProperty("arrivalToleranceBlocks", Math.max(0, defaultStepArrivalToleranceBlocks));
+            try (Writer writer = Files.newBufferedWriter(defaultsPath, StandardCharsets.UTF_8)) {
+                GSON.toJson(root, writer);
+            }
+        } catch (Exception e) {
+            zszlScriptMod.LOGGER.warn("[path_retry] 保存步骤寻路重试默认值失败: {}", defaultsPath, e);
+        }
+    }
+
+    public static int getDefaultStepRetryCount() {
+        ensureStepRetryDefaultsLoaded();
+        return Math.max(0, defaultStepRetryCount);
+    }
+
+    public static int getDefaultStepPathRetryTimeoutSeconds() {
+        ensureStepRetryDefaultsLoaded();
+        return Math.max(0, defaultStepPathRetryTimeoutSeconds);
+    }
+
+    public static int getBuiltinStepRetryCount() {
+        return BUILTIN_STEP_RETRY_COUNT;
+    }
+
+    public static int getBuiltinStepPathRetryTimeoutSeconds() {
+        return BUILTIN_STEP_PATH_RETRY_TIMEOUT_SECONDS;
+    }
+
+    public static int getDefaultStepArrivalToleranceBlocks() {
+        ensureStepRetryDefaultsLoaded();
+        return Math.max(0, defaultStepArrivalToleranceBlocks);
+    }
+
+    public static int getBuiltinStepArrivalToleranceBlocks() {
+        return BUILTIN_STEP_ARRIVAL_TOLERANCE_BLOCKS;
+    }
+
+    public static synchronized void updateDefaultStepRetrySettings(int retryCount, int timeoutSeconds,
+            int arrivalToleranceBlocks) {
+        ensureStepRetryDefaultsLoaded();
+        defaultStepRetryCount = Math.max(0, retryCount);
+        defaultStepPathRetryTimeoutSeconds = Math.max(0, timeoutSeconds);
+        defaultStepArrivalToleranceBlocks = Math.max(0, arrivalToleranceBlocks);
+        saveStepRetryDefaults();
+    }
+
+    public static synchronized void resetDefaultStepRetrySettings() {
+        ensureStepRetryDefaultsLoaded();
+        resetStepRetryDefaultsToBuiltinInternal();
+        saveStepRetryDefaults();
     }
 
     public static String getPersistentActionUuid(ActionData actionData) {
@@ -857,6 +969,16 @@ public class PathSequenceManager {
                                 + ((params.has("enabled") && !params.get("enabled").getAsBoolean())
                                         ? I18n.format("path.common.off")
                                         : I18n.format("path.common.on"));
+                    case "toggle_conditional_execution":
+                        return "条件执行: "
+                                + ((params.has("enabled") && !params.get("enabled").getAsBoolean())
+                                        ? I18n.format("path.common.off")
+                                        : I18n.format("path.common.on"));
+                    case "toggle_auto_escape":
+                        return "自动逃离: "
+                                + ((params.has("enabled") && !params.get("enabled").getAsBoolean())
+                                        ? I18n.format("path.common.off")
+                                        : I18n.format("path.common.on"));
                     case "toggle_other_feature":
                         String otherFeatureName = getOtherFeatureDisplayName(
                                 params.has("featureId") ? params.get("featureId").getAsString() : "",
@@ -1383,8 +1505,9 @@ public class PathSequenceManager {
         private double[] gotoPoint;
         private final List<ActionData> actions = new ArrayList<>();
         private String note = "";
-        private int retryCount = 3;
-        private int pathRetryTimeoutSeconds = 5;
+        private int retryCount = getDefaultStepRetryCount();
+        private int pathRetryTimeoutSeconds = getDefaultStepPathRetryTimeoutSeconds();
+        private int arrivalToleranceBlocks = getDefaultStepArrivalToleranceBlocks();
         private String retryExhaustedPolicy = "END_SEQUENCE";
         private String retryExhaustedSequenceName = "";
 
@@ -1397,6 +1520,7 @@ public class PathSequenceManager {
             this.note = other.note;
             this.retryCount = other.retryCount;
             this.pathRetryTimeoutSeconds = other.pathRetryTimeoutSeconds;
+            this.arrivalToleranceBlocks = other.arrivalToleranceBlocks;
             this.retryExhaustedPolicy = other.retryExhaustedPolicy;
             this.retryExhaustedSequenceName = other.retryExhaustedSequenceName;
             for (ActionData action : other.actions) {
@@ -1442,6 +1566,14 @@ public class PathSequenceManager {
 
         public void setPathRetryTimeoutSeconds(int pathRetryTimeoutSeconds) {
             this.pathRetryTimeoutSeconds = Math.max(0, pathRetryTimeoutSeconds);
+        }
+
+        public int getArrivalToleranceBlocks() {
+            return Math.max(0, arrivalToleranceBlocks);
+        }
+
+        public void setArrivalToleranceBlocks(int arrivalToleranceBlocks) {
+            this.arrivalToleranceBlocks = Math.max(0, arrivalToleranceBlocks);
         }
 
         public String getRetryExhaustedPolicy() {
@@ -1718,7 +1850,7 @@ public class PathSequenceManager {
                             int retryCount = stepObj.get("retryCount").getAsInt();
                             if (retryCount <= 0 && hasLegacyStepSchedulingFields
                                     && !stepObj.has("pathRetryTimeoutSeconds")) {
-                                step.setRetryCount(3);
+                                step.setRetryCount(getDefaultStepRetryCount());
                             } else {
                                 step.setRetryCount(retryCount);
                             }
@@ -1728,6 +1860,9 @@ public class PathSequenceManager {
                         }
                         if (stepObj.has("pathRetryTimeoutSeconds")) {
                             step.setPathRetryTimeoutSeconds(stepObj.get("pathRetryTimeoutSeconds").getAsInt());
+                        }
+                        if (stepObj.has("arrivalToleranceBlocks")) {
+                            step.setArrivalToleranceBlocks(stepObj.get("arrivalToleranceBlocks").getAsInt());
                         }
                         if (stepObj.has("retryExhaustedPolicy")) {
                             step.setRetryExhaustedPolicy(stepObj.get("retryExhaustedPolicy").getAsString());
@@ -2194,6 +2329,14 @@ public class PathSequenceManager {
                 case "toggle_fly":
                     final boolean toggleFlyEnabled = !params.has("enabled") || params.get("enabled").getAsBoolean();
                     return player -> FlyHandler.INSTANCE.setEnabled(toggleFlyEnabled);
+                case "toggle_conditional_execution":
+                    final boolean toggleConditionalExecutionEnabled = !params.has("enabled")
+                            || params.get("enabled").getAsBoolean();
+                    return player -> ConditionalExecutionHandler.setGlobalEnabled(toggleConditionalExecutionEnabled);
+                case "toggle_auto_escape":
+                    final boolean toggleAutoEscapeEnabled = !params.has("enabled")
+                            || params.get("enabled").getAsBoolean();
+                    return player -> AutoEscapeHandler.setMasterEnabled(toggleAutoEscapeEnabled);
                 case "toggle_other_feature":
                     final String targetOtherFeatureId = params.has("featureId")
                             ? params.get("featureId").getAsString()
@@ -2467,6 +2610,7 @@ public class PathSequenceManager {
                 stepObj.addProperty("note", step.getNote());
                 stepObj.addProperty("retryCount", step.getRetryCount());
                 stepObj.addProperty("pathRetryTimeoutSeconds", step.getPathRetryTimeoutSeconds());
+                stepObj.addProperty("arrivalToleranceBlocks", step.getArrivalToleranceBlocks());
                 stepObj.addProperty("retryExhaustedPolicy", step.getRetryExhaustedPolicy());
                 if (!step.getRetryExhaustedSequenceName().isEmpty()) {
                     stepObj.addProperty("retryExhaustedSequenceName", step.getRetryExhaustedSequenceName());

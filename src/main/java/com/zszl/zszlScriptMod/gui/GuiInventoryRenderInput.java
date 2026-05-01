@@ -53,6 +53,7 @@ import com.zszl.zszlScriptMod.gui.path.GuiPathManager;
 import com.zszl.zszlScriptMod.gui.theme.GuiThemeManager;
 import com.zszl.zszlScriptMod.handlers.AdExpPanelHandler;
 import com.zszl.zszlScriptMod.handlers.AutoEatHandler;
+import com.zszl.zszlScriptMod.handlers.AutoEscapeHandler;
 import com.zszl.zszlScriptMod.handlers.AutoFishingHandler;
 import com.zszl.zszlScriptMod.handlers.AutoEquipHandler;
 import com.zszl.zszlScriptMod.handlers.AutoFollowHandler;
@@ -595,6 +596,9 @@ abstract class GuiInventoryRenderInput extends GuiInventoryFeatureScreens {
                                 bgColor = 0xFF33AA33;
                             else if (command.equals("conditional_execution")
                                     && ConditionalExecutionHandler.isGloballyEnabled())
+                                bgColor = 0xFF33AA33;
+                            else if (command.equals("auto_escape")
+                                    && AutoEscapeHandler.isMasterEnabled())
                                 bgColor = 0xFF33AA33;
                             else if (command.equals("toggle_auto_pickup") && AutoPickupHandler.globalEnabled)
                                 bgColor = 0xFF33AA33;
@@ -1518,8 +1522,12 @@ abstract class GuiInventoryRenderInput extends GuiInventoryFeatureScreens {
                             mc.displayGuiScreen(new GuiConditionalExecutionManager(null));
                         }
                     } else if (command.equals("auto_escape")) {
-                        closeOverlay();
-                        mc.displayGuiScreen(new GuiAutoEscapeManager(null));
+                        if (mouseButton == 0) {
+                            AutoEscapeHandler.setMasterEnabled(!AutoEscapeHandler.isMasterEnabled());
+                        } else if (mouseButton == 1) {
+                            closeOverlay();
+                            mc.displayGuiScreen(new GuiAutoEscapeManager(null));
+                        }
                     } else if (command.equals("toggle_death_auto_rejoin")) {
                         if (mouseButton == 0) {
                             DeathAutoRejoinHandler.deathAutoRejoinEnabled = !DeathAutoRejoinHandler.deathAutoRejoinEnabled;

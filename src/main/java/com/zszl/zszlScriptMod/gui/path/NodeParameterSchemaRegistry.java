@@ -142,6 +142,8 @@ public final class NodeParameterSchemaRegistry {
                                         "blocknextgui", "close_container_window", "hud_text_check", "autoeat",
                                         "autoequip", "autopickup",
                                         "toggle_autoeat", "toggle_autofishing", "toggle_kill_aura", "toggle_fly",
+                                        "toggle_conditional_execution",
+                                        "toggle_auto_escape",
                                         "runlastsequence", "run_sequence", "stop_current_sequence",
                                         "goto_action", "skip_actions", "skip_steps", "repeat_actions",
                                         "restart_sequence",
@@ -473,6 +475,12 @@ public final class NodeParameterSchemaRegistry {
                 } else if ("toggle_fly".equals(normalized)) {
                         schemas.add(FieldSchema.paramsField("enabled", "飞行开关", FieldType.BOOLEAN, false,
                                         "true=开启飞行，false=关闭飞行。", "true / false", "true"));
+                } else if ("toggle_conditional_execution".equals(normalized)) {
+                        schemas.add(FieldSchema.paramsField("enabled", "条件执行总开关", FieldType.BOOLEAN, false,
+                                        "true=开启条件执行，false=关闭条件执行。", "true / false", "true"));
+                } else if ("toggle_auto_escape".equals(normalized)) {
+                        schemas.add(FieldSchema.paramsField("enabled", "自动逃离总开关", FieldType.BOOLEAN, false,
+                                        "true=开启自动逃离检测，false=关闭自动逃离检测。", "true / false", "true"));
                 } else if ("runlastsequence".equals(normalized)) {
                 } else if ("run_sequence".equals(normalized)) {
                         schemas.add(FieldSchema.paramsField("sequenceName", "序列名", FieldType.GRAPH_REF, true,

@@ -415,9 +415,11 @@ public class KillAuraHandler implements AbstractGameEventListener {
         private final double upRange;
         private final double downRange;
         private final Predicate<EntityLivingBase> targetFilter;
+        private final boolean whitelistOverridesTargetGroup;
 
         public AreaHuntOptions(double centerX, double centerY, double centerZ, double radius,
-                double upRange, double downRange, Predicate<EntityLivingBase> targetFilter) {
+                double upRange, double downRange, Predicate<EntityLivingBase> targetFilter,
+                boolean whitelistOverridesTargetGroup) {
             this.centerX = centerX;
             this.centerY = centerY;
             this.centerZ = centerZ;
@@ -426,10 +428,15 @@ public class KillAuraHandler implements AbstractGameEventListener {
             this.upRange = Math.max(0.0D, upRange);
             this.downRange = Math.max(0.0D, downRange);
             this.targetFilter = targetFilter;
+            this.whitelistOverridesTargetGroup = whitelistOverridesTargetGroup;
         }
 
         private boolean allows(EntityLivingBase target) {
             return targetFilter == null || targetFilter.test(target);
+        }
+
+        private boolean shouldTreatAllowedTargetAsWhitelistMatched() {
+            return whitelistOverridesTargetGroup;
         }
 
         private boolean contains(Entity target) {
@@ -1955,6 +1962,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
         if (areaOptions != null && (!areaOptions.contains(target) || !areaOptions.allows(target))) {
             return null;
         }
+        boolean whitelistMatched = areaOptions != null && areaOptions.shouldTreatAllowedTargetAsWhitelistMatched();
         if (areaOptions == null && isHuntEnabled() && !isWithinConfiguredHuntVerticalRange(player, target)) {
             return null;
         }
@@ -1971,8 +1979,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
         }
 
         String targetName = getFilterableEntityName(target);
-        int whitelistPriority = Integer.MAX_VALUE;
-        boolean whitelistMatched = false;
+        int whitelistPriority = whitelistMatched ? 0 : Integer.MAX_VALUE;
         if (areaOptions == null) {
             if (enableNameBlacklist && matchesNameList(targetName, nameBlacklist)) {
                 return null;

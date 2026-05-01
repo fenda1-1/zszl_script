@@ -19,6 +19,8 @@ public final class ToggleActionLibraryGroup {
                         itemFactory.apply("toggle_autofishing"),
                         itemFactory.apply("toggle_kill_aura"),
                         itemFactory.apply("toggle_fly"),
+                        itemFactory.apply("toggle_conditional_execution"),
+                        itemFactory.apply("toggle_auto_escape"),
                         itemFactory.apply("toggle_other_feature")));
     }
 }
