@@ -423,10 +423,18 @@ public final class PathConfigValidator {
         if (safePath.isEmpty()) {
             return "";
         }
+        while (safePath.endsWith("]")) {
+            int bracketIndex = safePath.lastIndexOf('[');
+            if (bracketIndex < 0) {
+                break;
+            }
+            safePath = safePath.substring(0, bracketIndex);
+        }
+        if (safePath.isEmpty()) {
+            return "";
+        }
         int dotIndex = safePath.lastIndexOf('.');
-        int bracketIndex = safePath.lastIndexOf('[');
-        int start = Math.max(dotIndex, bracketIndex);
-        return start < 0 ? safePath : safePath.substring(start + 1).replace("]", "");
+        return dotIndex < 0 ? safePath : safePath.substring(dotIndex + 1);
     }
 
     private static ResolvedParamValue resolveParamValue(ActionParameterVariableResolver.Context variableContext,
