@@ -4,6 +4,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.zszl.zszlScriptMod.handlers.ItemFilterHandler;
+import com.zszl.zszlScriptMod.handlers.ItemSpreadHandler;
 import com.zszl.zszlScriptMod.path.ActionParameterVariableResolver;
 import com.zszl.zszlScriptMod.path.InventoryItemFilterExpressionEngine;
 import com.zszl.zszlScriptMod.path.LegacyActionRuntime;
@@ -789,6 +790,45 @@ public final class PathConfigValidator {
                 validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "intervalTicks", "使用间隔",
                         variableContext, issues);
                 break;
+            case "spread_inventory_item":
+                validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "delayTicks", "延迟",
+                        variableContext, issues);
+                validatePositiveIntParam(sequenceName, stepIndex, actionIndex, params, "perSlotCount", "每槽数量", 1,
+                        variableContext, issues);
+                List<String> spreadExpressions = InventoryItemFilterExpressionEngine.readExpressions(params);
+                if (!spreadExpressions.isEmpty()) {
+                    validateItemFilterExpressionList(sequenceName, stepIndex, actionIndex,
+                            spreadExpressions, "物品过滤表达式", issues);
+                } else if (isBlank(getString(params, "itemName"))) {
+                    issues.add(new Issue(Severity.ERROR, "spread_item_filter_missing", sequenceName, stepIndex,
+                            actionIndex, "平摊物品缺少过滤条件", "请至少添加一条物品过滤表达式。"));
+                }
+                validateSpreadEnum(sequenceName, stepIndex, actionIndex, params, "sourceScope", "来源范围",
+                        new String[] {
+                                ItemSpreadHandler.SOURCE_SCOPE_INVENTORY,
+                                ItemSpreadHandler.SOURCE_SCOPE_MAIN,
+                                ItemSpreadHandler.SOURCE_SCOPE_HOTBAR,
+                                ItemSpreadHandler.SOURCE_SCOPE_CONTAINER
+                        }, variableContext, issues);
+                validateSpreadEnum(sequenceName, stepIndex, actionIndex, params, "targetScope", "目标范围",
+                        new String[] {
+                                ItemSpreadHandler.TARGET_SCOPE_INVENTORY,
+                                ItemSpreadHandler.TARGET_SCOPE_MAIN,
+                                ItemSpreadHandler.TARGET_SCOPE_HOTBAR
+                        }, variableContext, issues);
+                validateSpreadEnum(sequenceName, stepIndex, actionIndex, params, "spreadMode", "平摊模式",
+                        new String[] {
+                                ItemSpreadHandler.MODE_ONE_PER_SLOT,
+                                ItemSpreadHandler.MODE_EVEN_SPLIT,
+                                ItemSpreadHandler.MODE_FIXED_PER_SLOT
+                        }, variableContext, issues);
+                validateSpreadEnum(sequenceName, stepIndex, actionIndex, params, "remainderMode", "残留处理",
+                        new String[] {
+                                ItemSpreadHandler.REMAINDER_RETURN_SOURCE,
+                                ItemSpreadHandler.REMAINDER_FIRST_EMPTY,
+                                ItemSpreadHandler.REMAINDER_KEEP_CURSOR
+                        }, variableContext, issues);
+                break;
             case "use_held_item":
                 validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "delayTicks", "延迟",
                         variableContext, issues);
@@ -1390,6 +1430,7 @@ public final class PathConfigValidator {
             case "dropfiltereditems":
             case "autochestclick":
             case "move_inventory_items_to_chest_slots":
+            case "spread_inventory_item":
             case "warehouse_auto_deposit":
             case "transferitemstowarehouse":
             case "move_inventory_item_to_hotbar":
@@ -1520,6 +1561,29 @@ public final class PathConfigValidator {
             issues.add(new Issue(Severity.ERROR, key + "_range", sequenceName, stepIndex, actionIndex,
                     label + "过小", "参数 " + key + " 至少应为 " + minimum + "，当前为 " + value.intValue() + "。"));
         }
+    }
+
+    private static void validateSpreadEnum(String sequenceName, int stepIndex, int actionIndex,
+            JsonObject params, String key, String label, String[] allowedValues,
+            ActionParameterVariableResolver.Context variableContext, List<Issue> issues) {
+        if (params == null || key == null || !params.has(key)) {
+            return;
+        }
+        ResolvedParamValue resolvedValue = resolveParamValue(variableContext, params, key);
+        if (resolvedValue == null || resolvedValue.isDynamicReference() || resolvedValue.isMissingReference()) {
+            return;
+        }
+        String value = safe(LegacyActionRuntime.stringifyValue(resolvedValue.value)).trim();
+        if (value.isEmpty()) {
+            return;
+        }
+        for (String allowed : allowedValues) {
+            if (allowed != null && allowed.equalsIgnoreCase(value)) {
+                return;
+            }
+        }
+        issues.add(new Issue(Severity.ERROR, key + "_invalid", sequenceName, stepIndex, actionIndex,
+                label + "不支持", "参数 " + key + " 当前值为 " + value + "。"));
     }
 
     private static void validatePositiveDoubleParam(String sequenceName, int stepIndex, int actionIndex,

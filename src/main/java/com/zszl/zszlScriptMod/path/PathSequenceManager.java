@@ -17,6 +17,7 @@ import com.zszl.zszlScriptMod.handlers.EmbeddedNavigationHandler;
 import com.zszl.zszlScriptMod.handlers.FlyHandler;
 import com.zszl.zszlScriptMod.handlers.GuiBlockerHandler;
 import com.zszl.zszlScriptMod.handlers.ItemFilterHandler;
+import com.zszl.zszlScriptMod.handlers.ItemSpreadHandler;
 import com.zszl.zszlScriptMod.handlers.KillAuraHandler;
 import com.zszl.zszlScriptMod.handlers.WarehouseEventHandler;
 import com.zszl.zszlScriptMod.otherfeatures.OtherFeatureGroupManager;
@@ -924,6 +925,29 @@ public class PathSequenceManager {
                                 + moveChestDelayTicks
                                 + " tick"
                                 + getDelayNormalizationDescriptionSuffix(params);
+                    case "spread_inventory_item":
+                        List<String> spreadExpressions = InventoryItemFilterExpressionEngine.readExpressions(params);
+                        String spreadSummary = spreadExpressions.isEmpty()
+                                ? (params.has("itemName") ? params.get("itemName").getAsString() : "未设置")
+                                : InventoryItemFilterExpressionEngine.summarizeExpressions(spreadExpressions);
+                        int spreadTargetSlots = countIntListParam(params, "targetSlots", "targetSlotsText");
+                        String spreadMode = params.has("spreadMode")
+                                ? params.get("spreadMode").getAsString()
+                                : ItemSpreadHandler.MODE_ONE_PER_SLOT;
+                        String spreadModeText = ItemSpreadHandler.MODE_EVEN_SPLIT.equalsIgnoreCase(spreadMode)
+                                ? "平均分配"
+                                : (ItemSpreadHandler.MODE_FIXED_PER_SLOT.equalsIgnoreCase(spreadMode)
+                                        ? "每槽指定数量"
+                                        : "每槽1个");
+                        return "平摊物品到背包: "
+                                + spreadSummary
+                                + " / "
+                                + spreadModeText
+                                + " / 目标"
+                                + (spreadTargetSlots > 0 ? spreadTargetSlots + "格" : "按范围")
+                                + " / 延迟"
+                                + (params.has("delayTicks") ? Math.max(0, params.get("delayTicks").getAsInt()) : 1)
+                                + " tick";
                     case "transferitemstowarehouse":
                         return I18n.format("path.action.desc.transfer_to_warehouse");
                     case "warehouse_auto_deposit":
@@ -2239,6 +2263,8 @@ public class PathSequenceManager {
                     });
                 case "move_inventory_items_to_chest_slots":
                     return player -> ItemFilterHandler.moveInventoryItemsToChestSlots(params);
+                case "spread_inventory_item":
+                    return player -> ItemSpreadHandler.spreadInventoryItem(params);
                 case "transferitemstowarehouse":
                     return player -> ItemFilterHandler.transferItemsToWarehouse();
                 case "warehouse_auto_deposit":
