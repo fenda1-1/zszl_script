@@ -56,6 +56,7 @@ public final class LegacySequenceTriggerManager {
     public static final String TRIGGER_INVENTORY_CHANGED = "inventory_changed";
     public static final String TRIGGER_INVENTORY_FULL = "inventory_full";
     public static final String TRIGGER_ENTITY_NEARBY = "entity_nearby";
+    public static final String TRIGGER_PLAYER_LIST = "player_list";
     public static final String TRIGGER_ITEM_PICKUP = "item_pickup";
     public static final String TRIGGER_SERVER_CONNECT = "server_connect";
     public static final String TRIGGER_SERVER_DISCONNECT = "server_disconnect";
@@ -396,6 +397,8 @@ public final class LegacySequenceTriggerManager {
                 return matchesTextParam(params, "entityText", eventData, "entityName");
             case TRIGGER_ENTITY_NEARBY:
                 return matchesEntityNearby(params, eventData);
+            case TRIGGER_PLAYER_LIST:
+                return matchesPlayerList(params, eventData);
             case TRIGGER_ITEM_PICKUP:
                 return matchesItemPickup(params, eventData);
             case TRIGGER_WORLD_CHANGED:
@@ -510,6 +513,10 @@ public final class LegacySequenceTriggerManager {
         String registryName = getStringValue(eventData, "registryName");
         String combined = (itemName + " | " + registryName).toLowerCase(Locale.ROOT);
         return combined.contains(itemText.toLowerCase(Locale.ROOT));
+    }
+
+    private static boolean matchesPlayerList(JsonObject params, JsonObject eventData) {
+        return PlayerListTriggerSupport.matchesConfiguredPlayers(params, eventData);
     }
 
     private static boolean matchesDamageEvent(JsonObject params, JsonObject eventData) {
@@ -653,6 +660,9 @@ public final class LegacySequenceTriggerManager {
         sanitizeIntParam(sanitized, "minFilledSlots", 0, 0);
         sanitizeDoubleParam(sanitized, "minDamage", 0.0D, 0.0D);
         sanitizeDoubleParam(sanitized, "hpThreshold", 6.0D, 0.0D);
+        if (TRIGGER_PLAYER_LIST.equals(triggerType)) {
+            PlayerListTriggerSupport.sanitizeParams(sanitized);
+        }
         return sanitized;
     }
 
@@ -833,6 +843,8 @@ public final class LegacySequenceTriggerManager {
                 return "背包满";
             case TRIGGER_ENTITY_NEARBY:
                 return "附近实体";
+            case TRIGGER_PLAYER_LIST:
+                return "玩家列表";
             case TRIGGER_ITEM_PICKUP:
                 return "拾取物品";
             case TRIGGER_SERVER_CONNECT:
@@ -907,6 +919,7 @@ public final class LegacySequenceTriggerManager {
                 || TRIGGER_INVENTORY_CHANGED.equals(value)
                 || TRIGGER_INVENTORY_FULL.equals(value)
                 || TRIGGER_ENTITY_NEARBY.equals(value)
+                || TRIGGER_PLAYER_LIST.equals(value)
                 || TRIGGER_ITEM_PICKUP.equals(value)
                 || TRIGGER_SERVER_CONNECT.equals(value)
                 || TRIGGER_SERVER_DISCONNECT.equals(value)) {

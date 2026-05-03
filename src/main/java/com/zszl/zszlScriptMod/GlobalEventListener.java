@@ -10,6 +10,7 @@ import com.zszl.zszlScriptMod.handlers.GuiBlockerHandler;
 import com.zszl.zszlScriptMod.listenersupport.PlayerIdleTriggerTracker;
 import com.zszl.zszlScriptMod.path.node.NodeTriggerManager;
 import com.zszl.zszlScriptMod.path.trigger.LegacySequenceTriggerManager;
+import com.zszl.zszlScriptMod.path.trigger.PlayerListTriggerSupport;
 import com.zszl.zszlScriptMod.utils.WorldLoadSafety;
 import com.zszl.zszlScriptMod.utils.guiinspect.GuiElementInspector;
 import net.minecraft.ChatFormatting;
@@ -37,6 +38,7 @@ import net.minecraftforge.event.entity.player.AttackEntityEvent;
 import net.minecraftforge.eventbus.api.listener.SubscribeEvent;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
@@ -63,6 +65,8 @@ public final class GlobalEventListener {
     private String lastWorldKey = "";
     private String lastScoreboardSignature = "";
     private String lastNearbyEntitySignature = "";
+    private PlayerListTriggerSupport.PlayerSnapshot lastPlayerListSnapshot = new PlayerListTriggerSupport.PlayerSnapshot(
+            Collections.emptyList(), "");
     private Screen lastGuiScreen = null;
     private String lastGuiClassName = "";
     private String lastGuiTitle = "";
@@ -112,6 +116,8 @@ public final class GlobalEventListener {
                 || LegacySequenceTriggerManager.hasRulesForTrigger(LegacySequenceTriggerManager.TRIGGER_ENTITY_NEARBY);
         boolean needsScoreboardChecks = LegacySequenceTriggerManager
                 .hasRulesForTrigger(LegacySequenceTriggerManager.TRIGGER_SCOREBOARD_CHANGED);
+        boolean needsPlayerListChecks = LegacySequenceTriggerManager
+                .hasRulesForTrigger(LegacySequenceTriggerManager.TRIGGER_PLAYER_LIST);
         boolean needsTimerTriggers = NodeTriggerManager.hasGraphsForTrigger(NodeTriggerManager.TRIGGER_TIMER)
                 || LegacySequenceTriggerManager.hasRulesForTrigger(LegacySequenceTriggerManager.TRIGGER_TIMER);
         boolean needsHpLowTriggers = NodeTriggerManager.hasGraphsForTrigger(NodeTriggerManager.TRIGGER_HP_LOW)
@@ -219,6 +225,16 @@ public final class GlobalEventListener {
                         scoreboardTrigger);
             }
             lastScoreboardSignature = scoreboardSignature;
+        }
+        if (needsPlayerListChecks) {
+            PlayerListTriggerSupport.PlayerSnapshot playerListSnapshot = PlayerListTriggerSupport.captureSnapshot(mc);
+            if (!playerListSnapshot.players.isEmpty()) {
+                LegacySequenceTriggerManager.triggerEvent(LegacySequenceTriggerManager.TRIGGER_PLAYER_LIST,
+                        PlayerListTriggerSupport.buildTriggerEvent(lastPlayerListSnapshot, playerListSnapshot));
+            }
+            lastPlayerListSnapshot = playerListSnapshot;
+        } else {
+            lastPlayerListSnapshot = new PlayerListTriggerSupport.PlayerSnapshot(Collections.emptyList(), "");
         }
 
         if (needsTimerTriggers && clientTickCounter % 20 == 0) {
@@ -451,6 +467,7 @@ public final class GlobalEventListener {
         lastWorldKey = "";
         lastScoreboardSignature = "";
         lastNearbyEntitySignature = "";
+        lastPlayerListSnapshot = new PlayerListTriggerSupport.PlayerSnapshot(Collections.emptyList(), "");
         lastGuiScreen = null;
         lastGuiClassName = "";
         lastGuiTitle = "";

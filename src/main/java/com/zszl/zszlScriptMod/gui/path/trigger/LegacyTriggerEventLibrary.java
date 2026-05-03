@@ -28,6 +28,8 @@ public final class LegacyTriggerEventLibrary {
                 new LegacyTriggerEventItem(false, "受到伤害", LegacySequenceTriggerManager.TRIGGER_PLAYER_HURT, "配置伤害来源和最小伤害值。"),
                 new LegacyTriggerEventItem(false, "攻击实体", LegacySequenceTriggerManager.TRIGGER_ATTACK_ENTITY, "配置目标实体文本。"),
                 new LegacyTriggerEventItem(false, "击杀目标", LegacySequenceTriggerManager.TRIGGER_TARGET_KILL, "配置被击杀实体文本。"),
+                new LegacyTriggerEventItem(false, "玩家列表", LegacySequenceTriggerManager.TRIGGER_PLAYER_LIST,
+                        "当 Tab 玩家列表中存在匹配玩家时按冷却触发，可配置多个名称卡片并选择包含或全匹配。"),
                 new LegacyTriggerEventItem(false, "死亡", LegacySequenceTriggerManager.TRIGGER_DEATH, "角色死亡时触发。"),
                 new LegacyTriggerEventItem(false, "重生", LegacySequenceTriggerManager.TRIGGER_RESPAWN, "角色重生后触发。"),
                 new LegacyTriggerEventItem(true, "世界 / 区域 / 背包", "", ""),
