@@ -6,6 +6,8 @@ import net.minecraft.client.entity.EntityPlayerSP;
 import net.minecraft.client.gui.GuiMainMenu;
 import net.minecraft.client.gui.GuiMerchant;
 import net.minecraft.client.gui.GuiMultiplayer;
+import net.minecraft.client.gui.GuiScreen;
+import net.minecraft.client.gui.ScaledResolution;
 import net.minecraft.client.gui.inventory.GuiChest;
 import net.minecraft.client.multiplayer.WorldClient;
 import net.minecraft.entity.Entity;
@@ -34,6 +36,10 @@ import net.minecraftforge.fml.common.network.internal.FMLProxyPacket;
 
 import com.zszl.zszlScriptMod.PerformanceMonitor;
 import com.zszl.zszlScriptMod.zszlScriptMod;
+import com.zszl.zszlScriptMod.gui.GuiInventory;
+import com.zszl.zszlScriptMod.gui.GuiInventoryOverlayScreen;
+
+import java.lang.reflect.Method;
 import com.zszl.zszlScriptMod.config.DebugModule;
 import com.zszl.zszlScriptMod.config.ModConfig;
 import com.zszl.zszlScriptMod.handlers.ArenaItemHandler;
@@ -1259,71 +1265,180 @@ public class ModUtils {
     }
 
     /**
-     * 【重构】模拟鼠标点击（支持动态分辨率缩放和静默/移动模式切换）
-     * 静默模式现在使用更可靠的 GuiClick.ahk，它能模拟悬浮和点击，适用于GUI按钮。
-     *
-     * @param x              记录时的X坐标
-     * @param y              记录时的Y坐标
-     * @param isLeftClick    是否为左键点击
-     * @param originalWidth  记录坐标时的窗口宽度
-     * @param originalHeight 记录坐标时的窗口高度
+     * 模拟鼠标点击。
+     * 默认优先走原版世界点击或当前 GUI 事件注入，仅在 GUI 注入失败时才回退到 AHK。
      */
     public static void simulateMouseClick(int x, int y, boolean isLeftClick, int originalWidth, int originalHeight) {
         simulateMouseClick(x, y, isLeftClick ? "left" : "right", originalWidth, originalHeight);
     }
 
     public static void simulateMouseClick(int x, int y, String mouseButton, int originalWidth, int originalHeight) {
-        if (ModConfig.isDebugFlagEnabled(DebugModule.AHK_EXECUTION) && Minecraft.getMinecraft().player != null) {
-            String mode = ModConfig.ahkMoveMouseMode ? "移动模式" : "后台模拟模式 (新)";
-            String debugMsg = String.format("§d[调试] §7模拟鼠标点击 (%s): 逻辑坐标(%d, %d), 原始分辨率(%dx%d)", mode, x, y,
-                    originalWidth, originalHeight);
-            Minecraft.getMinecraft().player.sendMessage(new TextComponentString(debugMsg));
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc == null) {
+            return;
         }
 
-        // 将外部调用包裹在新线程中，防止阻塞游戏主线程
+        Runnable task = () -> {
+            try {
+                if (trySimulateMouseClickDirect(mc, x, y, mouseButton, originalWidth, originalHeight)) {
+                    debugMouseClickRoute("原生/GUI 注入", x, y, originalWidth, originalHeight, mouseButton);
+                    return;
+                }
+
+                if (mc.currentScreen != null) {
+                    performAhkMouseClickFallback(x, y, mouseButton, originalWidth, originalHeight);
+                    return;
+                }
+            } catch (Exception e) {
+                zszlScriptMod.LOGGER.error("模拟鼠标点击失败", e);
+            }
+        };
+
+        if (mc.isCallingFromMinecraftThread()) {
+            task.run();
+        } else {
+            mc.addScheduledTask(task);
+        }
+    }
+
+    private static boolean trySimulateMouseClickDirect(Minecraft mc, int x, int y, String mouseButton, int originalWidth,
+            int originalHeight) {
+        if (mc == null) {
+            return false;
+        }
+        if (mc.currentScreen == null) {
+            return invokeMinecraftWorldClick(mc, mouseButton);
+        }
+        return invokeGuiClick(mc, x, y, mouseButton, originalWidth, originalHeight);
+    }
+
+    private static boolean invokeMinecraftWorldClick(Minecraft mc, String mouseButton) {
+        String[] methodNames;
+        if ("middle".equalsIgnoreCase(mouseButton)) {
+            methodNames = new String[] { "middleClickMouse", "func_147112_ai", "pickBlock" };
+        } else if ("right".equalsIgnoreCase(mouseButton)) {
+            methodNames = new String[] { "rightClickMouse", "func_147121_ag" };
+        } else {
+            methodNames = new String[] { "clickMouse", "func_147116_af" };
+        }
+        for (String methodName : methodNames) {
+            try {
+                Method method = Minecraft.class.getDeclaredMethod(methodName);
+                method.setAccessible(true);
+                method.invoke(mc);
+                return true;
+            } catch (ReflectiveOperationException ignored) {
+            }
+        }
+        zszlScriptMod.LOGGER.warn("无法触发 Minecraft 世界点击: button={}, methods={}", mouseButton,
+                java.util.Arrays.toString(methodNames));
+        return false;
+    }
+
+    private static boolean invokeGuiClick(Minecraft mc, int x, int y, String mouseButton, int originalWidth,
+            int originalHeight) {
+        if (mc == null || mc.currentScreen == null) {
+            return false;
+        }
+
+        int currentScreenWidth = Math.max(1, mc.displayWidth);
+        int currentScreenHeight = Math.max(1, mc.displayHeight);
+        int sourceWidth = originalWidth <= 0 ? 2560 : originalWidth;
+        int sourceHeight = originalHeight <= 0 ? 1334 : originalHeight;
+        int actualX = (int) Math.round(((double) x / sourceWidth) * currentScreenWidth);
+        int actualY = (int) Math.round(((double) y / sourceHeight) * currentScreenHeight);
+        int button = "middle".equalsIgnoreCase(mouseButton) ? 2 : ("right".equalsIgnoreCase(mouseButton) ? 1 : 0);
+
+        if (mc.currentScreen instanceof GuiInventoryOverlayScreen) {
+            int rawY = Math.max(0, currentScreenHeight - actualY - 1);
+            try {
+                GuiInventory.handleMouseClick(actualX, rawY, button);
+                GuiInventory.handleMouseRelease(actualX, rawY, button);
+                return true;
+            } catch (Exception e) {
+                zszlScriptMod.LOGGER.warn("GUIOverlay 点击注入失败: button={}, ({}, {})", mouseButton, actualX, actualY, e);
+            }
+            return false;
+        }
+
+        ScaledResolution resolution = new ScaledResolution(mc);
+        int scaledX = actualX * resolution.getScaledWidth() / currentScreenWidth;
+        int scaledY = actualY * resolution.getScaledHeight() / currentScreenHeight;
+        try {
+            invokeGuiScreenMouseMethod(mc.currentScreen, new String[] { "mouseClicked", "func_73864_a" },
+                    scaledX, scaledY, button);
+            invokeGuiScreenMouseMethod(mc.currentScreen, new String[] { "mouseReleased", "func_146286_b" },
+                    scaledX, scaledY, button);
+            return true;
+        } catch (ReflectiveOperationException e) {
+            zszlScriptMod.LOGGER.warn("GUI 点击注入失败: button={}, scaled=({}, {})", mouseButton, scaledX, scaledY, e);
+        }
+        return false;
+    }
+
+    private static void invokeGuiScreenMouseMethod(GuiScreen screen, String[] methodNames, int mouseX, int mouseY,
+            int mouseButton) throws ReflectiveOperationException {
+        for (Class<?> type = screen.getClass(); type != null; type = type.getSuperclass()) {
+            for (String methodName : methodNames) {
+                try {
+                    Method method = type.getDeclaredMethod(methodName, int.class, int.class, int.class);
+                    method.setAccessible(true);
+                    method.invoke(screen, mouseX, mouseY, mouseButton);
+                    return;
+                } catch (NoSuchMethodException ignored) {
+                }
+            }
+        }
+        throw new NoSuchMethodException("未找到 GuiScreen 鼠标方法");
+    }
+
+    private static void performAhkMouseClickFallback(int x, int y, String mouseButton, int originalWidth,
+            int originalHeight) {
+        debugMouseClickRoute("AHK fallback", x, y, originalWidth, originalHeight, mouseButton);
+
         new Thread(() -> {
             try {
-                // 获取当前的实际窗口分辨率
-                int currentScreenWidth = Minecraft.getMinecraft().displayWidth;
-                int currentScreenHeight = Minecraft.getMinecraft().displayHeight;
+                Minecraft mc = Minecraft.getMinecraft();
+                if (mc == null) {
+                    return;
+                }
 
-                // 如果原始分辨率未提供（例如旧版配置），则使用默认值以兼容
-                int sourceWidth = (originalWidth <= 0) ? 2560 : originalWidth;
-                int sourceHeight = (originalHeight <= 0) ? 1334 : originalHeight;
-
-                // 根据比例计算在当前分辨率下的实际坐标
+                int currentScreenWidth = mc.displayWidth;
+                int currentScreenHeight = mc.displayHeight;
+                int sourceWidth = originalWidth <= 0 ? 2560 : originalWidth;
+                int sourceHeight = originalHeight <= 0 ? 1334 : originalHeight;
                 int actualX = (int) Math.round(((double) x / sourceWidth) * currentScreenWidth);
                 int actualY = (int) Math.round(((double) y / sourceHeight) * currentScreenHeight);
 
-                String XCoordinate = String.valueOf(actualX);
-                String YCoordinate = String.valueOf(actualY);
-                String MouseButton;
-                if ("middle".equalsIgnoreCase(mouseButton)) {
-                    MouseButton = "Middle";
-                } else if ("right".equalsIgnoreCase(mouseButton)) {
-                    MouseButton = "Right";
-                } else {
-                    MouseButton = "Left";
-                }
+                String xCoordinate = String.valueOf(actualX);
+                String yCoordinate = String.valueOf(actualY);
+                String buttonText = "middle".equalsIgnoreCase(mouseButton)
+                        ? "Middle"
+                        : ("right".equalsIgnoreCase(mouseButton) ? "Right" : "Left");
 
                 if (ModConfig.ahkMoveMouseMode) {
-                    // 移动鼠标模式 (旧逻辑，用于兼容或特殊情况)
-                    String windowTitle = Display.getTitle();
-                    AHKExecutor.executeTargetedAHKScript("MouseClick.ahk", windowTitle, XCoordinate, YCoordinate, MouseButton,
-                            "true");
+                    AHKExecutor.executeTargetedAHKScript("MouseClick.ahk", Display.getTitle(), xCoordinate, yCoordinate,
+                            buttonText, "true");
                 } else {
-                    // 新的后台模拟模式，调用 GuiClick.ahk
-                    AHKExecutor.executeTargetedAHKScript("GuiClick.ahk", XCoordinate, YCoordinate, MouseButton);
+                    AHKExecutor.executeTargetedAHKScript("GuiClick.ahk", xCoordinate, yCoordinate, buttonText);
                 }
-
-                zszlScriptMod.LOGGER.info("动态缩放点击成功 | 逻辑: ({}, {}) @ {}x{} -> 实际: ({}, {}) @ {}x{}",
-                        x, y, sourceWidth, sourceHeight,
-                        actualX, actualY, currentScreenWidth, currentScreenHeight);
-
             } catch (Exception e) {
-                zszlScriptMod.LOGGER.error("模拟鼠标点击时在后台线程出错", e);
+                zszlScriptMod.LOGGER.error("AHK fallback 模拟鼠标点击失败", e);
             }
         }).start();
+    }
+
+    private static void debugMouseClickRoute(String route, int x, int y, int originalWidth, int originalHeight,
+            String mouseButton) {
+        if (!ModConfig.isDebugFlagEnabled(DebugModule.AHK_EXECUTION)) {
+            return;
+        }
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc != null && mc.player != null) {
+            String debugMsg = String.format("§d[调试] §7模拟鼠标点击 [%s/%s]: 逻辑坐标(%d, %d), 原始分辨率(%dx%d)",
+                    route, mouseButton, x, y, originalWidth, originalHeight);
+            mc.player.sendMessage(new TextComponentString(debugMsg));
+        }
     }
 
     private static String normalizeDisplayName(String name) {

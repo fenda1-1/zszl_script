@@ -19,7 +19,7 @@ if (A_Args.Length < 3 + argOffset) {
 ; A_Args[1]: (可选) Java 进程 PID
 ; A_Args[1/2]: X 坐标
 ; A_Args[2/3]: Y 坐标
-; A_Args[3/4]: 鼠标按钮 ("Left" or "Right")
+; A_Args[3/4]: 鼠标按钮 ("Left" or "Right" or "Middle")
 x := A_Args[1 + argOffset]
 y := A_Args[2 + argOffset]
 button := A_Args[3 + argOffset]
@@ -35,6 +35,10 @@ if (button = "Left") {
     downMsg := 0x0201 ; WM_LBUTTONDOWN
     upMsg   := 0x0202 ; WM_LBUTTONUP
     wParam  := 0x0001 ; MK_LBUTTON
+} else if (button = "Middle") {
+    downMsg := 0x0207 ; WM_MBUTTONDOWN
+    upMsg   := 0x0208 ; WM_MBUTTONUP
+    wParam  := 0x0010 ; MK_MBUTTON
 } else {
     downMsg := 0x0204 ; WM_RBUTTONDOWN
     upMsg   := 0x0205 ; WM_RBUTTONUP

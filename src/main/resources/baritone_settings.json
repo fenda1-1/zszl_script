@@ -825,7 +825,7 @@
     },
     {
       "key": "blockingBlocks",
-      "defaultValue": "[tripwire,cocoa,skull,end_rod,ladder,vine,snow_layer,cauldron,iron_door,iron_trapdoor]",
+      "defaultValue": "[tripwire,cocoa,skull,end_rod,ladder,vine,cauldron,iron_door,iron_trapdoor]",
       "type": "list",
       "desc": "阻挡方块列表（会按不可通过处理）"
     },
@@ -837,7 +837,7 @@
     },
     {
       "key": "dangerousBlocks",
-      "defaultValue": "[flowing_water,water,flowing_lava,lava,magma,cactus,fire,end_portal,web]",
+      "defaultValue": "[flowing_lava,lava,magma,cactus,fire,end_portal,web]",
       "type": "list",
       "desc": "危险方块列表（会影响危险地形判定与部分移动规划）"
     },
