@@ -195,12 +195,7 @@ public class SingleItemFeatureConfigScreen extends ThemedGuiScreen {
                     ItemFeatureManager::setAutoEquipIntervalTicks);
             return;
         case "drop_all":
-            this.mc.setScreen(new GuiTextInput(this, "输入丢弃关键词（逗号分隔）",
-                    ItemFeatureManager.getDropAllKeywordsText(), value -> {
-                        ItemFeatureManager.setDropAllKeywordsText(value);
-                        refreshButtonTexts();
-                        this.mc.setScreen(this);
-                    }));
+            this.mc.setScreen(new GuiDropAllExpressionConfig(this));
             return;
         default:
             return;

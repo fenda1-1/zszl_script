@@ -12,6 +12,7 @@ import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Mouse;
 import java.io.IOException;
 import java.util.function.Consumer;
 import com.zszl.zszlScriptMod.gui.components.GuiTheme;
+import org.lwjgl.glfw.GLFW;
 
 /**
  * 通用文本输入GUI
@@ -89,6 +90,30 @@ public class GuiTextInput extends ThemedGuiScreen {
         } else if (keyCode == Keyboard.KEY_ESCAPE) {
             this.actionPerformed(this.buttonList.get(1));
         }
+    }
+
+    @Override
+    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) {
+            try {
+                this.actionPerformed(this.buttonList.get(0));
+            } catch (IOException ignored) {
+            }
+            return true;
+        }
+        if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
+            try {
+                this.actionPerformed(this.buttonList.get(1));
+            } catch (IOException ignored) {
+            }
+            return true;
+        }
+        return this.inputField != null && this.inputField.keyPressed(keyCode, scanCode, modifiers);
+    }
+
+    @Override
+    public boolean charTyped(char codePoint, int modifiers) {
+        return this.inputField != null && this.inputField.charTyped(codePoint, modifiers);
     }
 
     @Override

@@ -44,6 +44,7 @@ import com.zszl.zszlScriptMod.utils.ClientPerformanceWarmupManager;
 import com.zszl.zszlScriptMod.utils.HudTextScanner;
 import com.zszl.zszlScriptMod.utils.HttpsCompat;
 import com.zszl.zszlScriptMod.utils.PacketCaptureHandler;
+import com.zszl.zszlScriptMod.utils.WorldLoadSafety;
 import com.zszl.zszlScriptMod.utils.guiinspect.GuiInspectionManager;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
@@ -176,7 +177,14 @@ public class zszlScriptMod {
         PacketCaptureHandler.onClientTick();
         GuiInspectionManager.onClientTick();
         RenderFeatureManager.INSTANCE.tick(mc);
+        boolean automationDeferred = WorldLoadSafety.shouldDeferAutomation(mc);
+        if (GUI_KEY.consumeClick()) {
+            GuiInventory.toggleOverlayScreen();
+        }
         if (mc.player == null) {
+            return;
+        }
+        if (automationDeferred) {
             return;
         }
         AutoEatHandler.checkAutoEat(mc.player);
@@ -185,20 +193,18 @@ public class zszlScriptMod {
         MovementFeatureManager.tickClientPlayerFeatures(mc.player);
         WorldFeatureManager.INSTANCE.tick(mc);
         ItemFeatureManager.INSTANCE.tick(mc);
-        if (GUI_KEY.consumeClick()) {
-            GuiInventory.toggleOverlayScreen();
-        }
     }
 
     @SubscribeEvent
     public void onNetworkLogin(ClientPlayerNetworkEvent.LoggingIn event) {
+        WorldLoadSafety.onNetworkLogin();
         MiscFeatureManager.INSTANCE.onClientConnected();
         ClientPerformanceWarmupManager.warmupCurrentProfileAsync("network-login");
-        PacketCaptureHandler.injectIntoCurrentConnection();
     }
 
     @SubscribeEvent
     public void onNetworkLogout(ClientPlayerNetworkEvent.LoggingOut event) {
+        WorldLoadSafety.onNetworkLogout();
         MiscFeatureManager.INSTANCE.onClientDisconnect();
         MovementFeatureManager.INSTANCE.onClientDisconnect();
         RenderFeatureManager.INSTANCE.onClientDisconnect();

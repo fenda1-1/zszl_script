@@ -50,6 +50,10 @@ final class PacketCodecCompat {
         }
     }
 
+    static boolean hasCurrentProtocolInfo(boolean outbound) {
+        return currentProtocolInfo(outbound) != null;
+    }
+
     static Packet<?> decodeStandardPacket(int packetId, byte[] payload, boolean outbound) {
         ProtocolInfo<?> protocol = currentProtocolInfo(outbound);
         if (protocol == null) {

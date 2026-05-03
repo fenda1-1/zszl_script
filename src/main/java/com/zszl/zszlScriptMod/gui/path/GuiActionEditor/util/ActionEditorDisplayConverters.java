@@ -172,6 +172,18 @@ public final class ActionEditorDisplayConverters {
                 : "foreground";
     }
 
+    public static String sequenceControlOperationToDisplay(String operation) {
+        return "resume".equalsIgnoreCase(operation)
+                ? I18n.format("gui.path.action_editor.option.sequence_control_operation.resume")
+                : I18n.format("gui.path.action_editor.option.sequence_control_operation.pause");
+    }
+
+    public static String displayToSequenceControlOperation(String display) {
+        return I18n.format("gui.path.action_editor.option.sequence_control_operation.resume").equals(display)
+                ? "resume"
+                : "pause";
+    }
+
     public static String moveChestDirectionToDisplay(String direction) {
         return ItemFilterHandler.MOVE_DIRECTION_CHEST_TO_INVENTORY.equalsIgnoreCase(direction)
                 ? I18n.format("gui.path.action_editor.option.move_chest_direction.chest_to_inventory")

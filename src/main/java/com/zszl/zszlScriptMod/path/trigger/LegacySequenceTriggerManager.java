@@ -12,7 +12,9 @@ import com.zszl.zszlScriptMod.path.PathSequenceManager;
 import com.zszl.zszlScriptMod.path.PathSequenceManager.PathSequence;
 import com.zszl.zszlScriptMod.path.runtime.ScopedRuntimeVariables;
 import com.zszl.zszlScriptMod.system.ProfileManager;
+import com.zszl.zszlScriptMod.utils.WorldLoadSafety;
 import com.zszl.zszlScriptMod.zszlScriptMod;
+import net.minecraft.client.Minecraft;
 
 import java.io.Reader;
 import java.io.Writer;
@@ -226,6 +228,10 @@ public final class LegacySequenceTriggerManager {
         }
         int enabledRuleCount = ENABLED_RULE_COUNT_BY_TRIGGER.getOrDefault(normalizedType, 0);
         if (enabledRuleCount <= 0) {
+            return;
+        }
+        if (!TRIGGER_SERVER_DISCONNECT.equals(normalizedType)
+                && WorldLoadSafety.shouldDeferAutomation(Minecraft.getInstance())) {
             return;
         }
 

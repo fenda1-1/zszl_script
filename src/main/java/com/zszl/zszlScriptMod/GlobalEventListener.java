@@ -10,6 +10,7 @@ import com.zszl.zszlScriptMod.handlers.GuiBlockerHandler;
 import com.zszl.zszlScriptMod.listenersupport.PlayerIdleTriggerTracker;
 import com.zszl.zszlScriptMod.path.node.NodeTriggerManager;
 import com.zszl.zszlScriptMod.path.trigger.LegacySequenceTriggerManager;
+import com.zszl.zszlScriptMod.utils.WorldLoadSafety;
 import com.zszl.zszlScriptMod.utils.guiinspect.GuiElementInspector;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
@@ -65,6 +66,7 @@ public final class GlobalEventListener {
     private Screen lastGuiScreen = null;
     private String lastGuiClassName = "";
     private String lastGuiTitle = "";
+    private JsonObject pendingServerConnectTriggerData = null;
 
     private GlobalEventListener() {
     }
@@ -80,8 +82,12 @@ public final class GlobalEventListener {
             resetRuntimeState();
             return;
         }
+        if (WorldLoadSafety.shouldDeferAutomation(mc)) {
+            return;
+        }
 
         if (event.phase == TickEvent.Phase.START) {
+            dispatchPendingServerConnectTrigger();
             handleClientTickStart(mc);
             return;
         }
@@ -362,15 +368,26 @@ public final class GlobalEventListener {
 
     @SubscribeEvent
     public void onNetworkLogin(ClientPlayerNetworkEvent.LoggingIn event) {
-        JsonObject triggerData = buildServerTriggerData(Minecraft.getInstance());
-        LegacySequenceTriggerManager.triggerEvent(LegacySequenceTriggerManager.TRIGGER_SERVER_CONNECT, triggerData);
+        WorldLoadSafety.onNetworkLogin();
+        pendingServerConnectTriggerData = buildServerTriggerData(Minecraft.getInstance());
     }
 
     @SubscribeEvent
     public void onNetworkLogout(ClientPlayerNetworkEvent.LoggingOut event) {
         JsonObject triggerData = buildServerTriggerData(Minecraft.getInstance());
         LegacySequenceTriggerManager.triggerEvent(LegacySequenceTriggerManager.TRIGGER_SERVER_DISCONNECT, triggerData);
+        WorldLoadSafety.onNetworkLogout();
+        pendingServerConnectTriggerData = null;
         resetRuntimeState();
+    }
+
+    private void dispatchPendingServerConnectTrigger() {
+        if (pendingServerConnectTriggerData == null) {
+            return;
+        }
+        JsonObject triggerData = pendingServerConnectTriggerData;
+        pendingServerConnectTriggerData = null;
+        LegacySequenceTriggerManager.triggerEvent(LegacySequenceTriggerManager.TRIGGER_SERVER_CONNECT, triggerData);
     }
 
     @SubscribeEvent

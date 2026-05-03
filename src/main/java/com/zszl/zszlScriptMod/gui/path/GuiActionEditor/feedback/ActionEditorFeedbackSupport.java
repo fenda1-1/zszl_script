@@ -28,6 +28,11 @@ public final class ActionEditorFeedbackSupport {
                         : "每次触发都执行";
                 return "会" + (background ? "在后台并行" : "在前台") + "执行序列 "
                         + (sequenceName.isEmpty() ? "（未选择）" : sequenceName) + "，当前为" + runMode + "。";
+            case "sequence_control":
+                boolean resume = "resume".equalsIgnoreCase(getDraftString(params, "operation", "pause"));
+                boolean controlBackground = "background".equalsIgnoreCase(getDraftString(params, "targetScope", "foreground"));
+                return "会" + (resume ? "恢复" : "暂停") + (controlBackground ? "后台" : "前台")
+                        + "当前正在执行的序列；前台暂停时会一并暂停当前寻路。";
             case "disconnect":
                 return "会立即断开当前连接，并触发断线后的状态清理与联动逻辑。";
             default:
@@ -65,6 +70,12 @@ public final class ActionEditorFeedbackSupport {
                         + Math.max(1, getDraftInt(params, "executeEveryCount", 1)) + " 次执行一次。";
             }
             return "风险较低，建议确认目标序列本身不会递归或抢占关键资源。";
+        }
+        if ("sequence_control".equals(type)) {
+            if ("resume".equalsIgnoreCase(getDraftString(params, "operation", "pause"))) {
+                return "如果目标序列当前未运行，或本来就不是暂停状态，这次恢复不会产生实际效果。";
+            }
+            return "暂停后需要在别处补一个“恢复”动作，否则目标序列会一直挂起。";
         }
         if ("disconnect".equals(type)) {
             return "执行后当前会话会立刻断开；若启用了自动重连等功能，会继续按其现有配置处理。";

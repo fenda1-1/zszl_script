@@ -4,6 +4,7 @@ import com.google.gson.JsonObject;
 import com.zszl.zszlScriptMod.PerformanceMonitor;
 import com.zszl.zszlScriptMod.gui.packet.InputTimelineManager;
 import com.zszl.zszlScriptMod.gui.packet.PacketFilterConfig;
+import com.zszl.zszlScriptMod.gui.packet.PacketInterceptConfig;
 import com.zszl.zszlScriptMod.gui.packet.PacketIdRecordManager;
 import com.zszl.zszlScriptMod.path.node.NodeTriggerManager;
 import com.zszl.zszlScriptMod.path.trigger.LegacySequenceTriggerManager;
@@ -278,11 +279,10 @@ public class PacketCaptureHandler extends ChannelDuplexHandler {
 
     public static void onClientTick() {
         Minecraft mc = Minecraft.getInstance();
-        if (mc.getConnection() != null) {
+        if (mc.getConnection() != null && !WorldLoadSafety.shouldDeferNetworkCapture(mc) && isNetworkHandlerNeeded()) {
             injectIntoCurrentConnection();
         } else {
-            currentConnectionInjected = false;
-            lastInjectedConnection = null;
+            removeFromCurrentConnection();
             lastKnownCaptureQueueSize = 0;
         }
 
@@ -408,26 +408,24 @@ public class PacketCaptureHandler extends ChannelDuplexHandler {
 
     public static void injectIntoCurrentConnection() {
         Minecraft mc = Minecraft.getInstance();
+        if (WorldLoadSafety.shouldDeferNetworkCapture(mc) || !isNetworkHandlerNeeded()) {
+            removeFromCurrentConnection();
+            return;
+        }
         ClientPacketListener listener = mc.getConnection();
         if (listener == null) {
-            currentConnectionInjected = false;
-            lastInjectedConnection = null;
+            resetInjectionState();
             return;
         }
         try {
             Connection connection = listener.getConnection();
             if (connection == null) {
-                currentConnectionInjected = false;
-                lastInjectedConnection = null;
-                return;
-            }
-            if (currentConnectionInjected && connection == lastInjectedConnection) {
+                resetInjectionState();
                 return;
             }
             Channel channel = resolveChannel(connection);
             if (channel == null || channel.pipeline() == null) {
-                currentConnectionInjected = false;
-                lastInjectedConnection = null;
+                resetInjectionState();
                 return;
             }
             if (channel.pipeline().get(HANDLER_NAME) instanceof PacketCaptureHandler) {
@@ -446,10 +444,50 @@ public class PacketCaptureHandler extends ChannelDuplexHandler {
             currentConnectionInjected = true;
             lastInjectedConnection = connection;
         } catch (Exception e) {
-            currentConnectionInjected = false;
-            lastInjectedConnection = null;
+            resetInjectionState();
             zszlScriptMod.LOGGER.error("注入 PacketCaptureHandler 失败", e);
         }
+    }
+
+    public static void removeFromCurrentConnection() {
+        if (!currentConnectionInjected && lastInjectedConnection == null) {
+            return;
+        }
+        Minecraft mc = Minecraft.getInstance();
+        ClientPacketListener listener = mc == null ? null : mc.getConnection();
+        Connection connection = null;
+        if (listener != null) {
+            try {
+                connection = listener.getConnection();
+            } catch (Exception ignored) {
+            }
+        }
+        if (connection == null) {
+            connection = lastInjectedConnection;
+        }
+        removeFromConnection(connection);
+    }
+
+    private static void removeFromConnection(Connection connection) {
+        if (connection == null) {
+            resetInjectionState();
+            return;
+        }
+        try {
+            Channel channel = resolveChannel(connection);
+            if (channel != null && channel.pipeline() != null && channel.pipeline().get(HANDLER_NAME) != null) {
+                channel.pipeline().remove(HANDLER_NAME);
+            }
+        } catch (Exception e) {
+            zszlScriptMod.LOGGER.debug("移除 PacketCaptureHandler 失败", e);
+        } finally {
+            resetInjectionState();
+        }
+    }
+
+    private static void resetInjectionState() {
+        currentConnectionInjected = false;
+        lastInjectedConnection = null;
     }
 
     private static Channel resolveChannel(Connection connection) {
@@ -507,6 +545,10 @@ public class PacketCaptureHandler extends ChannelDuplexHandler {
     public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise) throws Exception {
         PerformanceMonitor.PerformanceTimer timer = PerformanceMonitor.startTimer("packet_capture_outbound");
         try {
+            if (WorldLoadSafety.shouldDeferNetworkCapture(Minecraft.getInstance()) || !isNetworkHandlerNeeded()) {
+                super.write(ctx, msg, promise);
+                return;
+            }
             if (msg instanceof Packet<?>) {
                 boolean captureFeatureEnabled = PerformanceMonitor.isFeatureEnabled("packet_capture_outbound");
                 boolean needRawPacketProcessing = isRawPacketProcessingNeeded(true, captureFeatureEnabled, false);
@@ -529,13 +571,17 @@ public class PacketCaptureHandler extends ChannelDuplexHandler {
     public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
         PerformanceMonitor.PerformanceTimer timer = PerformanceMonitor.startTimer("packet_capture_inbound");
         try {
+            if (WorldLoadSafety.shouldDeferNetworkCapture(Minecraft.getInstance()) || !isNetworkHandlerNeeded()) {
+                super.channelRead(ctx, msg);
+                return;
+            }
             Object forward = msg;
             PacketMeta meta = null;
             Packet<?> effectivePacket = null;
 
             if (msg instanceof Packet<?>) {
                 boolean captureFeatureEnabled = PerformanceMonitor.isFeatureEnabled("packet_capture_inbound");
-                boolean interceptEnabled = PerformanceMonitor.isFeatureEnabled("packet_intercept");
+                boolean interceptEnabled = isInboundInterceptActive();
                 boolean needRawPacketProcessing = isRawPacketProcessingNeeded(false, captureFeatureEnabled,
                         interceptEnabled);
                 effectivePacket = (Packet<?>) msg;
@@ -1108,6 +1154,40 @@ public class PacketCaptureHandler extends ChannelDuplexHandler {
                 || LegacySequenceTriggerManager.hasRulesForTrigger(LegacySequenceTriggerManager.TRIGGER_PACKET);
     }
 
+    private static boolean hasInboundTypedTriggerConsumers() {
+        if (!isBusinessProcessingEnabled()) {
+            return false;
+        }
+        return LegacySequenceTriggerManager.hasRulesForTrigger(LegacySequenceTriggerManager.TRIGGER_TITLE)
+                || LegacySequenceTriggerManager.hasRulesForTrigger(LegacySequenceTriggerManager.TRIGGER_ACTIONBAR)
+                || LegacySequenceTriggerManager.hasRulesForTrigger(LegacySequenceTriggerManager.TRIGGER_BOSSBAR)
+                || LegacySequenceTriggerManager.hasRulesForTrigger(LegacySequenceTriggerManager.TRIGGER_ITEM_PICKUP);
+    }
+
+    private static boolean isNetworkHandlerNeeded() {
+        boolean outboundCaptureFeatureEnabled = PerformanceMonitor.isFeatureEnabled("packet_capture_outbound");
+        boolean inboundCaptureFeatureEnabled = PerformanceMonitor.isFeatureEnabled("packet_capture_inbound");
+        return isRawPacketProcessingNeeded(true, outboundCaptureFeatureEnabled, false)
+                || isRawPacketProcessingNeeded(false, inboundCaptureFeatureEnabled, isInboundInterceptActive())
+                || hasInboundTypedTriggerConsumers();
+    }
+
+    private static boolean isInboundInterceptActive() {
+        if (!PerformanceMonitor.isFeatureEnabled("packet_intercept")) {
+            return false;
+        }
+        PacketInterceptConfig config = PacketInterceptConfig.INSTANCE;
+        if (config == null || !config.inboundInterceptEnabled || config.inboundRules == null) {
+            return false;
+        }
+        for (PacketInterceptConfig.InterceptRule rule : config.inboundRules) {
+            if (rule != null && rule.enabled) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private static boolean isRawPacketProcessingNeeded(boolean outbound, boolean captureFeatureEnabled,
             boolean interceptEnabled) {
         if (captureFeatureEnabled && isCapturing) {
@@ -1207,10 +1287,12 @@ public class PacketCaptureHandler extends ChannelDuplexHandler {
         }
 
         PacketCodecCompat.EncodedPacket encoded = null;
-        try {
-            encoded = PacketCodecCompat.encode(packet, outbound);
-        } catch (Throwable t) {
-            logEncodeFailureOnce(packet, t);
+        if (PacketCodecCompat.hasCurrentProtocolInfo(outbound)) {
+            try {
+                encoded = PacketCodecCompat.encode(packet, outbound);
+            } catch (Throwable t) {
+                logEncodeFailureOnce(packet, t);
+            }
         }
 
         if (packet instanceof ServerboundCustomPayloadPacket) {
