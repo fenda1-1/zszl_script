@@ -74,7 +74,7 @@ public final class LookBehavior extends Behavior implements ILookBehavior {
 
     @Override
     public void updateTarget(Rotation rotation, boolean blockInteract) {
-        this.target = new Target(rotation, Target.Mode.resolve(ctx, blockInteract), blockInteract);
+        this.target = new Target(rotation, resolveTargetMode(blockInteract), blockInteract);
         this.movementRotation = rotation;
     }
 
@@ -217,6 +217,20 @@ public final class LookBehavior extends Behavior implements ILookBehavior {
 
     private boolean hasActivePathingMovementControl() {
         return ctx.player() != null && baritone.getPathingBehavior().isPathing();
+    }
+
+    private Target.Mode resolveTargetMode(boolean blockInteract) {
+        if (shouldUseCompatibilityWalkClientMode(blockInteract)) {
+            return Target.Mode.CLIENT;
+        }
+        return Target.Mode.resolve(ctx, blockInteract);
+    }
+
+    private boolean shouldUseCompatibilityWalkClientMode(boolean blockInteract) {
+        return Baritone.settings().compatibilityWalkMode.value
+                && !blockInteract
+                && ctx.player() != null
+                && !ctx.player().isFallFlying();
     }
 
     private void clearMovementRotationIfDetachedFromPathing() {

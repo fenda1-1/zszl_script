@@ -404,6 +404,12 @@
       "desc": "反作弊兼容模式"
     },
     {
+      "key": "compatibilityWalkMode",
+      "defaultValue": "false",
+      "type": "boolean",
+      "desc": "兼容走路模式"
+    },
+    {
       "key": "pathThroughCachedOnly",
       "defaultValue": "false",
       "type": "boolean",

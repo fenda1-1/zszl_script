@@ -819,6 +819,14 @@ public final class Settings {
     public final Setting<Boolean> antiCheatCompatibility = new Setting<>(true);
 
     /**
+     * Route movement through simulated vanilla movement keys instead of Baritone's custom ClientInput bridge.
+     * <p>
+     * This is intended for servers or scenes where direct input vector injection is ignored, but real keybind state
+     * changes still move the player correctly.
+     */
+    public final Setting<Boolean> compatibilityWalkMode = new Setting<>(false);
+
+    /**
      * Exclusively use cached chunks for pathing
      * <p>
      * Never turn this on

@@ -845,16 +845,16 @@ public class PacketCaptureHandler extends ChannelDuplexHandler {
         List<CapturedPacketData> target = sent ? capturedPackets : capturedReceivedPackets;
         synchronized (target) {
             if (!target.isEmpty()) {
-                CapturedPacketData first = target.get(0);
-                if (first != null && first.canAggregate(data)) {
-                    first.mergeFrom(data);
+                CapturedPacketData last = target.get(target.size() - 1);
+                if (last != null && last.canAggregate(data)) {
+                    last.mergeFrom(data);
                     return;
                 }
             }
-            target.add(0, data);
+            target.add(data);
             int limit = resolveMaxCapturedPackets();
             while (target.size() > limit + CAPTURE_TRIM_BATCH) {
-                target.remove(target.size() - 1);
+                target.remove(0);
             }
         }
         PacketIdRecordManager.recordCapturedPacket(sent, data);
