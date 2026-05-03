@@ -439,6 +439,7 @@ public class PathSequenceManager {
                                     params.get("locatorMode").getAsString());
                             return "点击元素: "
                                     + (params.has("locatorText") ? params.get("locatorText").getAsString() : "")
+                                    + " / " + getClickMouseButtonText(params)
                                     + " / "
                                     + (ActionTargetLocator.CLICK_MODE_BUTTON_TEXT
                                             .equalsIgnoreCase(normalizedClickLocatorMode)
@@ -458,7 +459,7 @@ public class PathSequenceManager {
                                 clickOriginalWidthDesc, clickOriginalHeightDesc);
                         String clickMouseMoveModeDesc = ModUtils.normalizeClickMouseMoveMode(
                                 params.has("mouseMoveMode") ? params.get("mouseMoveMode").getAsString() : "");
-                        return I18n.format("path.action.desc.click", params.get("x").getAsInt(),
+                        return I18n.format("path.action.desc.click", getClickMouseButtonText(params), params.get("x").getAsInt(),
                                 params.get("y").getAsInt(),
                                 ModUtils.CLICK_COORDINATE_MODE_SCALED.equals(clickCoordinateModeDesc)
                                         ? I18n.format("gui.path.action_editor.option.click_coordinate_mode.scaled")
@@ -1313,6 +1314,37 @@ public class PathSequenceManager {
                 : I18n.format("gui.path.action_editor.option.stop_sequence_scope_foreground");
     }
 
+    private static String getClickMouseButton(JsonObject params) {
+        if (params == null || !params.has("left")) {
+            return "left";
+        }
+        try {
+            JsonElement buttonElement = params.get("left");
+            if (buttonElement != null
+                    && buttonElement.isJsonPrimitive()
+                    && buttonElement.getAsJsonPrimitive().isBoolean()) {
+                return buttonElement.getAsBoolean() ? "left" : "right";
+            }
+            String raw = buttonElement == null ? "" : buttonElement.getAsString();
+            if ("middle".equalsIgnoreCase(raw)) {
+                return "middle";
+            }
+            if ("right".equalsIgnoreCase(raw) || "false".equalsIgnoreCase(raw)) {
+                return "right";
+            }
+        } catch (Exception ignored) {
+        }
+        return "left";
+    }
+
+    private static String getClickMouseButtonText(JsonObject params) {
+        String mouseButton = getClickMouseButton(params);
+        if ("middle".equalsIgnoreCase(mouseButton)) {
+            return "中键";
+        }
+        return "right".equalsIgnoreCase(mouseButton) ? "右键" : "左键";
+    }
+
     private static String getSequenceControlTargetScope(JsonObject params) {
         return getStopCurrentSequenceTargetScope(params);
     }
@@ -1837,7 +1869,7 @@ public class PathSequenceManager {
                 case "click":
                     final int x = params.get("x").getAsInt();
                     final int y = params.get("y").getAsInt();
-                    final boolean isLeft = params.get("left").getAsBoolean();
+                    final String clickMouseButton = getClickMouseButton(params);
                     final String clickLocatorMode = ActionTargetLocator.normalizeClickLocatorMode(
                             params.has("locatorMode")
                                     ? params.get("locatorMode").getAsString()
@@ -1874,13 +1906,13 @@ public class PathSequenceManager {
                             int pointRefHeight = mc.screen != null && mc.screen.height > 0
                                     ? mc.screen.height
                                     : mc.getWindow().getGuiScaledHeight();
-                            ModUtils.simulateMouseClick(point.getX(), point.getY(), isLeft,
+                            ModUtils.simulateMouseClick(point.getX(), point.getY(), clickMouseButton,
                                     pointRefWidth, pointRefHeight,
                                     ModUtils.CLICK_COORDINATE_MODE_SCALED,
                                     clickMouseMoveMode);
                             return;
                         }
-                        ModUtils.simulateMouseClick(x, y, isLeft, originalWidth, originalHeight,
+                        ModUtils.simulateMouseClick(x, y, clickMouseButton, originalWidth, originalHeight,
                                 clickCoordinateMode, clickMouseMoveMode);
                     };
 

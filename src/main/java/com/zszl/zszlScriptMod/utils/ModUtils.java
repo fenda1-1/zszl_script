@@ -667,9 +667,17 @@ public final class ModUtils {
 
     public static void simulateMouseClick(int x, int y, boolean isLeftClick, int originalWidth, int originalHeight,
             String coordinateMode, String mouseMoveMode) {
+        simulateMouseClick(x, y, isLeftClick ? "left" : "right", originalWidth, originalHeight, coordinateMode,
+                mouseMoveMode);
+    }
+
+    public static void simulateMouseClick(int x, int y, String mouseButton, int originalWidth, int originalHeight,
+            String coordinateMode, String mouseMoveMode) {
         runOnClientThread(() -> {
             Minecraft mc = Minecraft.getInstance();
-            int button = isLeftClick ? 0 : 1;
+            int button = "middle".equalsIgnoreCase(mouseButton)
+                    ? 2
+                    : ("right".equalsIgnoreCase(mouseButton) ? 1 : 0);
             Screen screen = mc.screen;
             int screenWidth = Math.max(1, mc.getWindow().getScreenWidth());
             int screenHeight = Math.max(1, mc.getWindow().getScreenHeight());
@@ -727,16 +735,21 @@ public final class ModUtils {
             }
 
             if (CLICK_MOUSE_MOVE_MODE_MOVE.equals(normalizedMouseMoveMode)
-                    && performDetachedWindowClick(rawX, rawYTop, isLeftClick)) {
+                    && performDetachedWindowClick(rawX, rawYTop, mouseButton)) {
                 return;
             }
 
-            invokeMinecraftClick(isLeftClick);
+            invokeMinecraftClick(mouseButton);
         });
     }
 
     public static void simulateMouseClick(int x, int y, boolean isLeftClick, int originalWidth, int originalHeight) {
         simulateMouseClick(x, y, isLeftClick, originalWidth, originalHeight,
+                CLICK_COORDINATE_MODE_RAW, CLICK_MOUSE_MOVE_MODE_SILENT);
+    }
+
+    public static void simulateMouseClick(int x, int y, String mouseButton, int originalWidth, int originalHeight) {
+        simulateMouseClick(x, y, mouseButton, originalWidth, originalHeight,
                 CLICK_COORDINATE_MODE_RAW, CLICK_MOUSE_MOVE_MODE_SILENT);
     }
 
@@ -1037,9 +1050,17 @@ public final class ModUtils {
     }
 
     private static void invokeMinecraftClick(boolean isLeftClick) {
+        invokeMinecraftClick(isLeftClick ? "left" : "right");
+    }
+
+    private static void invokeMinecraftClick(String mouseButton) {
         Minecraft mc = Minecraft.getInstance();
         try {
-            Method method = Minecraft.class.getDeclaredMethod(isLeftClick ? "startAttack" : "startUseItem");
+            if ("middle".equalsIgnoreCase(mouseButton)) {
+                return;
+            }
+            Method method = Minecraft.class.getDeclaredMethod(
+                    "right".equalsIgnoreCase(mouseButton) ? "startUseItem" : "startAttack");
             method.setAccessible(true);
             method.invoke(mc);
         } catch (Exception ignored) {
@@ -1074,6 +1095,10 @@ public final class ModUtils {
     }
 
     private static boolean performDetachedWindowClick(int rawX, int rawYTop, boolean isLeftClick) {
+        return performDetachedWindowClick(rawX, rawYTop, isLeftClick ? "left" : "right");
+    }
+
+    private static boolean performDetachedWindowClick(int rawX, int rawYTop, String mouseButton) {
         Minecraft mc = Minecraft.getInstance();
         if (mc == null || !ModConfig.isMouseDetached) {
             return false;
@@ -1087,8 +1112,11 @@ public final class ModUtils {
 
             Robot robot = new Robot();
             robot.mouseMove(windowX[0] + rawX, windowY[0] + rawYTop);
-            int mask = isLeftClick ? java.awt.event.InputEvent.BUTTON1_DOWN_MASK
-                    : java.awt.event.InputEvent.BUTTON3_DOWN_MASK;
+            int mask = "middle".equalsIgnoreCase(mouseButton)
+                    ? java.awt.event.InputEvent.BUTTON2_DOWN_MASK
+                    : ("right".equalsIgnoreCase(mouseButton)
+                            ? java.awt.event.InputEvent.BUTTON3_DOWN_MASK
+                            : java.awt.event.InputEvent.BUTTON1_DOWN_MASK);
             robot.mousePress(mask);
             robot.mouseRelease(mask);
             return true;
