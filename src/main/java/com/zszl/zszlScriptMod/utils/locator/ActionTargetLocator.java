@@ -146,12 +146,24 @@ public final class ActionTargetLocator {
         return point != null && tryInvokeCurrentScreenClick(point.getX(), point.getY(), isLeftClick);
     }
 
+    public static boolean tryInvokeCurrentScreenClick(String locatorMode, String locatorText, String matchMode,
+            String mouseButton) {
+        ClickPoint point = resolveScreenClickPoint(locatorMode, locatorText, matchMode);
+        return point != null && tryInvokeCurrentScreenClick(point.getX(), point.getY(), mouseButton);
+    }
+
     public static boolean tryInvokeCurrentScreenClick(int x, int y, boolean isLeftClick) {
+        return tryInvokeCurrentScreenClick(x, y, isLeftClick ? "left" : "right");
+    }
+
+    public static boolean tryInvokeCurrentScreenClick(int x, int y, String mouseButton) {
         Screen screen = Minecraft.getInstance().screen;
         if (screen == null) {
             return false;
         }
-        int button = isLeftClick ? 0 : 1;
+        int button = "middle".equalsIgnoreCase(mouseButton)
+                ? 2
+                : ("right".equalsIgnoreCase(mouseButton) ? 1 : 0);
         boolean handled = screen.mouseClicked(x, y, button);
         screen.mouseReleased(x, y, button);
         return handled;

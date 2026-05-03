@@ -1329,8 +1329,8 @@ gui.path.action_editor.label.x=X坐标
 gui.path.action_editor.help.x=点击X坐标。请开启调试-调试设置-显示鼠标坐标查看鼠标位置
 gui.path.action_editor.label.y=Y坐标
 gui.path.action_editor.help.y=点击Y坐标。请开启调试-调试设置-显示鼠标坐标查看鼠标位置
-gui.path.action_editor.label.left_click=左键
-gui.path.action_editor.help.left_click=true (左键) 或 false (右键)
+gui.path.action_editor.label.left_click=鼠标按键
+gui.path.action_editor.help.left_click=可选左键、右键或中键；旧配置里的 true/false 仍兼容为左/右键
 gui.path.action_editor.label.click_coordinate_mode=坐标模式
 gui.path.action_editor.help.click_coordinate_mode=原始坐标=按游戏窗口原始像素分辨率记录/回放；缩放坐标=按GUI缩放后的界面坐标记录/回放。默认原始坐标
 gui.path.action_editor.label.click_mouse_move_mode=鼠标移动模式
@@ -2129,7 +2129,7 @@ path.action.desc.disconnect=断开当前连接
 path.action.desc.delay=延迟: %s ticks
 path.action.desc.key=按键: %s (%s)
 path.action.desc.jump=跳跃: %s 次, 间隔 %s ticks
-path.action.desc.click=点击: (%s, %s) | %s | %s
+path.action.desc.click=点击[%s]: (%s, %s) | %s | %s
 path.action.desc.window_click=容器内槽位点击: window=%s, slot=%s, button=%s, type=%s
 path.action.desc.setview=设置视角: (Yaw: %.1f, Pitch: %.1f)
 path.action.desc.right_click_block=右键方块: %s
