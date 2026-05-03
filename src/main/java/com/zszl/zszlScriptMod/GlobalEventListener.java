@@ -41,6 +41,7 @@ import com.zszl.zszlScriptMod.path.PathSequenceEventListener.ProgressSnapshot;
 import com.zszl.zszlScriptMod.path.PathSequenceManager;
 import com.zszl.zszlScriptMod.path.node.NodeTriggerManager;
 import com.zszl.zszlScriptMod.path.trigger.LegacySequenceTriggerManager;
+import com.zszl.zszlScriptMod.path.trigger.PlayerListTriggerSupport;
 import com.zszl.zszlScriptMod.utils.ModUtils;
 import com.zszl.zszlScriptMod.utils.ReflectionCompat;
 import com.zszl.zszlScriptMod.handlers.WarehouseEventHandler;
@@ -49,6 +50,7 @@ import com.zszl.zszlScriptMod.utils.guiinspect.GuiInspectionManager;
 import com.zszl.zszlScriptMod.utils.guiinspect.GuiElementInspector;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Random;
 import java.util.Set;
@@ -83,6 +85,8 @@ public class GlobalEventListener {
     private String lastWorldKey = "";
     private String lastScoreboardSignature = "";
     private String lastNearbyEntitySignature = "";
+    private PlayerListTriggerSupport.PlayerSnapshot lastPlayerListSnapshot = new PlayerListTriggerSupport.PlayerSnapshot(
+            Collections.<PlayerListTriggerSupport.PlayerRecord>emptyList(), "");
     private String lastLegacyGuiClassName = "";
     private String lastLegacyGuiTitle = "";
     private static final int DEATH_REJOIN_MAX_ATTEMPTS = 2;
@@ -185,6 +189,8 @@ public class GlobalEventListener {
         final Minecraft mc = Minecraft.getMinecraft();
         if (mc == null || mc.player == null || mc.world == null) {
             playerIdleTriggerTracker.reset();
+            lastPlayerListSnapshot = new PlayerListTriggerSupport.PlayerSnapshot(
+                    Collections.<PlayerListTriggerSupport.PlayerRecord>emptyList(), "");
             return;
         }
 
@@ -206,6 +212,8 @@ public class GlobalEventListener {
                     || LegacySequenceTriggerManager.hasRulesForTrigger(LegacySequenceTriggerManager.TRIGGER_ENTITY_NEARBY);
             boolean needsScoreboardChecks = LegacySequenceTriggerManager
                     .hasRulesForTrigger(LegacySequenceTriggerManager.TRIGGER_SCOREBOARD_CHANGED);
+            boolean needsPlayerListChecks = LegacySequenceTriggerManager
+                    .hasRulesForTrigger(LegacySequenceTriggerManager.TRIGGER_PLAYER_LIST);
             boolean needsTimerTriggers = NodeTriggerManager.hasGraphsForTrigger(NodeTriggerManager.TRIGGER_TIMER)
                     || LegacySequenceTriggerManager.hasRulesForTrigger(LegacySequenceTriggerManager.TRIGGER_TIMER);
             boolean needsHpLowTriggers = NodeTriggerManager.hasGraphsForTrigger(NodeTriggerManager.TRIGGER_HP_LOW)
@@ -314,6 +322,18 @@ public class GlobalEventListener {
                             LegacySequenceTriggerManager.TRIGGER_SCOREBOARD_CHANGED, scoreboardTrigger);
                 }
                 lastScoreboardSignature = scoreboardSignature;
+            }
+
+            if (needsPlayerListChecks) {
+                PlayerListTriggerSupport.PlayerSnapshot playerListSnapshot = PlayerListTriggerSupport.captureSnapshot(mc);
+                if (!playerListSnapshot.players.isEmpty()) {
+                    LegacySequenceTriggerManager.triggerEvent(LegacySequenceTriggerManager.TRIGGER_PLAYER_LIST,
+                            PlayerListTriggerSupport.buildTriggerEvent(lastPlayerListSnapshot, playerListSnapshot));
+                }
+                lastPlayerListSnapshot = playerListSnapshot;
+            } else {
+                lastPlayerListSnapshot = new PlayerListTriggerSupport.PlayerSnapshot(
+                        Collections.<PlayerListTriggerSupport.PlayerRecord>emptyList(), "");
             }
 
             if (needsTimerTriggers && clientTickCounter % 20 == 0) {
