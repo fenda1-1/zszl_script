@@ -12,6 +12,7 @@ import com.zszl.zszlScriptMod.gui.path.trigger.LegacyTriggerEventLibrary;
 import com.zszl.zszlScriptMod.path.PathSequenceManager;
 import com.zszl.zszlScriptMod.path.runtime.ScopedRuntimeVariables;
 import com.zszl.zszlScriptMod.path.trigger.LegacySequenceTriggerManager;
+import com.zszl.zszlScriptMod.path.trigger.PlayerListTriggerSupport;
 import com.zszl.zszlScriptMod.utils.PacketCaptureHandler;
 import com.zszl.zszlScriptMod.utils.guiinspect.GuiInspectionManager;
 import net.minecraft.client.gui.GuiButton;
@@ -48,6 +49,7 @@ public class GuiLegacySequenceTriggerRules extends ThemedGuiScreen {
     private static final int BTN_IMPORT_PACKET = 26;
     private static final int BTN_IDLE_EXCLUDE_PATH = 27;
     private static final int BTN_IDLE_IGNORE_DAMAGE = 28;
+    private static final int BTN_EDIT_PLAYER_LIST = 29;
     private static final String CATEGORY_ALL = "__all__";
 
     private static final int RULE_CARD_H = 36;
@@ -230,12 +232,14 @@ public class GuiLegacySequenceTriggerRules extends ThemedGuiScreen {
     private GuiButton importPacketBtn;
     private GuiButton idleExcludePathBtn;
     private GuiButton idleIgnoreDamageBtn;
+    private GuiButton editPlayerListBtn;
 
     private boolean editingEnabled = true;
     private boolean editingBackground = false;
     private String editingPacketDirection = "";
     private boolean editingIdleExcludePath = true;
     private boolean editingIdleIgnoreDamage = false;
+    private final List<PlayerListTriggerSupport.RuleEntry> editingPlayerListEntries = new ArrayList<>();
     private String statusMessage = "§7左侧选规则，中间选事件，右侧编辑该事件专属参数。";
     private boolean workingCopyInitialized = false;
     private final List<TooltipRegion> tooltipRegions = new ArrayList<>();
@@ -360,6 +364,7 @@ public class GuiLegacySequenceTriggerRules extends ThemedGuiScreen {
         importPacketBtn = new ThemedButton(BTN_IMPORT_PACKET, 0, 0, 96, 20, "填入最近包");
         idleExcludePathBtn = new ThemedButton(BTN_IDLE_EXCLUDE_PATH, 0, 0, 120, 20, "");
         idleIgnoreDamageBtn = new ThemedButton(BTN_IDLE_IGNORE_DAMAGE, 0, 0, 120, 20, "");
+        editPlayerListBtn = new ThemedButton(BTN_EDIT_PLAYER_LIST, 0, 0, 120, 20, "编辑玩家列表规则");
         buttonList.add(selectSequenceBtn);
         buttonList.add(toggleEnabledBtn);
         buttonList.add(toggleBackgroundBtn);
@@ -369,6 +374,7 @@ public class GuiLegacySequenceTriggerRules extends ThemedGuiScreen {
         buttonList.add(importPacketBtn);
         buttonList.add(idleExcludePathBtn);
         buttonList.add(idleIgnoreDamageBtn);
+        buttonList.add(editPlayerListBtn);
 
         int footerY = panelY + panelH - 28;
         buttonList.add(new ThemedButton(BTN_ADD, panelX + 10, footerY, 76, 20, "新增"));
@@ -425,6 +431,8 @@ public class GuiLegacySequenceTriggerRules extends ThemedGuiScreen {
         entityMinCountField.setText(String.valueOf(intParam(params, "minCount", 1)));
         editingIdleExcludePath = booleanParam(params, "excludePathTracking", true);
         editingIdleIgnoreDamage = booleanParam(params, "ignoreDamageReset", false);
+        editingPlayerListEntries.clear();
+        editingPlayerListEntries.addAll(PlayerListTriggerSupport.readEntries(params));
     }
 
     private void clearEditor() {
@@ -445,6 +453,7 @@ public class GuiLegacySequenceTriggerRules extends ThemedGuiScreen {
         editingPacketDirection = "";
         editingIdleExcludePath = true;
         editingIdleIgnoreDamage = false;
+        editingPlayerListEntries.clear();
     }
 
     private List<GuiTextField> allFields() {
@@ -466,6 +475,7 @@ public class GuiLegacySequenceTriggerRules extends ThemedGuiScreen {
                 || LegacySequenceTriggerManager.TRIGGER_GUI_CLOSE.equals(selectedTriggerType()));
         boolean packetTrigger = hasRule && LegacySequenceTriggerManager.TRIGGER_PACKET.equals(selectedTriggerType());
         boolean idleTrigger = hasRule && LegacySequenceTriggerManager.TRIGGER_PLAYER_IDLE.equals(selectedTriggerType());
+        boolean playerListTrigger = hasRule && LegacySequenceTriggerManager.TRIGGER_PLAYER_LIST.equals(selectedTriggerType());
         selectSequenceBtn.enabled = hasRule;
         toggleEnabledBtn.enabled = hasRule;
         toggleBackgroundBtn.enabled = hasRule;
@@ -475,6 +485,7 @@ public class GuiLegacySequenceTriggerRules extends ThemedGuiScreen {
         importPacketBtn.enabled = packetTrigger;
         idleExcludePathBtn.enabled = idleTrigger;
         idleIgnoreDamageBtn.enabled = idleTrigger;
+        editPlayerListBtn.enabled = playerListTrigger;
         if (!idleTrigger || activeEditorTab != TAB_EVENT) {
             idleExcludePathBtn.visible = false;
             idleIgnoreDamageBtn.visible = false;
@@ -539,6 +550,8 @@ public class GuiLegacySequenceTriggerRules extends ThemedGuiScreen {
         } else if (LegacySequenceTriggerManager.TRIGGER_ENTITY_NEARBY.equals(type)) {
             putTrimmed(params, "entityText", entityTextField.getText());
             params.addProperty("minCount", parseInt(entityMinCountField.getText(), 1, 0));
+        } else if (LegacySequenceTriggerManager.TRIGGER_PLAYER_LIST.equals(type)) {
+            PlayerListTriggerSupport.writeEntries(params, editingPlayerListEntries);
         } else if (LegacySequenceTriggerManager.TRIGGER_ATTACK_ENTITY.equals(type)
                 || LegacySequenceTriggerManager.TRIGGER_TARGET_KILL.equals(type)) {
             putTrimmed(params, "entityText", entityTextField.getText());
@@ -646,6 +659,16 @@ public class GuiLegacySequenceTriggerRules extends ThemedGuiScreen {
         case BTN_IDLE_IGNORE_DAMAGE:
             editingIdleIgnoreDamage = !editingIdleIgnoreDamage;
             break;
+        case BTN_EDIT_PLAYER_LIST:
+            flushEditorToSelected();
+            mc.displayGuiScreen(new GuiPlayerListTriggerRuleEditor(this, editingPlayerListEntries, updatedEntries -> {
+                editingPlayerListEntries.clear();
+                editingPlayerListEntries.addAll(PlayerListTriggerSupport.copyEntries(updatedEntries));
+                flushEditorToSelected();
+                activeEditorTab = TAB_EVENT;
+                statusMessage = "§a已更新玩家列表名称卡片。";
+            }));
+            return;
         default:
             break;
         }
@@ -1125,6 +1148,19 @@ public class GuiLegacySequenceTriggerRules extends ThemedGuiScreen {
                     "§e最少实体数量",
                     "§7附近实体数量达到该值才触发。",
                     "§7可配合实体文本一起筛选。");
+            nextY += 24;
+        } else if (LegacySequenceTriggerManager.TRIGGER_PLAYER_LIST.equals(type)) {
+            nextY = drawTextPreviewBox(nextY, "玩家名称卡片",
+                    PlayerListTriggerSupport.buildEntriesSummary(editingPlayerListEntries), 0xFFB8C7D9);
+            editPlayerListBtn.x = fieldX;
+            editPlayerListBtn.y = nextY - 1;
+            editPlayerListBtn.width = fieldW;
+            editPlayerListBtn.displayString = fieldW < 140 ? "编辑玩家卡片" : "编辑玩家列表规则";
+            editPlayerListBtn.visible = isFullyVisibleInEditorContent(editPlayerListBtn.y, editPlayerListBtn.height);
+            registerButtonTooltip(editPlayerListBtn,
+                    "§e编辑玩家列表规则",
+                    "§7支持从当前 Tab 玩家列表回填名称，也支持手动输入名称。",
+                    "§7每张卡片可选择“全匹配”或“包含”，并支持新增、编辑、删除多个卡片。");
             nextY += 24;
         } else if (LegacySequenceTriggerManager.TRIGGER_ATTACK_ENTITY.equals(type)) {
             drawField("目标实体文本包含", entityTextField, nextY,
@@ -2340,6 +2376,9 @@ public class GuiLegacySequenceTriggerRules extends ThemedGuiScreen {
         if (LegacySequenceTriggerManager.TRIGGER_ENTITY_NEARBY.equals(type)) {
             return Arrays.asList(entityTextField, entityMinCountField);
         }
+        if (LegacySequenceTriggerManager.TRIGGER_PLAYER_LIST.equals(type)) {
+            return java.util.Collections.emptyList();
+        }
         if (LegacySequenceTriggerManager.TRIGGER_ATTACK_ENTITY.equals(type)
                 || LegacySequenceTriggerManager.TRIGGER_TARGET_KILL.equals(type)) {
             return Arrays.asList(entityTextField);
@@ -2478,6 +2517,7 @@ public class GuiLegacySequenceTriggerRules extends ThemedGuiScreen {
         hideEditorButton(importPacketBtn);
         hideEditorButton(idleExcludePathBtn);
         hideEditorButton(idleIgnoreDamageBtn);
+        hideEditorButton(editPlayerListBtn);
     }
 
     private void fillFromLatestGuiSnapshot() {

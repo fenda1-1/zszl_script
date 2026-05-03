@@ -52,6 +52,7 @@ public final class LegacySequenceTriggerManager {
     public static final String TRIGGER_INVENTORY_CHANGED = "inventory_changed";
     public static final String TRIGGER_INVENTORY_FULL = "inventory_full";
     public static final String TRIGGER_ENTITY_NEARBY = "entity_nearby";
+    public static final String TRIGGER_PLAYER_LIST = "player_list";
     public static final String TRIGGER_ITEM_PICKUP = "item_pickup";
     public static final String TRIGGER_SERVER_CONNECT = "server_connect";
     public static final String TRIGGER_SERVER_DISCONNECT = "server_disconnect";
@@ -430,6 +431,8 @@ public final class LegacySequenceTriggerManager {
                 return evaluateTextParam(params, "entityText", eventData, "entityName", "目标实体", containsPrefix);
             case TRIGGER_ENTITY_NEARBY:
                 return evaluateEntityNearby(params, eventData, containsPrefix);
+            case TRIGGER_PLAYER_LIST:
+                return evaluatePlayerList(params, eventData, containsPrefix);
             case TRIGGER_ITEM_PICKUP:
                 return evaluateItemPickup(params, eventData, containsPrefix);
             case TRIGGER_WORLD_CHANGED:
@@ -598,6 +601,28 @@ public final class LegacySequenceTriggerManager {
                 : RuleEvaluation.missed(prefix + "拾取物品文本未命中: 需要 " + quote(itemText) + "，实际 "
                         + quote(shortenDebugText(itemName + " | " + registryName, 68)),
                         "pickup_text_miss|" + itemText.toLowerCase(Locale.ROOT) + "|" + count);
+    }
+
+    private static RuleEvaluation evaluatePlayerList(JsonObject params, JsonObject eventData, String prefix) {
+        List<PlayerListTriggerSupport.RuleEntry> entries = PlayerListTriggerSupport.readEntries(params);
+        if (entries.isEmpty()) {
+            return RuleEvaluation.matched(prefix + "未配置玩家名称卡片，任意玩家列表变化都可触发。",
+                    "player_list_any");
+        }
+        boolean matched = PlayerListTriggerSupport.matchesConfiguredPlayers(params, eventData);
+        String summary = PlayerListTriggerSupport.buildEntriesSummary(entries);
+        String joined = getStringValue(eventData, "joined");
+        String left = getStringValue(eventData, "left");
+        String actual = !joined.isEmpty() || !left.isEmpty()
+                ? "加入=" + quote(shortenDebugText(joined, 48)) + " | 离开=" + quote(shortenDebugText(left, 48))
+                : quote(shortenDebugText(getStringValue(eventData, "playersText"), 72));
+        return matched
+                ? RuleEvaluation.matched(prefix + "玩家列表卡片命中: " + quote(shortenDebugText(summary, 72))
+                        + " | 当前 " + actual,
+                        "player_list_match|" + summary.toLowerCase(Locale.ROOT))
+                : RuleEvaluation.missed(prefix + "玩家列表卡片未命中: " + quote(shortenDebugText(summary, 72))
+                        + " | 当前 " + actual,
+                        "player_list_miss|" + summary.toLowerCase(Locale.ROOT));
     }
 
     private static RuleEvaluation evaluateDamageEvent(JsonObject params, JsonObject eventData, String prefix) {
@@ -984,6 +1009,10 @@ public final class LegacySequenceTriggerManager {
             case TRIGGER_ENTITY_NEARBY:
                 return "附近实体变化 | 数量=" + getLongParam(eventData, "count", 0L)
                         + " | 当前=" + quote(shortenDebugText(getStringValue(eventData, "after"), 84));
+            case TRIGGER_PLAYER_LIST:
+                return "玩家列表变化 | 加入=" + quote(shortenDebugText(getStringValue(eventData, "joined"), 48))
+                        + " | 离开=" + quote(shortenDebugText(getStringValue(eventData, "left"), 48))
+                        + " | 当前=" + quote(shortenDebugText(getStringValue(eventData, "playersText"), 84));
             case TRIGGER_ITEM_PICKUP:
                 return "拾取物品 " + quote(shortenDebugText(getStringValue(eventData, "itemName"), 40))
                         + " x" + getLongParam(eventData, "count", 0L);
@@ -1009,6 +1038,7 @@ public final class LegacySequenceTriggerManager {
                         + "|" + bucketHalf(getDoubleParam(eventData, "maxHp", 0.0D));
             case TRIGGER_INVENTORY_CHANGED:
             case TRIGGER_ENTITY_NEARBY:
+            case TRIGGER_PLAYER_LIST:
             case TRIGGER_SCOREBOARD_CHANGED:
                 return buildSearchText(eventData);
             default:
@@ -1099,6 +1129,9 @@ public final class LegacySequenceTriggerManager {
         sanitizeIntParam(sanitized, "minFilledSlots", 0, 0);
         sanitizeDoubleParam(sanitized, "minDamage", 0.0D, 0.0D);
         sanitizeDoubleParam(sanitized, "hpThreshold", 6.0D, 0.0D);
+        if (TRIGGER_PLAYER_LIST.equals(triggerType)) {
+            PlayerListTriggerSupport.sanitizeParams(sanitized);
+        }
         return sanitized;
     }
 
@@ -1252,6 +1285,7 @@ public final class LegacySequenceTriggerManager {
                 || TRIGGER_INVENTORY_CHANGED.equals(value)
                 || TRIGGER_INVENTORY_FULL.equals(value)
                 || TRIGGER_ENTITY_NEARBY.equals(value)
+                || TRIGGER_PLAYER_LIST.equals(value)
                 || TRIGGER_ITEM_PICKUP.equals(value)
                 || TRIGGER_SERVER_CONNECT.equals(value)
                 || TRIGGER_SERVER_DISCONNECT.equals(value)) {
@@ -1319,6 +1353,8 @@ public final class LegacySequenceTriggerManager {
                 return "背包已满";
             case TRIGGER_ENTITY_NEARBY:
                 return "附近实体";
+            case TRIGGER_PLAYER_LIST:
+                return "玩家列表";
             case TRIGGER_ITEM_PICKUP:
                 return "拾取物品";
             case TRIGGER_SERVER_CONNECT:
