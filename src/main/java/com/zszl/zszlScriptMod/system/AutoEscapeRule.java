@@ -26,6 +26,9 @@ public class AutoEscapeRule {
     public boolean enableNameBlacklist;
     public List<String> nameBlacklist;
 
+    public boolean enableAreaBlacklist;
+    public List<AreaBlacklistEntry> areaBlacklist;
+
     public boolean enablePlayerGameModeFilter;
     public String playerGameModeFilter;
 
@@ -56,6 +59,9 @@ public class AutoEscapeRule {
         this.enableNameBlacklist = false;
         this.nameBlacklist = new ArrayList<>();
 
+        this.enableAreaBlacklist = false;
+        this.areaBlacklist = new ArrayList<>();
+
         this.enablePlayerGameModeFilter = false;
         this.playerGameModeFilter = PLAYER_GAME_MODE_ALL;
 
@@ -76,6 +82,9 @@ public class AutoEscapeRule {
         }
         if (nameBlacklist == null) {
             nameBlacklist = new ArrayList<>();
+        }
+        if (areaBlacklist == null) {
+            areaBlacklist = new ArrayList<>();
         }
     }
 
@@ -98,6 +107,7 @@ public class AutoEscapeRule {
         entityTypes = sanitizeStringList(entityTypes);
         nameWhitelist = sanitizeStringList(nameWhitelist);
         nameBlacklist = sanitizeStringList(nameBlacklist);
+        areaBlacklist = sanitizeAreaBlacklist(areaBlacklist);
     }
 
     public void resetRuntimeState() {
@@ -115,6 +125,8 @@ public class AutoEscapeRule {
         copy.nameWhitelist = new ArrayList<>(this.nameWhitelist == null ? new ArrayList<String>() : this.nameWhitelist);
         copy.enableNameBlacklist = this.enableNameBlacklist;
         copy.nameBlacklist = new ArrayList<>(this.nameBlacklist == null ? new ArrayList<String>() : this.nameBlacklist);
+        copy.enableAreaBlacklist = this.enableAreaBlacklist;
+        copy.areaBlacklist = copyAreaBlacklist(this.areaBlacklist);
         copy.enablePlayerGameModeFilter = this.enablePlayerGameModeFilter;
         copy.playerGameModeFilter = this.playerGameModeFilter;
         copy.escapeSequenceName = this.escapeSequenceName;
@@ -163,6 +175,39 @@ public class AutoEscapeRule {
         return result;
     }
 
+    private static List<AreaBlacklistEntry> sanitizeAreaBlacklist(List<AreaBlacklistEntry> source) {
+        List<AreaBlacklistEntry> result = new ArrayList<>();
+        if (source == null) {
+            return result;
+        }
+        for (AreaBlacklistEntry entry : source) {
+            if (entry == null) {
+                continue;
+            }
+            AreaBlacklistEntry normalized = entry.copy();
+            if (normalized.areaKey.isEmpty()) {
+                continue;
+            }
+            if (!containsAreaEntry(result, normalized.areaKey, normalized.chunkRadius)) {
+                result.add(normalized);
+            }
+        }
+        return result;
+    }
+
+    private static List<AreaBlacklistEntry> copyAreaBlacklist(List<AreaBlacklistEntry> source) {
+        List<AreaBlacklistEntry> copy = new ArrayList<>();
+        if (source == null) {
+            return copy;
+        }
+        for (AreaBlacklistEntry entry : source) {
+            if (entry != null) {
+                copy.add(entry.copy());
+            }
+        }
+        return copy;
+    }
+
     private static boolean containsIgnoreCase(List<String> values, String target) {
         if (values == null || target == null) {
             return false;
@@ -173,5 +218,50 @@ public class AutoEscapeRule {
             }
         }
         return false;
+    }
+
+    private static boolean containsAreaEntry(List<AreaBlacklistEntry> values, String areaKey, int chunkRadius) {
+        if (values == null) {
+            return false;
+        }
+        for (AreaBlacklistEntry value : values) {
+            if (value != null
+                    && value.chunkRadius == chunkRadius
+                    && value.areaKey.equalsIgnoreCase(areaKey)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public static class AreaBlacklistEntry {
+        public String areaKey;
+        public int chunkRadius;
+
+        public AreaBlacklistEntry() {
+            this("", 0);
+        }
+
+        public AreaBlacklistEntry(String areaKey, int chunkRadius) {
+            this.areaKey = areaKey == null ? "" : areaKey;
+            this.chunkRadius = chunkRadius;
+            normalize();
+        }
+
+        public void normalize() {
+            areaKey = normalizeAreaKey(areaKey);
+            chunkRadius = Math.max(0, chunkRadius);
+        }
+
+        public AreaBlacklistEntry copy() {
+            return new AreaBlacklistEntry(areaKey, chunkRadius);
+        }
+    }
+
+    public static String normalizeAreaKey(String value) {
+        String normalized = value == null ? "" : value.trim();
+        normalized = normalized.replace('，', ',').replace('：', ':');
+        normalized = normalized.replace(" ", "");
+        return normalized;
     }
 }

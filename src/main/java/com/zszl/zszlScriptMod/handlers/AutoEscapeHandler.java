@@ -472,6 +472,9 @@ public class AutoEscapeHandler {
         if (player == null || mc.world == null || rule == null) {
             return false;
         }
+        if (isBlockedByAreaBlacklist(player, rule)) {
+            return false;
+        }
 
         double range = rule.detectionRange <= 0 ? AutoEscapeRule.DEFAULT_DETECTION_RANGE : rule.detectionRange;
         AxisAlignedBB box = player.getEntityBoundingBox().grow(range);
@@ -499,6 +502,70 @@ public class AutoEscapeHandler {
             return true;
         }
         return false;
+    }
+
+    public static String getCurrentAreaKey() {
+        if (mc == null || mc.player == null) {
+            return "";
+        }
+        return buildAreaKey(mc.player.dimension, mc.player.chunkCoordX, mc.player.chunkCoordZ);
+    }
+
+    private static boolean isBlockedByAreaBlacklist(EntityPlayerSP player, AutoEscapeRule rule) {
+        if (player == null
+                || rule == null
+                || !rule.enableAreaBlacklist
+                || rule.areaBlacklist == null
+                || rule.areaBlacklist.isEmpty()) {
+            return false;
+        }
+
+        int currentDimension = player.dimension;
+        int currentChunkX = player.chunkCoordX;
+        int currentChunkZ = player.chunkCoordZ;
+
+        for (AutoEscapeRule.AreaBlacklistEntry entry : rule.areaBlacklist) {
+            int[] parsed = parseAreaKey(entry == null ? "" : entry.areaKey);
+            if (parsed == null || parsed[0] != currentDimension) {
+                continue;
+            }
+            int radius = entry == null ? 0 : Math.max(0, entry.chunkRadius);
+            if (Math.abs(currentChunkX - parsed[1]) <= radius
+                    && Math.abs(currentChunkZ - parsed[2]) <= radius) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static int[] parseAreaKey(String areaKey) {
+        String normalized = AutoEscapeRule.normalizeAreaKey(areaKey);
+        if (normalized.isEmpty()) {
+            return null;
+        }
+
+        int colonIndex = normalized.indexOf(':');
+        if (colonIndex <= 0 || colonIndex >= normalized.length() - 1) {
+            return null;
+        }
+
+        int commaIndex = normalized.indexOf(',', colonIndex + 1);
+        if (commaIndex <= colonIndex + 1 || commaIndex >= normalized.length() - 1) {
+            return null;
+        }
+
+        try {
+            int dimension = Integer.parseInt(normalized.substring(0, colonIndex));
+            int chunkX = Integer.parseInt(normalized.substring(colonIndex + 1, commaIndex));
+            int chunkZ = Integer.parseInt(normalized.substring(commaIndex + 1));
+            return new int[] { dimension, chunkX, chunkZ };
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
+    }
+
+    private static String buildAreaKey(int dimension, int chunkX, int chunkZ) {
+        return dimension + ":" + chunkX + "," + chunkZ;
     }
 
     private static boolean isEntityAliveForDetection(Entity entity) {
