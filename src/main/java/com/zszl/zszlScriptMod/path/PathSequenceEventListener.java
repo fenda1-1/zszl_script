@@ -720,6 +720,26 @@ public class PathSequenceEventListener {
         return true;
     }
 
+    public static boolean pauseForegroundSequenceByAction() {
+        if (instance == null || !instance.isTracking()) {
+            return false;
+        }
+        if (!instance.isPaused) {
+            instance.pause();
+        }
+        return true;
+    }
+
+    public static boolean resumeForegroundSequenceByAction() {
+        if (instance == null || !instance.isTracking()) {
+            return false;
+        }
+        if (instance.isPaused) {
+            instance.resume();
+        }
+        return true;
+    }
+
     public static boolean stopBackgroundSequencesByAction() {
         boolean stopped = false;
         for (PathSequenceEventListener runner : new ArrayList<>(backgroundRunners)) {
@@ -730,6 +750,32 @@ public class PathSequenceEventListener {
             }
         }
         return stopped;
+    }
+
+    public static boolean pauseBackgroundSequencesByAction() {
+        boolean handled = false;
+        for (PathSequenceEventListener runner : new ArrayList<>(backgroundRunners)) {
+            if (runner != null && runner.isTracking()) {
+                if (!runner.isPaused) {
+                    runner.pause();
+                }
+                handled = true;
+            }
+        }
+        return handled;
+    }
+
+    public static boolean resumeBackgroundSequencesByAction() {
+        boolean handled = false;
+        for (PathSequenceEventListener runner : new ArrayList<>(backgroundRunners)) {
+            if (runner != null && runner.isTracking()) {
+                if (runner.isPaused) {
+                    runner.resume();
+                }
+                handled = true;
+            }
+        }
+        return handled;
     }
 
     private static boolean restoreAnyBackgroundNavigation() {
@@ -898,6 +944,10 @@ public class PathSequenceEventListener {
 
     public boolean isTracking() {
         return tracking;
+    }
+
+    public boolean isPaused() {
+        return isPaused;
     }
 
     public boolean isAutoEatStepPathingActive() {
@@ -5573,6 +5623,7 @@ public class PathSequenceEventListener {
 
         private boolean shouldSkipAction(String actionType) {
             return "run_sequence".equals(actionType) || "hunt".equals(actionType) || "set_var".equals(actionType)
+                    || "sequence_control".equals(actionType)
                     || "goto_action".equals(actionType) || "repeat_actions".equals(actionType)
                     || "restart_sequence".equals(actionType)
                     || "capture_nearby_entity".equals(actionType) || "capture_gui_title".equals(actionType)

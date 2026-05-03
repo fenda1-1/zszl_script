@@ -145,6 +145,7 @@ public final class NodeParameterSchemaRegistry {
                                         "toggle_conditional_execution",
                                         "toggle_auto_escape",
                                         "runlastsequence", "run_sequence", "stop_current_sequence",
+                                        "sequence_control",
                                         "goto_action", "skip_actions", "skip_steps", "repeat_actions",
                                         "restart_sequence",
                                         "silentuse", "switch_hotbar_slot", "use_hotbar_item",
@@ -498,6 +499,15 @@ public final class NodeParameterSchemaRegistry {
                                         "foreground=停止当前前台序列；background=停止当前后台序列。",
                                         "foreground / background", "foreground",
                                         "foreground", "background"));
+                } else if ("sequence_control".equals(normalized)) {
+                        schemas.add(FieldSchema.paramsField("targetScope", "控制目标", FieldType.SELECT, false,
+                                        "foreground=控制当前前台序列；background=控制当前后台序列。",
+                                        "foreground / background", "foreground",
+                                        "foreground", "background"));
+                        schemas.add(FieldSchema.paramsField("operation", "控制操作", FieldType.SELECT, false,
+                                        "pause=暂停；resume=恢复。",
+                                        "pause / resume", "pause",
+                                        "pause", "resume"));
                 } else if ("silentuse".equals(normalized)) {
                         schemas.add(FieldSchema.paramsField("item", "物品名", FieldType.TEXT, true,
                                         "要静默使用的物品名称。", "不能为空", ""));

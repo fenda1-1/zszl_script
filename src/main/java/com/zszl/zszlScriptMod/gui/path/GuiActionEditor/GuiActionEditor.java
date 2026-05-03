@@ -2039,6 +2039,9 @@ public class GuiActionEditor extends ThemedGuiScreen {
             case "stop_current_sequence":
                 ActionParameterSections.buildStopCurrentSequenceSection(this, x, currentY, fieldWidth);
                 break;
+            case "sequence_control":
+                ActionParameterSections.buildSequenceControlSection(this, x, currentY, fieldWidth);
+                break;
             // end send_packet extras
         }
     }
@@ -2326,8 +2329,12 @@ public class GuiActionEditor extends ThemedGuiScreen {
                 newParams.addProperty(key, displayToWaitCombinedMode(value));
             } else if ("executeMode".equals(key)) {
                 newParams.addProperty(key, displayToRunSequenceExecuteMode(value));
-            } else if ("targetScope".equals(key) && "stop_current_sequence".equalsIgnoreCase(selectedType)) {
+            } else if ("targetScope".equals(key)
+                    && ("stop_current_sequence".equalsIgnoreCase(selectedType)
+                            || "sequence_control".equalsIgnoreCase(selectedType))) {
                 newParams.addProperty(key, displayToStopCurrentSequenceScope(value));
+            } else if ("operation".equals(key) && "sequence_control".equalsIgnoreCase(selectedType)) {
+                newParams.addProperty(key, displayToSequenceControlOperation(value));
             } else if ("moveDirection".equals(key)) {
                 newParams.addProperty(key, displayToMoveChestDirection(value));
             } else if ("requiredNbtTagsMode".equals(key)) {

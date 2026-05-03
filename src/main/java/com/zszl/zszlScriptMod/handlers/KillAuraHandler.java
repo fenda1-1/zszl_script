@@ -5150,6 +5150,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
 
         private boolean shouldSkipAction(String actionType) {
             return "run_sequence".equals(actionType) || "hunt".equals(actionType) || "set_var".equals(actionType)
+                    || "sequence_control".equals(actionType)
                     || "goto_action".equals(actionType) || "repeat_actions".equals(actionType)
                     || "restart_sequence".equals(actionType)
                     || "capture_nearby_entity".equals(actionType) || "capture_gui_title".equals(actionType)

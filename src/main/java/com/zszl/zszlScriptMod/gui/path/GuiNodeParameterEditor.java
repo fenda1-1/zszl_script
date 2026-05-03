@@ -243,6 +243,7 @@ public class GuiNodeParameterEditor extends ThemedGuiScreen {
             if ("runlastsequence".equals(normalized)) return "运行上次序列";
             if ("run_sequence".equals(normalized)) return "运行序列";
             if ("stop_current_sequence".equals(normalized)) return "停止当前执行序列";
+            if ("sequence_control".equals(normalized)) return "序列控制";
             if ("restart_sequence".equals(normalized)) return "重头执行序列";
             if ("silentuse".equals(normalized)) return "静默使用物品";
             if ("switch_hotbar_slot".equals(normalized)) return "切换快捷栏";

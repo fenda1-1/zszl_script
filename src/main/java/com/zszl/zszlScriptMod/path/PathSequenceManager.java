@@ -1166,6 +1166,10 @@ public class PathSequenceManager {
                     case "stop_current_sequence":
                         return I18n.format("path.action.desc.stop_current_sequence",
                                 getStopCurrentSequenceScopeText(params));
+                    case "sequence_control":
+                        return I18n.format("path.action.desc.sequence_control",
+                                getSequenceControlScopeText(params),
+                                getSequenceControlOperationText(params));
                     case "run_template":
                         String templateName = params.has("templateName") ? params.get("templateName").getAsString()
                                 : I18n.format("msg.common.unknown");
@@ -1504,6 +1508,34 @@ public class PathSequenceManager {
         return "background".equalsIgnoreCase(getStopCurrentSequenceTargetScope(params))
                 ? I18n.format("gui.path.action_editor.option.stop_sequence_scope_background")
                 : I18n.format("gui.path.action_editor.option.stop_sequence_scope_foreground");
+    }
+
+    private static String getSequenceControlTargetScope(JsonObject params) {
+        return getStopCurrentSequenceTargetScope(params);
+    }
+
+    private static String getSequenceControlOperation(JsonObject params) {
+        if (params == null || !params.has("operation")) {
+            return "pause";
+        }
+        try {
+            String operation = params.get("operation").getAsString();
+            return "resume".equalsIgnoreCase(operation) ? "resume" : "pause";
+        } catch (Exception ignored) {
+            return "pause";
+        }
+    }
+
+    private static String getSequenceControlScopeText(JsonObject params) {
+        return "background".equalsIgnoreCase(getSequenceControlTargetScope(params))
+                ? I18n.format("gui.path.action_editor.option.stop_sequence_scope_background")
+                : I18n.format("gui.path.action_editor.option.stop_sequence_scope_foreground");
+    }
+
+    private static String getSequenceControlOperationText(JsonObject params) {
+        return "resume".equalsIgnoreCase(getSequenceControlOperation(params))
+                ? I18n.format("gui.path.action_editor.option.sequence_control_operation.resume")
+                : I18n.format("gui.path.action_editor.option.sequence_control_operation.pause");
     }
 
     private static String formatTickDelayText(int delayTicks) {
@@ -2384,6 +2416,10 @@ public class PathSequenceManager {
                 case "stop_current_sequence":
                     final String stopTargetScope = getStopCurrentSequenceTargetScope(params);
                     return player -> stopCurrentSequenceFromAction(stopTargetScope);
+                case "sequence_control":
+                    final String sequenceControlTargetScope = getSequenceControlTargetScope(params);
+                    final String sequenceControlOperation = getSequenceControlOperation(params);
+                    return player -> controlSequenceFromAction(sequenceControlTargetScope, sequenceControlOperation);
                 case "run_template":
                     final String templateNameValue = params.has("templateName")
                             ? params.get("templateName").getAsString()
@@ -3233,6 +3269,23 @@ public class PathSequenceManager {
             PathSequenceEventListener.stopBackgroundSequencesByAction();
         } else {
             PathSequenceEventListener.stopForegroundSequenceByAction();
+        }
+    }
+
+    private static void controlSequenceFromAction(String targetScope, String operation) {
+        boolean resume = "resume".equalsIgnoreCase(operation);
+        if ("background".equalsIgnoreCase(targetScope)) {
+            if (resume) {
+                PathSequenceEventListener.resumeBackgroundSequencesByAction();
+            } else {
+                PathSequenceEventListener.pauseBackgroundSequencesByAction();
+            }
+            return;
+        }
+        if (resume) {
+            PathSequenceEventListener.resumeForegroundSequenceByAction();
+        } else {
+            PathSequenceEventListener.pauseForegroundSequenceByAction();
         }
     }
 
