@@ -1419,8 +1419,8 @@ gui.path.action_editor.label.x=X坐标
 gui.path.action_editor.help.x=屏幕X坐标 (基于 %s 宽)
 gui.path.action_editor.label.y=Y坐标
 gui.path.action_editor.help.y=屏幕Y坐标 (基于 %s 高)
-gui.path.action_editor.label.left_click=左键
-gui.path.action_editor.help.left_click=true (左键) 或 false (右键)
+gui.path.action_editor.label.left_click=鼠标按键
+gui.path.action_editor.help.left_click=可选左键、右键或中键；旧配置里的 true/false 仍兼容为左/右键
 gui.path.action_editor.label.screen_locator_mode=屏幕定位模式
 gui.path.action_editor.help.screen_locator_mode=坐标=按 X/Y 点击；按钮文本=按当前 GUI 按钮文字定位；槽位文本=按当前容器槽位物品名定位；元素路径=按扫描出来的 GUI 元素路径定位
 gui.path.action_editor.label.slot_locator_mode=槽位定位模式
@@ -2204,7 +2204,7 @@ path.action.desc.disconnect=断开当前连接
 path.action.desc.delay=延迟: %s ticks
 path.action.desc.key=按键: %s (%s)
 path.action.desc.jump=跳跃: %s 次, 间隔 %s ticks
-path.action.desc.click=点击: (%s, %s)
+path.action.desc.click=点击[%s]: (%s, %s)
 path.action.desc.window_click=容器内槽位点击: window=%s, slot=%s, button=%s, type=%s
 path.action.desc.setview=设置视角: (Yaw: %.1f, Pitch: %.1f)
 path.action.desc.right_click_block=右键方块: %s

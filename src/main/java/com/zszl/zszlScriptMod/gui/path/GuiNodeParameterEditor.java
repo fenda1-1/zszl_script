@@ -261,6 +261,10 @@ public class GuiNodeParameterEditor extends ThemedGuiScreen {
             if ("up".equals(normalized)) return "抬起";
         }
 
+        if ("left".equals(key)) {
+            return com.zszl.zszlScriptMod.gui.path.GuiActionEditor.util.ActionEditorDisplayConverters.leftToDisplay(value);
+        }
+
         if ("triggerType".equals(key)) {
             if ("onchat".equals(normalized)) return "聊天触发";
             if ("onpacket".equals(normalized)) return "数据包触发";

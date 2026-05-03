@@ -1269,6 +1269,10 @@ public class ModUtils {
      * @param originalHeight 记录坐标时的窗口高度
      */
     public static void simulateMouseClick(int x, int y, boolean isLeftClick, int originalWidth, int originalHeight) {
+        simulateMouseClick(x, y, isLeftClick ? "left" : "right", originalWidth, originalHeight);
+    }
+
+    public static void simulateMouseClick(int x, int y, String mouseButton, int originalWidth, int originalHeight) {
         if (ModConfig.isDebugFlagEnabled(DebugModule.AHK_EXECUTION) && Minecraft.getMinecraft().player != null) {
             String mode = ModConfig.ahkMoveMouseMode ? "移动模式" : "后台模拟模式 (新)";
             String debugMsg = String.format("§d[调试] §7模拟鼠标点击 (%s): 逻辑坐标(%d, %d), 原始分辨率(%dx%d)", mode, x, y,
@@ -1293,7 +1297,14 @@ public class ModUtils {
 
                 String XCoordinate = String.valueOf(actualX);
                 String YCoordinate = String.valueOf(actualY);
-                String MouseButton = isLeftClick ? "Left" : "Right";
+                String MouseButton;
+                if ("middle".equalsIgnoreCase(mouseButton)) {
+                    MouseButton = "Middle";
+                } else if ("right".equalsIgnoreCase(mouseButton)) {
+                    MouseButton = "Right";
+                } else {
+                    MouseButton = "Left";
+                }
 
                 if (ModConfig.ahkMoveMouseMode) {
                     // 移动鼠标模式 (旧逻辑，用于兼容或特殊情况)

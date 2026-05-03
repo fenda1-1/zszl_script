@@ -131,18 +131,33 @@ public final class ActionTargetLocator {
         return tryInvokeCurrentScreenClick(point.getX(), point.getY(), isLeftClick);
     }
 
+    public static boolean tryInvokeCurrentScreenClick(String locatorMode, String locatorText, String matchMode,
+            String mouseButton) {
+        ClickPoint point = resolveScreenClickPoint(locatorMode, locatorText, matchMode);
+        if (point == null) {
+            return false;
+        }
+        return tryInvokeCurrentScreenClick(point.getX(), point.getY(), mouseButton);
+    }
+
     public static boolean tryInvokeCurrentScreenClick(int x, int y, boolean isLeftClick) {
+        return tryInvokeCurrentScreenClick(x, y, isLeftClick ? "left" : "right");
+    }
+
+    public static boolean tryInvokeCurrentScreenClick(int x, int y, String mouseButton) {
         Minecraft mc = Minecraft.getMinecraft();
         GuiScreen screen = mc == null ? null : mc.currentScreen;
         if (screen == null) {
             return false;
         }
-        int mouseButton = isLeftClick ? 0 : 1;
+        int mouseButtonCode = "middle".equalsIgnoreCase(mouseButton)
+                ? 2
+                : ("right".equalsIgnoreCase(mouseButton) ? 1 : 0);
         try {
             Method mouseClicked = resolveMethod(screen.getClass(), "mouseClicked", int.class, int.class, int.class);
-            mouseClicked.invoke(screen, x, y, mouseButton);
+            mouseClicked.invoke(screen, x, y, mouseButtonCode);
             Method mouseReleased = resolveMethod(screen.getClass(), "mouseReleased", int.class, int.class, int.class);
-            mouseReleased.invoke(screen, x, y, mouseButton);
+            mouseReleased.invoke(screen, x, y, mouseButtonCode);
             return true;
         } catch (Exception ignored) {
         }

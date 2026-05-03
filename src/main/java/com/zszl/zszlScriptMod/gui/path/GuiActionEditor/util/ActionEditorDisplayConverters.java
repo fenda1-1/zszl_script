@@ -35,7 +35,23 @@ public final class ActionEditorDisplayConverters {
     }
 
     public static String leftToDisplay(String leftRaw) {
+        if ("middle".equalsIgnoreCase(leftRaw)) {
+            return "中键";
+        }
+        if ("right".equalsIgnoreCase(leftRaw)) {
+            return "右键";
+        }
         return "false".equalsIgnoreCase(leftRaw) ? "右键" : "左键";
+    }
+
+    public static String displayToMouseButton(String display) {
+        if ("中键".equals(display)) {
+            return "middle";
+        }
+        if ("右键".equals(display)) {
+            return "right";
+        }
+        return "left";
     }
 
     public static String clickTypeToDisplay(String clickType) {

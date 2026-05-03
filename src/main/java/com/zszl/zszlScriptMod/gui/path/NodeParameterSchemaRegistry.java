@@ -329,8 +329,9 @@ public final class NodeParameterSchemaRegistry {
                                         "录制时参考分辨率下的 X 坐标。", "数字", "960"));
                         schemas.add(FieldSchema.paramsField("y", "屏幕 Y", FieldType.NUMBER, true,
                                         "录制时参考分辨率下的 Y 坐标。", "数字", "540"));
-                        schemas.add(FieldSchema.paramsField("left", "左键点击", FieldType.BOOLEAN, false,
-                                        "关闭时表示右键点击。", "true / false", "true"));
+                        schemas.add(FieldSchema.paramsField("left", "鼠标按键", FieldType.SELECT, false,
+                                        "left=左键；right=右键；middle=中键。", "left / right / middle", "left",
+                                        "left", "right", "middle"));
                         schemas.add(FieldSchema.paramsField("originalWidth", "参考宽度", FieldType.NUMBER, false,
                                         "录制时的屏幕宽度。", ">= 1", "2560"));
                         schemas.add(FieldSchema.paramsField("originalHeight", "参考高度", FieldType.NUMBER, false,

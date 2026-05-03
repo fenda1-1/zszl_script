@@ -148,6 +148,37 @@ public class PathSequenceManager {
                 .equalsIgnoreCase(normalizeClickLocatorMode(locatorMode));
     }
 
+    private static String getClickMouseButton(JsonObject params) {
+        if (params == null || !params.has("left")) {
+            return "left";
+        }
+        try {
+            JsonElement buttonElement = params.get("left");
+            if (buttonElement != null
+                    && buttonElement.isJsonPrimitive()
+                    && buttonElement.getAsJsonPrimitive().isBoolean()) {
+                return buttonElement.getAsBoolean() ? "left" : "right";
+            }
+            String raw = buttonElement == null ? "" : buttonElement.getAsString();
+            if ("middle".equalsIgnoreCase(raw)) {
+                return "middle";
+            }
+            if ("right".equalsIgnoreCase(raw) || "false".equalsIgnoreCase(raw)) {
+                return "right";
+            }
+        } catch (Exception ignored) {
+        }
+        return "left";
+    }
+
+    private static String getClickMouseButtonText(JsonObject params) {
+        String mouseButton = getClickMouseButton(params);
+        if ("middle".equalsIgnoreCase(mouseButton)) {
+            return "中键";
+        }
+        return "right".equalsIgnoreCase(mouseButton) ? "右键" : "左键";
+    }
+
     private static synchronized void ensureWindowClickMapLoaded() {
         if (windowClickMapLoaded) {
             return;
@@ -479,6 +510,7 @@ public class PathSequenceManager {
                         if (!isClickCoordinateMode(clickLocatorModeDesc)) {
                             return "点击元素: "
                                     + (params.has("locatorText") ? params.get("locatorText").getAsString() : "")
+                                    + " / " + getClickMouseButtonText(params)
                                     + " / "
                                     + (ActionTargetLocator.CLICK_MODE_BUTTON_TEXT
                                             .equalsIgnoreCase(clickLocatorModeDesc)
@@ -488,7 +520,8 @@ public class PathSequenceManager {
                                                                     ? "槽位文本"
                                                                     : "元素路径"));
                         }
-                        return I18n.format("path.action.desc.click", params.get("x").getAsInt(),
+                        return I18n.format("path.action.desc.click", getClickMouseButtonText(params),
+                                params.get("x").getAsInt(),
                                 params.get("y").getAsInt());
                     case "window_click":
                         String containsText = params.has("contains") ? params.get("contains").getAsString() : "";
@@ -1997,7 +2030,7 @@ public class PathSequenceManager {
                 case "click":
                     final int x = params.get("x").getAsInt();
                     final int y = params.get("y").getAsInt();
-                    final boolean isLeft = params.get("left").getAsBoolean();
+                    final String clickMouseButton = getClickMouseButton(params);
                     final String clickLocatorMode = normalizeClickLocatorMode(params.has("locatorMode")
                             ? params.get("locatorMode").getAsString()
                             : ActionTargetLocator.CLICK_MODE_COORDINATE);
@@ -2015,7 +2048,7 @@ public class PathSequenceManager {
                     return player -> {
                         if (!isClickCoordinateMode(clickLocatorMode)) {
                             if (ActionTargetLocator.tryInvokeCurrentScreenClick(clickLocatorMode, clickLocatorText,
-                                    clickLocatorMatchMode, isLeft)) {
+                                    clickLocatorMatchMode, clickMouseButton)) {
                                 return;
                             }
                             ActionTargetLocator.ClickPoint point = ActionTargetLocator.resolveScreenClickPoint(
@@ -2028,11 +2061,11 @@ public class PathSequenceManager {
                                 return;
                             }
                             Minecraft mc = Minecraft.getMinecraft();
-                            ModUtils.simulateMouseClick(point.getX(), point.getY(), isLeft,
+                            ModUtils.simulateMouseClick(point.getX(), point.getY(), clickMouseButton,
                                     mc.displayWidth, mc.displayHeight);
                             return;
                         }
-                        ModUtils.simulateMouseClick(x, y, isLeft, originalWidth, originalHeight);
+                        ModUtils.simulateMouseClick(x, y, clickMouseButton, originalWidth, originalHeight);
                     };
 
                 case "window_click":

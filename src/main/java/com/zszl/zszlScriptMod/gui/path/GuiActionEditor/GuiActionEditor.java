@@ -1609,7 +1609,7 @@ public class GuiActionEditor extends ThemedGuiScreen {
                 currentY += 40;
                 addDropdown(I18n.format("gui.path.action_editor.label.left_click"), "left",
                         I18n.format("gui.path.action_editor.help.left_click"), fieldWidth, x, currentY,
-                        new String[] { "左键", "右键" },
+                        new String[] { "左键", "右键", "中键" },
                         leftToDisplay(currentParams.has("left") ? currentParams.get("left").getAsString() : "true"));
                 break;
             case "setview":
@@ -2297,7 +2297,7 @@ public class GuiActionEditor extends ThemedGuiScreen {
             if ("state".equals(key)) {
                 newParams.addProperty(key, displayToState(value));
             } else if ("left".equals(key)) {
-                newParams.addProperty(key, "左键".equals(value));
+                newParams.addProperty(key, displayToMouseButton(value));
             } else if ("direction".equals(key)) {
                 newParams.addProperty(key, displayToDirection(value));
             } else if ("autoAttack".equals(key)) {
