@@ -683,10 +683,14 @@ public final class ModUtils {
             String coordinateMode, String mouseMoveMode) {
         runOnClientThread(() -> {
             Minecraft mc = Minecraft.getInstance();
+            Screen screen = mc.screen;
+            if (screen == null && "middle".equalsIgnoreCase(mouseButton)) {
+                invokeMinecraftMiddleClick(mc);
+                return;
+            }
             int button = "middle".equalsIgnoreCase(mouseButton)
                     ? 2
                     : ("right".equalsIgnoreCase(mouseButton) ? 1 : 0);
-            Screen screen = mc.screen;
             int screenWidth = Math.max(1, mc.getWindow().getScreenWidth());
             int screenHeight = Math.max(1, mc.getWindow().getScreenHeight());
             int scaledWidth = Math.max(1, screen != null && screen.width > 0
@@ -1067,13 +1071,37 @@ public final class ModUtils {
         Minecraft mc = Minecraft.getInstance();
         try {
             if ("middle".equalsIgnoreCase(mouseButton)) {
+                invokeMinecraftMiddleClick(mc);
                 return;
             }
-            Method method = Minecraft.class.getDeclaredMethod(
-                    "right".equalsIgnoreCase(mouseButton) ? "startUseItem" : "startAttack");
-            method.setAccessible(true);
-            method.invoke(mc);
+            String[] methodNames = "right".equalsIgnoreCase(mouseButton)
+                    ? new String[] { "startUseItem", "m_91277_" }
+                    : new String[] { "startAttack", "m_202354_" };
+            for (String methodName : methodNames) {
+                try {
+                    Method method = Minecraft.class.getDeclaredMethod(methodName);
+                    method.setAccessible(true);
+                    method.invoke(mc);
+                    return;
+                } catch (ReflectiveOperationException ignored) {
+                }
+            }
         } catch (Exception ignored) {
+        }
+    }
+
+    private static void invokeMinecraftMiddleClick(Minecraft mc) {
+        if (mc == null) {
+            return;
+        }
+        for (String methodName : new String[] { "pickBlock", "m_91280_", "middleClickMouse" }) {
+            try {
+                Method method = Minecraft.class.getDeclaredMethod(methodName);
+                method.setAccessible(true);
+                method.invoke(mc);
+                return;
+            } catch (ReflectiveOperationException ignored) {
+            }
         }
     }
 

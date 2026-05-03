@@ -111,6 +111,8 @@ import com.zszl.zszlScriptMod.utils.TitleCompendiumManager;
 import com.zszl.zszlScriptMod.utils.UpdateChecker;
 import com.zszl.zszlScriptMod.utils.UpdateManager;
 import com.zszl.zszlScriptMod.zszlScriptMod;
+import com.mojang.blaze3d.systems.RenderSystem;
+import com.mojang.blaze3d.vertex.PoseStack;
 
 import net.minecraft.client.Minecraft;
 import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.FontRenderer;
@@ -3692,6 +3694,23 @@ public class GuiInventory {
         return bounds != null && bounds.x + bounds.width <= anchorRect.x;
     }
 
+    private static void pushTopOverlayLayer() {
+        PoseStack poseStack = RenderSystem.getModelViewStack();
+        poseStack.pushPose();
+        poseStack.translate(0.0F, 0.0F, 400.0F);
+        RenderSystem.applyModelViewMatrix();
+        RenderSystem.disableDepthTest();
+        RenderSystem.enableBlend();
+        RenderSystem.defaultBlendFunc();
+    }
+
+    private static void popTopOverlayLayer() {
+        RenderSystem.enableDepthTest();
+        PoseStack poseStack = RenderSystem.getModelViewStack();
+        poseStack.popPose();
+        RenderSystem.applyModelViewMatrix();
+    }
+
     private static void drawContextMenus(int mouseX, int mouseY, int screenWidth, int screenHeight,
             FontRenderer fontRenderer) {
         contextMenuLayers.clear();
@@ -3699,19 +3718,21 @@ public class GuiInventory {
             return;
         }
 
-        List<ContextMenuItem> items = contextMenuRootItems;
-        int x = clampContextMenuX(contextMenuAnchorX, getContextMenuWidth(items, fontRenderer), screenWidth);
-        int y = clampContextMenuY(contextMenuAnchorY, items.size() * 20 + 4, screenHeight);
-        int depth = 0;
+        pushTopOverlayLayer();
+        try {
+            List<ContextMenuItem> items = contextMenuRootItems;
+            int x = clampContextMenuX(contextMenuAnchorX, getContextMenuWidth(items, fontRenderer), screenWidth);
+            int y = clampContextMenuY(contextMenuAnchorY, items.size() * 20 + 4, screenHeight);
+            int depth = 0;
 
-        while (items != null && !items.isEmpty()) {
-            ContextMenuLayer layer = new ContextMenuLayer(items);
-            layer.x = x;
-            layer.y = y;
-            layer.width = getContextMenuWidth(items, fontRenderer);
-            int layerHeight = items.size() * 20 + 4;
-            layer.bounds = new Rectangle(layer.x, layer.y, layer.width, layerHeight);
-            contextMenuLayers.add(layer);
+            while (items != null && !items.isEmpty()) {
+                ContextMenuLayer layer = new ContextMenuLayer(items);
+                layer.x = x;
+                layer.y = y;
+                layer.width = getContextMenuWidth(items, fontRenderer);
+                int layerHeight = items.size() * 20 + 4;
+                layer.bounds = new Rectangle(layer.x, layer.y, layer.width, layerHeight);
+                contextMenuLayers.add(layer);
 
             drawRect(layer.x, layer.y, layer.x + layer.width, layer.y + layerHeight, 0xEE111A22);
             drawHorizontalLine(layer.x, layer.x + layer.width, layer.y, 0xFF6FB8FF);
@@ -3810,9 +3831,12 @@ public class GuiInventory {
             int childMenuHeight = items.size() * 20 + 4;
             boolean childPreferLeft = shouldOpenSubMenuToLeft(anchorRect, items, fontRenderer, screenWidth,
                     screenHeight, ancestorBounds, preferLeftForChild);
-            x = resolveSubMenuX(anchorRect, items, fontRenderer, screenWidth, ancestorBounds, childPreferLeft);
-            y = clampContextMenuY(anchorRect.y, childMenuHeight, screenHeight);
-            depth++;
+                x = resolveSubMenuX(anchorRect, items, fontRenderer, screenWidth, ancestorBounds, childPreferLeft);
+                y = clampContextMenuY(anchorRect.y, childMenuHeight, screenHeight);
+                depth++;
+            }
+        } finally {
+            popTopOverlayLayer();
         }
     }
 
@@ -6351,9 +6375,9 @@ public class GuiInventory {
                         screenWidth, screenHeight, -1, fontRenderer);
             }
 
-            drawContextMenus(mouseX, mouseY, screenWidth, screenHeight, fontRenderer);
             drawCustomSequenceDragGhost(mouseX, mouseY, fontRenderer);
             drawCategoryTreeDragGhost(mouseX, mouseY, fontRenderer);
+            drawContextMenus(mouseX, mouseY, screenWidth, screenHeight, fontRenderer);
 
         } finally {
         }
