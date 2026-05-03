@@ -96,7 +96,7 @@ public final class ItemFeatureManager {
                 "客户端近似实现：按住攻击键时拦截未满蓄力的近战攻击，并在满蓄力瞬间自动出刀，尽量避免连续平砍掉伤。", true));
         register(new FeatureState("force_no_hunger", "强制不饥饿",
                 "持续锁定客户端饥饿值、饱和度和消耗值，尽量让角色保持满饱食状态。", true));
-        register(new FeatureState("drop_all", "丢弃所有", "按关键词自动丢弃指定物品，支持多个关键词。", true));
+        register(new FeatureState("drop_all", "丢弃所有", "按物品过滤表达式自动丢弃指定物品，支持多条表达式。", true));
         register(new FeatureState("shulker_preview", "潜影盒预览", "鼠标悬停在潜影盒物品上时，直接显示其内部内容预览。", true));
         loadConfig();
     }
@@ -426,6 +426,12 @@ public final class ItemFeatureManager {
                     ? clampInt(root.get("dropAllDelayTicks").getAsInt(), 0, 20)
                     : DEFAULT_DROP_ALL_DELAY_TICKS;
             dropAllKeywordsText = root.has("dropAllKeywordsText") ? root.get("dropAllKeywordsText").getAsString() : "";
+            dropAllItemFilterExpressions.clear();
+            if (root.has("dropAllItemFilterExpressions") && root.get("dropAllItemFilterExpressions").isJsonArray()) {
+                readDropAllExpressionArray(root.getAsJsonArray("dropAllItemFilterExpressions"));
+            } else if (root.has("dropAllExpressions") && root.get("dropAllExpressions").isJsonArray()) {
+                readDropAllExpressionArray(root.getAsJsonArray("dropAllExpressions"));
+            }
 
             for (FeatureState state : FEATURES.values()) {
                 if (!features.has(state.id) || !features.get(state.id).isJsonObject()) {
@@ -444,6 +450,17 @@ public final class ItemFeatureManager {
         }
     }
 
+    private static void readDropAllExpressionArray(JsonArray expressions) {
+        for (JsonElement element : expressions) {
+            if (element != null && element.isJsonPrimitive()) {
+                String expression = safe(element.getAsString());
+                if (!expression.isEmpty()) {
+                    dropAllItemFilterExpressions.add(expression);
+                }
+            }
+        }
+    }
+
     public static void saveConfig() {
         try {
             Path file = ProfileManager.getCurrentProfileDir().resolve("other_features_item.json");
@@ -454,6 +471,11 @@ public final class ItemFeatureManager {
             root.addProperty("autoEquipIntervalTicks", autoEquipIntervalTicks);
             root.addProperty("dropAllDelayTicks", dropAllDelayTicks);
             root.addProperty("dropAllKeywordsText", getDropAllKeywordsText());
+            JsonArray dropAllExpressions = new JsonArray();
+            for (String expression : normalizeDropAllExpressions(dropAllItemFilterExpressions)) {
+                dropAllExpressions.add(expression);
+            }
+            root.add("dropAllItemFilterExpressions", dropAllExpressions);
             for (FeatureState state : FEATURES.values()) {
                 JsonObject json = new JsonObject();
                 json.addProperty("enabled", state.enabled);

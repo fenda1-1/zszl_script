@@ -85,6 +85,7 @@ public final class ActionDisplayCatalog {
         ACTION_DISPLAY_KEYS.put("send_packet", "gui.path.action_editor.type.send_packet");
         ACTION_DISPLAY_KEYS.put("run_sequence", "gui.path.action_editor.type.run_sequence");
         ACTION_DISPLAY_KEYS.put("stop_current_sequence", "gui.path.action_editor.type.stop_current_sequence");
+        ACTION_DISPLAY_KEYS.put("sequence_control", "gui.path.action_editor.type.sequence_control");
     }
 
     private ActionDisplayCatalog() {

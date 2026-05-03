@@ -465,6 +465,26 @@ public class PathSequenceEventListener {
         return true;
     }
 
+    public static boolean pauseForegroundSequenceByAction() {
+        if (instance == null || !instance.isTracking()) {
+            return false;
+        }
+        if (!instance.paused) {
+            instance.pause();
+        }
+        return true;
+    }
+
+    public static boolean resumeForegroundSequenceByAction() {
+        if (instance == null || !instance.isTracking()) {
+            return false;
+        }
+        if (instance.paused) {
+            instance.resume();
+        }
+        return true;
+    }
+
     public static boolean stopBackgroundSequencesByAction() {
         boolean stopped = false;
         for (PathSequenceEventListener runner : new ArrayList<>(BACKGROUND_RUNNERS)) {
@@ -475,6 +495,32 @@ public class PathSequenceEventListener {
             }
         }
         return stopped;
+    }
+
+    public static boolean pauseBackgroundSequencesByAction() {
+        boolean handled = false;
+        for (PathSequenceEventListener runner : new ArrayList<>(BACKGROUND_RUNNERS)) {
+            if (runner != null && runner.isTracking()) {
+                if (!runner.paused) {
+                    runner.pause();
+                }
+                handled = true;
+            }
+        }
+        return handled;
+    }
+
+    public static boolean resumeBackgroundSequencesByAction() {
+        boolean handled = false;
+        for (PathSequenceEventListener runner : new ArrayList<>(BACKGROUND_RUNNERS)) {
+            if (runner != null && runner.isTracking()) {
+                if (runner.paused) {
+                    runner.resume();
+                }
+                handled = true;
+            }
+        }
+        return handled;
     }
 
     public static synchronized boolean isBuiltinSequenceDelayEnabled() {
@@ -492,6 +538,10 @@ public class PathSequenceEventListener {
 
     public boolean isTracking() {
         return tracking;
+    }
+
+    public boolean isPaused() {
+        return paused;
     }
 
     public boolean isAutoEatStepPathingActive() {
@@ -562,13 +612,21 @@ public class PathSequenceEventListener {
     }
 
     public void pause() {
+        if (!tracking || paused) {
+            return;
+        }
         this.paused = true;
         this.pausedByGui = false;
+        EmbeddedNavigationHandler.INSTANCE.pause("路径序列暂停");
     }
 
     public void resume() {
+        if (!paused) {
+            return;
+        }
         this.paused = false;
         this.pausedByGui = false;
+        EmbeddedNavigationHandler.INSTANCE.resume("路径序列恢复");
         ensureRegistered();
     }
 
@@ -3497,6 +3555,7 @@ public class PathSequenceEventListener {
             return "run_sequence".equals(actionType)
                     || "hunt".equals(actionType)
                     || "set_var".equals(actionType)
+                    || "sequence_control".equals(actionType)
                     || "goto_action".equals(actionType)
                     || "repeat_actions".equals(actionType)
                     || "capture_nearby_entity".equals(actionType)

@@ -56,6 +56,7 @@ public final class FlowActionLibraryGroup {
                         I18n.format("gui.path.action_editor.group.flow.network"),
                         itemFactory.apply("run_sequence"),
                         itemFactory.apply("stop_current_sequence"),
+                        itemFactory.apply("sequence_control"),
                         itemFactory.apply("send_packet")));
     }
 }

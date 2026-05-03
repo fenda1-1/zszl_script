@@ -23,6 +23,7 @@ import com.zszl.zszlScriptMod.path.PathSequenceManager.PathSequence;
 import com.zszl.zszlScriptMod.path.PathSequenceManager.PathStep;
 import com.zszl.zszlScriptMod.path.runtime.ScopedRuntimeVariables;
 import com.zszl.zszlScriptMod.shadowbaritone.api.BaritoneAPI;
+import com.zszl.zszlScriptMod.shadowbaritone.api.event.events.PathEvent;
 import com.zszl.zszlScriptMod.shadowbaritone.api.event.events.PacketEvent;
 import com.zszl.zszlScriptMod.shadowbaritone.api.event.events.type.EventState;
 import com.zszl.zszlScriptMod.shadowbaritone.api.event.listener.AbstractGameEventListener;
@@ -118,6 +119,11 @@ public class KillAuraHandler implements AbstractGameEventListener {
     private static final int HUNT_GOTO_INTERVAL_TICKS = 6;
     private static final double HUNT_GOTO_MOVE_THRESHOLD_SQ = 1.0D;
     private static final double HUNT_FIXED_DISTANCE_TOLERANCE = 0.30D;
+    private static final int HUNT_UNREACHABLE_MAX_TRACKED_TARGETS = 256;
+    private static final int HUNT_UNREACHABLE_MAX_FAILED_GOALS_PER_TARGET = 16;
+    private static final int HUNT_UNREACHABLE_FAILS_BEFORE_TEMP_EXCLUDE = 3;
+    private static final int HUNT_UNREACHABLE_TEMP_EXCLUDE_TICKS = 100;
+    private static final double HUNT_UNREACHABLE_TARGET_RESET_DISTANCE_SQ = 4.0D;
     private static final int HUNT_PICKUP_GOTO_INTERVAL_TICKS = 5;
     private static final int HUNT_PICKUP_SEARCH_INTERVAL_TICKS = 3;
     private static final double HUNT_PICKUP_OVERLAP_GROWTH = 0.05D;
@@ -203,6 +209,9 @@ public class KillAuraHandler implements AbstractGameEventListener {
     private int lastHuntTargetEntityId = Integer.MIN_VALUE;
     private double lastHuntTargetX = 0.0D;
     private double lastHuntTargetZ = 0.0D;
+    private double lastHuntGoalX = Double.NaN;
+    private double lastHuntGoalY = Double.NaN;
+    private double lastHuntGoalZ = Double.NaN;
     private boolean huntPickupNavigationActive = false;
     private int lastHuntPickupGotoTick = -99999;
     private int lastHuntPickupTargetEntityId = Integer.MIN_VALUE;
@@ -218,7 +227,37 @@ public class KillAuraHandler implements AbstractGameEventListener {
     private int lastTeleportCorrectionTick = Integer.MIN_VALUE;
     private final AttackSequenceExecutor attackSequenceExecutor = new AttackSequenceExecutor();
     private final HuntOrbitController huntOrbitController = new HuntOrbitController();
+    private final Map<Integer, HuntUnreachableTracker> huntUnreachableTrackers = new LinkedHashMap<>();
     private String lastOrbitDebugState = "";
+
+    private static final class HuntUnreachableTracker {
+        private double lastTargetX;
+        private double lastTargetY;
+        private double lastTargetZ;
+        private int failedGoalCount;
+        private int excludeUntilTick;
+        private final LinkedHashSet<Long> failedGoalKeys = new LinkedHashSet<>();
+
+        private HuntUnreachableTracker(LivingEntity target) {
+            refreshTargetPosition(target);
+        }
+
+        private void refreshTargetPosition(LivingEntity target) {
+            if (target == null) {
+                return;
+            }
+            this.lastTargetX = target.getX();
+            this.lastTargetY = target.getY();
+            this.lastTargetZ = target.getZ();
+        }
+
+        private void resetFailures(LivingEntity target) {
+            refreshTargetPosition(target);
+            this.failedGoalCount = 0;
+            this.excludeUntilTick = 0;
+            this.failedGoalKeys.clear();
+        }
+    }
 
     public static class KillAuraPreset {
         public String name = "";
@@ -1074,6 +1113,8 @@ public class KillAuraHandler implements AbstractGameEventListener {
             return;
         }
 
+        tickHuntUnreachableTrackers(player);
+
         if (this.attackCooldownTicks > 0) {
             this.attackCooldownTicks--;
         }
@@ -1102,6 +1143,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
                 this.lastSafeMotionY = 0.0D;
                 this.lastSafeMotionZ = 0.0D;
             }
+            clearHuntUnreachableTracking();
             return;
         }
 
@@ -1110,6 +1152,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
             stopHuntPickupNavigation();
             stopHuntNavigation();
             this.attackSequenceExecutor.stop();
+            clearHuntUnreachableTracking();
             return;
         }
 
@@ -1204,6 +1247,21 @@ public class KillAuraHandler implements AbstractGameEventListener {
         mc.execute(() -> handleTeleportCorrection(new double[] { correctedX, correctedY, correctedZ }));
     }
 
+    @Override
+    public void onPathEvent(PathEvent event) {
+        if (event == null) {
+            return;
+        }
+        if (event == PathEvent.CALC_FINISHED_NOW_EXECUTING) {
+            clearCurrentHuntUnreachableFailureCount();
+            return;
+        }
+        if (event != PathEvent.CALC_FAILED) {
+            return;
+        }
+        handleHuntPathCalculationFailed();
+    }
+
     private List<LivingEntity> findTargets(LocalPlayer player) {
         List<LivingEntity> targets = new ArrayList<>();
         LivingEntity lockedTarget = null;
@@ -1285,6 +1343,9 @@ public class KillAuraHandler implements AbstractGameEventListener {
         if (!target.isAlive() || target.isRemoved() || target instanceof ArmorStand) {
             return null;
         }
+        if (isHuntUnreachableExcludedTarget(player, target)) {
+            return null;
+        }
         if (ignoreInvisible && target.isInvisible()) {
             return null;
         }
@@ -1321,6 +1382,168 @@ public class KillAuraHandler implements AbstractGameEventListener {
         float yawDeltaAbs = Math.abs(Mth.wrapDegrees(getDesiredAimRotation(player, target).getYaw() - player.getYRot()));
         return new TargetCandidate(target, distanceSq, useWhitelistPriority ? whitelistPriority : 0,
                 isCurrentTarget ? 0 : 1, yawDeltaAbs);
+    }
+
+    private boolean isHuntUnreachableExcludedTarget(LocalPlayer player, LivingEntity target) {
+        if (player == null || target == null) {
+            return false;
+        }
+        HuntUnreachableTracker tracker = huntUnreachableTrackers.get(target.getId());
+        if (tracker == null) {
+            return false;
+        }
+        if (hasHuntTargetRelocated(tracker, target)) {
+            tracker.resetFailures(target);
+            if (tracker.failedGoalKeys.isEmpty()) {
+                huntUnreachableTrackers.remove(target.getId());
+            }
+            return false;
+        }
+        return tracker.excludeUntilTick > player.tickCount;
+    }
+
+    private void tickHuntUnreachableTrackers(LocalPlayer player) {
+        if (player == null || player.level() == null || huntUnreachableTrackers.isEmpty()) {
+            return;
+        }
+        List<Integer> trackedIds = new ArrayList<>(huntUnreachableTrackers.keySet());
+        for (Integer entityId : trackedIds) {
+            if (entityId == null) {
+                continue;
+            }
+            Entity entity = player.level().getEntity(entityId);
+            HuntUnreachableTracker tracker = huntUnreachableTrackers.get(entityId);
+            if (tracker == null) {
+                continue;
+            }
+            if (!(entity instanceof LivingEntity living)) {
+                huntUnreachableTrackers.remove(entityId);
+                continue;
+            }
+            if (!living.isAlive() || living.isRemoved()) {
+                huntUnreachableTrackers.remove(entityId);
+                continue;
+            }
+            if (hasHuntTargetRelocated(tracker, living)) {
+                tracker.resetFailures(living);
+                if (tracker.failedGoalKeys.isEmpty()) {
+                    huntUnreachableTrackers.remove(entityId);
+                }
+            }
+        }
+        pruneHuntUnreachableTrackingSize();
+    }
+
+    private void clearHuntUnreachableTracking() {
+        huntUnreachableTrackers.clear();
+    }
+
+    private boolean hasHuntTargetRelocated(HuntUnreachableTracker tracker, LivingEntity target) {
+        if (tracker == null || target == null) {
+            return false;
+        }
+        double dx = target.getX() - tracker.lastTargetX;
+        double dz = target.getZ() - tracker.lastTargetZ;
+        return dx * dx + dz * dz >= HUNT_UNREACHABLE_TARGET_RESET_DISTANCE_SQ;
+    }
+
+    private boolean isBlockedHuntNavigationDestination(LivingEntity target, double goalX, double goalY, double goalZ) {
+        if (target == null) {
+            return false;
+        }
+        HuntUnreachableTracker tracker = huntUnreachableTrackers.get(target.getId());
+        if (tracker == null || tracker.failedGoalKeys.isEmpty()) {
+            return false;
+        }
+        return tracker.failedGoalKeys.contains(toHuntGoalKey(goalX, goalY, goalZ));
+    }
+
+    private long toHuntGoalKey(double goalX, double goalY, double goalZ) {
+        return BlockPos.containing(goalX, goalY, goalZ).asLong();
+    }
+
+    private void clearCurrentHuntUnreachableFailureCount() {
+        if (!huntNavigationActive || lastHuntTargetEntityId == Integer.MIN_VALUE) {
+            return;
+        }
+        Minecraft mc = Minecraft.getInstance();
+        if (mc == null || mc.level == null) {
+            return;
+        }
+        Entity entity = mc.level.getEntity(lastHuntTargetEntityId);
+        if (!(entity instanceof LivingEntity living)) {
+            return;
+        }
+        HuntUnreachableTracker tracker = huntUnreachableTrackers.get(lastHuntTargetEntityId);
+        if (tracker == null) {
+            return;
+        }
+        tracker.failedGoalCount = 0;
+        tracker.excludeUntilTick = 0;
+        tracker.refreshTargetPosition(living);
+    }
+
+    private void handleHuntPathCalculationFailed() {
+        if (!huntNavigationActive || lastHuntTargetEntityId == Integer.MIN_VALUE
+                || Double.isNaN(lastHuntGoalX) || Double.isNaN(lastHuntGoalY) || Double.isNaN(lastHuntGoalZ)) {
+            return;
+        }
+        Minecraft mc = Minecraft.getInstance();
+        LocalPlayer player = mc == null ? null : mc.player;
+        if (player == null || mc.level == null) {
+            return;
+        }
+        Entity entity = mc.level.getEntity(lastHuntTargetEntityId);
+        if (!(entity instanceof LivingEntity target)) {
+            stopHuntNavigation();
+            return;
+        }
+        HuntUnreachableTracker tracker = huntUnreachableTrackers.get(target.getId());
+        if (tracker == null) {
+            tracker = new HuntUnreachableTracker(target);
+            huntUnreachableTrackers.put(target.getId(), tracker);
+        } else if (hasHuntTargetRelocated(tracker, target)) {
+            tracker.resetFailures(target);
+        } else {
+            tracker.refreshTargetPosition(target);
+        }
+
+        tracker.failedGoalCount++;
+        tracker.failedGoalKeys.add(toHuntGoalKey(lastHuntGoalX, lastHuntGoalY, lastHuntGoalZ));
+        while (tracker.failedGoalKeys.size() > HUNT_UNREACHABLE_MAX_FAILED_GOALS_PER_TARGET) {
+            Long first = tracker.failedGoalKeys.iterator().next();
+            tracker.failedGoalKeys.remove(first);
+        }
+        pruneHuntUnreachableTrackingSize();
+
+        boolean temporarilyExcluded = tracker.failedGoalCount >= HUNT_UNREACHABLE_FAILS_BEFORE_TEMP_EXCLUDE;
+        if (temporarilyExcluded) {
+            tracker.excludeUntilTick = player.tickCount + HUNT_UNREACHABLE_TEMP_EXCLUDE_TICKS;
+            tracker.failedGoalCount = 0;
+        }
+
+        zszlScriptMod.LOGGER.info(
+                "杀戮光环追击寻路不可达: id={}, name={}, goal=({}, {}, {}), failedGoals={}, tempExcluded={}",
+                target.getId(),
+                getFilterableEntityName(target),
+                Mth.floor(lastHuntGoalX),
+                Mth.floor(lastHuntGoalY),
+                Mth.floor(lastHuntGoalZ),
+                tracker.failedGoalKeys.size(),
+                temporarilyExcluded);
+
+        stopHuntNavigation();
+        if (temporarilyExcluded && this.currentTargetEntityId == target.getId()) {
+            this.currentTargetEntityId = -1;
+            this.attackSequenceExecutor.stop();
+        }
+    }
+
+    private void pruneHuntUnreachableTrackingSize() {
+        while (huntUnreachableTrackers.size() > HUNT_UNREACHABLE_MAX_TRACKED_TARGETS) {
+            Integer first = huntUnreachableTrackers.keySet().iterator().next();
+            huntUnreachableTrackers.remove(first);
+        }
     }
 
     private boolean shouldAllowHuntTrackingWithoutLineOfSight() {
@@ -1519,11 +1742,17 @@ public class KillAuraHandler implements AbstractGameEventListener {
                 EmbeddedNavigationHandler.INSTANCE.startGoto(EmbeddedNavigationHandler.NavigationOwner.KILL_AURA_HUNT,
                         safeDestination[0], safeDestination[1],
                         safeDestination[2], true, "固定距离追击：采用安全导航落点");
+                recordHuntNavigationDispatch(target, safeDestination[0], safeDestination[1], safeDestination[2], nowTick);
             } else {
                 double[] destination = computeFixedDistanceHuntDestination(player, target);
+                if (isBlockedHuntNavigationDestination(target, destination[0], target.getY(), destination[2])) {
+                    temporarilyExcludeUnreachableHuntTarget(target, nowTick);
+                    return;
+                }
                 EmbeddedNavigationHandler.INSTANCE.startGotoXZ(
                         EmbeddedNavigationHandler.NavigationOwner.KILL_AURA_HUNT,
                         destination[0], destination[2], true, "固定距离追击：直接导航到计算落点");
+                recordHuntNavigationDispatch(target, destination[0], target.getY(), destination[2], nowTick);
             }
         } else {
             double[] safeDestination = findApproachHuntNavigationDestination(player, target);
@@ -1531,18 +1760,54 @@ public class KillAuraHandler implements AbstractGameEventListener {
                 EmbeddedNavigationHandler.INSTANCE.startGoto(EmbeddedNavigationHandler.NavigationOwner.KILL_AURA_HUNT,
                         safeDestination[0], safeDestination[1],
                         safeDestination[2], true, "接近追击：采用安全导航落点");
+                recordHuntNavigationDispatch(target, safeDestination[0], safeDestination[1], safeDestination[2], nowTick);
             } else {
+                if (isBlockedHuntNavigationDestination(target, target.getX(), target.getY(), target.getZ())) {
+                    temporarilyExcludeUnreachableHuntTarget(target, nowTick);
+                    return;
+                }
                 EmbeddedNavigationHandler.INSTANCE.startGotoXZ(
                         EmbeddedNavigationHandler.NavigationOwner.KILL_AURA_HUNT,
                         target.getX(), target.getZ(), true, "接近追击：直接贴近目标XZ");
+                recordHuntNavigationDispatch(target, target.getX(), target.getY(), target.getZ(), nowTick);
             }
         }
+    }
 
+    private void recordHuntNavigationDispatch(LivingEntity target, double goalX, double goalY, double goalZ, int nowTick) {
+        if (target == null) {
+            return;
+        }
         this.huntNavigationActive = true;
         this.lastHuntGotoTick = nowTick;
-        this.lastHuntTargetEntityId = targetId;
+        this.lastHuntTargetEntityId = target.getId();
         this.lastHuntTargetX = target.getX();
         this.lastHuntTargetZ = target.getZ();
+        this.lastHuntGoalX = goalX;
+        this.lastHuntGoalY = goalY;
+        this.lastHuntGoalZ = goalZ;
+    }
+
+    private void temporarilyExcludeUnreachableHuntTarget(LivingEntity target, int nowTick) {
+        if (target == null) {
+            return;
+        }
+        HuntUnreachableTracker tracker = huntUnreachableTrackers.get(target.getId());
+        if (tracker == null) {
+            tracker = new HuntUnreachableTracker(target);
+            huntUnreachableTrackers.put(target.getId(), tracker);
+        }
+        tracker.refreshTargetPosition(target);
+        tracker.failedGoalCount = 0;
+        tracker.excludeUntilTick = nowTick + HUNT_UNREACHABLE_TEMP_EXCLUDE_TICKS;
+        pruneHuntUnreachableTrackingSize();
+        zszlScriptMod.LOGGER.info("杀戮光环追击目标暂时排除: id={}, name={}, untilTick={}",
+                target.getId(), getFilterableEntityName(target), tracker.excludeUntilTick);
+        stopHuntNavigation();
+        if (this.currentTargetEntityId == target.getId()) {
+            this.currentTargetEntityId = -1;
+            this.attackSequenceExecutor.stop();
+        }
     }
 
     private ItemEntity findHuntPriorityPickupItem(LocalPlayer player) {
@@ -1647,6 +1912,9 @@ public class KillAuraHandler implements AbstractGameEventListener {
         this.lastHuntTargetEntityId = Integer.MIN_VALUE;
         this.lastHuntTargetX = 0.0D;
         this.lastHuntTargetZ = 0.0D;
+        this.lastHuntGoalX = Double.NaN;
+        this.lastHuntGoalY = Double.NaN;
+        this.lastHuntGoalZ = Double.NaN;
     }
 
     private void debugOrbit(String status, String detail) {
@@ -1813,7 +2081,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
             return destination;
         }
         double[] fallback = computeFixedDistanceHuntDestination(player, target);
-        return findSafeHuntNavigationDestination(player, fallback[0], fallback[1], fallback[2]);
+        return findSafeHuntNavigationDestination(player, target, fallback[0], fallback[1], fallback[2]);
     }
 
     private double[] findOrbitAlignedHuntNavigationDestination(LocalPlayer player, LivingEntity target) {
@@ -1830,8 +2098,8 @@ public class KillAuraHandler implements AbstractGameEventListener {
         }
 
         double[] exactOrbitPoint = computeFixedDistanceHuntDestination(player, target);
-        double[] directSafeDestination = findSafeHuntNavigationDestination(player, exactOrbitPoint[0], exactOrbitPoint[1],
-                exactOrbitPoint[2], HUNT_ORBIT_ENTRY_SAFE_SEARCH_RADIUS);
+        double[] directSafeDestination = findSafeHuntNavigationDestination(player, target, exactOrbitPoint[0],
+                exactOrbitPoint[1], exactOrbitPoint[2], HUNT_ORBIT_ENTRY_SAFE_SEARCH_RADIUS);
         double preferredRadius = Math.max(HUNT_APPROACH_MIN_STAND_RADIUS, getEffectiveHuntFixedDistance());
         double orbitBand = Math.max(HUNT_FIXED_DISTANCE_TOLERANCE, HUNT_ORBIT_ENTRY_RADIUS_BAND);
         if (directSafeDestination != null
@@ -1870,7 +2138,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
                 continue;
             }
 
-            double[] safeDestination = findSafeHuntNavigationDestination(player, point.x, target.getY(), point.z,
+            double[] safeDestination = findSafeHuntNavigationDestination(player, target, point.x, target.getY(), point.z,
                     HUNT_ORBIT_ENTRY_SAFE_SEARCH_RADIUS);
             if (safeDestination == null) {
                 continue;
@@ -1943,8 +2211,8 @@ public class KillAuraHandler implements AbstractGameEventListener {
                 double desiredX = target.getX() + Math.cos(baseAngle + angleOffset) * radius;
                 double desiredZ = target.getZ() + Math.sin(baseAngle + angleOffset) * radius;
                 double[] clippedDestination = clipHuntDestinationXZ(target.getX(), target.getZ(), desiredX, desiredZ);
-                double[] safeDestination = findSafeHuntNavigationDestination(player, clippedDestination[0], target.getY(),
-                        clippedDestination[1]);
+                double[] safeDestination = findSafeHuntNavigationDestination(player, target, clippedDestination[0],
+                        target.getY(), clippedDestination[1]);
                 if (safeDestination == null) {
                     continue;
                 }
@@ -1970,7 +2238,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
         if (bestFallbackDestination != null) {
             return bestFallbackDestination;
         }
-        return findSafeHuntNavigationDestination(player, target.getX(), target.getY(), target.getZ());
+        return findSafeHuntNavigationDestination(player, target, target.getX(), target.getY(), target.getZ());
     }
 
     private List<Double> buildHuntRadiusSamples(double preferredRadius, double minRadius, double maxRadius) {
@@ -2070,11 +2338,21 @@ public class KillAuraHandler implements AbstractGameEventListener {
 
     private double[] findSafeHuntNavigationDestination(LocalPlayer player, double desiredX, double desiredY,
             double desiredZ) {
-        return findSafeHuntNavigationDestination(player, desiredX, desiredY, desiredZ, 2);
+        return findSafeHuntNavigationDestination(player, null, desiredX, desiredY, desiredZ, 2);
     }
 
     private double[] findSafeHuntNavigationDestination(LocalPlayer player, double desiredX, double desiredY,
             double desiredZ, int safeSearchRadius) {
+        return findSafeHuntNavigationDestination(player, null, desiredX, desiredY, desiredZ, safeSearchRadius);
+    }
+
+    private double[] findSafeHuntNavigationDestination(LocalPlayer player, LivingEntity target, double desiredX,
+            double desiredY, double desiredZ) {
+        return findSafeHuntNavigationDestination(player, target, desiredX, desiredY, desiredZ, 2);
+    }
+
+    private double[] findSafeHuntNavigationDestination(LocalPlayer player, LivingEntity target, double desiredX,
+            double desiredY, double desiredZ, int safeSearchRadius) {
         if (player == null || player.level() == null) {
             return null;
         }
@@ -2093,6 +2371,9 @@ public class KillAuraHandler implements AbstractGameEventListener {
                     double centerX = candidateFeet.getX() + 0.5D;
                     double centerY = candidateFeet.getY();
                     double centerZ = candidateFeet.getZ() + 0.5D;
+                    if (isBlockedHuntNavigationDestination(target, centerX, centerY, centerZ)) {
+                        continue;
+                    }
                     double score = player.distanceToSqr(centerX, centerY, centerZ)
                             + centerDistSq(centerX, centerZ, desiredX, desiredZ) * 2.25D
                             + Math.abs(centerY - desiredY) * 1.35D;
@@ -3129,6 +3410,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
             return "run_sequence".equals(actionType)
                     || "hunt".equals(actionType)
                     || "set_var".equals(actionType)
+                    || "sequence_control".equals(actionType)
                     || "goto_action".equals(actionType)
                     || "repeat_actions".equals(actionType)
                     || "capture_nearby_entity".equals(actionType)

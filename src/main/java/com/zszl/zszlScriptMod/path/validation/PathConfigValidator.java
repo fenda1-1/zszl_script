@@ -511,6 +511,9 @@ public final class PathConfigValidator {
             case "stop_current_sequence":
                 validateStopCurrentSequence(sequenceName, stepIndex, actionIndex, params, issues);
                 break;
+            case "sequence_control":
+                validateSequenceControl(sequenceName, stepIndex, actionIndex, params, issues);
+                break;
             case "run_template":
                 validateRunTemplate(sequenceName, stepIndex, actionIndex, params, sequenceNames, variableContext, issues);
                 break;
@@ -910,6 +913,27 @@ public final class PathConfigValidator {
             issues.add(new Issue(Severity.WARNING, "stop_current_sequence_scope_invalid",
                     sequenceName, stepIndex, actionIndex,
                     "停止范围无效", "仅支持 foreground 或 background，留空时默认 foreground。"));
+        }
+    }
+
+    private static void validateSequenceControl(String sequenceName, int stepIndex, int actionIndex,
+            JsonObject params, List<Issue> issues) {
+        String scope = getString(params, "targetScope").trim();
+        if (!isBlank(scope)
+                && !"foreground".equalsIgnoreCase(scope)
+                && !"background".equalsIgnoreCase(scope)) {
+            issues.add(new Issue(Severity.WARNING, "sequence_control_scope_invalid",
+                    sequenceName, stepIndex, actionIndex,
+                    "序列控制目标无效", "仅支持 foreground 或 background，留空时默认 foreground。"));
+        }
+
+        String operation = getString(params, "operation").trim();
+        if (!isBlank(operation)
+                && !"pause".equalsIgnoreCase(operation)
+                && !"resume".equalsIgnoreCase(operation)) {
+            issues.add(new Issue(Severity.WARNING, "sequence_control_operation_invalid",
+                    sequenceName, stepIndex, actionIndex,
+                    "序列控制操作无效", "仅支持 pause 或 resume，留空时默认 pause。"));
         }
     }
 

@@ -4,6 +4,7 @@ import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Keyboard;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.network.chat.Component;
+import org.lwjgl.glfw.GLFW;
 
 import java.util.function.Predicate;
 
@@ -54,10 +55,25 @@ public class GuiTextField {
     }
 
     public boolean textboxKeyTyped(char typedChar, int keyCode) {
+        return textboxKeyTyped(typedChar, keyCode, currentGlfwModifiers());
+    }
+
+    public boolean textboxKeyTyped(char typedChar, int keyCode, int modifiers) {
         if (typedChar != 0 && typedChar != '\u0000') {
-            return delegate.charTyped(typedChar, 0);
+            return delegate.charTyped(typedChar, modifiers);
         }
-        return delegate.keyPressed(Keyboard.toGlfwKey(keyCode), 0, 0);
+        return delegate.keyPressed(Keyboard.toGlfwKey(keyCode), 0, modifiers);
+    }
+
+    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        return delegate.keyPressed(keyCode, scanCode, modifiers);
+    }
+
+    public boolean charTyped(char typedChar, int modifiers) {
+        if (typedChar == 0 || typedChar == '\u0000') {
+            return false;
+        }
+        return delegate.charTyped(typedChar, modifiers);
     }
 
     public void mouseClicked(int mouseX, int mouseY, int mouseButton) {
@@ -165,6 +181,20 @@ public class GuiTextField {
 
     public boolean isEnabled() {
         return enabled;
+    }
+
+    private static int currentGlfwModifiers() {
+        int modifiers = 0;
+        if (Keyboard.isKeyDown(Keyboard.KEY_LCONTROL) || Keyboard.isKeyDown(Keyboard.KEY_RCONTROL)) {
+            modifiers |= GLFW.GLFW_MOD_CONTROL;
+        }
+        if (Keyboard.isKeyDown(Keyboard.KEY_LSHIFT) || Keyboard.isKeyDown(Keyboard.KEY_RSHIFT)) {
+            modifiers |= GLFW.GLFW_MOD_SHIFT;
+        }
+        if (Keyboard.isKeyDown(Keyboard.KEY_LMENU) || Keyboard.isKeyDown(Keyboard.KEY_RMENU)) {
+            modifiers |= GLFW.GLFW_MOD_ALT;
+        }
+        return modifiers;
     }
 }
 

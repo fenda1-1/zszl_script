@@ -470,5 +470,31 @@ final class ActionParameterSections {
                         ? editor.currentParams.get("targetScope").getAsString()
                         : "foreground"));
     }
+
+    static void buildSequenceControlSection(GuiActionEditor editor, int x, int currentY, int fieldWidth) {
+        editor.addDropdown(I18n.format("gui.path.action_editor.label.sequence_control_target_scope"),
+                "targetScope",
+                I18n.format("gui.path.action_editor.help.sequence_control_target_scope"),
+                fieldWidth, x, currentY,
+                new String[] {
+                        I18n.format("gui.path.action_editor.option.stop_sequence_scope_foreground"),
+                        I18n.format("gui.path.action_editor.option.stop_sequence_scope_background")
+                },
+                stopCurrentSequenceScopeToDisplay(editor.currentParams.has("targetScope")
+                        ? editor.currentParams.get("targetScope").getAsString()
+                        : "foreground"));
+        currentY += 40;
+        editor.addDropdown(I18n.format("gui.path.action_editor.label.sequence_control_operation"),
+                "operation",
+                I18n.format("gui.path.action_editor.help.sequence_control_operation"),
+                fieldWidth, x, currentY,
+                new String[] {
+                        I18n.format("gui.path.action_editor.option.sequence_control_operation.pause"),
+                        I18n.format("gui.path.action_editor.option.sequence_control_operation.resume")
+                },
+                sequenceControlOperationToDisplay(editor.currentParams.has("operation")
+                        ? editor.currentParams.get("operation").getAsString()
+                        : "pause"));
+    }
 }
 
