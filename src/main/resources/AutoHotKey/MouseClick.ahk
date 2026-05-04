@@ -1,5 +1,6 @@
 ; AHK v2 语法
-#SingleInstance Force
+; 该脚本会被 Java 高频、短时地重复拉起，必须允许并发实例，避免出现“等待旧实例关闭”的弹窗
+#SingleInstance Off
 SetWorkingDir(A_ScriptDir)
 SetTitleMatchMode(2)
 

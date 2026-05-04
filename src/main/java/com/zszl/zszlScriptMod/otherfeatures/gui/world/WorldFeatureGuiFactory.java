@@ -13,6 +13,9 @@ public final class WorldFeatureGuiFactory {
         if (feature == null) {
             return null;
         }
+        if ("coord_display".equalsIgnoreCase(feature.id)) {
+            return new GuiCoordDisplayConfigScreen(parent);
+        }
         return new SingleWorldFeatureConfigScreen(parent, feature.id, feature.name + "设置");
     }
 }

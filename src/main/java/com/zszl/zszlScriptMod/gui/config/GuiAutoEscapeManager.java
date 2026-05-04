@@ -131,7 +131,7 @@ public class GuiAutoEscapeManager extends AbstractThreePaneRuleManager<AutoEscap
 
     @Override
     protected String getGuideText() {
-        return "§7自动逃离优先级最高：检测到指定实体后会立即打断当前序列并执行逃离序列。";
+        return "§7使用指南：左键筛选/折叠分组，右键分组或卡片打开菜单，右侧编辑规则；双击规则卡片可快速开关。自动逃离命中后会立即打断当前序列执行逃离。";
     }
 
     @Override

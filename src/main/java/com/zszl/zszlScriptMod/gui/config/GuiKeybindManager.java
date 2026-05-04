@@ -26,6 +26,9 @@ public class GuiKeybindManager extends ThemedGuiScreen {
 
     private static final int BUTTON_SAVE = 100;
     private static final int BUTTON_BACK = 101;
+    private static final int BUTTON_FILTER_BOUND = 102;
+    private static final int BUTTON_FILTER_CONFLICT = 103;
+    private static final int BUTTON_FILTER_SCRIPTS = 104;
     private static final int TITLE_HEIGHT = 20;
     private static final int TABLE_HEADER_HEIGHT = 22;
     private static final int ITEM_HEIGHT = 28;
@@ -98,6 +101,9 @@ public class GuiKeybindManager extends ThemedGuiScreen {
     private int statsX;
     private int statsY;
     private int statsWidth;
+    private int filterX;
+    private int filterY;
+    private int filterGap;
     private int helperY;
     private int tableX;
     private int tableY;
@@ -110,6 +116,9 @@ public class GuiKeybindManager extends ThemedGuiScreen {
     private int buttonY;
 
     private String hoveredTooltip;
+    private boolean filterOnlyBound = false;
+    private boolean filterOnlyConflicts = false;
+    private boolean filterOnlyScripts = false;
 
     public GuiKeybindManager(GuiScreen parent) {
         this.parentScreen = parent;
@@ -136,9 +145,16 @@ public class GuiKeybindManager extends ThemedGuiScreen {
                 I18n.format("gui.keybind.save_close")));
         this.buttonList.add(new ThemedButton(BUTTON_BACK, this.panelX + this.panelWidth - 10 - buttonWidth, this.buttonY,
                 buttonWidth, 20, I18n.format("gui.keybind.back_nosave")));
+        int filterButtonWidth = Math.max(88, Math.min(124, (this.tableWidth - 12) / 3));
+        this.buttonList.add(new ThemedButton(BUTTON_FILTER_BOUND, this.filterX, this.filterY, filterButtonWidth, 20, ""));
+        this.buttonList.add(new ThemedButton(BUTTON_FILTER_CONFLICT, this.filterX + filterButtonWidth + this.filterGap,
+                this.filterY, filterButtonWidth, 20, ""));
+        this.buttonList.add(new ThemedButton(BUTTON_FILTER_SCRIPTS,
+                this.filterX + (filterButtonWidth + this.filterGap) * 2, this.filterY, filterButtonWidth, 20, ""));
 
         rebuildFilteredRows();
         refreshScrollBounds();
+        refreshFilterButtons();
     }
 
     private void layoutScreen() {
@@ -165,7 +181,10 @@ public class GuiKeybindManager extends ThemedGuiScreen {
         this.searchWidth = contentWidth - 48 - this.statsWidth - 8;
         this.statsX = this.searchX + this.searchWidth + 8;
         this.statsY = this.searchY;
-        this.helperY = this.searchY + 28;
+        this.filterX = contentX;
+        this.filterY = this.searchY + 28;
+        this.filterGap = 6;
+        this.helperY = this.filterY + 26;
         this.buttonY = this.panelY + this.panelHeight - 30;
         this.footerHintY = this.buttonY - 16;
         this.tableX = contentX;
@@ -189,11 +208,12 @@ public class GuiKeybindManager extends ThemedGuiScreen {
 
     private void rebuildFilteredRows() {
         String keyword = this.searchField == null ? "" : this.searchField.getText().trim().toLowerCase(Locale.ROOT);
+        java.util.Map<String, Integer> conflictCounts = buildConflictCounts();
         this.filteredRows.clear();
 
         for (BindableAction action : BindableAction.values()) {
             RowEntry row = new RowEntry(action);
-            if (keyword.isEmpty() || buildSearchText(row).contains(keyword)) {
+            if (matchesFilters(row, keyword, conflictCounts)) {
                 this.filteredRows.add(row);
             }
         }
@@ -202,10 +222,43 @@ public class GuiKeybindManager extends ThemedGuiScreen {
         sequenceNames.sort(Comparator.naturalOrder());
         for (String sequenceName : sequenceNames) {
             RowEntry row = new RowEntry(sequenceName);
-            if (keyword.isEmpty() || buildSearchText(row).contains(keyword)) {
+            if (matchesFilters(row, keyword, conflictCounts)) {
                 this.filteredRows.add(row);
             }
         }
+    }
+
+    private boolean matchesFilters(RowEntry row, String keyword, java.util.Map<String, Integer> conflictCounts) {
+        Keybind keybind = getRowKeybind(row);
+        if (this.filterOnlyScripts && row.actionRow) {
+            return false;
+        }
+        if (this.filterOnlyBound && !hasBinding(keybind)) {
+            return false;
+        }
+        if (this.filterOnlyConflicts && !isConflictingKeybind(keybind, conflictCounts)) {
+            return false;
+        }
+        return keyword.isEmpty() || buildSearchText(row).contains(keyword);
+    }
+
+    private java.util.Map<String, Integer> buildConflictCounts() {
+        java.util.Map<String, Integer> counts = new java.util.HashMap<>();
+        for (BindableAction action : BindableAction.values()) {
+            incrementConflictCount(counts, KeybindManager.keybinds.get(action));
+        }
+        for (Keybind keybind : KeybindManager.pathSequenceKeybinds.values()) {
+            incrementConflictCount(counts, keybind);
+        }
+        return counts;
+    }
+
+    private void incrementConflictCount(java.util.Map<String, Integer> counts, Keybind keybind) {
+        String signature = getBindingSignature(keybind);
+        if (signature.isEmpty()) {
+            return;
+        }
+        counts.put(signature, counts.getOrDefault(signature, 0) + 1);
     }
 
     private String buildSearchText(RowEntry row) {
@@ -236,6 +289,44 @@ public class GuiKeybindManager extends ThemedGuiScreen {
             return KeybindManager.keybinds.get(row.action);
         }
         return KeybindManager.pathSequenceKeybinds.get(row.sequenceName);
+    }
+
+    private boolean hasBinding(Keybind keybind) {
+        return keybind != null && keybind.getKeyCode() != Keyboard.KEY_NONE;
+    }
+
+    private String getBindingSignature(Keybind keybind) {
+        if (!hasBinding(keybind)) {
+            return "";
+        }
+        java.util.LinkedHashSet<String> normalizedModifiers = new java.util.LinkedHashSet<>();
+        if (keybind.getModifiers() != null) {
+            for (Integer modifier : keybind.getModifiers()) {
+                String token = normalizeModifierToken(modifier == null ? Keyboard.KEY_NONE : modifier);
+                if (!token.isEmpty()) {
+                    normalizedModifiers.add(token);
+                }
+            }
+        }
+        return keybind.getKeyCode() + "|" + new ArrayList<>(normalizedModifiers).toString();
+    }
+
+    private String normalizeModifierToken(int modifier) {
+        if (modifier == Keyboard.KEY_LCONTROL || modifier == Keyboard.KEY_RCONTROL) {
+            return "CTRL";
+        }
+        if (modifier == Keyboard.KEY_LSHIFT || modifier == Keyboard.KEY_RSHIFT) {
+            return "SHIFT";
+        }
+        if (modifier == Keyboard.KEY_LMENU || modifier == Keyboard.KEY_RMENU) {
+            return "ALT";
+        }
+        return "";
+    }
+
+    private boolean isConflictingKeybind(Keybind keybind, java.util.Map<String, Integer> conflictCounts) {
+        String signature = getBindingSignature(keybind);
+        return !signature.isEmpty() && conflictCounts.getOrDefault(signature, 0) > 1;
     }
 
     private String getBindingText(RowEntry row, Keybind keybind, boolean fullText) {
@@ -384,7 +475,7 @@ public class GuiKeybindManager extends ThemedGuiScreen {
     private void drawHelperBar() {
         drawRect(this.panelX + 10, this.helperY, this.panelX + this.panelWidth - 10, this.helperY + 16, 0x88324E67);
         drawRect(this.panelX + 10, this.helperY, this.panelX + this.panelWidth - 10, this.helperY + 1, 0xAA77CFFF);
-        drawString(this.fontRenderer, I18n.format("gui.keybind.tip.table"), this.panelX + 14, this.helperY + 4,
+        drawString(this.fontRenderer, I18n.format("gui.keybind.tip.table") + "  §7过滤器可叠加使用。", this.panelX + 14, this.helperY + 4,
                 0xFFCAE6F7);
     }
 
@@ -448,6 +539,7 @@ public class GuiKeybindManager extends ThemedGuiScreen {
         }
 
         int visibleItems = getVisibleItems();
+        java.util.Map<String, Integer> conflictCounts = buildConflictCounts();
         for (int i = 0; i < visibleItems; i++) {
             int index = i + this.scrollOffset;
             if (index >= this.filteredRows.size()) {
@@ -494,9 +586,13 @@ public class GuiKeybindManager extends ThemedGuiScreen {
             String bindingText = getBindingText(row, keybind, false);
             String bindingTooltip = getBindingText(row, keybind, true);
             String drawnBinding = trimToWidth(bindingText, keyWidth - 12);
-            int bindingColor = (keybind == null || keybind.getKeyCode() == Keyboard.KEY_NONE) ? GuiTheme.SUB_TEXT : 0xFFF6D27B;
+            boolean conflict = isConflictingKeybind(keybind, conflictCounts);
+            int bindingColor = !hasBinding(keybind) ? GuiTheme.SUB_TEXT : (conflict ? 0xFFFF8E8E : 0xFFF6D27B);
             drawString(this.fontRenderer, drawnBinding, keyX + 6, rowY + 10, bindingColor);
             setTooltipIfTrimmed(bindingTooltip, drawnBinding, mouseX, mouseY, keyX + 4, rowY + 4, keyWidth - 8, 18);
+            if (conflict && isHoverRegion(mouseX, mouseY, keyX + 4, rowY + 4, keyWidth - 8, 18)) {
+                this.hoveredTooltip = "该快捷键与其他动作或脚本冲突";
+            }
 
             String detailText = getRowDetailText(row, keybind);
             String drawnDetail = trimToWidth(detailText, detailWidth - 12);
@@ -528,6 +624,21 @@ public class GuiKeybindManager extends ThemedGuiScreen {
     private void drawFooterHint() {
         drawString(this.fontRenderer, I18n.format("gui.keybind.footer_hint"), this.panelX + 12, this.footerHintY,
                 GuiTheme.SUB_TEXT);
+    }
+
+    private void refreshFilterButtons() {
+        updateFilterButton(BUTTON_FILTER_BOUND, this.filterOnlyBound, "只看已绑定");
+        updateFilterButton(BUTTON_FILTER_CONFLICT, this.filterOnlyConflicts, "只看冲突");
+        updateFilterButton(BUTTON_FILTER_SCRIPTS, this.filterOnlyScripts, "只看脚本");
+    }
+
+    private void updateFilterButton(int id, boolean enabled, String label) {
+        for (GuiButton button : this.buttonList) {
+            if (button != null && button.id == id) {
+                button.displayString = label + ": " + (enabled ? "§a开" : "§7关");
+                break;
+            }
+        }
     }
 
     private void openPacketSelector(final RowEntry row) {
@@ -570,6 +681,24 @@ public class GuiKeybindManager extends ThemedGuiScreen {
         } else if (button.id == BUTTON_BACK) {
             KeybindManager.loadConfig();
             this.mc.displayGuiScreen(this.parentScreen);
+        } else if (button.id == BUTTON_FILTER_BOUND) {
+            this.filterOnlyBound = !this.filterOnlyBound;
+            this.scrollOffset = 0;
+            rebuildFilteredRows();
+            refreshScrollBounds();
+            refreshFilterButtons();
+        } else if (button.id == BUTTON_FILTER_CONFLICT) {
+            this.filterOnlyConflicts = !this.filterOnlyConflicts;
+            this.scrollOffset = 0;
+            rebuildFilteredRows();
+            refreshScrollBounds();
+            refreshFilterButtons();
+        } else if (button.id == BUTTON_FILTER_SCRIPTS) {
+            this.filterOnlyScripts = !this.filterOnlyScripts;
+            this.scrollOffset = 0;
+            rebuildFilteredRows();
+            refreshScrollBounds();
+            refreshFilterButtons();
         }
     }
 

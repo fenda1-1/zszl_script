@@ -200,7 +200,7 @@ public class GuiAutoFollowManager extends ThemedGuiScreen {
     private DragPayload activeDragPayload = null;
     private TreeDropTarget currentTreeDropTarget = null;
 
-    private String statusMessage = "§7使用指南：左键筛选/折叠，右键分组或卡片打开菜单，滚轮可滚动右侧规则编辑器";
+    private String statusMessage = "§7使用指南：左键筛选/折叠分组，右键分组或卡片打开菜单，双击规则卡片可快速开关，滚轮可滚动右侧规则编辑器";
     private int statusColor = 0xFFB8C7D9;
     private final String[] editorSections = new String[] { "基础", "巡逻", "目标筛选", "评分调试", "高级" };
     private int activeEditorSection = 0;

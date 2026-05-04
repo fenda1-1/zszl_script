@@ -13,6 +13,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.entity.EntityPlayerSP;
 import net.minecraft.init.Blocks;
 import net.minecraft.util.ResourceLocation;
+import net.minecraft.util.math.MathHelper;
 import net.minecraftforge.client.event.EntityViewRenderEvent;
 import net.minecraftforge.client.event.RenderGameOverlayEvent;
 import net.minecraftforge.client.event.RenderWorldLastEvent;
@@ -115,6 +116,10 @@ public class RenderFeatureManager {
 
     public static boolean antiBobRemoveViewBobbing = true;
     public static boolean antiBobRemoveHurtShake = true;
+
+    public static boolean groundSpeedShowTitle = true;
+    public static boolean groundSpeedShowUnit = true;
+    public static int groundSpeedDecimalPlaces = 1;
 
     public static boolean radarPlayers = true;
     public static boolean radarMonsters = true;
@@ -372,6 +377,11 @@ public class RenderFeatureManager {
             antiBobRemoveViewBobbing = true;
             antiBobRemoveHurtShake = true;
             break;
+        case "ground_speed":
+            groundSpeedShowTitle = true;
+            groundSpeedShowUnit = true;
+            groundSpeedDecimalPlaces = 1;
+            break;
         case "radar":
             radarPlayers = true;
             radarMonsters = true;
@@ -433,7 +443,9 @@ public class RenderFeatureManager {
         case "anti_bob":
             return isEnabled(normalizedId) ? "已抑制镜头晃动" : "未启用";
         case "ground_speed":
-            return isEnabled(normalizedId) ? "当前地速 " + formatFloat(getCurrentHorizontalSpeedBlocksPerSecond()) + " 格/秒"
+            return isEnabled(normalizedId)
+                    ? "当前地速 " + formatGroundSpeed(getCurrentHorizontalSpeedBlocksPerSecond())
+                            + (groundSpeedShowUnit ? " 格/秒" : "")
                     : "未启用";
         case "radar":
             return isEnabled(normalizedId) ? "雷达范围 " + formatFloat(radarMaxDistance) + " 格" : "未启用";
@@ -762,6 +774,9 @@ public class RenderFeatureManager {
         crosshairThickness = 2.0F;
         antiBobRemoveViewBobbing = true;
         antiBobRemoveHurtShake = true;
+        groundSpeedShowTitle = true;
+        groundSpeedShowUnit = true;
+        groundSpeedDecimalPlaces = 1;
         radarPlayers = true;
         radarMonsters = true;
         radarAnimals = false;
@@ -843,6 +858,11 @@ public class RenderFeatureManager {
             crosshairThickness = root.has("crosshair_thickness") ? root.get("crosshair_thickness").getAsFloat() : 2.0F;
             antiBobRemoveViewBobbing = !root.has("anti_bob_remove_view_bobbing") || root.get("anti_bob_remove_view_bobbing").getAsBoolean();
             antiBobRemoveHurtShake = !root.has("anti_bob_remove_hurt_shake") || root.get("anti_bob_remove_hurt_shake").getAsBoolean();
+            groundSpeedShowTitle = !root.has("ground_speed_show_title") || root.get("ground_speed_show_title").getAsBoolean();
+            groundSpeedShowUnit = !root.has("ground_speed_show_unit") || root.get("ground_speed_show_unit").getAsBoolean();
+            groundSpeedDecimalPlaces = root.has("ground_speed_decimal_places")
+                    ? MathHelper.clamp(root.get("ground_speed_decimal_places").getAsInt(), 0, 3)
+                    : 1;
             radarPlayers = !root.has("radar_players") || root.get("radar_players").getAsBoolean();
             radarMonsters = !root.has("radar_monsters") || root.get("radar_monsters").getAsBoolean();
             radarAnimals = root.has("radar_animals") && root.get("radar_animals").getAsBoolean();
@@ -924,6 +944,9 @@ public class RenderFeatureManager {
             root.addProperty("crosshair_thickness", crosshairThickness);
             root.addProperty("anti_bob_remove_view_bobbing", antiBobRemoveViewBobbing);
             root.addProperty("anti_bob_remove_hurt_shake", antiBobRemoveHurtShake);
+            root.addProperty("ground_speed_show_title", groundSpeedShowTitle);
+            root.addProperty("ground_speed_show_unit", groundSpeedShowUnit);
+            root.addProperty("ground_speed_decimal_places", MathHelper.clamp(groundSpeedDecimalPlaces, 0, 3));
             root.addProperty("radar_players", radarPlayers);
             root.addProperty("radar_monsters", radarMonsters);
             root.addProperty("radar_animals", radarAnimals);
@@ -950,6 +973,11 @@ public class RenderFeatureManager {
 
     private static String formatFloat(float value) {
         return String.format(Locale.ROOT, "%.1f", value);
+    }
+
+    public static String formatGroundSpeed(float value) {
+        int decimals = MathHelper.clamp(groundSpeedDecimalPlaces, 0, 3);
+        return String.format(Locale.ROOT, "%." + decimals + "f", value);
     }
 
     private static float getCurrentHorizontalSpeedBlocksPerSecond() {

@@ -217,10 +217,13 @@ final class RenderFeatureSupport {
         double deltaZ = mc.player.posZ - mc.player.lastTickPosZ;
         float groundSpeed = (float) (Math.sqrt(deltaX * deltaX + deltaZ * deltaZ) * 20.0D);
         String title = "地速";
-        String value = formatFloat(groundSpeed) + " 格/秒";
-        int panelWidth = Math.max(86,
-                Math.max(mc.fontRenderer.getStringWidth(title), mc.fontRenderer.getStringWidth(value)) + 10);
-        int panelHeight = mc.fontRenderer.FONT_HEIGHT * 2 + 10;
+        String value = RenderFeatureManager.formatGroundSpeed(groundSpeed)
+                + (RenderFeatureManager.groundSpeedShowUnit ? " 格/秒" : "");
+        int panelWidth = Math.max(72,
+                Math.max(RenderFeatureManager.groundSpeedShowTitle ? mc.fontRenderer.getStringWidth(title) : 0,
+                        mc.fontRenderer.getStringWidth(value)) + 10);
+        int lineCount = RenderFeatureManager.groundSpeedShowTitle ? 2 : 1;
+        int panelHeight = mc.fontRenderer.FONT_HEIGHT * lineCount + 8 + (RenderFeatureManager.groundSpeedShowTitle ? 2 : 0);
         int x = scaledResolution.getScaledWidth() - panelWidth - 12;
         int y = 12 + (radarSize > 0 ? radarSize + 8 : 0);
         y = Math.min(y, Math.max(12, scaledResolution.getScaledHeight() - panelHeight - 12));
@@ -230,8 +233,12 @@ final class RenderFeatureSupport {
         Gui.drawRect(x, y + panelHeight - 1, x + panelWidth, y + panelHeight, 0xFF35536C);
         Gui.drawRect(x, y, x + 1, y + panelHeight, 0xFF35536C);
         Gui.drawRect(x + panelWidth - 1, y, x + panelWidth, y + panelHeight, 0xFF35536C);
-        mc.fontRenderer.drawStringWithShadow(title, x + 5, y + 3, 0xFFEAF6FF);
-        mc.fontRenderer.drawStringWithShadow(value, x + 5, y + 5 + mc.fontRenderer.FONT_HEIGHT, 0xFFFFFFFF);
+        if (RenderFeatureManager.groundSpeedShowTitle) {
+            mc.fontRenderer.drawStringWithShadow(title, x + 5, y + 3, 0xFFEAF6FF);
+            mc.fontRenderer.drawStringWithShadow(value, x + 5, y + 5 + mc.fontRenderer.FONT_HEIGHT, 0xFFFFFFFF);
+        } else {
+            mc.fontRenderer.drawStringWithShadow(value, x + 5, y + 4, 0xFFFFFFFF);
+        }
     }
 
     static void renderEntityInfo(Minecraft mc) {

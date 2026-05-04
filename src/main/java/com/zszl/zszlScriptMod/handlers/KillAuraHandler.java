@@ -8,6 +8,7 @@ import com.zszl.zszlScriptMod.config.ModConfig;
 import com.zszl.zszlScriptMod.path.LegacyActionRuntime;
 import com.zszl.zszlScriptMod.path.PathSequenceEventListener;
 import com.zszl.zszlScriptMod.path.PathSequenceManager;
+import com.zszl.zszlScriptMod.path.InventoryItemFilterExpressionEngine;
 import com.zszl.zszlScriptMod.path.PathSequenceManager.ActionData;
 import com.zszl.zszlScriptMod.path.PathSequenceManager.PathSequence;
 import com.zszl.zszlScriptMod.path.PathSequenceManager.PathStep;
@@ -53,12 +54,15 @@ import net.minecraft.entity.passive.EntityVillager;
 import net.minecraft.entity.passive.EntityWaterMob;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.item.ItemAxe;
+import net.minecraft.item.EnumRarity;
+import net.minecraft.item.ItemStack;
 import net.minecraft.item.ItemSword;
 import net.minecraft.network.play.client.CPacketPlayer;
 import net.minecraft.network.play.client.CPacketUseEntity;
 import net.minecraft.network.play.server.SPacketPlayerPosLook;
 import net.minecraft.util.EnumFacing;
 import net.minecraft.util.EnumHand;
+import net.minecraft.util.ResourceLocation;
 import net.minecraft.util.math.AxisAlignedBB;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.MathHelper;
@@ -102,6 +106,8 @@ public class KillAuraHandler implements AbstractGameEventListener {
     public static final String HUNT_MODE_FIXED_DISTANCE = "FIXED_DISTANCE";
     private static final Gson GSON = new Gson();
     private static final Type STRING_LIST_TYPE = new TypeToken<List<String>>() {
+    }.getType();
+    private static final Type HUNT_PICKUP_RULE_LIST_TYPE = new TypeToken<List<HuntPickupRule>>() {
     }.getType();
     private static final Type PRESET_LIST_TYPE = new TypeToken<List<KillAuraPreset>>() {
     }.getType();
@@ -152,6 +158,13 @@ public class KillAuraHandler implements AbstractGameEventListener {
     public static boolean huntEnabled = true;
     public static String huntMode = HUNT_MODE_APPROACH;
     public static boolean huntPickupItemsEnabled = false;
+    public static final String HUNT_PICKUP_RULE_MODE_ALLOW = "ALLOW";
+    public static final String HUNT_PICKUP_RULE_MODE_BLOCK = "BLOCK";
+    public static final String HUNT_PICKUP_RARITY_COMMON = "common";
+    public static final String HUNT_PICKUP_RARITY_UNCOMMON = "uncommon";
+    public static final String HUNT_PICKUP_RARITY_RARE = "rare";
+    public static final String HUNT_PICKUP_RARITY_EPIC = "epic";
+    public static List<HuntPickupRule> huntPickupRules = new ArrayList<>();
     public static boolean visualizeHuntRadius = false;
     public static float huntRadius = 8.0F;
     public static float huntFixedDistance = 4.2F;
@@ -314,6 +327,53 @@ public class KillAuraHandler implements AbstractGameEventListener {
         }
     }
 
+    private static final class HuntPickupRuleDecision {
+        private final boolean allowed;
+        private final int priority;
+
+        private HuntPickupRuleDecision(boolean allowed, int priority) {
+            this.allowed = allowed;
+            this.priority = priority;
+        }
+    }
+
+    public static class HuntPickupRule {
+        public String name = "";
+        public String category = "默认";
+        public boolean enabled = true;
+        public String mode = HUNT_PICKUP_RULE_MODE_ALLOW;
+        public String nameKeyword = "";
+        public String itemIdKeyword = "";
+        public List<String> requiredNbtTags = new ArrayList<>();
+        public List<String> rarityFilters = new ArrayList<>();
+        public List<String> itemFilterExpressions = new ArrayList<>();
+        public float maxDistance = 0.0F;
+        public int priority = 0;
+
+        public HuntPickupRule() {
+        }
+
+        public HuntPickupRule(HuntPickupRule other) {
+            if (other == null) {
+                return;
+            }
+            this.name = other.name == null ? "" : other.name;
+            this.category = other.category == null ? "默认" : other.category;
+            this.enabled = other.enabled;
+            this.mode = other.mode == null ? HUNT_PICKUP_RULE_MODE_ALLOW : other.mode;
+            this.nameKeyword = other.nameKeyword == null ? "" : other.nameKeyword;
+            this.itemIdKeyword = other.itemIdKeyword == null ? "" : other.itemIdKeyword;
+            this.requiredNbtTags = new ArrayList<>(
+                    other.requiredNbtTags == null ? new ArrayList<String>() : other.requiredNbtTags);
+            this.rarityFilters = new ArrayList<>(
+                    other.rarityFilters == null ? new ArrayList<String>() : other.rarityFilters);
+            this.itemFilterExpressions = new ArrayList<>(
+                    other.itemFilterExpressions == null ? new ArrayList<String>() : other.itemFilterExpressions);
+            this.maxDistance = other.maxDistance;
+            this.priority = other.priority;
+        }
+    }
+
     public static class KillAuraPreset {
         public String name = "";
         public boolean rotateToTarget = true;
@@ -345,6 +405,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
         public String aimPitchOffsetSpec = DEFAULT_AIM_PITCH_OFFSET_SPEC;
         public String huntMode = HUNT_MODE_APPROACH;
         public boolean huntPickupItemsEnabled = false;
+        public List<HuntPickupRule> huntPickupRules = new ArrayList<>();
         public boolean visualizeHuntRadius = false;
         public float huntRadius = 8.0F;
         public float huntFixedDistance = 4.2F;
@@ -412,6 +473,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
                     : other.aimPitchOffsetSpec;
             this.huntMode = other.huntMode == null ? HUNT_MODE_APPROACH : other.huntMode;
             this.huntPickupItemsEnabled = other.huntPickupItemsEnabled;
+            this.huntPickupRules = copyHuntPickupRuleList(other.huntPickupRules);
             this.visualizeHuntRadius = other.visualizeHuntRadius;
             this.huntRadius = other.huntRadius;
             this.huntFixedDistance = other.huntFixedDistance;
@@ -567,6 +629,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
         huntEnabled = true;
         huntMode = HUNT_MODE_APPROACH;
         huntPickupItemsEnabled = false;
+        huntPickupRules = new ArrayList<>();
         visualizeHuntRadius = false;
         huntRadius = 8.0F;
         huntFixedDistance = 4.2F;
@@ -693,6 +756,10 @@ public class KillAuraHandler implements AbstractGameEventListener {
             boolean hasHuntFixedDistance = json.has("huntFixedDistance");
             if (json.has("huntPickupItemsEnabled")) {
                 huntPickupItemsEnabled = json.get("huntPickupItemsEnabled").getAsBoolean();
+            }
+            if (json.has("huntPickupRules") && json.get("huntPickupRules").isJsonArray()) {
+                List<HuntPickupRule> loadedRules = GSON.fromJson(json.get("huntPickupRules"), HUNT_PICKUP_RULE_LIST_TYPE);
+                huntPickupRules = normalizeHuntPickupRuleList(loadedRules);
             }
             if (json.has("visualizeHuntRadius")) {
                 visualizeHuntRadius = json.get("visualizeHuntRadius").getAsBoolean();
@@ -828,6 +895,8 @@ public class KillAuraHandler implements AbstractGameEventListener {
             json.addProperty("huntMode", huntMode);
             json.addProperty("huntEnabled", isHuntEnabled());
             json.addProperty("huntPickupItemsEnabled", huntPickupItemsEnabled);
+            json.add("huntPickupRules",
+                    GSON.toJsonTree(copyHuntPickupRuleList(huntPickupRules), HUNT_PICKUP_RULE_LIST_TYPE));
             json.addProperty("visualizeHuntRadius", visualizeHuntRadius);
             json.addProperty("huntRadius", huntRadius);
             json.addProperty("huntFixedDistance", huntFixedDistance);
@@ -912,6 +981,15 @@ public class KillAuraHandler implements AbstractGameEventListener {
             }
         }
         return snapshots;
+    }
+
+    public static synchronized List<HuntPickupRule> getHuntPickupRuleSnapshots() {
+        return copyHuntPickupRuleList(huntPickupRules);
+    }
+
+    public static synchronized void replaceHuntPickupRules(List<HuntPickupRule> rules) {
+        huntPickupRules = normalizeHuntPickupRuleList(rules);
+        saveConfig();
     }
 
     public static synchronized boolean hasPreset(String name) {
@@ -1008,6 +1086,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
         setAimPitchOffsetSpec(safePreset.aimPitchOffsetSpec);
         huntMode = safePreset.huntMode;
         huntPickupItemsEnabled = safePreset.huntPickupItemsEnabled;
+        huntPickupRules = copyHuntPickupRuleList(safePreset.huntPickupRules);
         visualizeHuntRadius = safePreset.visualizeHuntRadius;
         huntRadius = safePreset.huntRadius;
         huntFixedDistance = safePreset.huntFixedDistance;
@@ -3953,8 +4032,10 @@ public class KillAuraHandler implements AbstractGameEventListener {
             }
         }
 
-        EntityItem nearest = null;
+        EntityItem bestItem = null;
         double bestDistSq = Double.MAX_VALUE;
+        int bestPriority = Integer.MIN_VALUE;
+        boolean hasAllowRules = hasEnabledHuntPickupAllowRules();
 
         for (Entity entity : player.world.loadedEntityList) {
             if (!(entity instanceof EntityItem)) {
@@ -3971,16 +4052,118 @@ public class KillAuraHandler implements AbstractGameEventListener {
                 continue;
             }
 
-            if (playerDistSq < bestDistSq) {
+            HuntPickupRuleDecision decision = evaluateHuntPickupItem(player, item, Math.sqrt(playerDistSq),
+                    hasAllowRules);
+            if (!decision.allowed) {
+                continue;
+            }
+
+            if (decision.priority > bestPriority
+                    || (decision.priority == bestPriority && playerDistSq < bestDistSq)) {
+                bestPriority = decision.priority;
                 bestDistSq = playerDistSq;
-                nearest = item;
+                bestItem = item;
             }
         }
 
         lastHuntPickupSearchTick = nowTick;
-        lastHuntPickupSearchTargetEntityId = nearest == null ? Integer.MIN_VALUE : nearest.getEntityId();
-        lastHuntPickupSearchFound = nearest != null;
-        return nearest;
+        lastHuntPickupSearchTargetEntityId = bestItem == null ? Integer.MIN_VALUE : bestItem.getEntityId();
+        lastHuntPickupSearchFound = bestItem != null;
+        return bestItem;
+    }
+
+    private HuntPickupRuleDecision evaluateHuntPickupItem(EntityPlayerSP player, EntityItem item,
+            double playerDistance, boolean hasAllowRules) {
+        if (item == null || item.isDead) {
+            return new HuntPickupRuleDecision(false, Integer.MIN_VALUE);
+        }
+
+        ItemStack stack = item.getItem();
+        if (stack == null || stack.isEmpty()) {
+            return new HuntPickupRuleDecision(false, Integer.MIN_VALUE);
+        }
+
+        List<HuntPickupRule> rules = huntPickupRules == null ? new ArrayList<HuntPickupRule>() : huntPickupRules;
+        if (rules.isEmpty()) {
+            return new HuntPickupRuleDecision(true, 0);
+        }
+
+        String rarity = normalizeHuntPickupRarityToken(getHuntPickupRarityToken(stack));
+        boolean allowMatched = false;
+        int bestAllowPriority = Integer.MIN_VALUE;
+
+        for (HuntPickupRule rule : rules) {
+            if (!isMatchingHuntPickupRule(item, rule, rarity, playerDistance)) {
+                continue;
+            }
+            if (HUNT_PICKUP_RULE_MODE_BLOCK.equals(rule.mode)) {
+                return new HuntPickupRuleDecision(false, Integer.MIN_VALUE);
+            }
+            allowMatched = true;
+            bestAllowPriority = Math.max(bestAllowPriority, rule.priority);
+        }
+
+        if (hasAllowRules && !allowMatched) {
+            return new HuntPickupRuleDecision(false, Integer.MIN_VALUE);
+        }
+        return new HuntPickupRuleDecision(true, allowMatched ? bestAllowPriority : 0);
+    }
+
+    private boolean hasEnabledHuntPickupAllowRules() {
+        if (huntPickupRules == null || huntPickupRules.isEmpty()) {
+            return false;
+        }
+        for (HuntPickupRule rule : huntPickupRules) {
+            if (rule != null && rule.enabled && !HUNT_PICKUP_RULE_MODE_BLOCK.equals(rule.mode)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean isMatchingHuntPickupRule(EntityItem item, HuntPickupRule rule, String rarity, double playerDistance) {
+        if (rule == null || !rule.enabled) {
+            return false;
+        }
+        if (rule.maxDistance > 0.0F && playerDistance - rule.maxDistance > 0.0001D) {
+            return false;
+        }
+        ItemStack stack = item == null ? ItemStack.EMPTY : item.getItem();
+        if (stack == null || stack.isEmpty()) {
+            return false;
+        }
+        if (rule.itemFilterExpressions == null || rule.itemFilterExpressions.isEmpty()) {
+            return true;
+        }
+        for (String expression : rule.itemFilterExpressions) {
+            if (expression == null || expression.trim().isEmpty()) {
+                continue;
+            }
+            try {
+                if (InventoryItemFilterExpressionEngine.matches(stack, -1, expression, rarity, playerDistance)) {
+                    return true;
+                }
+            } catch (RuntimeException ignored) {
+            }
+        }
+        return false;
+    }
+
+    private String getHuntPickupRarityToken(ItemStack stack) {
+        if (stack == null || stack.isEmpty()) {
+            return HUNT_PICKUP_RARITY_COMMON;
+        }
+        EnumRarity rarity = stack.getRarity();
+        if (rarity == EnumRarity.UNCOMMON) {
+            return HUNT_PICKUP_RARITY_UNCOMMON;
+        }
+        if (rarity == EnumRarity.RARE) {
+            return HUNT_PICKUP_RARITY_RARE;
+        }
+        if (rarity == EnumRarity.EPIC) {
+            return HUNT_PICKUP_RARITY_EPIC;
+        }
+        return HUNT_PICKUP_RARITY_COMMON;
     }
 
     private EntityItem resolveCachedHuntPickupItem(EntityPlayerSP player, double radiusSq) {
@@ -4999,6 +5182,198 @@ public class KillAuraHandler implements AbstractGameEventListener {
         return true;
     }
 
+    private static List<HuntPickupRule> copyHuntPickupRuleList(List<HuntPickupRule> source) {
+        List<HuntPickupRule> copied = new ArrayList<>();
+        if (source == null) {
+            return copied;
+        }
+        for (HuntPickupRule rule : source) {
+            HuntPickupRule normalized = normalizeHuntPickupRule(rule);
+            if (normalized != null) {
+                copied.add(new HuntPickupRule(normalized));
+            }
+        }
+        return copied;
+    }
+
+    private static List<HuntPickupRule> normalizeHuntPickupRuleList(List<HuntPickupRule> source) {
+        List<HuntPickupRule> normalized = new ArrayList<>();
+        if (source == null) {
+            return normalized;
+        }
+        LinkedHashSet<String> seenNames = new LinkedHashSet<>();
+        int fallbackIndex = 1;
+        for (HuntPickupRule rule : source) {
+            HuntPickupRule safeRule = normalizeHuntPickupRule(rule);
+            if (safeRule == null) {
+                continue;
+            }
+            String baseName = safeRule.name;
+            while (!seenNames.add(baseName.toLowerCase(Locale.ROOT))) {
+                baseName = safeRule.name + "_" + fallbackIndex++;
+            }
+            safeRule.name = baseName;
+            normalized.add(safeRule);
+        }
+        return normalized;
+    }
+
+    private static HuntPickupRule normalizeHuntPickupRule(HuntPickupRule source) {
+        if (source == null) {
+            return null;
+        }
+        HuntPickupRule rule = new HuntPickupRule(source);
+        rule.name = normalizePresetName(rule.name);
+        if (rule.name.isEmpty()) {
+            return null;
+        }
+        rule.category = normalizeCategoryName(rule.category);
+        rule.mode = normalizeHuntPickupRuleMode(rule.mode);
+        rule.nameKeyword = normalizeNameFilterKeyword(rule.nameKeyword);
+        rule.itemIdKeyword = rule.itemIdKeyword == null ? "" : rule.itemIdKeyword.trim().toLowerCase(Locale.ROOT);
+        rule.requiredNbtTags = normalizeNameList(rule.requiredNbtTags);
+        rule.rarityFilters = normalizeHuntPickupRarityList(rule.rarityFilters);
+        rule.itemFilterExpressions = normalizeHuntPickupExpressions(rule.itemFilterExpressions);
+        migrateLegacyHuntPickupRuleToExpressions(rule);
+        rule.maxDistance = MathHelper.clamp(rule.maxDistance, 0.0F, 100.0F);
+        rule.priority = MathHelper.clamp(rule.priority, -999, 999);
+
+        boolean hasMatcher = !rule.itemFilterExpressions.isEmpty()
+                || rule.maxDistance > 0.0F;
+        return hasMatcher ? rule : null;
+    }
+
+    private static String normalizeCategoryName(String category) {
+        String normalized = category == null ? "" : category.trim();
+        return normalized.isEmpty() ? "默认" : normalized;
+    }
+
+    private static String normalizeHuntPickupRuleMode(String mode) {
+        return HUNT_PICKUP_RULE_MODE_BLOCK.equalsIgnoreCase(mode)
+                ? HUNT_PICKUP_RULE_MODE_BLOCK
+                : HUNT_PICKUP_RULE_MODE_ALLOW;
+    }
+
+    private static List<String> normalizeHuntPickupRarityList(List<String> source) {
+        LinkedHashSet<String> unique = new LinkedHashSet<>();
+        if (source != null) {
+            for (String entry : source) {
+                String normalized = normalizeHuntPickupRarityToken(entry);
+                if (!normalized.isEmpty()) {
+                    unique.add(normalized);
+                }
+            }
+        }
+        return new ArrayList<>(unique);
+    }
+
+    public static String normalizeHuntPickupRarityToken(String value) {
+        String normalized = value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
+        if (normalized.isEmpty()) {
+            return "";
+        }
+        if ("普通".equals(normalized) || "common".equals(normalized)) {
+            return HUNT_PICKUP_RARITY_COMMON;
+        }
+        if ("罕见".equals(normalized) || "少见".equals(normalized) || "uncommon".equals(normalized)) {
+            return HUNT_PICKUP_RARITY_UNCOMMON;
+        }
+        if ("稀有".equals(normalized) || "rare".equals(normalized)) {
+            return HUNT_PICKUP_RARITY_RARE;
+        }
+        if ("史诗".equals(normalized) || "epic".equals(normalized)) {
+            return HUNT_PICKUP_RARITY_EPIC;
+        }
+        return "";
+    }
+
+    public static String getHuntPickupRarityDisplayName(String rarityToken) {
+        String normalized = normalizeHuntPickupRarityToken(rarityToken);
+        if (HUNT_PICKUP_RARITY_UNCOMMON.equals(normalized)) {
+            return "罕见";
+        }
+        if (HUNT_PICKUP_RARITY_RARE.equals(normalized)) {
+            return "稀有";
+        }
+        if (HUNT_PICKUP_RARITY_EPIC.equals(normalized)) {
+            return "史诗";
+        }
+        return "普通";
+    }
+
+    private static List<String> normalizeHuntPickupExpressions(List<String> source) {
+        List<String> normalized = new ArrayList<>();
+        if (source == null) {
+            return normalized;
+        }
+        LinkedHashSet<String> unique = new LinkedHashSet<>();
+        for (String expression : source) {
+            String text = expression == null ? "" : expression.trim();
+            if (text.isEmpty()) {
+                continue;
+            }
+            try {
+                InventoryItemFilterExpressionEngine.validate(text);
+                unique.add(text);
+            } catch (RuntimeException ignored) {
+            }
+        }
+        normalized.addAll(unique);
+        return normalized;
+    }
+
+    private static void migrateLegacyHuntPickupRuleToExpressions(HuntPickupRule rule) {
+        if (rule == null || !rule.itemFilterExpressions.isEmpty()) {
+            return;
+        }
+
+        List<String> expressions = new ArrayList<>();
+        String legacyExpression = buildLegacyHuntPickupExpression(rule.nameKeyword, rule.itemIdKeyword,
+                rule.requiredNbtTags, rule.rarityFilters);
+        if (!legacyExpression.isEmpty()) {
+            expressions.add(legacyExpression);
+        }
+        rule.itemFilterExpressions = normalizeHuntPickupExpressions(expressions);
+        rule.nameKeyword = "";
+        rule.itemIdKeyword = "";
+        rule.requiredNbtTags = new ArrayList<>();
+        rule.rarityFilters = new ArrayList<>();
+    }
+
+    private static String buildLegacyHuntPickupExpression(String nameKeyword, String itemIdKeyword,
+            List<String> requiredNbtTags, List<String> rarityFilters) {
+        List<String> parts = new ArrayList<>();
+        String normalizedName = normalizeNameFilterKeyword(nameKeyword);
+        if (!normalizedName.isEmpty()) {
+            parts.add("nameContains(\"" + escapeExpressionText(normalizedName) + "\")");
+        }
+        String normalizedId = itemIdKeyword == null ? "" : itemIdKeyword.trim().toLowerCase(Locale.ROOT);
+        if (!normalizedId.isEmpty()) {
+            parts.add("registryContains(\"" + escapeExpressionText(normalizedId) + "\")");
+        }
+        List<String> normalizedTags = normalizeNameList(requiredNbtTags);
+        if (!normalizedTags.isEmpty()) {
+            List<String> tagParts = new ArrayList<>();
+            for (String tag : normalizedTags) {
+                tagParts.add("NBT(\"" + escapeExpressionText(tag) + "\")");
+            }
+            parts.add("(" + String.join(" || ", tagParts) + ")");
+        }
+        List<String> normalizedRarities = normalizeHuntPickupRarityList(rarityFilters);
+        if (!normalizedRarities.isEmpty()) {
+            List<String> rarityParts = new ArrayList<>();
+            for (String rarity : normalizedRarities) {
+                rarityParts.add("rarity == \"" + escapeExpressionText(rarity) + "\"");
+            }
+            parts.add("(" + String.join(" || ", rarityParts) + ")");
+        }
+        return parts.isEmpty() ? "" : String.join(" && ", parts);
+    }
+
+    private static String escapeExpressionText(String text) {
+        return text == null ? "" : text.replace("\\", "\\\\").replace("\"", "\\\"");
+    }
+
     private static String normalizeHuntModeValue(String mode) {
         String normalizedMode = mode == null ? "" : mode.trim().toUpperCase(Locale.ROOT);
         if (HUNT_MODE_FIXED_DISTANCE.equals(normalizedMode)) {
@@ -5060,6 +5435,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
         preset.aimPitchOffsetSpec = aimPitchOffsetSpec;
         preset.huntMode = huntMode;
         preset.huntPickupItemsEnabled = huntPickupItemsEnabled;
+        preset.huntPickupRules = copyHuntPickupRuleList(huntPickupRules);
         preset.visualizeHuntRadius = visualizeHuntRadius;
         preset.huntRadius = huntRadius;
         preset.huntFixedDistance = huntFixedDistance;
@@ -5098,6 +5474,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
                 && (normalizedPreset.rotateToTarget || normalizedPreset.aimOnlyMode);
         normalizedPreset.nameWhitelist = normalizeNameList(normalizedPreset.nameWhitelist);
         normalizedPreset.nameBlacklist = normalizeNameList(normalizedPreset.nameBlacklist);
+        normalizedPreset.huntPickupRules = normalizeHuntPickupRuleList(normalizedPreset.huntPickupRules);
         normalizedPreset.attackSequenceName = normalizedPreset.attackSequenceName == null
                 ? ""
                 : normalizedPreset.attackSequenceName.trim();
@@ -5198,6 +5575,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
         nearbyEntityScanRange = MathHelper.clamp(nearbyEntityScanRange, 1.0F, 64.0F);
         nameWhitelist = normalizeNameList(nameWhitelist);
         nameBlacklist = normalizeNameList(nameBlacklist);
+        huntPickupRules = normalizeHuntPickupRuleList(huntPickupRules);
         attackSequenceName = getConfiguredAttackSequenceName();
 
         String normalizedAttackMode = attackMode == null ? "" : attackMode.trim().toUpperCase(Locale.ROOT);

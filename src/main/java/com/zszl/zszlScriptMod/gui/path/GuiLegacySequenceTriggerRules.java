@@ -240,7 +240,7 @@ public class GuiLegacySequenceTriggerRules extends ThemedGuiScreen {
     private boolean editingIdleExcludePath = true;
     private boolean editingIdleIgnoreDamage = false;
     private final List<PlayerListTriggerSupport.RuleEntry> editingPlayerListEntries = new ArrayList<>();
-    private String statusMessage = "§7左侧选规则，中间选事件，右侧编辑该事件专属参数。";
+    private String statusMessage = "§7使用指南：左侧规则树筛选/折叠规则与分组，右键分组打开菜单，中间切换触发事件，右侧编辑专属参数。";
     private boolean workingCopyInitialized = false;
     private final List<TooltipRegion> tooltipRegions = new ArrayList<>();
     private final Set<String> collapsedLibraryGroups = new LinkedHashSet<>();

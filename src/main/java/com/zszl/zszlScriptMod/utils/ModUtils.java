@@ -621,7 +621,6 @@ public class ModUtils {
 
         if (nearest != null) {
             Minecraft.getMinecraft().playerController.interactWithEntity(player, nearest, EnumHand.MAIN_HAND);
-            player.swingArm(EnumHand.MAIN_HAND);
             zszlScriptMod.LOGGER.info("Right clicked entity {} at {} preserveView={}", nearest.getName(), pos,
                     preserveView);
         } else {

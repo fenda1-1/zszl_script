@@ -331,6 +331,9 @@ public class GuiRenderFeatureConfig extends ThemedGuiScreen {
         } else if ("thickness".equals(key)) {
             openFloatInput("输入准星粗细 (1.0 - 6.0)", RenderFeatureManager.crosshairThickness, 1.0F, 6.0F,
                     value -> RenderFeatureManager.crosshairThickness = value);
+        } else if ("decimal_places".equals(key)) {
+            openIntInput("输入地速小数位数 (0 - 3)", RenderFeatureManager.groundSpeedDecimalPlaces, 0, 3,
+                    value -> RenderFeatureManager.groundSpeedDecimalPlaces = value);
         }
         refreshButtonTexts();
     }
@@ -405,6 +408,11 @@ public class GuiRenderFeatureConfig extends ThemedGuiScreen {
             keys.add("remove_view_bobbing");
             keys.add("remove_hurt_shake");
             break;
+        case "ground_speed":
+            keys.add("show_title");
+            keys.add("show_unit");
+            keys.add("decimal_places");
+            break;
         case "radar":
             keys.add("players");
             keys.add("monsters");
@@ -443,6 +451,7 @@ public class GuiRenderFeatureConfig extends ThemedGuiScreen {
                 && !"max_steps".equals(key)
                 && !"color".equals(key)
                 && !"size".equals(key)
+                && !"decimal_places".equals(key)
                 && !"thickness".equals(key);
     }
 
@@ -496,6 +505,8 @@ public class GuiRenderFeatureConfig extends ThemedGuiScreen {
             return "准星大小 : " + formatFloat(RenderFeatureManager.crosshairSize);
         case "thickness":
             return "准星粗细 : " + formatFloat(RenderFeatureManager.crosshairThickness);
+        case "decimal_places":
+            return "小数位数 : " + RenderFeatureManager.groundSpeedDecimalPlaces;
         default:
             return key;
         }
@@ -549,6 +560,10 @@ public class GuiRenderFeatureConfig extends ThemedGuiScreen {
             return "移除走路晃动";
         case "remove_hurt_shake":
             return "移除受伤抖动";
+        case "show_title":
+            return "显示标题";
+        case "show_unit":
+            return "显示单位";
         case "rotate_with_view":
             return "随视角旋转";
         case "show_position":
@@ -673,6 +688,14 @@ public class GuiRenderFeatureConfig extends ThemedGuiScreen {
             }
             if ("remove_hurt_shake".equals(key)) {
                 return RenderFeatureManager.antiBobRemoveHurtShake;
+            }
+            return false;
+        case "ground_speed":
+            if ("show_title".equals(key)) {
+                return RenderFeatureManager.groundSpeedShowTitle;
+            }
+            if ("show_unit".equals(key)) {
+                return RenderFeatureManager.groundSpeedShowUnit;
             }
             return false;
         case "radar":
@@ -810,6 +833,13 @@ public class GuiRenderFeatureConfig extends ThemedGuiScreen {
                 RenderFeatureManager.antiBobRemoveViewBobbing = !RenderFeatureManager.antiBobRemoveViewBobbing;
             } else if ("remove_hurt_shake".equals(key)) {
                 RenderFeatureManager.antiBobRemoveHurtShake = !RenderFeatureManager.antiBobRemoveHurtShake;
+            }
+            break;
+        case "ground_speed":
+            if ("show_title".equals(key)) {
+                RenderFeatureManager.groundSpeedShowTitle = !RenderFeatureManager.groundSpeedShowTitle;
+            } else if ("show_unit".equals(key)) {
+                RenderFeatureManager.groundSpeedShowUnit = !RenderFeatureManager.groundSpeedShowUnit;
             }
             break;
         case "radar":
@@ -1013,6 +1043,8 @@ public class GuiRenderFeatureConfig extends ThemedGuiScreen {
             return "§8范围 0.5 - 6.0";
         case "max_steps":
             return "§8范围 20 - 320";
+        case "decimal_places":
+            return "§8范围 0 - 3";
         case "edit_blocks":
             return "§8点击后打开透视方块编辑界面";
         case "color":

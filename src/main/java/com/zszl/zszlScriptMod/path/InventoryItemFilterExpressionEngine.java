@@ -183,6 +183,17 @@ public final class InventoryItemFilterExpressionEngine {
         return new Parser(text, ItemSnapshot.from(stack, slotIndex), false).parseExpression();
     }
 
+    public static boolean matches(ItemStack stack, int slotIndex, String expression, String rarity, double distance) {
+        if (stack == null || stack.isEmpty()) {
+            return false;
+        }
+        String text = safe(expression).trim();
+        if (text.isEmpty()) {
+            return false;
+        }
+        return new Parser(text, ItemSnapshot.from(stack, slotIndex, rarity, distance), false).parseExpression();
+    }
+
     private static List<String> normalizeExpressions(List<String> expressions) {
         List<String> normalized = new ArrayList<String>();
         if (expressions == null) {
@@ -228,13 +239,17 @@ public final class InventoryItemFilterExpressionEngine {
         private final String normalizedRawNbt;
         private final String searchableText;
         private final String normalizedSearchableText;
+        private final String rarity;
+        private final String normalizedRarity;
+        private final double distance;
         private final List<String> tooltipLines;
         private final List<String> loreLines;
         private final List<KeyValueEntry> keyValueEntries;
         private final Map<String, List<String>> valuesByKey;
 
         private ItemSnapshot(String displayName, String registryName, int count, int slotIndex, int itemDamage,
-                boolean hasNbt, String rawNbt, String searchableText, List<String> tooltipLines, List<String> loreLines,
+                boolean hasNbt, String rawNbt, String searchableText, String rarity, double distance,
+                List<String> tooltipLines, List<String> loreLines,
                 List<KeyValueEntry> keyValueEntries, Map<String, List<String>> valuesByKey) {
             this.displayName = safe(displayName);
             this.normalizedDisplayName = normalizeComparableText(this.displayName);
@@ -248,6 +263,9 @@ public final class InventoryItemFilterExpressionEngine {
             this.normalizedRawNbt = normalizeComparableText(this.rawNbt);
             this.searchableText = safe(searchableText);
             this.normalizedSearchableText = normalizeComparableText(this.searchableText);
+            this.rarity = safe(rarity);
+            this.normalizedRarity = normalizeComparableText(this.rarity);
+            this.distance = distance;
             this.tooltipLines = tooltipLines == null ? Collections.<String>emptyList() : tooltipLines;
             this.loreLines = loreLines == null ? Collections.<String>emptyList() : loreLines;
             this.keyValueEntries = keyValueEntries == null ? Collections.<KeyValueEntry>emptyList() : keyValueEntries;
@@ -255,11 +273,16 @@ public final class InventoryItemFilterExpressionEngine {
         }
 
         private static ItemSnapshot empty() {
-            return new ItemSnapshot("", "", 0, -1, 0, false, "", "", new ArrayList<String>(), new ArrayList<String>(),
+            return new ItemSnapshot("", "", 0, -1, 0, false, "", "", "", 0.0D,
+                    new ArrayList<String>(), new ArrayList<String>(),
                     new ArrayList<KeyValueEntry>(), new LinkedHashMap<String, List<String>>());
         }
 
         private static ItemSnapshot from(ItemStack stack, int slotIndex) {
+            return from(stack, slotIndex, "", 0.0D);
+        }
+
+        private static ItemSnapshot from(ItemStack stack, int slotIndex, String rarity, double distance) {
             if (stack == null || stack.isEmpty()) {
                 return empty();
             }
@@ -289,7 +312,7 @@ public final class InventoryItemFilterExpressionEngine {
             }
 
             return new ItemSnapshot(displayName, registryText, stack.getCount(), slotIndex, stack.getItemDamage(),
-                    stack.hasTagCompound(), rawNbt, searchableText, tooltipLines, loreLines, keyValueEntries,
+                    stack.hasTagCompound(), rawNbt, searchableText, rarity, distance, tooltipLines, loreLines, keyValueEntries,
                     valuesByKey);
         }
 
@@ -1348,6 +1371,11 @@ public final class InventoryItemFilterExpressionEngine {
                     return joinLines(snapshot.tooltipLines);
                 case "lore":
                     return joinLines(snapshot.loreLines);
+                case "rarity":
+                    return snapshot.rarity;
+                case "distance":
+                case "dist":
+                    return snapshot.distance;
                 case "alltext":
                 case "search":
                     return snapshot.searchableText;

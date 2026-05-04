@@ -1,5 +1,6 @@
 package com.zszl.zszlScriptMod.gui.config;
 
+import com.google.gson.JsonParser;
 import com.zszl.zszlScriptMod.gui.components.GuiTheme;
 import com.zszl.zszlScriptMod.gui.components.ThemedButton;
 import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
@@ -10,10 +11,20 @@ import org.lwjgl.input.Keyboard;
 import org.lwjgl.input.Mouse;
 
 import java.io.IOException;
+import java.io.StringReader;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+import com.google.gson.stream.JsonReader;
 
 public class GuiProfileConfigEditor extends ThemedGuiScreen {
+
+    private static final Pattern JSON_LOCATION_PATTERN = Pattern.compile("line\\s+(\\d+)\\s+column\\s+(\\d+)");
 
     private final GuiScreen parentScreen;
     private final String profileName;
@@ -27,9 +38,10 @@ public class GuiProfileConfigEditor extends ThemedGuiScreen {
     private int scrollOffset = 0;
     private int maxScroll = 0;
 
-    private String statusMessage = "§7Ctrl+S 保存，Ctrl+V 粘贴，滚轮滚动";
+    private String statusMessage = "§7Ctrl+S 保存，保存前会自动校验；失败会定位错误行，可一键回滚";
     private int statusColor = 0xFFB8C7D9;
     private boolean dirty = false;
+    private int highlightedErrorLine = -1;
 
     public GuiProfileConfigEditor(GuiScreen parentScreen, String profileName, String relativePath, String content) {
         this.parentScreen = parentScreen;
@@ -52,7 +64,8 @@ public class GuiProfileConfigEditor extends ThemedGuiScreen {
         this.buttonList.add(new ThemedButton(0, panelX + 10, bottomY, 90, 20, "§a保存当前文件"));
         this.buttonList.add(new ThemedButton(1, panelX + 110, bottomY, 90, 20, "§e重新载入"));
         this.buttonList.add(new ThemedButton(2, panelX + 210, bottomY, 90, 20, "§b复制全文"));
-        this.buttonList.add(new ThemedButton(3, panelX + panelWidth - 110, bottomY, 100, 20, "§c返回"));
+        this.buttonList.add(new ThemedButton(3, panelX + 310, bottomY, 100, 20, "§6回滚到已保存"));
+        this.buttonList.add(new ThemedButton(4, panelX + panelWidth - 110, bottomY, 100, 20, "§c返回"));
         recalcScrollBounds();
         clampCursor();
     }
@@ -76,6 +89,9 @@ public class GuiProfileConfigEditor extends ThemedGuiScreen {
                 setStatus("§a已复制当前配置全文到剪贴板", 0xFF8CFF9E);
                 break;
             case 3:
+                rollbackToLastSaved();
+                break;
+            case 4:
                 this.mc.displayGuiScreen(parentScreen);
                 break;
             default:
@@ -237,6 +253,11 @@ public class GuiProfileConfigEditor extends ThemedGuiScreen {
             int drawY = editorY + 4 + local * getLineHeight();
             String lineNo = String.valueOf(lineIndex + 1);
             String lineText = lines.get(lineIndex);
+            boolean errorLine = lineIndex == highlightedErrorLine;
+
+            if (errorLine) {
+                drawRect(editorX + 1, drawY - 1, editorX + editorW - 9, drawY + getLineHeight() - 1, 0x44CC4C4C);
+            }
 
             this.drawString(this.fontRenderer, "§7" + lineNo,
                     editorX + lineNumberWidth - 4 - this.fontRenderer.getStringWidth(lineNo),
@@ -269,10 +290,16 @@ public class GuiProfileConfigEditor extends ThemedGuiScreen {
     }
 
     private void saveCurrentFile() {
+        ValidationResult validation = validateCurrentContent();
+        if (!validation.valid) {
+            applyValidationFailure(validation);
+            return;
+        }
         try {
             ProfileShareCodeManager.saveProfileFileContent(profileName, relativePath, getContent());
             originalContent = getContent();
             dirty = false;
+            highlightedErrorLine = -1;
             setStatus("§a已保存当前配置文件", 0xFF8CFF9E);
         } catch (Exception e) {
             setStatus("§c保存失败: " + e.getMessage(), 0xFFFF8E8E);
@@ -284,10 +311,18 @@ public class GuiProfileConfigEditor extends ThemedGuiScreen {
             originalContent = ProfileShareCodeManager.loadProfileFileContent(profileName, relativePath);
             setContent(originalContent);
             dirty = false;
+            highlightedErrorLine = -1;
             setStatus("§a已重新从磁盘载入", 0xFF8CFF9E);
         } catch (Exception e) {
             setStatus("§c重新载入失败: " + e.getMessage(), 0xFFFF8E8E);
         }
+    }
+
+    private void rollbackToLastSaved() {
+        setContent(originalContent);
+        dirty = false;
+        highlightedErrorLine = -1;
+        setStatus("§a已回滚到上次保存内容", 0xFF8CFF9E);
     }
 
     private void setContent(String content) {
@@ -305,6 +340,7 @@ public class GuiProfileConfigEditor extends ThemedGuiScreen {
         scrollOffset = 0;
         recalcScrollBounds();
         ensureCursorVisible();
+        highlightedErrorLine = -1;
     }
 
     private String getContent() {
@@ -453,6 +489,7 @@ public class GuiProfileConfigEditor extends ThemedGuiScreen {
         recalcScrollBounds();
         clampCursor();
         ensureCursorVisible();
+        highlightedErrorLine = -1;
     }
 
     private void recalcScrollBounds() {
@@ -495,6 +532,101 @@ public class GuiProfileConfigEditor extends ThemedGuiScreen {
     private void setStatus(String message, int color) {
         this.statusMessage = message == null ? "" : message;
         this.statusColor = color;
+    }
+
+    private ValidationResult validateCurrentContent() {
+        String normalizedPath = this.relativePath == null ? "" : this.relativePath.trim().toLowerCase(Locale.ROOT);
+        String content = getContent();
+        if (normalizedPath.endsWith(".json")) {
+            return validateJsonContent(content);
+        }
+        if (normalizedPath.endsWith(".lang")) {
+            return validateLangContent(content);
+        }
+        return ValidationResult.ok();
+    }
+
+    private ValidationResult validateJsonContent(String content) {
+        if (content == null || content.trim().isEmpty()) {
+            return ValidationResult.error("JSON 文件不能为空", 1, 1);
+        }
+        try {
+            JsonReader reader = new JsonReader(new StringReader(content));
+            reader.setLenient(false);
+            new JsonParser().parse(reader);
+            return ValidationResult.ok();
+        } catch (Exception e) {
+            int line = 1;
+            int column = 1;
+            Matcher matcher = JSON_LOCATION_PATTERN.matcher(String.valueOf(e.getMessage()));
+            if (matcher.find()) {
+                try {
+                    line = Math.max(1, Integer.parseInt(matcher.group(1)));
+                    column = Math.max(1, Integer.parseInt(matcher.group(2)));
+                } catch (Exception ignored) {
+                }
+            }
+            return ValidationResult.error("JSON 语法错误: " + safeMessage(e.getMessage()), line, column);
+        }
+    }
+
+    private ValidationResult validateLangContent(String content) {
+        String[] split = (content == null ? "" : content).replace("\r\n", "\n").replace('\r', '\n').split("\n", -1);
+        Set<String> keys = new LinkedHashSet<>();
+        for (int i = 0; i < split.length; i++) {
+            String rawLine = split[i];
+            String line = rawLine == null ? "" : rawLine.trim();
+            if (line.isEmpty() || line.startsWith("#")) {
+                continue;
+            }
+            int separator = rawLine.indexOf('=');
+            if (separator < 0) {
+                return ValidationResult.error("lang 文件必须使用 key=value 格式", i + 1, 1);
+            }
+            String key = rawLine.substring(0, separator).trim();
+            if (key.isEmpty()) {
+                return ValidationResult.error("lang 键名不能为空", i + 1, 1);
+            }
+            if (!keys.add(key)) {
+                return ValidationResult.error("lang 键重复: " + key, i + 1, 1);
+            }
+        }
+        return ValidationResult.ok();
+    }
+
+    private void applyValidationFailure(ValidationResult validation) {
+        highlightedErrorLine = validation.line - 1;
+        cursorLine = Math.max(0, Math.min(lines.size() - 1, highlightedErrorLine));
+        cursorColumn = Math.max(0, validation.column - 1);
+        ensureCursorVisible();
+        setStatus("§c保存已拦截: 第 " + validation.line + " 行，第 " + validation.column + " 列 - " + validation.message,
+                0xFFFF8E8E);
+    }
+
+    private String safeMessage(String message) {
+        return message == null ? "未知错误" : message.replace('\n', ' ').replace('\r', ' ').trim();
+    }
+
+    private static final class ValidationResult {
+        private final boolean valid;
+        private final String message;
+        private final int line;
+        private final int column;
+
+        private ValidationResult(boolean valid, String message, int line, int column) {
+            this.valid = valid;
+            this.message = message == null ? "" : message;
+            this.line = Math.max(1, line);
+            this.column = Math.max(1, column);
+        }
+
+        private static ValidationResult ok() {
+            return new ValidationResult(true, "", 1, 1);
+        }
+
+        private static ValidationResult error(String message, int line, int column) {
+            return new ValidationResult(false, message, line, column);
+        }
     }
 
     private int getPanelWidth() {

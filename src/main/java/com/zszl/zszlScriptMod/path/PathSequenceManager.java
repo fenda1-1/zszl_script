@@ -2283,7 +2283,6 @@ public class PathSequenceManager {
                             }
                             Minecraft.getMinecraft().playerController.interactWithEntity(player, targetEntity,
                                     EnumHand.MAIN_HAND);
-                            player.swingArm(EnumHand.MAIN_HAND);
                             return;
                         }
                         ModUtils.rightClickOnNearestEntity(player, entityPos, range, entityPreserveView);

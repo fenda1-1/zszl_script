@@ -71,6 +71,7 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
     private static final int BTN_HUNT_DOWN_RANGE = 48;
     private static final int BTN_NO_DAMAGE_ATTACK_LIMIT = 49;
     private static final int BTN_ONLY_ATTACK_WHEN_LOOKING_AT_TARGET = 50;
+    private static final int BTN_HUNT_PICKUP_RULES = 51;
 
     private static final int BTN_SAVE = 100;
     private static final int BTN_DEFAULT = 101;
@@ -140,6 +141,7 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
     private GuiButton huntUpRangeButton;
     private GuiButton huntDownRangeButton;
     private GuiButton huntOrbitSamplePointsButton;
+    private GuiButton huntPickupRuleButton;
     private GuiButton fullBrightGammaButton;
     private GuiButton scanRangeButton;
     private GuiButton scanNearbyButton;
@@ -336,6 +338,7 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
         huntUpRangeButton = new ThemedButton(BTN_HUNT_UP_RANGE, 0, 0, 100, 20, "");
         huntDownRangeButton = new ThemedButton(BTN_HUNT_DOWN_RANGE, 0, 0, 100, 20, "");
         huntOrbitSamplePointsButton = new ThemedButton(BTN_HUNT_ORBIT_SAMPLE_POINTS, 0, 0, 100, 20, "");
+        huntPickupRuleButton = new ThemedButton(BTN_HUNT_PICKUP_RULES, 0, 0, 100, 20, "");
         fullBrightGammaButton = new ThemedButton(BTN_FULL_BRIGHT_GAMMA, 0, 0, 100, 20, "");
         scanRangeButton = new ThemedButton(BTN_SCAN_RANGE, 0, 0, 100, 20, "");
         scanNearbyButton = new ThemedButton(BTN_SCAN_NEARBY, 0, 0, 100, 20, "");
@@ -395,6 +398,7 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
         this.buttonList.add(huntUpRangeButton);
         this.buttonList.add(huntDownRangeButton);
         this.buttonList.add(huntOrbitSamplePointsButton);
+        this.buttonList.add(huntPickupRuleButton);
         this.buttonList.add(fullBrightGammaButton);
         this.buttonList.add(scanRangeButton);
         this.buttonList.add(scanNearbyButton);
@@ -505,6 +509,8 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
 
         huntPickupButton.setEnabledState(KillAuraHandler.huntPickupItemsEnabled);
         huntPickupButton.displayString = "优先拾取掉落物: " + stateText(KillAuraHandler.huntPickupItemsEnabled);
+        int huntPickupRuleCount = KillAuraHandler.getHuntPickupRuleSnapshots().size();
+        huntPickupRuleButton.displayString = "掉落过滤规则: " + huntPickupRuleCount + " 条";
 
         huntVisualizeButton.setEnabledState(KillAuraHandler.visualizeHuntRadius);
         huntVisualizeButton.displayString = "显示追击半径光环: " + stateText(KillAuraHandler.visualizeHuntRadius);
@@ -562,6 +568,7 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
                 && KillAuraHandler.isHuntFixedDistanceMode()
                 && KillAuraHandler.huntOrbitEnabled;
         huntPickupButton.enabled = huntEnabled;
+        huntPickupRuleButton.enabled = true;
         huntVisualizeButton.enabled = huntEnabled;
 
         rangeButton.displayString = "攻击范围: " + formatFloat(KillAuraHandler.attackRange) + " 格";
@@ -863,6 +870,8 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
         currentY += rowStep;
         placeContentButton(huntPickupButton, leftX, currentY, buttonW, buttonHeight, layout);
         placeContentButton(huntVisualizeButton, rightX, currentY, buttonW, buttonHeight, layout);
+        currentY += rowStep;
+        placeContentButton(huntPickupRuleButton, leftX, currentY, fullWidth, buttonHeight, layout);
         return currentY + buttonHeight + 4;
     }
 
@@ -919,6 +928,7 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
         hideButton(antiKnockbackButton);
         hideButton(fullBrightButton);
         hideButton(huntPickupButton);
+        hideButton(huntPickupRuleButton);
         hideButton(huntVisualizeButton);
         hideButton(huntOrbitButton);
         hideButton(huntJumpOrbitButton);
@@ -1542,6 +1552,9 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
         case BTN_HUNT_PICKUP:
             KillAuraHandler.huntPickupItemsEnabled = !KillAuraHandler.huntPickupItemsEnabled;
             break;
+        case BTN_HUNT_PICKUP_RULES:
+            mc.displayGuiScreen(new GuiHuntPickupRuleManager(this));
+            return;
         case BTN_HUNT_VISUALIZE:
             KillAuraHandler.visualizeHuntRadius = !KillAuraHandler.visualizeHuntRadius;
             break;
@@ -1980,6 +1993,10 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
         } else if (huntPickupButton.visible && isMouseOver(mouseX, mouseY, huntPickupButton)) {
             drawHoveringText(Arrays.asList("§e优先拾取掉落物", "§7默认关闭。", "§7开启后，Hunt 在追击半径内发现掉落物时会先去捡，再继续追怪。",
                     "§7如果你当前就在自动拾取规则范围内，会优先让自动拾取规则管理器接管，不会互相抢导航。"), mouseX, mouseY);
+        } else if (huntPickupRuleButton.visible && isMouseOver(mouseX, mouseY, huntPickupRuleButton)) {
+            drawHoveringText(Arrays.asList("§e掉落过滤规则", "§7打开独立规则管理器，给 Hunt 拾取掉落物配置允许/屏蔽规则。",
+                    "§7每条规则都支持名称、物品ID、NBT、稀有度、距离和优先级。",
+                    "§7当存在允许规则时，只有命中允许规则且未命中屏蔽规则的掉落物才会去捡。"), mouseX, mouseY);
         } else if (huntVisualizeButton.visible && isMouseOver(mouseX, mouseY, huntVisualizeButton)) {
             drawHoveringText(Arrays.asList("§e显示追击半径光环", "§7开启后会在玩家脚底绘制一个追击半径的可视化光环。", "§7方便直观看到 Hunt 搜怪范围。"), mouseX,
                     mouseY);
@@ -2493,6 +2510,7 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
         KillAuraHandler.huntEnabled = true;
         KillAuraHandler.huntMode = KillAuraHandler.HUNT_MODE_APPROACH;
         KillAuraHandler.huntPickupItemsEnabled = false;
+        KillAuraHandler.huntPickupRules.clear();
         KillAuraHandler.visualizeHuntRadius = false;
         KillAuraHandler.huntRadius = 8.0F;
         KillAuraHandler.huntFixedDistance = 4.2F;
