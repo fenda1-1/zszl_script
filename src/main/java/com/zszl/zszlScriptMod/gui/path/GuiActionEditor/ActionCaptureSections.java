@@ -13,8 +13,15 @@ final class ActionCaptureSections {
     static void buildCaptureNearbyEntitySection(GuiActionEditor editor, int x, int currentY, int fieldWidth) {
         currentY += editor.addScopedVariableEditor(I18n.format("gui.path.action_editor.label.variable_name"), "varName",
                 I18n.format("gui.path.action_editor.help.capture_var_name"), fieldWidth, x, currentY, "entity");
+        editor.addDropdown("实体类型", "entityType",
+                "选择要采集的实体类型；留空名称时会采集最近的该类型实体。", fieldWidth, x, currentY,
+                new String[] { "玩家", "敌对生物", "被动生物", "所有实体" },
+                entityTypeToDisplay(editor.currentParams.has("entityType")
+                        ? editor.currentParams.get("entityType").getAsString()
+                        : "all"));
+        currentY += 50;
         editor.addTextField(I18n.format("gui.path.action_editor.label.entity_name"), "entityName",
-                I18n.format("gui.path.action_editor.help.capture_entity_name"), fieldWidth, x, currentY);
+                "支持部分匹配；留空时按实体类型采集最近目标。", fieldWidth, x, currentY);
         currentY += 40;
         editor.addTextField(I18n.format("gui.path.action_editor.label.range"), "radius",
                 I18n.format("gui.path.action_editor.help.range"), fieldWidth, x, currentY, "6");
@@ -56,8 +63,15 @@ final class ActionCaptureSections {
         currentY += editor.addScopedVariableEditor(I18n.format("gui.path.action_editor.label.variable_name"), "varName",
                 I18n.format("gui.path.action_editor.help.capture_var_name"), fieldWidth, x, currentY,
                 "entities");
+        editor.addDropdown("实体类型", "entityType",
+                "选择要采集的实体类型；留空名称时采集该类型的附近实体列表。", fieldWidth, x, currentY,
+                new String[] { "玩家", "敌对生物", "被动生物", "所有实体" },
+                entityTypeToDisplay(editor.currentParams.has("entityType")
+                        ? editor.currentParams.get("entityType").getAsString()
+                        : "all"));
+        currentY += 50;
         editor.addTextField(I18n.format("gui.path.action_editor.label.entity_name"), "entityName",
-                I18n.format("gui.path.action_editor.help.capture_entity_name"), fieldWidth, x, currentY);
+                "支持部分匹配；留空时按实体类型采集列表。", fieldWidth, x, currentY);
         currentY += 40;
         editor.addTextField(I18n.format("gui.path.action_editor.label.range"), "radius",
                 I18n.format("gui.path.action_editor.help.range"), fieldWidth, x, currentY, "8");

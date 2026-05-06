@@ -37,7 +37,14 @@ final class ActionParameterSections {
         editor.addTextField("向下追击范围", "huntDownRange",
                 "只追击比触发坐标低出该范围内的目标；旧动作默认 1 格。", fieldWidth, x, currentY, "1.0");
         currentY += 40;
-        editor.addSectionTitle("§7战斗/索敌/转向/追击使用杀戮光环当前配置", x, currentY);
+        editor.addDropdown("实体类型", "entityType",
+                "选择这次搜怪要锁定的实体类型；默认沿用杀戮光环当前目标配置。", fieldWidth, x, currentY,
+                new String[] { "沿用杀戮光环", "玩家", "敌对生物", "被动生物", "所有实体" },
+                entityTypeToDisplay(editor.currentParams.has("entityType")
+                        ? editor.currentParams.get("entityType").getAsString()
+                        : ""));
+        currentY += 50;
+        editor.addSectionTitle("§7战斗/索敌/转向/追击细节仍使用杀戮光环当前配置", x, currentY);
         currentY += 30;
 
         editor.addSectionTitle("§b§l━━━ 动作名单过滤 ━━━", x, currentY);

@@ -105,6 +105,7 @@ public class PacketCaptureHandler extends ChannelDuplexHandler {
     private static final int MAX_RECENT_PACKET_TEXTS = 200;
     private static final List<String> recentPacketTexts = Collections.synchronizedList(new ArrayList<>());
     private static volatile long recentPacketTextVersion = 0L;
+    private static volatile String latestBossbarText = "";
 
     private static class PendingPacketSnapshot {
         final String packetClassName;
@@ -483,11 +484,16 @@ public class PacketCaptureHandler extends ChannelDuplexHandler {
         return recentPacketTextVersion;
     }
 
+    public static String getLatestBossbarText() {
+        return latestBossbarText == null ? "" : latestBossbarText;
+    }
+
     public static void clearRecentPacketTexts() {
         synchronized (recentPacketTexts) {
             recentPacketTexts.clear();
             recentPacketTextVersion = 0L;
         }
+        latestBossbarText = "";
     }
 
     private static void storeIncomingOwlViewHex(byte[] rawData) {
@@ -792,16 +798,19 @@ public class PacketCaptureHandler extends ChannelDuplexHandler {
                             }
                         }
                     }
-                    if (inboundPacket instanceof SPacketUpdateBossInfo && hasBossbarListener) {
+                    if (inboundPacket instanceof SPacketUpdateBossInfo) {
                         SPacketUpdateBossInfo bossPacket = (SPacketUpdateBossInfo) inboundPacket;
                         if (bossPacket.getName() != null) {
                             String text = bossPacket.getName().getUnformattedText();
                             if (text != null && !text.trim().isEmpty()) {
-                                JsonObject triggerData = new JsonObject();
-                                triggerData.addProperty("text", text);
-                                triggerData.addProperty("operation", String.valueOf(bossPacket.getOperation()));
-                                LegacySequenceTriggerManager.triggerEvent(LegacySequenceTriggerManager.TRIGGER_BOSSBAR,
-                                        triggerData);
+                                latestBossbarText = text;
+                                if (hasBossbarListener) {
+                                    JsonObject triggerData = new JsonObject();
+                                    triggerData.addProperty("text", text);
+                                    triggerData.addProperty("operation", String.valueOf(bossPacket.getOperation()));
+                                    LegacySequenceTriggerManager.triggerEvent(LegacySequenceTriggerManager.TRIGGER_BOSSBAR,
+                                            triggerData);
+                                }
                             }
                         }
                     }

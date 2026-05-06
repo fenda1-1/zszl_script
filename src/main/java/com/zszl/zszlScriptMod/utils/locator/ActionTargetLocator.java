@@ -212,8 +212,7 @@ public final class ActionTargetLocator {
                         continue;
                     }
 
-                    String searchText = buildBlockSearchText(state);
-                    if (!matches(searchText, query, matchMode)) {
+                    if (!matchesBlock(state, query, matchMode)) {
                         continue;
                     }
                     matches.add(new BlockMatch(current, distSq, state.getBlock().getLocalizedName()));
@@ -555,18 +554,16 @@ public final class ActionTargetLocator {
         return builder.toString();
     }
 
-    private static String buildBlockSearchText(IBlockState state) {
+    private static boolean matchesBlock(IBlockState state, String normalizedQuery, String matchMode) {
         if (state == null || state.getBlock() == null) {
-            return "";
+            return false;
         }
-        StringBuilder builder = new StringBuilder();
         Block block = state.getBlock();
-        builder.append(block.getLocalizedName());
-        ResourceLocation registryName = block.getRegistryName();
-        if (registryName != null) {
-            builder.append(' ').append(registryName.toString());
+        if (matches(block.getLocalizedName(), normalizedQuery, matchMode)) {
+            return true;
         }
-        return builder.toString();
+        ResourceLocation registryName = block.getRegistryName();
+        return registryName != null && matches(registryName.toString(), normalizedQuery, matchMode);
     }
 
     private static String buildEntitySearchText(Entity entity) {

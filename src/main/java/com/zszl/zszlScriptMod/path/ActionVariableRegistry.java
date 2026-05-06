@@ -397,8 +397,11 @@ public final class ActionVariableRegistry {
                 addSuffixes(names, canonicalPrefix,
                         "_found", "_count", "_list", "_names", "_ids", "_types",
                         "_categories", "_distances", "_radius", "_max_count",
+                        "_player_count", "_hostile_count", "_passive_count",
                         "_nearest_name", "_nearest_id", "_nearest_type",
-                        "_nearest_category", "_nearest_distance");
+                        "_nearest_category", "_nearest_distance",
+                        "_nearest_player_name", "_nearest_player_distance",
+                        "_nearest_hostile_name", "_nearest_hostile_distance");
                 break;
             case "capture_packet_field":
                 names.add(canonicalPrefix);
@@ -426,6 +429,10 @@ public final class ActionVariableRegistry {
                         "_type", "_path", "_text", "_x", "_y",
                         "_width", "_height", "_slot", "_button_id");
                 break;
+            case "retry_block":
+                addSuffixes(names, canonicalPrefix,
+                        "", "_success", "_exhausted", "_remaining");
+                break;
             default:
                 names.add(canonicalPrefix);
                 break;
@@ -452,6 +459,9 @@ public final class ActionVariableRegistry {
                 || "capture_screen_region".equals(type)
                 || "capture_block_at".equals(type)) {
             return "varName";
+        }
+        if ("retry_block".equals(type)) {
+            return "attemptVar";
         }
         return null;
     }

@@ -557,24 +557,47 @@ public final class LegacySequenceTriggerManager {
 
     private static RuleEvaluation evaluateEntityNearby(JsonObject params, JsonObject eventData, String prefix) {
         String entityText = getStringParam(params, "entityText");
+        String entityType = getStringParam(params, "entityType");
         int minCount = Math.max(0, getIntParam(params, "minCount", 1));
+        String typeLabel = "全部";
+        String actual = getStringValue(eventData, "after");
         long count = getLongParam(eventData, "count", 0L);
+        if ("player".equalsIgnoreCase(entityType) || "玩家".equalsIgnoreCase(entityType)) {
+            typeLabel = "玩家";
+            actual = getStringValue(eventData, "afterPlayer");
+            count = getLongParam(eventData, "afterPlayerCount", 0L);
+        } else if ("hostile".equalsIgnoreCase(entityType)
+                || "monster".equalsIgnoreCase(entityType)
+                || "mob".equalsIgnoreCase(entityType)
+                || "敌对生物".equalsIgnoreCase(entityType)
+                || "怪物".equalsIgnoreCase(entityType)) {
+            typeLabel = "敌对生物";
+            actual = getStringValue(eventData, "afterHostile");
+            count = getLongParam(eventData, "afterHostileCount", 0L);
+        } else if ("passive".equalsIgnoreCase(entityType)
+                || "animal".equalsIgnoreCase(entityType)
+                || "被动生物".equalsIgnoreCase(entityType)
+                || "动物".equalsIgnoreCase(entityType)) {
+            typeLabel = "被动生物";
+            actual = getStringValue(eventData, "afterPassive");
+            count = getLongParam(eventData, "afterPassiveCount", 0L);
+        }
         if (count < minCount) {
-            return RuleEvaluation.missed(prefix + "附近实体数量不足: 需要>=" + minCount + "，实际=" + count,
-                    "entity_count_miss|" + minCount + "|" + count);
+            return RuleEvaluation.missed(prefix + "附近实体数量不足(" + typeLabel + "): 需要>=" + minCount + "，实际=" + count,
+                    "entity_count_miss|" + typeLabel + "|" + minCount + "|" + count);
         }
         if (entityText.isEmpty()) {
-            return RuleEvaluation.matched(prefix + "附近实体数量命中: " + count + " 个。", "entity_count_match|" + count);
+            return RuleEvaluation.matched(prefix + "附近实体数量命中(" + typeLabel + "): " + count + " 个。",
+                    "entity_count_match|" + typeLabel + "|" + count);
         }
-        String actual = getStringValue(eventData, "after");
         boolean matched = actual.toLowerCase(Locale.ROOT).contains(entityText.toLowerCase(Locale.ROOT));
         return matched
-                ? RuleEvaluation.matched(prefix + "附近实体文本命中: " + quote(entityText) + " | 当前 "
+                ? RuleEvaluation.matched(prefix + "附近实体文本命中(" + typeLabel + "): " + quote(entityText) + " | 当前 "
                         + quote(shortenDebugText(actual, 68)),
-                        "entity_text_match|" + entityText.toLowerCase(Locale.ROOT) + "|" + count)
-                : RuleEvaluation.missed(prefix + "附近实体文本未命中: 需要包含 " + quote(entityText) + "，实际 "
+                        "entity_text_match|" + typeLabel + "|" + entityText.toLowerCase(Locale.ROOT) + "|" + count)
+                : RuleEvaluation.missed(prefix + "附近实体文本未命中(" + typeLabel + "): 需要包含 " + quote(entityText) + "，实际 "
                         + quote(shortenDebugText(actual, 68)),
-                        "entity_text_miss|" + entityText.toLowerCase(Locale.ROOT) + "|" + count);
+                        "entity_text_miss|" + typeLabel + "|" + entityText.toLowerCase(Locale.ROOT) + "|" + count);
     }
 
     private static RuleEvaluation evaluateItemPickup(JsonObject params, JsonObject eventData, String prefix) {

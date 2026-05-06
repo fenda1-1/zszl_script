@@ -23,6 +23,7 @@ import com.zszl.zszlScriptMod.gui.path.GuiActionEditor.model.ParamSectionCard;
 import com.zszl.zszlScriptMod.gui.path.GuiActionEditor.model.ScopedVariableEditorBinding;
 import com.zszl.zszlScriptMod.gui.path.GuiActionEditor.prefs.GuiActionEditorPreferences;
 import com.zszl.zszlScriptMod.gui.path.GuiCapturedIdSelector;
+import com.zszl.zszlScriptMod.gui.path.GuiPlayerListTriggerRuleEditor;
 import com.zszl.zszlScriptMod.gui.path.GuiActionEditor.feedback.ActionEditorFeedbackSupport;
 import com.zszl.zszlScriptMod.gui.path.GuiOtherFeatureSelector;
 import com.zszl.zszlScriptMod.gui.path.GuiPathValidationReport;
@@ -40,6 +41,7 @@ import com.zszl.zszlScriptMod.path.PathSequenceManager;
 import com.zszl.zszlScriptMod.path.PathSequenceManager.PathSequence;
 import com.zszl.zszlScriptMod.path.ActionVariableRegistry;
 import com.zszl.zszlScriptMod.path.template.LegacyActionTemplateManager;
+import com.zszl.zszlScriptMod.path.trigger.PlayerListTriggerSupport;
 import com.zszl.zszlScriptMod.path.validation.PathConfigValidator;
 import com.zszl.zszlScriptMod.utils.PinyinSearchHelper;
 import com.zszl.zszlScriptMod.utils.CapturedIdRuleManager;
@@ -141,6 +143,8 @@ public class GuiActionEditor extends ThemedGuiScreen {
     static final int BTN_ID_DELETE_BOOLEAN_EXPRESSION = 316;
     static final int BTN_ID_MOVE_BOOLEAN_EXPRESSION_UP = 317;
     static final int BTN_ID_MOVE_BOOLEAN_EXPRESSION_DOWN = 318;
+    static final int BTN_ID_FILL_NEARBY_ENTITY_NAME = 319;
+    static final int BTN_ID_FILL_NEARBY_ENTITY_RADIUS = 320;
     static final int BTN_ID_ADD_INVENTORY_ITEM_FILTER_EXPRESSION = 625;
     static final int BTN_ID_EDIT_INVENTORY_ITEM_FILTER_EXPRESSION = 626;
     static final int BTN_ID_DELETE_INVENTORY_ITEM_FILTER_EXPRESSION = 627;
@@ -148,6 +152,7 @@ public class GuiActionEditor extends ThemedGuiScreen {
     static final int BTN_ID_MOVE_INVENTORY_ITEM_FILTER_EXPRESSION_DOWN = 629;
     static final int BTN_ID_ADD_HUNT_WHITELIST_CARD = 632;
     static final int BTN_ID_DELETE_HUNT_WHITELIST_CARD = 633;
+    static final int BTN_ID_EDIT_PLAYER_LIST_RULES = 634;
     private static final int BTN_ID_TOGGLE_SUMMARY_CARD = 610;
     private static final int BTN_ID_TOGGLE_VALIDATION_CARD = 611;
     private static final int BTN_ID_TOGGLE_HELP_CARD = 612;
@@ -287,6 +292,7 @@ public class GuiActionEditor extends ThemedGuiScreen {
     private EnumDropdown nearbyBlockDropdown;
     private final Map<String, String> nearbyEntityPosMap = new LinkedHashMap<>();
     private final Map<String, String> nearbyEntityNameMap = new LinkedHashMap<>();
+    private final Map<String, Double> nearbyEntityDistanceMap = new LinkedHashMap<>();
     private final Map<String, String> nearbyBlockPosMap = new LinkedHashMap<>();
     private String selectedSkill = "R";
     private GuiTextField systemMessageField;
@@ -294,6 +300,7 @@ public class GuiActionEditor extends ThemedGuiScreen {
     GuiButton btnSelectHuntAttackSequence;
     GuiButton btnSelectOtherFeature;
     GuiButton btnSelectCapturedId;
+    GuiButton btnEditPlayerListRules;
     private GuiButton btnAddMoveChestNbtTag;
     GuiButton btnAddConditionInventoryNbtTag;
     GuiButton btnAddBooleanExpression;
@@ -1055,6 +1062,7 @@ public class GuiActionEditor extends ThemedGuiScreen {
         this.btnSelectHuntAttackSequence = null;
         this.btnSelectOtherFeature = null;
         this.btnSelectCapturedId = null;
+        this.btnEditPlayerListRules = null;
         this.btnAddMoveChestNbtTag = null;
         this.btnAddConditionInventoryNbtTag = null;
         this.btnAddBooleanExpression = null;
@@ -1085,6 +1093,7 @@ public class GuiActionEditor extends ThemedGuiScreen {
         this.nearbyBlockDropdown = null;
         this.nearbyEntityPosMap.clear();
         this.nearbyEntityNameMap.clear();
+        this.nearbyEntityDistanceMap.clear();
         this.activeExpressionEditorBinding = null;
         this.expressionPopupSearchField = null;
         this.expressionPopupInputField = null;
@@ -1905,9 +1914,38 @@ public class GuiActionEditor extends ThemedGuiScreen {
             case "wait_until_gui_title":
                 ActionConditionWaitSections.buildGuiTitleSection(this, selectedType, x, currentY, fieldWidth);
                 break;
+            case "condition_scoreboard":
+            case "wait_until_scoreboard":
+                ActionConditionWaitSections.buildTextConditionWaitSection(this, selectedType, x, currentY, fieldWidth,
+                        "记分板文本包含", "text", "匹配当前侧边记分板标题与行文本；留空时不会命中。");
+                break;
+            case "condition_packet_field":
+            case "wait_until_packet_field":
+                ActionConditionWaitSections.buildPacketFieldConditionWaitSection(this, selectedType, x, currentY,
+                        fieldWidth);
+                break;
+            case "condition_packet_text":
+                ActionConditionWaitSections.buildTextConditionWaitSection(this, selectedType, x, currentY, fieldWidth,
+                        "数据包文本片段", "packetText", "匹配最近缓存的数据包文本片段；用于当前条件判断。");
+                break;
+            case "condition_bossbar":
+                ActionConditionWaitSections.buildTextConditionWaitSection(this, selectedType, x, currentY, fieldWidth,
+                        "Boss血条文本包含", "text", "匹配最近一次收到的 Boss 血条标题文本。");
+                break;
+            case "condition_gui_element":
+            case "wait_until_gui_element":
+                ActionConditionWaitSections.buildGuiElementConditionWaitSection(this, selectedType, x, currentY, fieldWidth);
+                break;
+            case "condition_screen_region":
+                ActionConditionWaitSections.buildWaitScreenRegionSection(this, selectedType, x, currentY, fieldWidth);
+                break;
             case "condition_player_in_area":
             case "wait_until_player_in_area":
                 ActionConditionWaitSections.buildPlayerAreaSection(this, selectedType, x, currentY, fieldWidth);
+                break;
+            case "condition_player_list":
+            case "wait_until_player_list":
+                ActionConditionWaitSections.buildPlayerListSection(this, selectedType, x, currentY, fieldWidth);
                 break;
             case "condition_entity_nearby":
             case "wait_until_entity_nearby":
@@ -1965,8 +2003,43 @@ public class GuiActionEditor extends ThemedGuiScreen {
             case "capture_block_at":
                 ActionCaptureSections.buildCaptureBlockAtSection(this, x, currentY, fieldWidth);
                 break;
+            case "label":
+                ActionUtilitySections.buildLabelSection(this, x, currentY, fieldWidth);
+                break;
             case "goto_action":
                 ActionUtilitySections.buildGotoActionSection(this, x, currentY, fieldWidth);
+                break;
+            case "goto_label":
+                ActionUtilitySections.buildGotoLabelSection(this, x, currentY, fieldWidth);
+                break;
+            case "if_else":
+                ActionUtilitySections.buildIfElseSection(this, x, currentY, fieldWidth);
+                break;
+            case "switch_var":
+                ActionUtilitySections.buildSwitchVarSection(this, x, currentY, fieldWidth);
+                break;
+            case "branch_table":
+                ActionUtilitySections.buildBranchTableSection(this, x, currentY, fieldWidth);
+                break;
+            case "while_condition":
+                ActionUtilitySections.buildWhileConditionSection(this, x, currentY, fieldWidth);
+                break;
+            case "for_each_point":
+                ActionUtilitySections.buildForEachPointSection(this, x, currentY, fieldWidth);
+                break;
+            case "for_each_list":
+                ActionUtilitySections.buildForEachListSection(this, x, currentY, fieldWidth);
+                break;
+            case "retry_block":
+                ActionUtilitySections.buildRetryBlockSection(this, x, currentY, fieldWidth);
+                break;
+            case "debug_print_var":
+                ActionUtilitySections.buildDebugPrintVarSection(this, x, currentY, fieldWidth);
+                break;
+            case "debug_print_nearby_entities":
+                ActionUtilitySections.buildDebugPrintNearbyEntitiesSection(this, x, currentY, fieldWidth);
+                break;
+            case "debug_print_gui_summary":
                 break;
             case "skip_actions":
                 ActionUtilitySections.buildSkipActionsSection(this, x, currentY, fieldWidth);
@@ -4214,6 +4287,16 @@ public class GuiActionEditor extends ThemedGuiScreen {
             return;
         }
 
+        if (button.id == BTN_ID_FILL_NEARBY_ENTITY_NAME) {
+            fillNearbyEntityNameFromScan("entityName");
+            return;
+        }
+
+        if (button.id == BTN_ID_FILL_NEARBY_ENTITY_RADIUS) {
+            fillNearbyEntityRadiusFromScan("radius");
+            return;
+        }
+
         if (button.id == BTN_ID_SCAN_NEARBY_BLOCKS) {
             scanNearbyInteractableBlocksAndRefreshDropdown();
             return;
@@ -4267,6 +4350,17 @@ public class GuiActionEditor extends ThemedGuiScreen {
                     selectedCapturedIdName = card.model.name;
                     currentParams.addProperty("capturedId", selectedCapturedIdName);
                 }
+                mc.displayGuiScreen(this);
+            }));
+            return;
+        }
+
+        if (button.id == BTN_ID_EDIT_PLAYER_LIST_RULES) {
+            List<PlayerListTriggerSupport.RuleEntry> currentEntries = PlayerListTriggerSupport.readEntries(currentParams);
+            mc.displayGuiScreen(new GuiPlayerListTriggerRuleEditor(this, currentEntries, updatedEntries -> {
+                PlayerListTriggerSupport.writeEntries(currentParams, updatedEntries);
+                this.hasUnsavedChanges = true;
+                this.pendingSwitchActionType = null;
                 mc.displayGuiScreen(this);
             }));
             return;
@@ -6132,6 +6226,40 @@ public class GuiActionEditor extends ThemedGuiScreen {
         this.pendingSwitchActionType = null;
     }
 
+    private void fillNearbyEntityNameFromScan(String fieldKey) {
+        if (nearbyEntityDropdown == null || nearbyEntityNameMap.isEmpty()) {
+            return;
+        }
+        String selectedName = nearbyEntityNameMap.get(nearbyEntityDropdown.getValue());
+        if (selectedName == null || selectedName.trim().isEmpty()) {
+            return;
+        }
+        int fieldIndex = getParamIndexByKey(availableActionTypes.get(selectedTypeIndex), fieldKey);
+        if (fieldIndex < 0 || fieldIndex >= paramFields.size()) {
+            return;
+        }
+        paramFields.get(fieldIndex).setText(selectedName.trim());
+        this.hasUnsavedChanges = true;
+        this.pendingSwitchActionType = null;
+    }
+
+    private void fillNearbyEntityRadiusFromScan(String fieldKey) {
+        if (nearbyEntityDropdown == null || nearbyEntityDistanceMap.isEmpty()) {
+            return;
+        }
+        Double selectedDistance = nearbyEntityDistanceMap.get(nearbyEntityDropdown.getValue());
+        if (selectedDistance == null || selectedDistance.doubleValue() <= 0.0D) {
+            return;
+        }
+        int fieldIndex = getParamIndexByKey(availableActionTypes.get(selectedTypeIndex), fieldKey);
+        if (fieldIndex < 0 || fieldIndex >= paramFields.size()) {
+            return;
+        }
+        paramFields.get(fieldIndex).setText(formatScanRadius(selectedDistance.doubleValue()));
+        this.hasUnsavedChanges = true;
+        this.pendingSwitchActionType = null;
+    }
+
     private List<String> splitFilterText(String text) {
         List<String> values = new ArrayList<>();
         if (text == null || text.trim().isEmpty()) {
@@ -6761,6 +6889,7 @@ public class GuiActionEditor extends ThemedGuiScreen {
         }
         nearbyEntityPosMap.clear();
         nearbyEntityNameMap.clear();
+        nearbyEntityDistanceMap.clear();
         List<EntityEntry> entries = new ArrayList<>();
         double maxDistance = getNearbyEntityScanRadius();
         double maxDistSq = maxDistance * maxDistance;
@@ -6804,6 +6933,7 @@ public class GuiActionEditor extends ThemedGuiScreen {
             options[i] = entries.get(i).label;
             nearbyEntityPosMap.put(entries.get(i).label, entries.get(i).pos);
             nearbyEntityNameMap.put(entries.get(i).label, entries.get(i).name);
+            nearbyEntityDistanceMap.put(entries.get(i).label, Math.sqrt(entries.get(i).distSq));
         }
         nearbyEntityDropdown.setOptions(options);
         nearbyEntityDropdown.setValue(options[0]);
@@ -7084,6 +7214,14 @@ public class GuiActionEditor extends ThemedGuiScreen {
             return "§f" + display;
         }
         return "§a选择捕获ID";
+    }
+
+    String getPlayerListRuleButtonText() {
+        List<PlayerListTriggerSupport.RuleEntry> entries = PlayerListTriggerSupport.readEntries(currentParams);
+        if (entries.isEmpty()) {
+            return "§a编辑玩家列表规则";
+        }
+        return "§f" + PlayerListTriggerSupport.buildEntriesSummary(entries);
     }
 
     private boolean hasAvailableOtherFeature() {

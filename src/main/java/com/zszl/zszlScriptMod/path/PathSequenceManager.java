@@ -27,6 +27,7 @@ import com.zszl.zszlScriptMod.otherfeatures.handler.render.RenderFeatureManager;
 import com.zszl.zszlScriptMod.system.ProfileManager;
 import com.zszl.zszlScriptMod.system.ServerFeatureVisibilityManager;
 import com.zszl.zszlScriptMod.path.template.LegacyActionTemplateManager;
+import com.zszl.zszlScriptMod.path.trigger.PlayerListTriggerSupport;
 import com.zszl.zszlScriptMod.utils.HudTextScanner;
 import com.zszl.zszlScriptMod.utils.ModUtils;
 import com.zszl.zszlScriptMod.utils.TickRangeSpec;
@@ -148,6 +149,25 @@ public class PathSequenceManager {
                 .equalsIgnoreCase(normalizeClickLocatorMode(locatorMode));
     }
 
+    private static BlockPos tryParseTargetPos(JsonObject params) {
+        if (params == null || !params.has("pos")) {
+            return null;
+        }
+        try {
+            JsonElement posElement = params.get("pos");
+            if (posElement == null || !posElement.isJsonArray()) {
+                return null;
+            }
+            JsonArray posArray = posElement.getAsJsonArray();
+            if (posArray.size() < 3) {
+                return null;
+            }
+            return new BlockPos(posArray.get(0).getAsInt(), posArray.get(1).getAsInt(), posArray.get(2).getAsInt());
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
     private static String getClickMouseButton(JsonObject params) {
         if (params == null || !params.has("left")) {
             return "left";
@@ -169,6 +189,62 @@ public class PathSequenceManager {
         } catch (Exception ignored) {
         }
         return "left";
+    }
+
+    private static String describeEntityTypeDisplay(String entityType) {
+        String normalized = entityType == null ? "" : entityType.trim();
+        if ("player".equalsIgnoreCase(normalized) || "玩家".equalsIgnoreCase(normalized)) {
+            return "玩家";
+        }
+        if ("hostile".equalsIgnoreCase(normalized)
+                || "monster".equalsIgnoreCase(normalized)
+                || "mob".equalsIgnoreCase(normalized)
+                || "敌对生物".equalsIgnoreCase(normalized)
+                || "怪物".equalsIgnoreCase(normalized)) {
+            return "敌对生物";
+        }
+        if ("passive".equalsIgnoreCase(normalized)
+                || "animal".equalsIgnoreCase(normalized)
+                || "被动生物".equalsIgnoreCase(normalized)
+                || "动物".equalsIgnoreCase(normalized)) {
+            return "被动生物";
+        }
+        if ("all".equalsIgnoreCase(normalized)
+                || "entity".equalsIgnoreCase(normalized)
+                || "所有实体".equalsIgnoreCase(normalized)) {
+            return "所有实体";
+        }
+        return "";
+    }
+
+    private static String describeNearbyEntityFilter(JsonObject params, boolean includeMinCount) {
+        if (params == null) {
+            return "未配置";
+        }
+        List<String> parts = new ArrayList<>();
+        String typeDisplay = describeEntityTypeDisplay(params.has("entityType") ? params.get("entityType").getAsString() : "");
+        String entityName = params.has("entityName") ? params.get("entityName").getAsString().trim() : "";
+        if (!typeDisplay.isEmpty()) {
+            parts.add(typeDisplay);
+        }
+        if (!entityName.isEmpty()) {
+            parts.add("名称 " + entityName);
+        }
+        if (includeMinCount) {
+            int minCount = params.has("minCount")
+                    ? params.get("minCount").getAsInt()
+                    : (params.has("count") ? params.get("count").getAsInt() : 1);
+            parts.add("至少" + Math.max(1, minCount) + "个");
+        }
+        return parts.isEmpty() ? "未配置" : String.join(" / ", parts);
+    }
+
+    private static String describePlayerListFilter(JsonObject params) {
+        if (params == null) {
+            return "未配置";
+        }
+        String summary = PlayerListTriggerSupport.buildEntriesSummary(PlayerListTriggerSupport.readEntries(params));
+        return summary == null || summary.trim().isEmpty() ? "未配置" : summary.trim();
     }
 
     private static String getClickMouseButtonText(JsonObject params) {
@@ -634,11 +710,14 @@ public class PathSequenceManager {
                         int condAreaSkip = params.has("skipCount") ? params.get("skipCount").getAsInt() : 1;
                         return "条件分支-玩家区域: 中心 " + condAreaCenter + " 半径 " + condAreaRadius
                                 + " / 失败跳过" + Math.max(0, condAreaSkip) + "个动作";
+                    case "condition_player_list":
+                        int condPlayerListSkip = params.has("skipCount") ? params.get("skipCount").getAsInt() : 1;
+                        return "条件分支-玩家列表: " + describePlayerListFilter(params)
+                                + " / 失败跳过" + Math.max(0, condPlayerListSkip) + "个动作";
                     case "condition_entity_nearby":
-                        String condEntityName = params.has("entityName") ? params.get("entityName").getAsString() : "";
                         double condEntityRadius = params.has("radius") ? params.get("radius").getAsDouble() : 6.0;
                         int condEntitySkip = params.has("skipCount") ? params.get("skipCount").getAsInt() : 1;
-                        return "条件分支-附近实体: " + condEntityName + " / 半径 " + condEntityRadius
+                        return "条件分支-附近实体: " + describeNearbyEntityFilter(params, true) + " / 半径 " + condEntityRadius
                                 + " / 失败跳过" + Math.max(0, condEntitySkip) + "个动作";
                     case "condition_expression":
                         List<String> conditionExpressions = readBooleanExpressionList(params, "expressions",
@@ -671,13 +750,75 @@ public class PathSequenceManager {
                         return "等待GUI标题: "
                                 + (params.has("title") ? params.get("title").getAsString() : "")
                                 + waitTimeoutSkipSuffix(params);
+                    case "condition_scoreboard":
+                        int condScoreboardSkip = params.has("skipCount") ? params.get("skipCount").getAsInt() : 1;
+                        return "条件分支-记分板: "
+                                + (params.has("text") ? params.get("text").getAsString() : "")
+                                + " / 失败跳过" + Math.max(0, condScoreboardSkip) + "个动作";
+                    case "condition_packet_field":
+                        int condPacketFieldSkip = params.has("skipCount") ? params.get("skipCount").getAsInt() : 1;
+                        String condPacketFieldKey = params.has("fieldKey") ? params.get("fieldKey").getAsString() : "";
+                        String condPacketFieldExpected = params.has("expectedValue")
+                                ? params.get("expectedValue").getAsString()
+                                : "";
+                        return "条件分支-包字段: "
+                                + (condPacketFieldKey.trim().isEmpty() ? "最近字段" : condPacketFieldKey)
+                                + " / "
+                                + (condPacketFieldExpected.trim().isEmpty() ? "存在" : condPacketFieldExpected)
+                                + " / 失败跳过" + Math.max(0, condPacketFieldSkip) + "个动作";
+                    case "wait_until_scoreboard":
+                        return "等待记分板: "
+                                + (params.has("text") ? params.get("text").getAsString() : "")
+                                + waitTimeoutSkipSuffix(params);
+                    case "wait_until_packet_field":
+                        String waitPacketFieldKey = params.has("fieldKey") ? params.get("fieldKey").getAsString() : "";
+                        String waitPacketFieldExpected = params.has("expectedValue")
+                                ? params.get("expectedValue").getAsString()
+                                : "";
+                        int waitPacketFieldPreExecuteCount = params.has("preExecuteCount")
+                                ? params.get("preExecuteCount").getAsInt()
+                                : 0;
+                        return "等待包字段: "
+                                + (waitPacketFieldKey.trim().isEmpty() ? "最近字段" : waitPacketFieldKey)
+                                + " / "
+                                + (waitPacketFieldExpected.trim().isEmpty() ? "存在" : waitPacketFieldExpected)
+                                + " / 先执行" + Math.max(0, waitPacketFieldPreExecuteCount) + "个动作"
+                                + waitTimeoutSkipSuffix(params);
+                    case "condition_packet_text":
+                        int condPacketTextSkip = params.has("skipCount") ? params.get("skipCount").getAsInt() : 1;
+                        return "条件分支-数据包文本: "
+                                + (params.has("packetText") ? params.get("packetText").getAsString() : "")
+                                + " / 失败跳过" + Math.max(0, condPacketTextSkip) + "个动作";
+                    case "condition_bossbar":
+                        int condBossbarSkip = params.has("skipCount") ? params.get("skipCount").getAsInt() : 1;
+                        return "条件分支-Boss血条: "
+                                + (params.has("text") ? params.get("text").getAsString() : "")
+                                + " / 失败跳过" + Math.max(0, condBossbarSkip) + "个动作";
+                    case "condition_gui_element":
+                        int condGuiElementSkip = params.has("skipCount") ? params.get("skipCount").getAsInt() : 1;
+                        return "条件分支-GUI元素: "
+                                + (params.has("locatorText") ? params.get("locatorText").getAsString() : "")
+                                + " / 失败跳过" + Math.max(0, condGuiElementSkip) + "个动作";
+                    case "condition_screen_region":
+                        int condScreenSkip = params.has("skipCount") ? params.get("skipCount").getAsInt() : 1;
+                        return "条件分支-屏幕区域: "
+                                + (params.has("regionRect") ? params.get("regionRect").toString() : "[0,0,50,50]")
+                                + " / 失败跳过" + Math.max(0, condScreenSkip) + "个动作";
                     case "wait_until_player_in_area":
                         return "等待进入区域: "
                                 + (params.has("center") ? params.get("center").toString() : "[0,0,0]")
                                 + waitTimeoutSkipSuffix(params);
+                    case "wait_until_player_list":
+                        return "等待玩家列表: "
+                                + describePlayerListFilter(params)
+                                + waitTimeoutSkipSuffix(params);
+                    case "wait_until_gui_element":
+                        return "等待GUI元素: "
+                                + (params.has("locatorText") ? params.get("locatorText").getAsString() : "")
+                                + waitTimeoutSkipSuffix(params);
                     case "wait_until_entity_nearby":
                         return "等待附近实体: "
-                                + (params.has("entityName") ? params.get("entityName").getAsString() : "")
+                                + describeNearbyEntityFilter(params, true)
                                 + waitTimeoutSkipSuffix(params);
                     case "wait_until_hud_text":
                         return "等待HUD文本: "
@@ -758,7 +899,11 @@ public class PathSequenceManager {
                                         : (params.has("value") ? params.get("value").toString() : ""));
                     case "capture_nearby_entity":
                         return "捕获附近实体 -> "
-                                + (params.has("varName") ? params.get("varName").getAsString() : "entity");
+                                + (params.has("varName") ? params.get("varName").getAsString() : "entity")
+                                + " / "
+                                + describeNearbyEntityFilter(params, false)
+                                + " / 半径"
+                                + (params.has("radius") ? params.get("radius").getAsString() : "6");
                     case "capture_gui_title":
                         return "捕获GUI标题 -> "
                                 + (params.has("varName") ? params.get("varName").getAsString() : "gui_title");
@@ -776,6 +921,8 @@ public class PathSequenceManager {
                     case "capture_entity_list":
                         return "捕获实体列表 -> "
                                 + (params.has("varName") ? params.get("varName").getAsString() : "entities")
+                                + " / "
+                                + describeNearbyEntityFilter(params, false)
                                 + " / 半径"
                                 + (params.has("radius") ? params.get("radius").getAsString() : "8")
                                 + " / 最多"
@@ -811,6 +958,9 @@ public class PathSequenceManager {
                     case "capture_block_at":
                         return "捕获方块信息 -> "
                                 + (params.has("varName") ? params.get("varName").getAsString() : "block");
+                    case "label":
+                        return "标签: "
+                                + (params.has("labelName") ? params.get("labelName").getAsString() : "");
                     case "capture_scoreboard":
                         return "捕获记分板 -> "
                                 + (params.has("varName") ? params.get("varName").getAsString() : "scoreboard")
@@ -826,6 +976,72 @@ public class PathSequenceManager {
                         return "跳转到动作序号: "
                                 + (params.has("targetActionIndex") ? params.get("targetActionIndex").getAsString()
                                         : "0");
+                    case "goto_label":
+                        return "跳转到标签: "
+                                + (params.has("targetLabel") ? params.get("targetLabel").getAsString() : "");
+                    case "if_else":
+                        return "条件块分支: 条件"
+                                + countSeparatedValues(params.has("conditionsText")
+                                        ? params.get("conditionsText").getAsString()
+                                        : "")
+                                + "项 / true块"
+                                + (params.has("thenCount") ? params.get("thenCount").getAsString() : "1")
+                                + " / false块"
+                                + (params.has("elseCount") ? params.get("elseCount").getAsString() : "0");
+                    case "switch_var":
+                        return "变量分支表: "
+                                + (params.has("sourceVar") ? params.get("sourceVar").getAsString() : "")
+                                + " / 分支"
+                                + countSeparatedValues(params.has("casesText")
+                                        ? params.get("casesText").getAsString()
+                                        : "")
+                                + "项";
+                    case "branch_table":
+                        return "表达式分支表: 分支"
+                                + countSeparatedValues(params.has("casesText")
+                                        ? params.get("casesText").getAsString()
+                                        : "")
+                                + "项";
+                    case "while_condition":
+                        return "条件循环: 条件"
+                                + countSeparatedValues(params.has("conditionsText")
+                                        ? params.get("conditionsText").getAsString()
+                                        : "")
+                                + "项 / 循环体"
+                                + (params.has("bodyCount") ? params.get("bodyCount").getAsString() : "1")
+                                + " / 最大"
+                                + (params.has("maxLoops") ? params.get("maxLoops").getAsString() : "0");
+                    case "for_each_point":
+                        return "遍历点列表: 点"
+                                + countSeparatedValues(params.has("pointsText")
+                                        ? params.get("pointsText").getAsString()
+                                        : "")
+                                + "个 / 循环体"
+                                + (params.has("bodyCount") ? params.get("bodyCount").getAsString() : "1");
+                    case "for_each_list":
+                        return "遍历列表: "
+                                + (params.has("sourceVar") ? params.get("sourceVar").getAsString() : "")
+                                + " / 循环体"
+                                + (params.has("bodyCount") ? params.get("bodyCount").getAsString() : "1");
+                    case "retry_block":
+                        return "重试动作块: 条件"
+                                + countSeparatedValues(params.has("conditionsText")
+                                        ? params.get("conditionsText").getAsString()
+                                        : "")
+                                + "项 / 块"
+                                + (params.has("bodyCount") ? params.get("bodyCount").getAsString() : "1")
+                                + " / 重试"
+                                + (params.has("retryCount") ? params.get("retryCount").getAsString() : "3");
+                    case "debug_print_var":
+                        return "调试打印变量: "
+                                + (params.has("varName") ? params.get("varName").getAsString() : "");
+                    case "debug_print_nearby_entities":
+                        return "调试打印附近实体: "
+                                + describeNearbyEntityFilter(params, false)
+                                + " / 半径"
+                                + (params.has("radius") ? params.get("radius").getAsString() : "8");
+                    case "debug_print_gui_summary":
+                        return "调试打印当前GUI摘要";
                     case "skip_actions":
                         return "跳过后续动作: "
                                 + (params.has("count") ? params.get("count").getAsString() : "1");
@@ -1052,6 +1268,7 @@ public class PathSequenceManager {
                                 : KillAuraHandler.DEFAULT_HUNT_UP_RANGE;
                         double huntDownRange = params.has("huntDownRange") ? params.get("huntDownRange").getAsDouble()
                                 : KillAuraHandler.DEFAULT_HUNT_DOWN_RANGE;
+                        String huntEntityType = params.has("entityType") ? params.get("entityType").getAsString() : "";
                         int noTargetSkipCount = params.has("noTargetSkipCount")
                                 ? Math.max(0, params.get("noTargetSkipCount").getAsInt())
                                 : 0;
@@ -1064,11 +1281,16 @@ public class PathSequenceManager {
                         boolean showRange = params.has("showHuntRange") && params.get("showHuntRange").getAsBoolean();
                         StringBuilder huntDesc = new StringBuilder("中心搜怪: 半径 ")
                                 .append(String.format(Locale.ROOT, "%.1f", Math.max(0.0D, radius)))
-                                .append("，使用杀戮光环当前配置");
+                                .append("，战斗细节沿用杀戮光环");
                         huntDesc.append(", 垂直 +")
                                 .append(String.format(Locale.ROOT, "%.1f", Math.max(0.0D, huntUpRange)))
                                 .append("/-")
                                 .append(String.format(Locale.ROOT, "%.1f", Math.max(0.0D, huntDownRange)));
+                        if (huntEntityType == null || huntEntityType.trim().isEmpty()) {
+                            huntDesc.append(", 实体类型沿用杀戮光环");
+                        } else {
+                            huntDesc.append(", 实体类型 ").append(describeEntityTypeDisplay(huntEntityType));
+                        }
                         if (noTargetSkipCount > 0) {
                             huntDesc.append(", 无目标跳过 ").append(noTargetSkipCount).append("个");
                         }
@@ -1093,13 +1315,9 @@ public class PathSequenceManager {
                                 : 3.0;
                         int timeout = params.has("timeout") ? params.get("timeout").getAsInt() : 0;
 
-                        String entityTypeDisplay = "玩家";
-                        if ("hostile".equalsIgnoreCase(entityType) || "monster".equalsIgnoreCase(entityType)) {
-                            entityTypeDisplay = "敌对生物";
-                        } else if ("passive".equalsIgnoreCase(entityType) || "animal".equalsIgnoreCase(entityType)) {
-                            entityTypeDisplay = "被动生物";
-                        } else if ("all".equalsIgnoreCase(entityType) || "entity".equalsIgnoreCase(entityType)) {
-                            entityTypeDisplay = "所有实体";
+                        String entityTypeDisplay = describeEntityTypeDisplay(entityType);
+                        if (entityTypeDisplay.isEmpty()) {
+                            entityTypeDisplay = "玩家";
                         }
 
                         StringBuilder followDesc = new StringBuilder("跟随");
@@ -2230,9 +2448,7 @@ public class PathSequenceManager {
                     float pitch = params.get("pitch").getAsFloat();
                     return player -> ModUtils.setPlayerViewAngles(player, yaw, pitch);
                 case "rightclickblock":
-                    JsonArray posArray = params.getAsJsonArray("pos");
-                    final BlockPos pos = new BlockPos(posArray.get(0).getAsInt(), posArray.get(1).getAsInt(),
-                            posArray.get(2).getAsInt());
+                    final BlockPos pos = tryParseTargetPos(params);
                     final double blockRange = params.has("range") ? params.get("range").getAsDouble() : 10.0D;
                     final String blockLocatorMode = params.has("locatorMode")
                             ? params.get("locatorMode").getAsString()
@@ -2254,13 +2470,15 @@ public class PathSequenceManager {
                                         blockLocatorText);
                                 return;
                             }
+                        } else if (resolvedPos == null) {
+                            zszlScriptMod.LOGGER.warn("[legacy_path] rightclickblock 坐标无效或缺失: pos={}",
+                                    params.has("pos") ? params.get("pos") : null);
+                            return;
                         }
                         ModUtils.rightClickOnBlock(player, resolvedPos, blockPreserveView);
                     };
                 case "rightclickentity":
-                    JsonArray entityPosArray = params.getAsJsonArray("pos");
-                    final BlockPos entityPos = new BlockPos(entityPosArray.get(0).getAsInt(),
-                            entityPosArray.get(1).getAsInt(), entityPosArray.get(2).getAsInt());
+                    final BlockPos entityPos = tryParseTargetPos(params);
                     final double range = params.get("range").getAsDouble();
                     final String entityLocatorMode = params.has("locatorMode")
                             ? params.get("locatorMode").getAsString()
@@ -2283,6 +2501,11 @@ public class PathSequenceManager {
                             }
                             Minecraft.getMinecraft().playerController.interactWithEntity(player, targetEntity,
                                     EnumHand.MAIN_HAND);
+                            return;
+                        }
+                        if (entityPos == null) {
+                            zszlScriptMod.LOGGER.warn("[legacy_path] rightclickentity 坐标无效或缺失: pos={}",
+                                    params.has("pos") ? params.get("pos") : null);
                             return;
                         }
                         ModUtils.rightClickOnNearestEntity(player, entityPos, range, entityPreserveView);

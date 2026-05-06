@@ -50,6 +50,7 @@ public class GuiLegacySequenceTriggerRules extends ThemedGuiScreen {
     private static final int BTN_IDLE_EXCLUDE_PATH = 27;
     private static final int BTN_IDLE_IGNORE_DAMAGE = 28;
     private static final int BTN_EDIT_PLAYER_LIST = 29;
+    private static final int BTN_ENTITY_TYPE = 30;
     private static final String CATEGORY_ALL = "__all__";
 
     private static final int RULE_CARD_H = 36;
@@ -233,12 +234,14 @@ public class GuiLegacySequenceTriggerRules extends ThemedGuiScreen {
     private GuiButton idleExcludePathBtn;
     private GuiButton idleIgnoreDamageBtn;
     private GuiButton editPlayerListBtn;
+    private GuiButton entityTypeBtn;
 
     private boolean editingEnabled = true;
     private boolean editingBackground = false;
     private String editingPacketDirection = "";
     private boolean editingIdleExcludePath = true;
     private boolean editingIdleIgnoreDamage = false;
+    private String editingEntityType = "";
     private final List<PlayerListTriggerSupport.RuleEntry> editingPlayerListEntries = new ArrayList<>();
     private String statusMessage = "§7使用指南：左侧规则树筛选/折叠规则与分组，右键分组打开菜单，中间切换触发事件，右侧编辑专属参数。";
     private boolean workingCopyInitialized = false;
@@ -365,6 +368,7 @@ public class GuiLegacySequenceTriggerRules extends ThemedGuiScreen {
         idleExcludePathBtn = new ThemedButton(BTN_IDLE_EXCLUDE_PATH, 0, 0, 120, 20, "");
         idleIgnoreDamageBtn = new ThemedButton(BTN_IDLE_IGNORE_DAMAGE, 0, 0, 120, 20, "");
         editPlayerListBtn = new ThemedButton(BTN_EDIT_PLAYER_LIST, 0, 0, 120, 20, "编辑玩家列表规则");
+        entityTypeBtn = new ThemedButton(BTN_ENTITY_TYPE, 0, 0, 120, 20, "");
         buttonList.add(selectSequenceBtn);
         buttonList.add(toggleEnabledBtn);
         buttonList.add(toggleBackgroundBtn);
@@ -375,6 +379,7 @@ public class GuiLegacySequenceTriggerRules extends ThemedGuiScreen {
         buttonList.add(idleExcludePathBtn);
         buttonList.add(idleIgnoreDamageBtn);
         buttonList.add(editPlayerListBtn);
+        buttonList.add(entityTypeBtn);
 
         int footerY = panelY + panelH - 28;
         buttonList.add(new ThemedButton(BTN_ADD, panelX + 10, footerY, 76, 20, "新增"));
@@ -429,6 +434,7 @@ public class GuiLegacySequenceTriggerRules extends ThemedGuiScreen {
         itemPickupCountField.setText(String.valueOf(intParam(params, "minCount", 1)));
         entityTextField.setText(stringParam(params, "entityText"));
         entityMinCountField.setText(String.valueOf(intParam(params, "minCount", 1)));
+        editingEntityType = stringParam(params, "entityType");
         editingIdleExcludePath = booleanParam(params, "excludePathTracking", true);
         editingIdleIgnoreDamage = booleanParam(params, "ignoreDamageReset", false);
         editingPlayerListEntries.clear();
@@ -451,6 +457,7 @@ public class GuiLegacySequenceTriggerRules extends ThemedGuiScreen {
         editingEnabled = true;
         editingBackground = false;
         editingPacketDirection = "";
+        editingEntityType = "";
         editingIdleExcludePath = true;
         editingIdleIgnoreDamage = false;
         editingPlayerListEntries.clear();
@@ -468,6 +475,7 @@ public class GuiLegacySequenceTriggerRules extends ThemedGuiScreen {
         toggleEnabledBtn.displayString = "启用规则: " + (editingEnabled ? "§aON" : "§cOFF");
         toggleBackgroundBtn.displayString = "后台执行: " + (editingBackground ? "§a是" : "§c否");
         packetDirectionBtn.displayString = "方向: " + packetDirectionLabel(editingPacketDirection);
+        entityTypeBtn.displayString = "实体类型: " + nearbyEntityTypeLabel(editingEntityType);
         idleExcludePathBtn.displayString = buildIdleExcludePathButtonLabel(idleExcludePathBtn.width);
         idleIgnoreDamageBtn.displayString = buildIdleIgnoreDamageButtonLabel(idleIgnoreDamageBtn.width);
         boolean hasRule = selectedRuleIndex >= 0 && selectedRuleIndex < rules.size();
@@ -476,10 +484,12 @@ public class GuiLegacySequenceTriggerRules extends ThemedGuiScreen {
         boolean packetTrigger = hasRule && LegacySequenceTriggerManager.TRIGGER_PACKET.equals(selectedTriggerType());
         boolean idleTrigger = hasRule && LegacySequenceTriggerManager.TRIGGER_PLAYER_IDLE.equals(selectedTriggerType());
         boolean playerListTrigger = hasRule && LegacySequenceTriggerManager.TRIGGER_PLAYER_LIST.equals(selectedTriggerType());
+        boolean nearbyEntityTrigger = hasRule && LegacySequenceTriggerManager.TRIGGER_ENTITY_NEARBY.equals(selectedTriggerType());
         selectSequenceBtn.enabled = hasRule;
         toggleEnabledBtn.enabled = hasRule;
         toggleBackgroundBtn.enabled = hasRule;
         packetDirectionBtn.enabled = packetTrigger;
+        entityTypeBtn.enabled = nearbyEntityTrigger;
         importGuiBtn.enabled = guiTrigger;
         openGuiInspectorBtn.enabled = guiTrigger;
         importPacketBtn.enabled = packetTrigger;
@@ -550,6 +560,7 @@ public class GuiLegacySequenceTriggerRules extends ThemedGuiScreen {
         } else if (LegacySequenceTriggerManager.TRIGGER_ENTITY_NEARBY.equals(type)) {
             putTrimmed(params, "entityText", entityTextField.getText());
             params.addProperty("minCount", parseInt(entityMinCountField.getText(), 1, 0));
+            putTrimmed(params, "entityType", editingEntityType);
         } else if (LegacySequenceTriggerManager.TRIGGER_PLAYER_LIST.equals(type)) {
             PlayerListTriggerSupport.writeEntries(params, editingPlayerListEntries);
         } else if (LegacySequenceTriggerManager.TRIGGER_ATTACK_ENTITY.equals(type)
@@ -641,6 +652,19 @@ public class GuiLegacySequenceTriggerRules extends ThemedGuiScreen {
                 editingPacketDirection = "outbound";
             } else {
                 editingPacketDirection = "";
+            }
+            break;
+        case BTN_ENTITY_TYPE:
+            if (editingEntityType.isEmpty()) {
+                editingEntityType = "player";
+            } else if ("player".equalsIgnoreCase(editingEntityType)) {
+                editingEntityType = "hostile";
+            } else if ("hostile".equalsIgnoreCase(editingEntityType)
+                    || "monster".equalsIgnoreCase(editingEntityType)
+                    || "mob".equalsIgnoreCase(editingEntityType)) {
+                editingEntityType = "passive";
+            } else {
+                editingEntityType = "";
             }
             break;
         case BTN_IMPORT_GUI:
@@ -1139,6 +1163,17 @@ public class GuiLegacySequenceTriggerRules extends ThemedGuiScreen {
                     "§7本次拾取数量达到该值才触发。");
             nextY += 24;
         } else if (LegacySequenceTriggerManager.TRIGGER_ENTITY_NEARBY.equals(type)) {
+            entityTypeBtn.x = fieldX;
+            entityTypeBtn.y = nextY - 1;
+            entityTypeBtn.width = fieldW;
+            entityTypeBtn.displayString = fieldW < 128 ? "类型: " + nearbyEntityTypeLabel(editingEntityType)
+                    : "实体类型: " + nearbyEntityTypeLabel(editingEntityType);
+            entityTypeBtn.visible = isFullyVisibleInEditorContent(entityTypeBtn.y, entityTypeBtn.height);
+            registerButtonTooltip(entityTypeBtn,
+                    "§e实体类型",
+                    "§7按附近实体类别过滤，可选全部、玩家、敌对生物、被动生物。",
+                    "§7留在“全部”时保持旧行为。");
+            nextY += 24;
             drawField("实体文本包含", entityTextField, nextY,
                     "§e实体文本包含",
                     "§7在附近实体列表文本中做包含匹配。",
@@ -2431,6 +2466,24 @@ public class GuiLegacySequenceTriggerRules extends ThemedGuiScreen {
         return "全部";
     }
 
+    private String nearbyEntityTypeLabel(String entityType) {
+        if ("player".equalsIgnoreCase(entityType) || "玩家".equalsIgnoreCase(entityType)) {
+            return "玩家";
+        }
+        if ("hostile".equalsIgnoreCase(entityType)
+                || "monster".equalsIgnoreCase(entityType)
+                || "mob".equalsIgnoreCase(entityType)
+                || "敌对生物".equalsIgnoreCase(entityType)) {
+            return "敌对生物";
+        }
+        if ("passive".equalsIgnoreCase(entityType)
+                || "animal".equalsIgnoreCase(entityType)
+                || "被动生物".equalsIgnoreCase(entityType)) {
+            return "被动生物";
+        }
+        return "全部";
+    }
+
     private String displayRuleName(LegacySequenceTriggerManager.RuleEditModel rule) {
         String name = safe(rule == null ? "" : rule.name).trim();
         return name.isEmpty() ? "(未命名规则)" : name;
@@ -2518,6 +2571,7 @@ public class GuiLegacySequenceTriggerRules extends ThemedGuiScreen {
         hideEditorButton(idleExcludePathBtn);
         hideEditorButton(idleIgnoreDamageBtn);
         hideEditorButton(editPlayerListBtn);
+        hideEditorButton(entityTypeBtn);
     }
 
     private void fillFromLatestGuiSnapshot() {

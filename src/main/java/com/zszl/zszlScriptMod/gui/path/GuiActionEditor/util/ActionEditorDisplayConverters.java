@@ -416,6 +416,9 @@ public final class ActionEditorDisplayConverters {
     }
 
     public static String entityTypeToDisplay(String type) {
+        if (type == null || type.trim().isEmpty()) {
+            return "沿用杀戮光环";
+        }
         if ("hostile".equalsIgnoreCase(type) || "monster".equalsIgnoreCase(type)) {
             return "敌对生物";
         }
@@ -429,6 +432,9 @@ public final class ActionEditorDisplayConverters {
     }
 
     public static String displayToEntityType(String display) {
+        if ("沿用杀戮光环".equals(display)) {
+            return "";
+        }
         if ("敌对生物".equals(display)) {
             return "hostile";
         }

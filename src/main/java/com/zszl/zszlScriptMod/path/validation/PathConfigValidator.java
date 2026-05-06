@@ -12,6 +12,7 @@ import com.zszl.zszlScriptMod.path.ActionVariableRegistry;
 import com.zszl.zszlScriptMod.path.PathSequenceManager.ActionData;
 import com.zszl.zszlScriptMod.path.PathSequenceManager.PathSequence;
 import com.zszl.zszlScriptMod.path.PathSequenceManager.PathStep;
+import com.zszl.zszlScriptMod.path.trigger.PlayerListTriggerSupport;
 import com.zszl.zszlScriptMod.path.runtime.locks.ResourceLockManager;
 import com.zszl.zszlScriptMod.path.template.LegacyActionTemplateManager;
 import com.zszl.zszlScriptMod.utils.TickRangeSpec;
@@ -548,6 +549,170 @@ public final class PathConfigValidator {
                     }
                 }
                 break;
+            case "label":
+                if (isBlank(getString(params, "labelName"))) {
+                    issues.add(new Issue(Severity.ERROR, "label_name_empty", sequenceName, stepIndex, actionIndex,
+                            "标签名为空", "请填写标签名。"));
+                } else if (stepActions != null) {
+                    String currentLabel = getString(params, "labelName").trim();
+                    for (int i = 0; i < stepActions.size(); i++) {
+                        if (i == actionIndex) {
+                            continue;
+                        }
+                        ActionData other = stepActions.get(i);
+                        if (other == null || other.type == null || other.params == null
+                                || !"label".equalsIgnoreCase(other.type)) {
+                            continue;
+                        }
+                        String otherLabel = getString(other.params, "labelName").trim();
+                        if (!otherLabel.isEmpty() && otherLabel.equalsIgnoreCase(currentLabel)) {
+                            issues.add(new Issue(Severity.WARNING, "label_name_duplicate", sequenceName, stepIndex, actionIndex,
+                                    "标签名重复", "当前步骤内存在同名标签，goto_label 会跳到第一个匹配标签。"));
+                            break;
+                        }
+                    }
+                }
+                break;
+            case "goto_label":
+                String targetLabel = getString(params, "targetLabel").trim();
+                if (targetLabel.isEmpty()) {
+                    issues.add(new Issue(Severity.ERROR, "goto_label_empty", sequenceName, stepIndex, actionIndex,
+                            "目标标签为空", "请填写要跳转的标签名。"));
+                } else if (stepActions != null && !stepActions.isEmpty()) {
+                    boolean found = false;
+                    for (ActionData other : stepActions) {
+                        if (other == null || other.type == null || other.params == null
+                                || !"label".equalsIgnoreCase(other.type)) {
+                            continue;
+                        }
+                        String otherLabel = getString(other.params, "labelName").trim();
+                        if (!otherLabel.isEmpty() && otherLabel.equalsIgnoreCase(targetLabel)) {
+                            found = true;
+                            break;
+                        }
+                    }
+                    if (!found) {
+                        issues.add(new Issue(Severity.ERROR, "goto_label_missing", sequenceName, stepIndex, actionIndex,
+                                "目标标签不存在", "当前步骤内未找到名为 " + targetLabel + " 的标签。"));
+                    }
+                }
+                break;
+            case "if_else":
+                if (isBlank(getString(params, "conditionsText"))) {
+                    issues.add(new Issue(Severity.ERROR, "if_else_empty", sequenceName, stepIndex, actionIndex,
+                            "条件块分支没有条件表达式", "请至少填写一条条件表达式。"));
+                } else {
+                    validateBooleanExpressionList(sequenceName, stepIndex, actionIndex,
+                            getString(params, "conditionsText"), "条件块表达式", issues);
+                }
+                validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "thenCount", "True块动作数",
+                        variableContext, issues);
+                validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "elseCount", "False块动作数",
+                        variableContext, issues);
+                break;
+            case "switch_var":
+                if (isBlank(getString(params, "sourceVar"))) {
+                    issues.add(new Issue(Severity.ERROR, "switch_var_source_empty", sequenceName, stepIndex, actionIndex,
+                            "分支变量为空", "请填写分支变量名。"));
+                }
+                if (isBlank(getString(params, "casesText"))) {
+                    issues.add(new Issue(Severity.ERROR, "switch_var_cases_empty", sequenceName, stepIndex, actionIndex,
+                            "分支表为空", "请至少填写一条 分支值=动作数。"));
+                }
+                validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "defaultCount", "默认分支动作数",
+                        variableContext, issues);
+                break;
+            case "branch_table":
+                if (isBlank(getString(params, "keyExpression"))) {
+                    issues.add(new Issue(Severity.ERROR, "branch_table_key_empty", sequenceName, stepIndex, actionIndex,
+                            "分支键表达式为空", "请填写分支键表达式。"));
+                } else {
+                    validateValueExpression(sequenceName, stepIndex, actionIndex,
+                            getString(params, "keyExpression"), params, "分支键表达式", issues);
+                }
+                if (isBlank(getString(params, "casesText"))) {
+                    issues.add(new Issue(Severity.ERROR, "branch_table_cases_empty", sequenceName, stepIndex, actionIndex,
+                            "分支表为空", "请至少填写一条 分支值=动作数。"));
+                }
+                validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "defaultCount", "默认分支动作数",
+                        variableContext, issues);
+                break;
+            case "while_condition":
+                if (isBlank(getString(params, "conditionsText"))) {
+                    issues.add(new Issue(Severity.ERROR, "while_condition_empty", sequenceName, stepIndex, actionIndex,
+                            "条件循环没有条件表达式", "请至少填写一条条件表达式。"));
+                } else {
+                    validateBooleanExpressionList(sequenceName, stepIndex, actionIndex,
+                            getString(params, "conditionsText"), "循环条件表达式", issues);
+                }
+                validatePositiveIntParam(sequenceName, stepIndex, actionIndex, params, "bodyCount", "循环体动作数",
+                        1, variableContext, issues);
+                validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "maxLoops", "最大循环次数",
+                        variableContext, issues);
+                break;
+            case "for_each_point":
+                if (isBlank(getString(params, "pointsText"))) {
+                    issues.add(new Issue(Severity.ERROR, "for_each_point_empty", sequenceName, stepIndex, actionIndex,
+                            "点列表为空", "请至少填写一个点位。"));
+                }
+                validatePositiveIntParam(sequenceName, stepIndex, actionIndex, params, "bodyCount", "循环体动作数",
+                        1, variableContext, issues);
+                if (isBlank(getString(params, "pointVar"))) {
+                    issues.add(new Issue(Severity.ERROR, "for_each_point_var_empty", sequenceName, stepIndex,
+                            actionIndex, "当前点变量为空", "请填写当前点变量名前缀。"));
+                }
+                if (isBlank(getString(params, "indexVar"))) {
+                    issues.add(new Issue(Severity.ERROR, "for_each_point_index_var_empty", sequenceName, stepIndex,
+                            actionIndex, "索引变量为空", "请填写索引变量名。"));
+                }
+                break;
+            case "for_each_list":
+                if (isBlank(getString(params, "sourceVar"))) {
+                    issues.add(new Issue(Severity.ERROR, "for_each_list_source_empty", sequenceName, stepIndex, actionIndex,
+                            "遍历列表变量为空", "请填写要遍历的列表变量名。"));
+                }
+                validatePositiveIntParam(sequenceName, stepIndex, actionIndex, params, "bodyCount", "循环体动作数",
+                        1, variableContext, issues);
+                if (isBlank(getString(params, "itemVar"))) {
+                    issues.add(new Issue(Severity.ERROR, "for_each_list_item_var_empty", sequenceName, stepIndex,
+                            actionIndex, "当前元素变量为空", "请填写当前元素变量名。"));
+                }
+                if (isBlank(getString(params, "indexVar"))) {
+                    issues.add(new Issue(Severity.ERROR, "for_each_list_index_var_empty", sequenceName, stepIndex,
+                            actionIndex, "索引变量为空", "请填写索引变量名。"));
+                }
+                break;
+            case "retry_block":
+                if (isBlank(getString(params, "conditionsText"))) {
+                    issues.add(new Issue(Severity.ERROR, "retry_block_empty", sequenceName, stepIndex, actionIndex,
+                            "重试块没有成功条件表达式", "请至少填写一条成功条件表达式。"));
+                } else {
+                    validateBooleanExpressionList(sequenceName, stepIndex, actionIndex,
+                            getString(params, "conditionsText"), "重试成功条件表达式", issues);
+                }
+                validatePositiveIntParam(sequenceName, stepIndex, actionIndex, params, "bodyCount", "动作块数量",
+                        1, variableContext, issues);
+                validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "retryCount", "最大重试次数",
+                        variableContext, issues);
+                validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "retryDelayTicks", "重试延迟Tick",
+                        variableContext, issues);
+                if (isBlank(getString(params, "attemptVar"))) {
+                    issues.add(new Issue(Severity.ERROR, "retry_block_attempt_var_empty", sequenceName, stepIndex,
+                            actionIndex, "重试变量前缀为空", "请填写重试变量前缀。"));
+                }
+                break;
+            case "debug_print_var":
+                if (isBlank(getString(params, "varName"))) {
+                    issues.add(new Issue(Severity.ERROR, "debug_print_var_empty", sequenceName, stepIndex, actionIndex,
+                            "调试变量名为空", "请填写要打印的变量名。"));
+                }
+                break;
+            case "debug_print_nearby_entities":
+                validatePositiveDoubleParam(sequenceName, stepIndex, actionIndex, params, "radius", "范围", false,
+                        variableContext, issues);
+                break;
+            case "debug_print_gui_summary":
+                break;
             case "skip_actions":
                 validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "count", "跳过动作数",
                         variableContext, issues);
@@ -620,6 +785,92 @@ public final class PathConfigValidator {
                     validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "skipCount", "失败跳过动作数",
                             variableContext, issues);
                 }
+                break;
+            case "condition_player_list":
+            case "wait_until_player_list":
+                if (PlayerListTriggerSupport.readEntries(params).isEmpty()) {
+                    issues.add(new Issue(Severity.ERROR, "player_list_empty", sequenceName, stepIndex, actionIndex,
+                            "玩家列表规则为空", "请至少配置一张玩家名称卡片。"));
+                }
+                if ("wait_until_player_list".equals(type)) {
+                    validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "timeoutTicks", "超时",
+                            variableContext, issues);
+                    validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "timeoutSkipCount",
+                            "超时跳过动作数", variableContext, issues);
+                } else {
+                    validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "skipCount", "失败跳过动作数",
+                            variableContext, issues);
+                }
+                break;
+            case "condition_scoreboard":
+            case "wait_until_scoreboard":
+            case "condition_bossbar":
+                if (isBlank(getString(params, "text"))) {
+                    issues.add(new Issue(Severity.ERROR, "text_condition_empty", sequenceName, stepIndex, actionIndex,
+                            "匹配文本为空", "请填写要匹配的文本。"));
+                }
+                if (type.startsWith("wait_")) {
+                    validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "timeoutTicks", "超时",
+                            variableContext, issues);
+                    validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "timeoutSkipCount",
+                            "超时跳过动作数", variableContext, issues);
+                } else {
+                    validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "skipCount", "失败跳过动作数",
+                            variableContext, issues);
+                }
+                break;
+            case "condition_packet_field":
+            case "wait_until_packet_field":
+                validateSpreadEnum(sequenceName, stepIndex, actionIndex, params, "lookupMode", "包字段读取方式",
+                        new String[] { "LATEST_CAPTURE", "VARIABLE" }, variableContext, issues);
+                validateSpreadEnum(sequenceName, stepIndex, actionIndex, params, "matchMode", "匹配方式",
+                        new String[] { "CONTAINS", "EXACT" }, variableContext, issues);
+                if ("VARIABLE".equalsIgnoreCase(getString(params, "lookupMode")) && isBlank(getString(params, "fieldKey"))) {
+                    issues.add(new Issue(Severity.ERROR, "packet_field_variable_key_missing", sequenceName, stepIndex,
+                            actionIndex, "包字段条件缺少变量键", "运行时变量模式下必须填写字段键/变量键。"));
+                }
+                if (type.startsWith("wait_")) {
+                    validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "timeoutTicks", "超时",
+                            variableContext, issues);
+                    validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "timeoutSkipCount",
+                            "超时跳过动作数", variableContext, issues);
+                    validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "preExecuteCount",
+                            "先执行动作数", variableContext, issues);
+                } else {
+                    validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "skipCount", "失败跳过动作数",
+                            variableContext, issues);
+                }
+                break;
+            case "condition_gui_element":
+                if (isBlank(getString(params, "locatorText")) && !"TITLE".equalsIgnoreCase(getString(params, "elementType"))) {
+                    issues.add(new Issue(Severity.ERROR, "gui_element_locator_empty", sequenceName, stepIndex, actionIndex,
+                            "GUI元素定位文本为空", "请填写定位文本，或把元素类型改为 TITLE。"));
+                }
+                validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "skipCount", "失败跳过动作数",
+                        variableContext, issues);
+                break;
+            case "condition_packet_text":
+                if (isBlank(getString(params, "packetText"))) {
+                    issues.add(new Issue(Severity.ERROR, "packet_text_empty", sequenceName, stepIndex, actionIndex,
+                            "数据包文本为空", "请填写要匹配的数据包文本片段。"));
+                }
+                validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "skipCount", "失败跳过动作数",
+                        variableContext, issues);
+                break;
+            case "wait_until_gui_element":
+                if (isBlank(getString(params, "locatorText")) && !"TITLE".equalsIgnoreCase(getString(params, "elementType"))) {
+                    issues.add(new Issue(Severity.ERROR, "wait_gui_element_locator_empty", sequenceName, stepIndex, actionIndex,
+                            "GUI元素定位文本为空", "请填写定位文本，或把元素类型改为 TITLE。"));
+                }
+                validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "timeoutTicks", "超时",
+                        variableContext, issues);
+                validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "timeoutSkipCount",
+                        "超时跳过动作数", variableContext, issues);
+                break;
+            case "condition_screen_region":
+                validateVisionRegionRect(sequenceName, stepIndex, actionIndex, params, variableContext, issues);
+                validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "skipCount", "失败跳过动作数",
+                        variableContext, issues);
                 break;
             case "set_var":
                 if (!isBlank(getString(params, "expression"))) {
@@ -708,10 +959,21 @@ public final class PathConfigValidator {
                 break;
             case "wait_until_gui_title":
             case "wait_until_player_in_area":
-            case "wait_until_entity_nearby":
             case "wait_until_hud_text":
             case "wait_until_captured_id":
             case "wait_until_packet_text":
+                validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "timeoutTicks", "超时",
+                        variableContext, issues);
+                validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "timeoutSkipCount", "超时跳过动作数",
+                        variableContext, issues);
+                validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "preExecuteCount", "先执行动作数",
+                        variableContext, issues);
+                break;
+            case "wait_until_entity_nearby":
+                validatePositiveDoubleParam(sequenceName, stepIndex, actionIndex, params, "radius", "范围", false,
+                        variableContext, issues);
+                validatePositiveIntParam(sequenceName, stepIndex, actionIndex, params, "minCount", "最少数量", 1,
+                        variableContext, issues);
                 validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "timeoutTicks", "超时",
                         variableContext, issues);
                 validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "timeoutSkipCount", "超时跳过动作数",
@@ -732,7 +994,14 @@ public final class PathConfigValidator {
                 break;
             case "condition_gui_title":
             case "condition_player_in_area":
+                validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "skipCount", "失败跳过动作数",
+                        variableContext, issues);
+                break;
             case "condition_entity_nearby":
+                validatePositiveDoubleParam(sequenceName, stepIndex, actionIndex, params, "radius", "范围", false,
+                        variableContext, issues);
+                validatePositiveIntParam(sequenceName, stepIndex, actionIndex, params, "minCount", "最少数量", 1,
+                        variableContext, issues);
                 validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "skipCount", "失败跳过动作数",
                         variableContext, issues);
                 break;
@@ -1472,7 +1741,11 @@ public final class PathConfigValidator {
                 break;
             case "wait_until_inventory_item":
             case "wait_until_gui_title":
+            case "wait_until_scoreboard":
+            case "wait_until_packet_field":
             case "wait_until_player_in_area":
+            case "wait_until_player_list":
+            case "wait_until_gui_element":
             case "wait_until_entity_nearby":
             case "wait_until_hud_text":
             case "wait_until_expression":

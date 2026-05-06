@@ -6,6 +6,7 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.zszl.zszlScriptMod.path.trigger.PlayerListTriggerSupport;
 import net.minecraft.block.Block;
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.client.Minecraft;
@@ -425,12 +426,14 @@ public class PathSequenceEventListener {
     private long waitConditionStartCapturedUpdateVersion = 0L;
     private long waitConditionStartCapturedRecaptureVersion = 0L;
     private long waitConditionStartPacketTextVersion = 0L;
+    private long waitConditionStartPacketFieldTimestamp = 0L;
     private ActionData deferredWaitActionData = null;
     private int deferredWaitResumeActionIndex = -1;
     private int deferredWaitElapsedTicks = 0;
     private long deferredWaitStartCapturedUpdateVersion = 0L;
     private long deferredWaitStartCapturedRecaptureVersion = 0L;
     private long deferredWaitStartPacketTextVersion = 0L;
+    private long deferredWaitStartPacketFieldTimestamp = 0L;
     // --- 新增结束 ---
 
     // --- 旧动作系统运行时变量/控制流状态 ---
@@ -443,12 +446,65 @@ public class PathSequenceEventListener {
     private int repeatActionRemainingLoops = 0;
     private int repeatActionIteration = 0;
     private String repeatActionLoopVarName = "loop_index";
+    private boolean branchBlockRunning = false;
+    private int branchBlockStepIndex = -1;
+    private int branchBlockSelectedEndIndex = -1;
+    private int branchBlockFinalEndIndex = -1;
+    private boolean ifElseRunning = false;
+    private int ifElseStepIndex = -1;
+    private int ifElseThenEndIndex = -1;
+    private int ifElseElseEndIndex = -1;
+    private boolean whileConditionRunning = false;
+    private int whileConditionStepIndex = -1;
+    private int whileConditionHeaderIndex = -1;
+    private int whileConditionBodyStartIndex = -1;
+    private int whileConditionBodyEndIndex = -1;
+    private int whileConditionIteration = 0;
+    private int whileConditionMaxLoops = 0;
+    private String whileConditionLoopVarName = "while_index";
+    private boolean forEachListRunning = false;
+    private int forEachListStepIndex = -1;
+    private int forEachListBodyStartIndex = -1;
+    private int forEachListBodyEndIndex = -1;
+    private int forEachListIteration = 0;
+    private List<Object> forEachListItems = new ArrayList<>();
+    private String forEachListItemVarName = "item";
+    private String forEachListIndexVarName = "item_index";
+    private boolean forEachPointRunning = false;
+    private int forEachPointStepIndex = -1;
+    private int forEachPointBodyStartIndex = -1;
+    private int forEachPointBodyEndIndex = -1;
+    private int forEachPointIteration = 0;
+    private List<BlockPos> forEachPoints = new ArrayList<>();
+    private String forEachPointVarName = "point";
+    private String forEachPointIndexVarName = "point_index";
+    private boolean retryBlockRunning = false;
+    private int retryBlockStepIndex = -1;
+    private int retryBlockHeaderIndex = -1;
+    private int retryBlockBodyStartIndex = -1;
+    private int retryBlockBodyEndIndex = -1;
+    private int retryBlockRetryRemaining = 0;
+    private int retryBlockAttempt = 1;
+    private int retryBlockDelayTicks = 0;
+    private JsonObject retryBlockParams = null;
+    private String retryBlockAttemptVarName = "retry_block";
+    private String retryBlockDescription = "";
     private final Deque<String> debugTraceLines = new ArrayDeque<>();
     private String currentDebugActionDescription = "";
     private String executionLogSessionId = "";
     private boolean executionResultSuccess = false;
     private String executionResultReason = "";
     // --- 新增结束 ---
+
+    private static final class BranchBlockCase {
+        private final String key;
+        private final int bodyCount;
+
+        private BranchBlockCase(String key, int bodyCount) {
+            this.key = key == null ? "" : key.trim();
+            this.bodyCount = Math.max(0, bodyCount);
+        }
+    }
 
     private PathSequenceEventListener() {
         this(false);
@@ -1117,6 +1173,15 @@ public class PathSequenceEventListener {
         this.executionResultReason = reason == null ? "" : reason;
     }
 
+    private void recordFailureDetail(String reason) {
+        if (reason == null || reason.trim().isEmpty()) {
+            return;
+        }
+        runtimeVariables.putLocal("last_failure_reason", reason.trim());
+        recordDebugTrace("失败原因: " + reason.trim());
+        appendExecutionLogEvent("failure", reason.trim());
+    }
+
     private void startExecutionLogSession() {
         finishExecutionLogSessionIfNeeded();
         if (currentSequence == null) {
@@ -1286,6 +1351,12 @@ public class PathSequenceEventListener {
         resetWaitConditionState();
         clearDeferredWaitState();
         resetRepeatActionState();
+        resetBranchBlockState();
+        resetIfElseState();
+        resetWhileConditionState();
+        resetForEachListState();
+        resetForEachPointState();
+        resetRetryBlockState();
         runtimeVariables.clear();
         this.initialSequenceVariables.clear();
         if (initialSequenceVariables != null) {
@@ -1351,6 +1422,12 @@ public class PathSequenceEventListener {
             resetAsyncActionState();
             resetWaitConditionState();
             resetRepeatActionState();
+            resetBranchBlockState();
+            resetIfElseState();
+            resetWhileConditionState();
+            resetForEachListState();
+            resetForEachPointState();
+            resetRetryBlockState();
             releaseResources();
             runtimeVariables.clear();
             if (backgroundRunner) {
@@ -1409,6 +1486,12 @@ public class PathSequenceEventListener {
         resetWaitConditionState();
         clearDeferredWaitState();
         resetRepeatActionState();
+        resetBranchBlockState();
+        resetIfElseState();
+        resetWhileConditionState();
+        resetForEachListState();
+        resetForEachPointState();
+        resetRetryBlockState();
         this.initialSequenceVariables.clear();
         runtimeVariables.clear();
         runtimeVariables.enterStep(this.currentStepIndex);
@@ -1476,9 +1559,37 @@ public class PathSequenceEventListener {
             this.huntCenterZ = mc.player.posZ;
         }
 
-        this.huntTargetHostile = KillAuraHandler.targetHostile;
-        this.huntTargetPassive = KillAuraHandler.targetPassive;
-        this.huntTargetPlayers = KillAuraHandler.targetPlayers;
+        String huntEntityType = params != null && params.has("entityType")
+                ? params.get("entityType").getAsString().trim()
+                : "";
+        if (huntEntityType.isEmpty()) {
+            this.huntTargetHostile = KillAuraHandler.targetHostile;
+            this.huntTargetPassive = KillAuraHandler.targetPassive;
+            this.huntTargetPlayers = KillAuraHandler.targetPlayers;
+        } else if ("player".equalsIgnoreCase(huntEntityType) || "玩家".equalsIgnoreCase(huntEntityType)) {
+            this.huntTargetHostile = false;
+            this.huntTargetPassive = false;
+            this.huntTargetPlayers = true;
+        } else if ("hostile".equalsIgnoreCase(huntEntityType)
+                || "monster".equalsIgnoreCase(huntEntityType)
+                || "mob".equalsIgnoreCase(huntEntityType)
+                || "敌对生物".equalsIgnoreCase(huntEntityType)
+                || "怪物".equalsIgnoreCase(huntEntityType)) {
+            this.huntTargetHostile = true;
+            this.huntTargetPassive = false;
+            this.huntTargetPlayers = false;
+        } else if ("passive".equalsIgnoreCase(huntEntityType)
+                || "animal".equalsIgnoreCase(huntEntityType)
+                || "被动生物".equalsIgnoreCase(huntEntityType)
+                || "动物".equalsIgnoreCase(huntEntityType)) {
+            this.huntTargetHostile = false;
+            this.huntTargetPassive = true;
+            this.huntTargetPlayers = false;
+        } else {
+            this.huntTargetHostile = true;
+            this.huntTargetPassive = true;
+            this.huntTargetPlayers = true;
+        }
         this.huntRestrictTargetGroups = true;
 
         this.huntEnableNameWhitelist = readHuntBooleanParam(params, "enableNameWhitelist", false);
@@ -1498,10 +1609,11 @@ public class PathSequenceEventListener {
         EmbeddedNavigationHandler.INSTANCE.stop();
         setStatus(getStatus().split(" \\| ")[0] + " | " + I18n.format("status.path.hunting"));
         zszlScriptMod.LOGGER.info(
-                "进入中心搜怪击杀: 半径={}, 垂直范围=+{}/-{}, 战斗配置=杀戮光环当前配置, 攻击模式={}, 追击模式={}, 自动绕圈={}, 无目标跳过={}, 无掉血排除次数={}, 目标类型[敌对={}, 被动={}, 玩家={}], 动作白名单={}, 动作黑名单={}, 显示范围={}",
+                "进入中心搜怪击杀: 半径={}, 垂直范围=+{}/-{}, 战斗配置=杀戮光环当前配置, 实体类型={}, 攻击模式={}, 追击模式={}, 自动绕圈={}, 无目标跳过={}, 无掉血排除次数={}, 目标类型[敌对={}, 被动={}, 玩家={}], 动作白名单={}, 动作黑名单={}, 显示范围={}",
                 this.huntRadius,
                 this.huntUpRange,
                 this.huntDownRange,
+                huntEntityType.isEmpty() ? "沿用杀戮光环" : huntEntityType,
                 KillAuraHandler.attackMode,
                 KillAuraHandler.huntMode,
                 this.huntOrbitEnabled,
@@ -1518,6 +1630,7 @@ public class PathSequenceEventListener {
                 + "), 半径=" + String.format(Locale.ROOT, "%.1f", this.huntRadius)
                 + ", 垂直=+" + String.format(Locale.ROOT, "%.1f", this.huntUpRange)
                 + "/-" + String.format(Locale.ROOT, "%.1f", this.huntDownRange)
+                + ", 实体类型=" + (huntEntityType.isEmpty() ? "沿用杀戮光环" : huntEntityType)
                 + ", 目标类型[敌对=" + this.huntTargetHostile
                 + ", 被动=" + this.huntTargetPassive
                 + ", 玩家=" + this.huntTargetPlayers
@@ -1735,6 +1848,24 @@ public class PathSequenceEventListener {
                 if (handleRepeatActionBoundary(actions)) {
                     return;
                 }
+                if (handleBranchBlockBoundary(actions)) {
+                    return;
+                }
+                if (handleIfElseBoundary(actions)) {
+                    return;
+                }
+                if (handleWhileConditionBoundary(actions)) {
+                    return;
+                }
+                if (handleForEachPointBoundary(actions)) {
+                    return;
+                }
+                if (handleForEachListBoundary(actions)) {
+                    return;
+                }
+                if (handleRetryBlockBoundary(actions, player)) {
+                    return;
+                }
 
                 if (handleDeferredWaitAction(player)) {
                     return;
@@ -1816,6 +1947,7 @@ public class PathSequenceEventListener {
                         resolvedActionData.params);
 
                 if (action == null) {
+                    recordFailureDetail("动作解析失败: " + currentDebugActionDescription);
                     handleCurrentStepFailure("action_parse_failed:" + resolvedActionData.type, null);
                     return;
                 }
@@ -1830,6 +1962,7 @@ public class PathSequenceEventListener {
                     try {
                         runWithExecutionContext(() -> delayAction.accept(player));
                     } catch (Exception e) {
+                        recordFailureDetail("延迟动作异常: " + currentDebugActionDescription + " / " + e.getMessage());
                         handleCurrentStepFailure("delay_action_exception:" + resolvedActionData.type, e);
                         return;
                     }
@@ -1863,6 +1996,7 @@ public class PathSequenceEventListener {
                     runWithExecutionContext(() -> action.accept(player));
                     zszlScriptMod.LOGGER.info(I18n.format("log.path.execute_action"), actionIndex, currentStepIndex);
                 } catch (Exception e) {
+                    recordFailureDetail("动作执行异常: " + currentDebugActionDescription + " / " + e.getMessage());
                     handleCurrentStepFailure("action_exception:" + resolvedActionData.type, e);
                     return;
                 }
@@ -1964,6 +2098,7 @@ public class PathSequenceEventListener {
             runWithExecutionContext(() -> action.accept(player));
             zszlScriptMod.LOGGER.info(I18n.format("log.path.execute_action"), actionIndex, currentStepIndex);
         } catch (Exception e) {
+            recordFailureDetail("异步动作异常: " + actionData.getDescription() + " / " + e.getMessage());
             handleCurrentStepFailure("async_action_exception:" + type, e);
             return true;
         }
@@ -2005,6 +2140,7 @@ public class PathSequenceEventListener {
         this.waitConditionStartCapturedUpdateVersion = 0L;
         this.waitConditionStartCapturedRecaptureVersion = 0L;
         this.waitConditionStartPacketTextVersion = 0L;
+        this.waitConditionStartPacketFieldTimestamp = 0L;
     }
 
     private void clearDeferredWaitState() {
@@ -2014,6 +2150,7 @@ public class PathSequenceEventListener {
         this.deferredWaitStartCapturedUpdateVersion = 0L;
         this.deferredWaitStartCapturedRecaptureVersion = 0L;
         this.deferredWaitStartPacketTextVersion = 0L;
+        this.deferredWaitStartPacketFieldTimestamp = 0L;
     }
 
     private void resetRepeatActionState() {
@@ -2025,6 +2162,86 @@ public class PathSequenceEventListener {
         this.repeatActionRemainingLoops = 0;
         this.repeatActionIteration = 0;
         this.repeatActionLoopVarName = "loop_index";
+    }
+
+    private void resetIfElseState() {
+        this.ifElseRunning = false;
+        this.ifElseStepIndex = -1;
+        this.ifElseThenEndIndex = -1;
+        this.ifElseElseEndIndex = -1;
+    }
+
+    private void resetBranchBlockState() {
+        this.branchBlockRunning = false;
+        this.branchBlockStepIndex = -1;
+        this.branchBlockSelectedEndIndex = -1;
+        this.branchBlockFinalEndIndex = -1;
+    }
+
+    private void resetWhileConditionState() {
+        runtimeVariables.remove(whileConditionLoopVarName);
+        runtimeVariables.remove(whileConditionLoopVarName + "_remaining");
+        this.whileConditionRunning = false;
+        this.whileConditionStepIndex = -1;
+        this.whileConditionHeaderIndex = -1;
+        this.whileConditionBodyStartIndex = -1;
+        this.whileConditionBodyEndIndex = -1;
+        this.whileConditionIteration = 0;
+        this.whileConditionMaxLoops = 0;
+        this.whileConditionLoopVarName = "while_index";
+    }
+
+    private void resetForEachListState() {
+        runtimeVariables.remove(forEachListItemVarName);
+        runtimeVariables.remove(forEachListItemVarName + "_text");
+        runtimeVariables.remove(forEachListIndexVarName);
+        runtimeVariables.remove(forEachListIndexVarName + "_total");
+        runtimeVariables.remove(forEachListIndexVarName + "_remaining");
+        this.forEachListRunning = false;
+        this.forEachListStepIndex = -1;
+        this.forEachListBodyStartIndex = -1;
+        this.forEachListBodyEndIndex = -1;
+        this.forEachListIteration = 0;
+        this.forEachListItems = new ArrayList<>();
+        this.forEachListItemVarName = "item";
+        this.forEachListIndexVarName = "item_index";
+    }
+
+    private void resetForEachPointState() {
+        runtimeVariables.remove(forEachPointVarName);
+        runtimeVariables.remove(forEachPointVarName + "_text");
+        runtimeVariables.remove(forEachPointVarName + "_x");
+        runtimeVariables.remove(forEachPointVarName + "_y");
+        runtimeVariables.remove(forEachPointVarName + "_z");
+        runtimeVariables.remove(forEachPointIndexVarName);
+        runtimeVariables.remove(forEachPointIndexVarName + "_total");
+        runtimeVariables.remove(forEachPointIndexVarName + "_remaining");
+        this.forEachPointRunning = false;
+        this.forEachPointStepIndex = -1;
+        this.forEachPointBodyStartIndex = -1;
+        this.forEachPointBodyEndIndex = -1;
+        this.forEachPointIteration = 0;
+        this.forEachPoints = new ArrayList<>();
+        this.forEachPointVarName = "point";
+        this.forEachPointIndexVarName = "point_index";
+    }
+
+    private void resetRetryBlockState() {
+        runtimeVariables.remove(retryBlockAttemptVarName);
+        runtimeVariables.remove(retryBlockAttemptVarName + "_success");
+        runtimeVariables.remove(retryBlockAttemptVarName + "_exhausted");
+        runtimeVariables.remove(retryBlockAttemptVarName + "_remaining");
+        this.retryBlockRunning = false;
+        this.retryBlockStepIndex = -1;
+        this.retryBlockHeaderIndex = -1;
+        this.retryBlockBodyStartIndex = -1;
+        this.retryBlockBodyEndIndex = -1;
+        this.retryBlockRetryRemaining = 0;
+        this.retryBlockAttempt = 1;
+        this.retryBlockDelayTicks = 0;
+        this.retryBlockParams = null;
+        this.retryBlockAttemptVarName = "retry_block";
+        this.retryBlockDescription = "";
     }
 
     private void resetStepPathRetryMonitor() {
@@ -2127,6 +2344,12 @@ public class PathSequenceEventListener {
         resetWaitConditionState();
         clearDeferredWaitState();
         resetRepeatActionState();
+        resetBranchBlockState();
+        resetIfElseState();
+        resetWhileConditionState();
+        resetForEachListState();
+        resetForEachPointState();
+        resetRetryBlockState();
         releaseResources();
 
         this.currentStepIndex = 0;
@@ -2226,6 +2449,12 @@ public class PathSequenceEventListener {
         resetWaitConditionState();
         clearDeferredWaitState();
         resetRepeatActionState();
+        resetBranchBlockState();
+        resetIfElseState();
+        resetWhileConditionState();
+        resetForEachListState();
+        resetForEachPointState();
+        resetRetryBlockState();
         releaseResources();
 
         if (currentStepRetryUsed < retryCount) {
@@ -2399,25 +2628,80 @@ public class PathSequenceEventListener {
     }
 
     private boolean hasNearbyMatchingEntity(EntityPlayerSP player, JsonObject params) {
-        if (player == null || mc.world == null || params == null) {
+        if (player == null || params == null) {
             return false;
         }
+        String entityType = params.has("entityType") ? params.get("entityType").getAsString().trim() : "";
         String entityName = params.has("entityName") ? params.get("entityName").getAsString().trim() : "";
-        double radius = params.has("radius") ? params.get("radius").getAsDouble() : 6.0D;
-        if (entityName.isEmpty()) {
+        if (entityType.isEmpty() && entityName.isEmpty()) {
             return false;
         }
-        String expected = entityName.toLowerCase(java.util.Locale.ROOT);
+        return collectMatchingNearbyEntities(player, params,
+                params.has("radius") ? params.get("radius").getAsDouble() : 6.0D,
+                false).size() >= readNearbyEntityMinCount(params);
+    }
+
+    private int readNearbyEntityMinCount(JsonObject params) {
+        if (params == null) {
+            return 1;
+        }
+        int minCount = params.has("minCount")
+                ? params.get("minCount").getAsInt()
+                : (params.has("count") ? params.get("count").getAsInt() : 1);
+        return Math.max(1, minCount);
+    }
+
+    private List<EntityLivingBase> collectMatchingNearbyEntities(EntityPlayerSP player, JsonObject params,
+            double defaultRadius, boolean allowEmptyAsAll) {
+        List<EntityLivingBase> matches = new ArrayList<>();
+        if (player == null || mc.world == null || params == null) {
+            return matches;
+        }
+        String entityType = params.has("entityType") ? params.get("entityType").getAsString().trim() : "";
+        String entityName = params.has("entityName") ? params.get("entityName").getAsString().trim() : "";
+        double radius = params.has("radius") ? params.get("radius").getAsDouble() : defaultRadius;
+        if (entityType.isEmpty() && entityName.isEmpty() && !allowEmptyAsAll) {
+            return matches;
+        }
+        String expected = entityName.toLowerCase(Locale.ROOT);
         List<EntityLivingBase> entities = mc.world.getEntitiesWithinAABB(EntityLivingBase.class,
                 new AxisAlignedBB(player.getPosition()).grow(radius));
         for (EntityLivingBase entity : entities) {
             if (entity == null || entity == player || !entity.isEntityAlive()) {
                 continue;
             }
-            String actual = entity.getName() == null ? "" : entity.getName().toLowerCase(java.util.Locale.ROOT);
-            if (actual.contains(expected)) {
-                return true;
+            if (!matchesNearbyEntityType(entity, entityType)) {
+                continue;
             }
+            String actual = entity.getName() == null ? "" : entity.getName().toLowerCase(Locale.ROOT);
+            if (!expected.isEmpty() && !actual.contains(expected)) {
+                continue;
+            }
+            matches.add(entity);
+        }
+        matches.sort(Comparator.comparingDouble(player::getDistanceSq));
+        return matches;
+    }
+
+    private boolean matchesNearbyEntityType(EntityLivingBase entity, String entityType) {
+        if (entity == null) {
+            return false;
+        }
+        String normalized = entityType == null ? "" : entityType.trim().toLowerCase(Locale.ROOT);
+        if (normalized.isEmpty() || "all".equals(normalized) || "entity".equals(normalized)
+                || "所有实体".equals(normalized)) {
+            return true;
+        }
+        if ("player".equals(normalized) || "玩家".equals(normalized)) {
+            return entity instanceof EntityPlayer;
+        }
+        if ("hostile".equals(normalized) || "monster".equals(normalized) || "mob".equals(normalized)
+                || "敌对生物".equals(normalized) || "怪物".equals(normalized)) {
+            return isHostileHuntTarget(entity);
+        }
+        if ("passive".equals(normalized) || "animal".equals(normalized)
+                || "被动生物".equals(normalized) || "动物".equals(normalized)) {
+            return isPassiveHuntTarget(entity);
         }
         return false;
     }
@@ -2449,6 +2733,177 @@ public class PathSequenceEventListener {
         return false;
     }
 
+    private boolean hasMatchingScoreboardText(JsonObject params) {
+        String expected = params != null && params.has("text") ? params.get("text").getAsString().trim() : "";
+        if (expected.isEmpty() || mc == null || mc.world == null) {
+            return false;
+        }
+        Scoreboard scoreboard = mc.world.getScoreboard();
+        if (scoreboard == null) {
+            return false;
+        }
+        ScoreObjective objective = scoreboard.getObjectiveInDisplaySlot(1);
+        if (objective == null) {
+            return false;
+        }
+        StringBuilder builder = new StringBuilder();
+        builder.append(objective.getDisplayName());
+        Collection<Score> scores = scoreboard.getSortedScores(objective);
+        int count = 0;
+        for (Score score : scores) {
+            if (score == null || score.getPlayerName() == null || score.getPlayerName().startsWith("#")) {
+                continue;
+            }
+            ScorePlayerTeam team = scoreboard.getPlayersTeam(score.getPlayerName());
+            String line = ScorePlayerTeam.formatPlayerName(team, score.getPlayerName());
+            if (builder.length() > 0) {
+                builder.append(" | ");
+            }
+            builder.append(line);
+            count++;
+            if (count >= 15) {
+                break;
+            }
+        }
+        return builder.toString().toLowerCase(Locale.ROOT).contains(expected.toLowerCase(Locale.ROOT));
+    }
+
+    private boolean hasMatchingRecentPacketText(JsonObject params) {
+        String expected = params != null && params.has("packetText") ? params.get("packetText").getAsString().trim() : "";
+        if (expected.isEmpty()) {
+            return false;
+        }
+        for (String text : PacketCaptureHandler.getRecentPacketTextsSnapshot()) {
+            if (text != null && text.toLowerCase(Locale.ROOT).contains(expected.toLowerCase(Locale.ROOT))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private PacketFieldRuleManager.CapturedFieldSnapshot resolvePacketFieldSnapshot(JsonObject params) {
+        String lookupMode = params != null && params.has("lookupMode")
+                ? params.get("lookupMode").getAsString()
+                : "LATEST_CAPTURE";
+        if ("VARIABLE".equalsIgnoreCase(lookupMode)) {
+            return null;
+        }
+        String fieldKey = params != null && params.has("fieldKey")
+                ? params.get("fieldKey").getAsString().trim()
+                : "";
+        return PacketFieldRuleManager.getLatestCapturedField(fieldKey);
+    }
+
+    private Object resolvePacketFieldLookupValue(JsonObject params,
+            PacketFieldRuleManager.CapturedFieldSnapshot snapshot) {
+        String lookupMode = params != null && params.has("lookupMode")
+                ? params.get("lookupMode").getAsString()
+                : "LATEST_CAPTURE";
+        if ("VARIABLE".equalsIgnoreCase(lookupMode)) {
+            String fieldKey = params != null && params.has("fieldKey")
+                    ? params.get("fieldKey").getAsString().trim()
+                    : "";
+            if (fieldKey.isEmpty()) {
+                return null;
+            }
+            Object value = runtimeVariables.get(fieldKey);
+            if (value == null) {
+                value = ScopedRuntimeVariables.getGlobalValue(fieldKey);
+            }
+            return value;
+        }
+        return snapshot == null ? null : snapshot.getValue();
+    }
+
+    private String stringifyPacketFieldValue(PacketFieldRuleManager.CapturedFieldSnapshot snapshot, Object value) {
+        if (snapshot != null && snapshot.getRawValue() != null && !snapshot.getRawValue().trim().isEmpty()) {
+            return snapshot.getRawValue().trim();
+        }
+        return value == null ? "" : LegacyActionRuntime.stringifyValue(value);
+    }
+
+    private boolean matchesPacketFieldExpectation(JsonObject params,
+            PacketFieldRuleManager.CapturedFieldSnapshot snapshot, Object value) {
+        if (snapshot == null && value == null) {
+            return false;
+        }
+        String expected = params != null && params.has("expectedValue")
+                ? params.get("expectedValue").getAsString().trim()
+                : "";
+        if (expected.isEmpty()) {
+            return true;
+        }
+        String actual = stringifyPacketFieldValue(snapshot, value);
+        if (actual.trim().isEmpty()) {
+            return false;
+        }
+        String matchMode = params != null && params.has("matchMode")
+                ? params.get("matchMode").getAsString()
+                : "CONTAINS";
+        String normalizedActual = actual.toLowerCase(Locale.ROOT);
+        String normalizedExpected = expected.toLowerCase(Locale.ROOT);
+        if ("EXACT".equalsIgnoreCase(matchMode)) {
+            return normalizedActual.equals(normalizedExpected);
+        }
+        return normalizedActual.contains(normalizedExpected);
+    }
+
+    private boolean hasMatchingPacketField(JsonObject params) {
+        PacketFieldRuleManager.CapturedFieldSnapshot snapshot = resolvePacketFieldSnapshot(params);
+        Object value = resolvePacketFieldLookupValue(params, snapshot);
+        return matchesPacketFieldExpectation(params, snapshot, value);
+    }
+
+    private boolean hasMatchingBossbarText(JsonObject params) {
+        String expected = params != null && params.has("text") ? params.get("text").getAsString().trim() : "";
+        if (expected.isEmpty()) {
+            return false;
+        }
+        String bossbarText = PacketCaptureHandler.getLatestBossbarText();
+        return bossbarText != null && bossbarText.toLowerCase(Locale.ROOT).contains(expected.toLowerCase(Locale.ROOT));
+    }
+
+    private boolean hasMatchingGuiElement(JsonObject params) {
+        if (params == null) {
+            return false;
+        }
+        String elementType = params.has("elementType") ? params.get("elementType").getAsString() : "ANY";
+        String locatorMode = params.has("guiElementLocatorMode") ? params.get("guiElementLocatorMode").getAsString() : "TEXT";
+        String locatorText = params.has("locatorText") ? params.get("locatorText").getAsString() : "";
+        String matchMode = params.has("locatorMatchMode") ? params.get("locatorMatchMode").getAsString() : "CONTAINS";
+
+        GuiElementInspector.GuiSnapshot snapshot = GuiElementInspector.captureCurrentSnapshot();
+        GuiElementInspector.GuiElementInfo best = null;
+        if ("PATH".equalsIgnoreCase(locatorMode)) {
+            best = GuiElementInspector.findFirstByPath(locatorText, matchMode, resolveGuiElementTypes(elementType));
+        } else {
+            best = findGuiElementByText(snapshot, locatorText, matchMode, elementType);
+        }
+        if (best == null && "TITLE".equalsIgnoreCase(elementType)) {
+            for (GuiElementInspector.GuiElementInfo element : snapshot.getElements()) {
+                if (element != null && element.getType() == GuiElementInspector.ElementType.TITLE) {
+                    return true;
+                }
+            }
+        }
+        return best != null;
+    }
+
+    private boolean hasMatchingPlayerList(JsonObject params) {
+        List<PlayerListTriggerSupport.RuleEntry> entries = PlayerListTriggerSupport.readEntries(params);
+        if (entries.isEmpty()) {
+            return false;
+        }
+        PlayerListTriggerSupport.PlayerSnapshot snapshot = PlayerListTriggerSupport.captureSnapshot(mc);
+        if (snapshot.players.isEmpty()) {
+            return false;
+        }
+        JsonObject eventData = PlayerListTriggerSupport.buildTriggerEvent(
+                new PlayerListTriggerSupport.PlayerSnapshot(Collections.<PlayerListTriggerSupport.PlayerRecord>emptyList(), ""),
+                snapshot);
+        return PlayerListTriggerSupport.matchesConfiguredPlayers(params, eventData);
+    }
+
     private boolean evaluateConditionAction(EntityPlayerSP player, ActionData actionData) {
         if (actionData == null || actionData.type == null) {
             return false;
@@ -2462,9 +2917,27 @@ public class PathSequenceEventListener {
                 String title = actionData.params.has("title") ? actionData.params.get("title").getAsString() : "";
                 String currentTitle = getCurrentGuiTitle();
                 return !title.trim().isEmpty() && currentTitle != null && currentTitle.contains(title.trim());
+            case "condition_scoreboard":
+            case "wait_until_scoreboard":
+                return hasMatchingScoreboardText(actionData.params);
+            case "condition_packet_field":
+            case "wait_until_packet_field":
+                return hasMatchingPacketField(actionData.params);
+            case "condition_packet_text":
+                return hasMatchingRecentPacketText(actionData.params);
+            case "condition_bossbar":
+                return hasMatchingBossbarText(actionData.params);
+            case "condition_gui_element":
+            case "wait_until_gui_element":
+                return hasMatchingGuiElement(actionData.params);
+            case "condition_screen_region":
+                return evaluateScreenRegionWait(actionData);
             case "condition_player_in_area":
             case "wait_until_player_in_area":
                 return isPlayerInArea(player, actionData.params);
+            case "condition_player_list":
+            case "wait_until_player_list":
+                return hasMatchingPlayerList(actionData.params);
             case "condition_entity_nearby":
             case "wait_until_entity_nearby":
                 return hasNearbyMatchingEntity(player, actionData.params);
@@ -2510,12 +2983,16 @@ public class PathSequenceEventListener {
             deferredWaitStartCapturedUpdateVersion = 0L;
             deferredWaitStartCapturedRecaptureVersion = 0L;
             deferredWaitStartPacketTextVersion = 0L;
+            deferredWaitStartPacketFieldTimestamp = 0L;
             if ("wait_until_captured_id".equals(type) && !capturedIdKey.isEmpty()) {
                 deferredWaitStartCapturedUpdateVersion = CapturedIdRuleManager.getCapturedUpdateVersion(capturedIdKey);
                 deferredWaitStartCapturedRecaptureVersion = CapturedIdRuleManager
                         .getCapturedRecaptureVersion(capturedIdKey);
             } else if ("wait_until_packet_text".equals(type)) {
                 deferredWaitStartPacketTextVersion = PacketCaptureHandler.getRecentPacketTextVersion();
+            } else if ("wait_until_packet_field".equals(type)) {
+                PacketFieldRuleManager.CapturedFieldSnapshot snapshot = resolvePacketFieldSnapshot(actionData.params);
+                deferredWaitStartPacketFieldTimestamp = snapshot == null ? 0L : snapshot.getTimestamp();
             }
             return;
         }
@@ -2523,11 +3000,15 @@ public class PathSequenceEventListener {
         waitConditionStartCapturedUpdateVersion = 0L;
         waitConditionStartCapturedRecaptureVersion = 0L;
         waitConditionStartPacketTextVersion = 0L;
+        waitConditionStartPacketFieldTimestamp = 0L;
         if ("wait_until_captured_id".equals(type) && !capturedIdKey.isEmpty()) {
             waitConditionStartCapturedUpdateVersion = CapturedIdRuleManager.getCapturedUpdateVersion(capturedIdKey);
             waitConditionStartCapturedRecaptureVersion = CapturedIdRuleManager.getCapturedRecaptureVersion(capturedIdKey);
         } else if ("wait_until_packet_text".equals(type)) {
             waitConditionStartPacketTextVersion = PacketCaptureHandler.getRecentPacketTextVersion();
+        } else if ("wait_until_packet_field".equals(type)) {
+            PacketFieldRuleManager.CapturedFieldSnapshot snapshot = resolvePacketFieldSnapshot(actionData.params);
+            waitConditionStartPacketFieldTimestamp = snapshot == null ? 0L : snapshot.getTimestamp();
         }
     }
 
@@ -2566,6 +3047,23 @@ public class PathSequenceEventListener {
             }
         }
         return false;
+    }
+
+    private boolean evaluatePacketFieldWait(ActionData actionData, long startPacketFieldTimestamp) {
+        if (actionData == null || actionData.params == null) {
+            return false;
+        }
+        String lookupMode = actionData.params.has("lookupMode")
+                ? actionData.params.get("lookupMode").getAsString()
+                : "LATEST_CAPTURE";
+        PacketFieldRuleManager.CapturedFieldSnapshot snapshot = resolvePacketFieldSnapshot(actionData.params);
+        Object value = resolvePacketFieldLookupValue(actionData.params, snapshot);
+        if (!"VARIABLE".equalsIgnoreCase(lookupMode)) {
+            if (snapshot == null || snapshot.getTimestamp() <= startPacketFieldTimestamp) {
+                return false;
+            }
+        }
+        return matchesPacketFieldExpectation(actionData.params, snapshot, value);
     }
 
     private boolean evaluateCombinedWait(ActionData actionData, EntityPlayerSP player) {
@@ -2673,7 +3171,8 @@ public class PathSequenceEventListener {
     }
 
     private boolean evaluateWaitAction(EntityPlayerSP player, ActionData actionData,
-            long startUpdateVersion, long startRecaptureVersion, long startPacketTextVersion) {
+            long startUpdateVersion, long startRecaptureVersion, long startPacketTextVersion,
+            long startPacketFieldTimestamp) {
         if (actionData == null || actionData.type == null) {
             return false;
         }
@@ -2684,8 +3183,14 @@ public class PathSequenceEventListener {
         if ("wait_until_packet_text".equals(type)) {
             return evaluatePacketTextWait(actionData, startPacketTextVersion);
         }
+        if ("wait_until_packet_field".equals(type)) {
+            return evaluatePacketFieldWait(actionData, startPacketFieldTimestamp);
+        }
         if ("wait_until_screen_region".equals(type)) {
             return evaluateScreenRegionWait(actionData);
+        }
+        if ("wait_until_gui_element".equals(type)) {
+            return hasMatchingGuiElement(actionData.params);
         }
         if ("wait_combined".equals(type)) {
             return evaluateCombinedWait(actionData, player);
@@ -2714,12 +3219,18 @@ public class PathSequenceEventListener {
         boolean matched = evaluateWaitAction(player, deferredWaitActionData,
                 deferredWaitStartCapturedUpdateVersion,
                 deferredWaitStartCapturedRecaptureVersion,
-                deferredWaitStartPacketTextVersion);
+                deferredWaitStartPacketTextVersion,
+                deferredWaitStartPacketFieldTimestamp);
         boolean cancelled = evaluateWaitCancelExpression(deferredWaitActionData, player);
         boolean timedOut = timeoutTicks > 0 && deferredWaitElapsedTicks >= timeoutTicks;
 
         if (matched || timedOut || cancelled) {
             if (timedOut || cancelled) {
+                String reasonDetail = cancelled
+                        ? "延后等待被取消: " + deferredWaitActionData.getDescription()
+                        : "延后等待超时: " + deferredWaitActionData.getDescription() + " / elapsed="
+                                + deferredWaitElapsedTicks + " / timeout=" + timeoutTicks;
+                recordFailureDetail(reasonDetail);
                 actionIndex += getWaitTimeoutSkipCount(deferredWaitActionData);
             }
             clearDeferredWaitState();
@@ -2746,6 +3257,7 @@ public class PathSequenceEventListener {
             currentDebugActionDescription = actionData.getDescription();
             recordDebugTrace("condition: " + currentDebugActionDescription + " -> " + (matched ? "true" : "false"));
             if (!matched) {
+                recordFailureDetail("条件不满足: " + currentDebugActionDescription + " / skip=" + skipCount);
                 actionIndex += skipCount + 1;
             } else {
                 actionIndex++;
@@ -2787,13 +3299,21 @@ public class PathSequenceEventListener {
             matched = evaluateWaitAction(player, actionData,
                     waitConditionStartCapturedUpdateVersion,
                     waitConditionStartCapturedRecaptureVersion,
-                    waitConditionStartPacketTextVersion);
+                    waitConditionStartPacketTextVersion,
+                    waitConditionStartPacketFieldTimestamp);
             boolean cancelled = evaluateWaitCancelExpression(actionData, player);
             boolean timedOut = timeoutTicks > 0 && waitConditionElapsedTicks >= timeoutTicks;
 
             if (matched || timedOut || cancelled) {
-                recordDebugTrace("wait finish: " + currentDebugActionDescription + " -> "
-                        + (matched ? "matched" : (cancelled ? "cancel" : "timeout")));
+                String waitResult = matched ? "matched" : (cancelled ? "cancel" : "timeout");
+                recordDebugTrace("wait finish: " + currentDebugActionDescription + " -> " + waitResult);
+                if (!matched) {
+                    String reasonDetail = cancelled
+                            ? "等待被取消: " + currentDebugActionDescription
+                            : "等待超时: " + currentDebugActionDescription + " / elapsed=" + waitConditionElapsedTicks
+                                    + " / timeout=" + timeoutTicks;
+                    recordFailureDetail(reasonDetail);
+                }
                 if (timedOut || cancelled) {
                     actionIndex += getWaitTimeoutSkipCount(actionData) + 1;
                 } else {
@@ -2837,6 +3357,37 @@ public class PathSequenceEventListener {
         if ("set_var".equals(normalizedType)) {
             return Collections.singleton("name");
         }
+        if ("label".equals(normalizedType)) {
+            return Collections.singleton("labelName");
+        }
+        if ("goto_label".equals(normalizedType)) {
+            return Collections.singleton("targetLabel");
+        }
+        if ("while_condition".equals(normalizedType)) {
+            return Collections.singleton("loopVar");
+        }
+        if ("switch_var".equals(normalizedType)) {
+            return Collections.singleton("sourceVar");
+        }
+        if ("for_each_list".equals(normalizedType)) {
+            Set<String> literalKeys = new LinkedHashSet<>();
+            literalKeys.add("sourceVar");
+            literalKeys.add("itemVar");
+            literalKeys.add("indexVar");
+            return literalKeys;
+        }
+        if ("for_each_point".equals(normalizedType)) {
+            Set<String> literalKeys = new LinkedHashSet<>();
+            literalKeys.add("pointVar");
+            literalKeys.add("indexVar");
+            return literalKeys;
+        }
+        if ("retry_block".equals(normalizedType)) {
+            return Collections.singleton("attemptVar");
+        }
+        if ("debug_print_var".equals(normalizedType)) {
+            return Collections.singleton("varName");
+        }
         if ("capture_nearby_entity".equals(normalizedType)
                 || "capture_gui_title".equals(normalizedType)
                 || "capture_inventory_slot".equals(normalizedType)
@@ -2850,6 +3401,237 @@ public class PathSequenceEventListener {
             return Collections.singleton("varName");
         }
         return Collections.emptySet();
+    }
+
+    private boolean evaluateStructuredConditionExpressions(JsonObject params, EntityPlayerSP player) {
+        if (params == null) {
+            return false;
+        }
+        List<String> expressions = readBooleanExpressionList(params, "expressions", "expression");
+        if (expressions.isEmpty()) {
+            expressions = splitCombinedExpressions(params.has("conditionsText")
+                    ? params.get("conditionsText").getAsString()
+                    : "");
+        }
+        if (expressions.isEmpty()) {
+            return false;
+        }
+        for (String expression : expressions) {
+            try {
+                if (!LegacyActionRuntime.evaluateExpression(
+                        expression,
+                        params,
+                        runtimeVariables,
+                        player,
+                        currentSequence,
+                        currentStepIndex,
+                        actionIndex)) {
+                    return false;
+                }
+            } catch (Exception e) {
+                zszlScriptMod.LOGGER.warn("[legacy_path] 结构流控表达式解析失败: {}", expression, e);
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private List<Object> normalizeForEachItems(Object source) {
+        List<Object> items = new ArrayList<>();
+        if (source == null) {
+            return items;
+        }
+        if (source instanceof List<?>) {
+            items.addAll((List<?>) source);
+            return items;
+        }
+        if (source instanceof JsonArray) {
+            JsonArray array = (JsonArray) source;
+            for (JsonElement element : array) {
+                if (element == null || element.isJsonNull()) {
+                    items.add(null);
+                } else if (element.isJsonPrimitive()) {
+                    items.add(element.getAsString());
+                } else {
+                    items.add(element);
+                }
+            }
+            return items;
+        }
+        if (source.getClass().isArray()) {
+            int length = java.lang.reflect.Array.getLength(source);
+            for (int i = 0; i < length; i++) {
+                items.add(java.lang.reflect.Array.get(source, i));
+            }
+            return items;
+        }
+        if (source instanceof String) {
+            String text = ((String) source).trim();
+            if (text.isEmpty()) {
+                return items;
+            }
+            for (String part : text.split("\\r?\\n|;|；|,")) {
+                if (part != null && !part.trim().isEmpty()) {
+                    items.add(part.trim());
+                }
+            }
+            if (!items.isEmpty()) {
+                return items;
+            }
+        }
+        items.add(source);
+        return items;
+    }
+
+    private void bindForEachListIterationVars() {
+        if (!forEachListRunning || forEachListIteration < 0 || forEachListIteration >= forEachListItems.size()) {
+            return;
+        }
+        Object item = forEachListItems.get(forEachListIteration);
+        runtimeVariables.putLocal(forEachListItemVarName, item);
+        runtimeVariables.putLocal(forEachListItemVarName + "_text", LegacyActionRuntime.stringifyValue(item));
+        runtimeVariables.putLocal(forEachListIndexVarName, forEachListIteration);
+        runtimeVariables.putLocal(forEachListIndexVarName + "_total", forEachListItems.size());
+        runtimeVariables.putLocal(forEachListIndexVarName + "_remaining",
+                Math.max(0, forEachListItems.size() - forEachListIteration - 1));
+    }
+
+    private List<BlockPos> parseForEachPoints(String rawPointsText) {
+        List<BlockPos> points = new ArrayList<>();
+        if (rawPointsText == null || rawPointsText.trim().isEmpty()) {
+            return points;
+        }
+        for (String line : rawPointsText.split("\\r?\\n|;|；")) {
+            if (line == null || line.trim().isEmpty()) {
+                continue;
+            }
+            BlockPos pos = parseBlockPosValue(line.trim());
+            if (pos != null) {
+                points.add(pos);
+            }
+        }
+        return points;
+    }
+
+    private BlockPos parseBlockPosValue(String rawValue) {
+        if (rawValue == null) {
+            return null;
+        }
+        String normalized = rawValue.trim();
+        if (normalized.isEmpty()) {
+            return null;
+        }
+        if (normalized.startsWith("[") && normalized.endsWith("]")) {
+            normalized = normalized.substring(1, normalized.length() - 1).trim();
+        }
+        String[] parts = normalized.split(",");
+        if (parts.length != 3) {
+            return null;
+        }
+        try {
+            int x = (int) Math.round(Double.parseDouble(parts[0].trim()));
+            int y = (int) Math.round(Double.parseDouble(parts[1].trim()));
+            int z = (int) Math.round(Double.parseDouble(parts[2].trim()));
+            return new BlockPos(x, y, z);
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
+    }
+
+    private void bindForEachPointIterationVars() {
+        if (!forEachPointRunning || forEachPointIteration < 0 || forEachPointIteration >= forEachPoints.size()) {
+            return;
+        }
+        BlockPos point = forEachPoints.get(forEachPointIteration);
+        String text = "[" + point.getX() + "," + point.getY() + "," + point.getZ() + "]";
+        runtimeVariables.putLocal(forEachPointVarName, text);
+        runtimeVariables.putLocal(forEachPointVarName + "_text", text);
+        runtimeVariables.putLocal(forEachPointVarName + "_x", point.getX());
+        runtimeVariables.putLocal(forEachPointVarName + "_y", point.getY());
+        runtimeVariables.putLocal(forEachPointVarName + "_z", point.getZ());
+        runtimeVariables.putLocal(forEachPointIndexVarName, forEachPointIteration);
+        runtimeVariables.putLocal(forEachPointIndexVarName + "_total", forEachPoints.size());
+        runtimeVariables.putLocal(forEachPointIndexVarName + "_remaining",
+                Math.max(0, forEachPoints.size() - forEachPointIteration - 1));
+    }
+
+    private void bindRetryBlockVars(boolean success, boolean exhausted) {
+        runtimeVariables.putLocal(retryBlockAttemptVarName, retryBlockAttempt);
+        runtimeVariables.putLocal(retryBlockAttemptVarName + "_success", success);
+        runtimeVariables.putLocal(retryBlockAttemptVarName + "_exhausted", exhausted);
+        runtimeVariables.putLocal(retryBlockAttemptVarName + "_remaining", Math.max(0, retryBlockRetryRemaining));
+    }
+
+    private List<BranchBlockCase> parseBranchBlockCases(String rawCasesText) {
+        List<BranchBlockCase> cases = new ArrayList<>();
+        if (rawCasesText == null || rawCasesText.trim().isEmpty()) {
+            return cases;
+        }
+        for (String line : rawCasesText.split("\\r?\\n|;|；")) {
+            if (line == null) {
+                continue;
+            }
+            String trimmed = line.trim();
+            if (trimmed.isEmpty()) {
+                continue;
+            }
+            int delimiter = trimmed.indexOf('=');
+            if (delimiter < 0) {
+                delimiter = trimmed.indexOf(':');
+            }
+            if (delimiter <= 0 || delimiter >= trimmed.length() - 1) {
+                continue;
+            }
+            String key = trimmed.substring(0, delimiter).trim();
+            String countText = trimmed.substring(delimiter + 1).trim();
+            if (key.isEmpty() || countText.isEmpty()) {
+                continue;
+            }
+            try {
+                cases.add(new BranchBlockCase(key, Integer.parseInt(countText)));
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        return cases;
+    }
+
+    private String resolveBranchBlockKey(ActionData resolvedActionData, EntityPlayerSP player) {
+        String type = resolvedActionData == null || resolvedActionData.type == null
+                ? ""
+                : resolvedActionData.type.toLowerCase(Locale.ROOT);
+        if ("switch_var".equals(type)) {
+            String sourceVar = resolvedActionData.params.has("sourceVar")
+                    ? resolvedActionData.params.get("sourceVar").getAsString().trim()
+                    : "";
+            Object value = runtimeVariables.get(sourceVar);
+            if (value == null && !sourceVar.isEmpty()) {
+                value = ScopedRuntimeVariables.getGlobalValue(sourceVar);
+            }
+            return LegacyActionRuntime.stringifyValue(value).trim();
+        }
+        if ("branch_table".equals(type)) {
+            String expression = resolvedActionData.params.has("keyExpression")
+                    ? resolvedActionData.params.get("keyExpression").getAsString().trim()
+                    : "";
+            if (expression.isEmpty()) {
+                return "";
+            }
+            try {
+                Object value = LegacyActionRuntime.evaluateValueExpression(
+                        expression,
+                        resolvedActionData.params,
+                        runtimeVariables,
+                        player,
+                        currentSequence,
+                        currentStepIndex,
+                        actionIndex);
+                return LegacyActionRuntime.stringifyValue(value).trim();
+            } catch (Exception e) {
+                zszlScriptMod.LOGGER.warn("[legacy_path] 分支键表达式解析失败: {}", expression, e);
+                return "";
+            }
+        }
+        return "";
     }
 
     private boolean handleRuntimeControlAction(EntityPlayerSP player,
@@ -2908,6 +3690,15 @@ public class PathSequenceEventListener {
             return true;
         }
 
+        if ("label".equals(type)) {
+            actionIndex++;
+            tickDelay = 2;
+            consumeDebugProgress("控制流标签: " + (resolvedActionData.params.has("labelName")
+                    ? resolvedActionData.params.get("labelName").getAsString()
+                    : ""));
+            return true;
+        }
+
         if ("goto_action".equals(type)) {
             int targetActionIndex = resolvedActionData.params.has("targetActionIndex")
                     ? Math.max(0, resolvedActionData.params.get("targetActionIndex").getAsInt())
@@ -2916,6 +3707,338 @@ public class PathSequenceEventListener {
             tickDelay = 2;
             resetWaitConditionState();
             consumeDebugProgress("控制流跳转: goto_action -> " + actionIndex);
+            return true;
+        }
+
+        if ("goto_label".equals(type)) {
+            String targetLabel = resolvedActionData.params.has("targetLabel")
+                    ? resolvedActionData.params.get("targetLabel").getAsString().trim()
+                    : "";
+            int targetActionIndex = findLabelActionIndex(actions, targetLabel);
+            if (targetActionIndex < 0) {
+                recordDebugTrace("goto_label 未找到: " + targetLabel);
+                actionIndex++;
+            } else {
+                actionIndex = targetActionIndex;
+            }
+            tickDelay = 2;
+            resetWaitConditionState();
+            consumeDebugProgress("控制流跳转: goto_label -> "
+                    + (targetLabel.isEmpty() ? "(空)" : targetLabel)
+                    + " @ " + actionIndex);
+            return true;
+        }
+
+        if ("if_else".equals(type)) {
+            int thenCount = resolvedActionData.params.has("thenCount")
+                    ? Math.max(0, resolvedActionData.params.get("thenCount").getAsInt())
+                    : 1;
+            int elseCount = resolvedActionData.params.has("elseCount")
+                    ? Math.max(0, resolvedActionData.params.get("elseCount").getAsInt())
+                    : 0;
+            boolean matched = evaluateStructuredConditionExpressions(resolvedActionData.params, player);
+            int headerIndex = actionIndex;
+            int thenStartIndex = headerIndex + 1;
+            int thenEndIndex = Math.min(actions.size() - 1, thenStartIndex + thenCount - 1);
+            int elseEndIndex = Math.min(actions.size() - 1, thenStartIndex + thenCount + elseCount - 1);
+            if (matched) {
+                if (thenCount <= 0 || thenStartIndex >= actions.size()) {
+                    actionIndex = Math.min(actions.size(), elseEndIndex + 1);
+                } else {
+                    ifElseRunning = elseCount > 0;
+                    ifElseStepIndex = currentStepIndex;
+                    ifElseThenEndIndex = thenEndIndex;
+                    ifElseElseEndIndex = elseEndIndex;
+                    actionIndex = thenStartIndex;
+                }
+            } else {
+                resetIfElseState();
+                actionIndex = Math.min(actions.size(), thenStartIndex + thenCount);
+            }
+            tickDelay = 1;
+            consumeDebugProgress("条件块分支: " + (matched ? "true" : "false"));
+            return true;
+        }
+
+        if ("switch_var".equals(type) || "branch_table".equals(type)) {
+            List<BranchBlockCase> branchCases = parseBranchBlockCases(resolvedActionData.params.has("casesText")
+                    ? resolvedActionData.params.get("casesText").getAsString()
+                    : "");
+            int defaultCount = resolvedActionData.params.has("defaultCount")
+                    ? Math.max(0, resolvedActionData.params.get("defaultCount").getAsInt())
+                    : 0;
+            if (branchCases.isEmpty()) {
+                actionIndex++;
+                tickDelay = 2;
+                return true;
+            }
+
+            String actualKey = resolveBranchBlockKey(resolvedActionData, player);
+            int matchedCaseIndex = -1;
+            int matchedStartOffset = 0;
+            int matchedBodyCount = 0;
+            int offset = 0;
+            for (int i = 0; i < branchCases.size(); i++) {
+                BranchBlockCase branchCase = branchCases.get(i);
+                if (matchedCaseIndex < 0 && branchCase.key.equalsIgnoreCase(actualKey)) {
+                    matchedCaseIndex = i;
+                    matchedStartOffset = offset;
+                    matchedBodyCount = branchCase.bodyCount;
+                }
+                offset += branchCase.bodyCount;
+            }
+
+            int headerIndex = actionIndex;
+            int defaultStartOffset = offset;
+            int totalBodyCount = offset + defaultCount;
+            int finalEndIndex = Math.min(actions.size() - 1, headerIndex + totalBodyCount);
+            int selectedStartIndex = matchedCaseIndex >= 0
+                    ? headerIndex + 1 + matchedStartOffset
+                    : headerIndex + 1 + defaultStartOffset;
+            int selectedBodyCount = matchedCaseIndex >= 0 ? matchedBodyCount : defaultCount;
+            int selectedEndIndex = selectedStartIndex + selectedBodyCount - 1;
+
+            resetBranchBlockState();
+            if (selectedBodyCount <= 0 || selectedStartIndex >= actions.size()) {
+                actionIndex = Math.min(actions.size(), finalEndIndex + 1);
+                tickDelay = 1;
+                consumeDebugProgress("分支表未执行分支");
+                return true;
+            }
+
+            branchBlockRunning = selectedEndIndex < finalEndIndex;
+            branchBlockStepIndex = currentStepIndex;
+            branchBlockSelectedEndIndex = Math.min(actions.size() - 1, selectedEndIndex);
+            branchBlockFinalEndIndex = finalEndIndex;
+            actionIndex = selectedStartIndex;
+            tickDelay = 1;
+            consumeDebugProgress("分支表命中: key=" + actualKey);
+            return true;
+        }
+
+        if ("while_condition".equals(type)) {
+            int bodyCount = resolvedActionData.params.has("bodyCount")
+                    ? Math.max(0, resolvedActionData.params.get("bodyCount").getAsInt())
+                    : 0;
+            int maxLoops = resolvedActionData.params.has("maxLoops")
+                    ? Math.max(0, resolvedActionData.params.get("maxLoops").getAsInt())
+                    : 0;
+            String loopVarName = resolvedActionData.params.has("loopVar")
+                    ? resolvedActionData.params.get("loopVar").getAsString().trim()
+                    : "while_index";
+            int headerIndex = actionIndex;
+            int bodyStartIndex = headerIndex + 1;
+            int bodyEndIndex = Math.min(actions.size() - 1, bodyStartIndex + bodyCount - 1);
+
+            if (!whileConditionRunning || whileConditionHeaderIndex != headerIndex
+                    || whileConditionStepIndex != currentStepIndex) {
+                whileConditionRunning = true;
+                whileConditionStepIndex = currentStepIndex;
+                whileConditionHeaderIndex = headerIndex;
+                whileConditionBodyStartIndex = bodyStartIndex;
+                whileConditionBodyEndIndex = bodyEndIndex;
+                whileConditionIteration = 0;
+                whileConditionMaxLoops = maxLoops;
+                whileConditionLoopVarName = loopVarName.isEmpty() ? "while_index" : loopVarName;
+            }
+
+            if (bodyCount <= 0 || bodyStartIndex >= actions.size()) {
+                resetWhileConditionState();
+                actionIndex++;
+                tickDelay = 2;
+                return true;
+            }
+            if (whileConditionMaxLoops > 0 && whileConditionIteration >= whileConditionMaxLoops) {
+                actionIndex = Math.min(actions.size(), whileConditionBodyEndIndex + 1);
+                resetWhileConditionState();
+                tickDelay = 1;
+                consumeDebugProgress("条件循环达到上限");
+                return true;
+            }
+
+            runtimeVariables.putLocal(whileConditionLoopVarName, whileConditionIteration);
+            runtimeVariables.putLocal(whileConditionLoopVarName + "_remaining",
+                    whileConditionMaxLoops > 0
+                            ? Math.max(0, whileConditionMaxLoops - whileConditionIteration - 1)
+                            : 0);
+            boolean matched = evaluateStructuredConditionExpressions(resolvedActionData.params, player);
+            if (!matched) {
+                actionIndex = Math.min(actions.size(), whileConditionBodyEndIndex + 1);
+                resetWhileConditionState();
+                tickDelay = 1;
+                consumeDebugProgress("条件循环退出");
+                return true;
+            }
+            actionIndex = whileConditionBodyStartIndex;
+            tickDelay = 1;
+            consumeDebugProgress("进入条件循环体: " + whileConditionIteration);
+            return true;
+        }
+
+        if ("for_each_point".equals(type)) {
+            int bodyCount = resolvedActionData.params.has("bodyCount")
+                    ? Math.max(0, resolvedActionData.params.get("bodyCount").getAsInt())
+                    : 0;
+            String pointVar = resolvedActionData.params.has("pointVar")
+                    ? resolvedActionData.params.get("pointVar").getAsString().trim()
+                    : "point";
+            String indexVar = resolvedActionData.params.has("indexVar")
+                    ? resolvedActionData.params.get("indexVar").getAsString().trim()
+                    : "point_index";
+            int bodyStartIndex = actionIndex + 1;
+            int bodyEndIndex = Math.min(actions.size() - 1, bodyStartIndex + bodyCount - 1);
+            List<BlockPos> points = parseForEachPoints(resolvedActionData.params.has("pointsText")
+                    ? resolvedActionData.params.get("pointsText").getAsString()
+                    : "");
+            if (bodyCount <= 0 || bodyStartIndex >= actions.size() || points.isEmpty()) {
+                resetForEachPointState();
+                actionIndex = Math.min(actions.size(), bodyStartIndex + Math.max(0, bodyCount));
+                tickDelay = 1;
+                consumeDebugProgress("点列表为空或无循环体");
+                return true;
+            }
+
+            forEachPointRunning = true;
+            forEachPointStepIndex = currentStepIndex;
+            forEachPointBodyStartIndex = bodyStartIndex;
+            forEachPointBodyEndIndex = bodyEndIndex;
+            forEachPointIteration = 0;
+            forEachPoints = points;
+            forEachPointVarName = pointVar.isEmpty() ? "point" : pointVar;
+            forEachPointIndexVarName = indexVar.isEmpty() ? "point_index" : indexVar;
+            bindForEachPointIterationVars();
+            actionIndex = bodyStartIndex;
+            tickDelay = 1;
+            consumeDebugProgress("进入点列表遍历: count=" + points.size());
+            return true;
+        }
+
+        if ("for_each_list".equals(type)) {
+            int bodyCount = resolvedActionData.params.has("bodyCount")
+                    ? Math.max(0, resolvedActionData.params.get("bodyCount").getAsInt())
+                    : 0;
+            String sourceVar = resolvedActionData.params.has("sourceVar")
+                    ? resolvedActionData.params.get("sourceVar").getAsString().trim()
+                    : "";
+            String itemVar = resolvedActionData.params.has("itemVar")
+                    ? resolvedActionData.params.get("itemVar").getAsString().trim()
+                    : "item";
+            String indexVar = resolvedActionData.params.has("indexVar")
+                    ? resolvedActionData.params.get("indexVar").getAsString().trim()
+                    : "item_index";
+            int bodyStartIndex = actionIndex + 1;
+            int bodyEndIndex = Math.min(actions.size() - 1, bodyStartIndex + bodyCount - 1);
+
+            Object sourceValue = runtimeVariables.get(sourceVar);
+            if (sourceValue == null && !sourceVar.isEmpty()) {
+                sourceValue = ScopedRuntimeVariables.getGlobalValue(sourceVar);
+            }
+            List<Object> items = normalizeForEachItems(sourceValue);
+            if (bodyCount <= 0 || bodyStartIndex >= actions.size() || items.isEmpty()) {
+                resetForEachListState();
+                actionIndex = Math.min(actions.size(), bodyStartIndex + Math.max(0, bodyCount));
+                tickDelay = 1;
+                consumeDebugProgress("遍历列表为空或无循环体");
+                return true;
+            }
+
+            forEachListRunning = true;
+            forEachListStepIndex = currentStepIndex;
+            forEachListBodyStartIndex = bodyStartIndex;
+            forEachListBodyEndIndex = bodyEndIndex;
+            forEachListIteration = 0;
+            forEachListItems = items;
+            forEachListItemVarName = itemVar.isEmpty() ? "item" : itemVar;
+            forEachListIndexVarName = indexVar.isEmpty() ? "item_index" : indexVar;
+            bindForEachListIterationVars();
+            actionIndex = bodyStartIndex;
+            tickDelay = 1;
+            consumeDebugProgress("进入列表遍历: count=" + items.size());
+            return true;
+        }
+
+        if ("retry_block".equals(type)) {
+            int bodyCount = resolvedActionData.params.has("bodyCount")
+                    ? Math.max(0, resolvedActionData.params.get("bodyCount").getAsInt())
+                    : 0;
+            int retryCount = resolvedActionData.params.has("retryCount")
+                    ? Math.max(0, resolvedActionData.params.get("retryCount").getAsInt())
+                    : 0;
+            int retryDelayTicks = resolvedActionData.params.has("retryDelayTicks")
+                    ? Math.max(0, resolvedActionData.params.get("retryDelayTicks").getAsInt())
+                    : 0;
+            String attemptVar = resolvedActionData.params.has("attemptVar")
+                    ? resolvedActionData.params.get("attemptVar").getAsString().trim()
+                    : "retry_block";
+            if (bodyCount <= 0 || actionIndex + 1 >= actions.size()) {
+                actionIndex++;
+                tickDelay = 2;
+                return true;
+            }
+            retryBlockRunning = true;
+            retryBlockStepIndex = currentStepIndex;
+            retryBlockHeaderIndex = actionIndex;
+            retryBlockBodyStartIndex = actionIndex + 1;
+            retryBlockBodyEndIndex = Math.min(actions.size() - 1, retryBlockBodyStartIndex + bodyCount - 1);
+            retryBlockRetryRemaining = retryCount;
+            retryBlockAttempt = 1;
+            retryBlockDelayTicks = retryDelayTicks;
+            retryBlockParams = resolvedActionData.params;
+            retryBlockAttemptVarName = attemptVar.isEmpty() ? "retry_block" : attemptVar;
+            retryBlockDescription = resolvedActionData.getDescription();
+            bindRetryBlockVars(false, false);
+            actionIndex = retryBlockBodyStartIndex;
+            tickDelay = 1;
+            consumeDebugProgress("进入重试块: retry=" + retryCount);
+            return true;
+        }
+
+        if ("debug_print_var".equals(type)) {
+            String varName = resolvedActionData.params.has("varName")
+                    ? resolvedActionData.params.get("varName").getAsString().trim()
+                    : "";
+            Object value = null;
+            if (!varName.isEmpty()) {
+                value = runtimeVariables.get(varName);
+                if (value == null) {
+                    value = ScopedRuntimeVariables.getGlobalValue(varName);
+                }
+            }
+            sendPathRetryMessage("调试变量 " + varName + " = " + LegacyActionRuntime.stringifyValue(value),
+                    net.minecraft.util.text.TextFormatting.AQUA);
+            recordDebugTrace("debug_print_var: " + varName + " = " + LegacyActionRuntime.stringifyValue(value));
+            actionIndex++;
+            tickDelay = 2;
+            return true;
+        }
+
+        if ("debug_print_nearby_entities".equals(type)) {
+            double radius = resolvedActionData.params.has("radius")
+                    ? resolvedActionData.params.get("radius").getAsDouble()
+                    : 8.0D;
+            List<EntityLivingBase> entities = collectMatchingNearbyEntities(player, resolvedActionData.params, radius, true);
+            List<String> names = new ArrayList<>();
+            for (int i = 0; i < entities.size() && i < 5; i++) {
+                EntityLivingBase entity = entities.get(i);
+                names.add(entity.getName() + "@" + String.format(Locale.ROOT, "%.1f", Math.sqrt(player.getDistanceSq(entity))));
+            }
+            sendPathRetryMessage("附近实体 count=" + entities.size() + " top=" + names,
+                    net.minecraft.util.text.TextFormatting.AQUA);
+            recordDebugTrace("debug_print_nearby_entities: count=" + entities.size() + " top=" + names);
+            actionIndex++;
+            tickDelay = 2;
+            return true;
+        }
+
+        if ("debug_print_gui_summary".equals(type)) {
+            GuiElementInspector.GuiSnapshot snapshot = GuiElementInspector.captureCurrentSnapshot();
+            String message = "GUI=" + snapshot.getScreenSimpleName()
+                    + " title=" + snapshot.getTitle()
+                    + " elements=" + snapshot.getElements().size();
+            sendPathRetryMessage(message, net.minecraft.util.text.TextFormatting.AQUA);
+            recordDebugTrace("debug_print_gui_summary: " + message);
+            actionIndex++;
+            tickDelay = 2;
             return true;
         }
 
@@ -3084,6 +4207,140 @@ public class PathSequenceEventListener {
         return false;
     }
 
+    private int findLabelActionIndex(List<ActionData> actions, String targetLabel) {
+        if (actions == null || actions.isEmpty() || targetLabel == null || targetLabel.trim().isEmpty()) {
+            return -1;
+        }
+        String expected = targetLabel.trim();
+        for (int i = 0; i < actions.size(); i++) {
+            ActionData action = actions.get(i);
+            if (action == null || action.type == null || action.params == null
+                    || !"label".equalsIgnoreCase(action.type)) {
+                continue;
+            }
+            String actual = action.params.has("labelName") ? action.params.get("labelName").getAsString().trim() : "";
+            if (expected.equalsIgnoreCase(actual)) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private boolean handleIfElseBoundary(List<ActionData> actions) {
+        if (!ifElseRunning || ifElseStepIndex != currentStepIndex) {
+            return false;
+        }
+        if (actionIndex <= ifElseThenEndIndex) {
+            return false;
+        }
+        actionIndex = Math.min(Math.max(0, ifElseElseEndIndex + 1), Math.max(0, actions.size()));
+        resetIfElseState();
+        tickDelay = 1;
+        consumeDebugProgress("条件块跳过 false 分支");
+        return true;
+    }
+
+    private boolean handleBranchBlockBoundary(List<ActionData> actions) {
+        if (!branchBlockRunning || branchBlockStepIndex != currentStepIndex) {
+            return false;
+        }
+        if (actionIndex <= branchBlockSelectedEndIndex) {
+            return false;
+        }
+        actionIndex = Math.min(Math.max(0, branchBlockFinalEndIndex + 1), Math.max(0, actions.size()));
+        resetBranchBlockState();
+        tickDelay = 1;
+        consumeDebugProgress("分支块跳过剩余分支");
+        return true;
+    }
+
+    private boolean handleWhileConditionBoundary(List<ActionData> actions) {
+        if (!whileConditionRunning || whileConditionStepIndex != currentStepIndex) {
+            return false;
+        }
+        if (actionIndex <= whileConditionBodyEndIndex) {
+            return false;
+        }
+        whileConditionIteration++;
+        actionIndex = whileConditionHeaderIndex;
+        tickDelay = 1;
+        consumeDebugProgress("条件循环回到头部: " + whileConditionIteration);
+        return true;
+    }
+
+    private boolean handleForEachPointBoundary(List<ActionData> actions) {
+        if (!forEachPointRunning || forEachPointStepIndex != currentStepIndex) {
+            return false;
+        }
+        if (actionIndex <= forEachPointBodyEndIndex) {
+            return false;
+        }
+        if (forEachPointIteration + 1 < forEachPoints.size()) {
+            forEachPointIteration++;
+            bindForEachPointIterationVars();
+            actionIndex = forEachPointBodyStartIndex;
+            tickDelay = 1;
+            consumeDebugProgress("点列表遍历下一项: " + forEachPointIteration);
+            return true;
+        }
+        resetForEachPointState();
+        return false;
+    }
+
+    private boolean handleForEachListBoundary(List<ActionData> actions) {
+        if (!forEachListRunning || forEachListStepIndex != currentStepIndex) {
+            return false;
+        }
+        if (actionIndex <= forEachListBodyEndIndex) {
+            return false;
+        }
+        if (forEachListIteration + 1 < forEachListItems.size()) {
+            forEachListIteration++;
+            bindForEachListIterationVars();
+            actionIndex = forEachListBodyStartIndex;
+            tickDelay = 1;
+            consumeDebugProgress("列表遍历下一项: " + forEachListIteration);
+            return true;
+        }
+        resetForEachListState();
+        return false;
+    }
+
+    private boolean handleRetryBlockBoundary(List<ActionData> actions, EntityPlayerSP player) {
+        if (!retryBlockRunning || retryBlockStepIndex != currentStepIndex) {
+            return false;
+        }
+        if (actionIndex <= retryBlockBodyEndIndex) {
+            return false;
+        }
+
+        boolean success = evaluateStructuredConditionExpressions(retryBlockParams, player);
+        bindRetryBlockVars(success, false);
+        if (success) {
+            recordDebugTrace("重试块成功: attempt=" + retryBlockAttempt + " / " + retryBlockDescription);
+            resetRetryBlockState();
+            return false;
+        }
+
+        if (retryBlockRetryRemaining > 0) {
+            retryBlockRetryRemaining--;
+            retryBlockAttempt++;
+            bindRetryBlockVars(false, false);
+            actionIndex = retryBlockBodyStartIndex;
+            tickDelay = Math.max(0, retryBlockDelayTicks);
+            consumeDebugProgress("重试块进入下一轮: attempt=" + retryBlockAttempt);
+            recordDebugTrace("重试块失败，准备重试: attempt=" + retryBlockAttempt + " / remaining="
+                    + retryBlockRetryRemaining);
+            return true;
+        }
+
+        bindRetryBlockVars(false, true);
+        recordFailureDetail("重试块耗尽: " + retryBlockDescription + " / attempt=" + retryBlockAttempt);
+        recordDebugTrace("重试块耗尽: attempt=" + retryBlockAttempt + " / " + retryBlockDescription);
+        resetRetryBlockState();
+        return false;
+    }
+
     private boolean handleRepeatActionBoundary(List<ActionData> actions) {
         if (!repeatActionRunning || repeatActionStepIndex != currentStepIndex) {
             return false;
@@ -3111,8 +4368,6 @@ public class PathSequenceEventListener {
 
     private void captureNearbyEntity(EntityPlayerSP player, JsonObject params) {
         String varName = params.has("varName") ? params.get("varName").getAsString().trim() : "entity";
-        String entityName = params.has("entityName") ? params.get("entityName").getAsString().trim() : "";
-        double radius = params.has("radius") ? params.get("radius").getAsDouble() : 6.0D;
 
         if (varName.isEmpty()) {
             return;
@@ -3123,27 +4378,8 @@ public class PathSequenceEventListener {
             return;
         }
 
-        String expected = entityName.toLowerCase(Locale.ROOT);
-        EntityLivingBase best = null;
-        double bestDistSq = Double.MAX_VALUE;
-        List<EntityLivingBase> entities = mc.world.getEntitiesWithinAABB(EntityLivingBase.class,
-                new AxisAlignedBB(player.getPosition()).grow(radius));
-        for (EntityLivingBase entity : entities) {
-            if (entity == null || entity == player || !entity.isEntityAlive()) {
-                continue;
-            }
-            if (!expected.isEmpty()) {
-                String actual = entity.getName() == null ? "" : entity.getName().toLowerCase(Locale.ROOT);
-                if (!actual.contains(expected)) {
-                    continue;
-                }
-            }
-            double distSq = player.getDistanceSq(entity);
-            if (distSq < bestDistSq) {
-                bestDistSq = distSq;
-                best = entity;
-            }
-        }
+        List<EntityLivingBase> entities = collectMatchingNearbyEntities(player, params, 6.0D, true);
+        EntityLivingBase best = entities.isEmpty() ? null : entities.get(0);
 
         if (best == null) {
             recordDebugTrace("capture_nearby_entity -> " + varName + " 未找到");
@@ -3252,9 +4488,6 @@ public class PathSequenceEventListener {
         String varName = params != null && params.has("varName")
                 ? params.get("varName").getAsString().trim()
                 : "entities";
-        String entityName = params != null && params.has("entityName")
-                ? params.get("entityName").getAsString().trim()
-                : "";
         double radius = params != null && params.has("radius") ? params.get("radius").getAsDouble() : 8.0D;
         int maxCount = params != null && params.has("maxCount") ? Math.max(1, params.get("maxCount").getAsInt()) : 16;
         if (varName.isEmpty()) {
@@ -3270,12 +4503,7 @@ public class PathSequenceEventListener {
         if (player == null || mc.world == null) {
             return;
         }
-
-        String expected = entityName.toLowerCase(Locale.ROOT);
-        List<EntityLivingBase> entities = new ArrayList<>(mc.world.getEntitiesWithinAABB(EntityLivingBase.class,
-                new AxisAlignedBB(player.getPosition()).grow(radius)));
-        entities.removeIf(entity -> entity == null || entity == player || !entity.isEntityAlive());
-        entities.sort(Comparator.comparingDouble(player::getDistanceSq));
+        List<EntityLivingBase> entities = collectMatchingNearbyEntities(player, params, radius, true);
 
         List<Map<String, Object>> list = new ArrayList<>();
         List<String> names = new ArrayList<>();
@@ -3283,11 +4511,13 @@ public class PathSequenceEventListener {
         List<String> types = new ArrayList<>();
         List<String> categories = new ArrayList<>();
         List<Double> distances = new ArrayList<>();
+        int playerCount = 0;
+        int hostileCount = 0;
+        int passiveCount = 0;
+        Map<String, Object> nearestPlayer = null;
+        Map<String, Object> nearestHostile = null;
         for (EntityLivingBase entity : entities) {
             String actualName = entity.getName() == null ? "" : entity.getName();
-            if (!expected.isEmpty() && !actualName.toLowerCase(Locale.ROOT).contains(expected)) {
-                continue;
-            }
             double distance = Math.sqrt(player.getDistanceSq(entity));
             String category = describeEntityCategory(entity);
 
@@ -3307,6 +4537,19 @@ public class PathSequenceEventListener {
             types.add(entity.getClass().getSimpleName());
             categories.add(category);
             distances.add(distance);
+            if ("PLAYER".equalsIgnoreCase(category)) {
+                playerCount++;
+                if (nearestPlayer == null) {
+                    nearestPlayer = entry;
+                }
+            } else if ("HOSTILE".equalsIgnoreCase(category)) {
+                hostileCount++;
+                if (nearestHostile == null) {
+                    nearestHostile = entry;
+                }
+            } else if ("PASSIVE".equalsIgnoreCase(category)) {
+                passiveCount++;
+            }
             if (list.size() >= maxCount) {
                 break;
             }
@@ -3322,6 +4565,9 @@ public class PathSequenceEventListener {
         runtimeVariables.put(varName + "_distances", distances);
         runtimeVariables.put(varName + "_radius", radius);
         runtimeVariables.put(varName + "_max_count", maxCount);
+        runtimeVariables.put(varName + "_player_count", playerCount);
+        runtimeVariables.put(varName + "_hostile_count", hostileCount);
+        runtimeVariables.put(varName + "_passive_count", passiveCount);
         if (!list.isEmpty()) {
             Map<String, Object> first = list.get(0);
             runtimeVariables.put(varName + "_nearest_name", first.get("name"));
@@ -3335,6 +4581,20 @@ public class PathSequenceEventListener {
             runtimeVariables.put(varName + "_nearest_type", "");
             runtimeVariables.put(varName + "_nearest_category", "");
             runtimeVariables.put(varName + "_nearest_distance", 0D);
+        }
+        if (nearestPlayer != null) {
+            runtimeVariables.put(varName + "_nearest_player_name", nearestPlayer.get("name"));
+            runtimeVariables.put(varName + "_nearest_player_distance", nearestPlayer.get("distance"));
+        } else {
+            runtimeVariables.put(varName + "_nearest_player_name", "");
+            runtimeVariables.put(varName + "_nearest_player_distance", 0D);
+        }
+        if (nearestHostile != null) {
+            runtimeVariables.put(varName + "_nearest_hostile_name", nearestHostile.get("name"));
+            runtimeVariables.put(varName + "_nearest_hostile_distance", nearestHostile.get("distance"));
+        } else {
+            runtimeVariables.put(varName + "_nearest_hostile_name", "");
+            runtimeVariables.put(varName + "_nearest_hostile_distance", 0D);
         }
         recordDebugTrace("capture_entity_list -> " + varName + " count=" + list.size());
     }
@@ -3756,13 +5016,24 @@ public class PathSequenceEventListener {
             zszlScriptMod.LOGGER.warn("[legacy_path] 步骤失败: seq={}, step={}, action={}, reason={}",
                     currentSequence.getName(), currentStepIndex, actionIndex, safeReason);
         }
-        recordDebugTrace("步骤失败: step=" + currentStepIndex + ", action=" + actionIndex + ", reason=" + safeReason);
+        String detailedReason = safeReason
+                + (currentDebugActionDescription == null || currentDebugActionDescription.trim().isEmpty()
+                        ? ""
+                        : " / action=" + currentDebugActionDescription);
+        recordFailureDetail(detailedReason);
+        recordDebugTrace("步骤失败: step=" + currentStepIndex + ", action=" + actionIndex + ", reason=" + detailedReason);
 
         resetHotbarUseActionState();
         resetAsyncActionState();
         resetWaitConditionState();
         clearDeferredWaitState();
         resetRepeatActionState();
+        resetBranchBlockState();
+        resetIfElseState();
+        resetWhileConditionState();
+        resetForEachListState();
+        resetForEachPointState();
+        resetRetryBlockState();
         resetStepPathRetryMonitor();
         releaseResources();
         markExecutionResult(false, "步骤动作异常停止: " + safeReason);
@@ -5448,32 +6719,10 @@ public class PathSequenceEventListener {
     }
 
     private boolean isValidFollowTarget(Entity entity) {
-        if (entity == null) {
-            return false;
-        }
-
-        String type = followEntityType.toLowerCase(Locale.ROOT);
-        
-        if ("player".equals(type)) {
-            return entity instanceof EntityPlayer;
-        }
-        
         if (!(entity instanceof EntityLivingBase)) {
             return false;
         }
-
-        EntityLivingBase living = (EntityLivingBase) entity;
-        
-        if ("hostile".equals(type) || "monster".equals(type)) {
-            return isHostileHuntTarget(living);
-        }
-        
-        if ("passive".equals(type) || "animal".equals(type)) {
-            return isPassiveHuntTarget(living);
-        }
-        
-        // "all" 或其他值：接受所有生物
-        return true;
+        return matchesNearbyEntityType((EntityLivingBase) entity, followEntityType);
     }
 
     private void resetFollowEntityState() {

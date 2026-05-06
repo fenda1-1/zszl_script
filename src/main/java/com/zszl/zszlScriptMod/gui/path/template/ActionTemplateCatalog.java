@@ -481,6 +481,19 @@ public final class ActionTemplateCatalog {
                 templates.add(runSubSequenceBackground());
                 templates.add(runSubSequenceInterval());
                 templates.add(stopBackgroundSequence());
+                templates.add(pointOccupiedSkipNextPoint());
+                templates.add(bossPatrolAcrossPoints());
+                templates.add(playerDetectedRetreat());
+                templates.add(targetMissingRetryNextPoint());
+                templates.add(waitRespawnKillContinue());
+                templates.add(safeMenuReopenRecovery());
+                templates.add(retryTargetScanThenNextPoint());
+                templates.add(switchRouteByStateVar());
+                templates.add(branchByPacketFieldStatus());
+                templates.add(ifElsePlayerDetectedSwitchLine());
+                templates.add(forEachPointPatrolCheck());
+                templates.add(forEachListBatchNotify());
+                templates.add(whileConditionUntilAreaClear());
                 return Collections.unmodifiableList(templates);
         }
 
@@ -1891,6 +1904,254 @@ public final class ActionTemplateCatalog {
                                 actions(
                                                 action("stop_current_sequence", params("targetScope", "background")),
                                                 action("system_message", params("message", "已请求停止后台序列"))));
+        }
+
+        private static ActionTemplate pointOccupiedSkipNextPoint() {
+                return template("point_occupied_skip_next", CATEGORY_FLOW,
+                                "点位被占用就跳下一个",
+                                "检测当前点位附近是否有玩家；如果有人占点，就直接跳到当前步骤里的下一个标签。",
+                                "适合 Boss 点、挂机点、采集点轮巡。",
+                                "把 targetLabel 改成你下一点的标签名；半径按实际点位大小调整。",
+                                actions(
+                                                action("condition_entity_nearby",
+                                                                params("entityType", "player", "radius", 8, "minCount", 1,
+                                                                                "skipCount", 1)),
+                                                action("goto_label", params("targetLabel", "next_point"))));
+        }
+
+        private static ActionTemplate bossPatrolAcrossPoints() {
+                return template("boss_patrol_across_points", CATEGORY_COMBAT,
+                                "Boss 多点轮巡",
+                                "按标签在多个 Boss 点之间轮巡；有玩家就跳点，没玩家再等 Boss 或搜怪。",
+                                "适合固定刷新点多、需要避开挂机玩家的地图。",
+                                "把每个 label、坐标、Boss 名称关键字改成实际值。后续新增点时继续照着复制 label 和 goto_label 即可。",
+                                actions(
+                                                action("label", params("labelName", "point_a")),
+                                                action("condition_entity_nearby",
+                                                                params("entityType", "player", "radius", 8, "minCount", 1,
+                                                                                "skipCount", 1)),
+                                                action("goto_label", params("targetLabel", "point_b")),
+                                                action("wait_until_entity_nearby",
+                                                                params("entityName", "Boss 名称关键字", "radius", 24,
+                                                                                "minCount", 1, "timeoutTicks", 60,
+                                                                                "timeoutSkipCount", 0)),
+                                                action("hunt", params("radius", 24, "entityType", "hostile",
+                                                                "huntUpRange", 8, "huntDownRange", 8,
+                                                                "enableNameWhitelist", true,
+                                                                "nameWhitelistText", "Boss 名称关键字",
+                                                                "showHuntRange", true)),
+                                                action("goto_label", params("targetLabel", "point_b")),
+                                                action("label", params("labelName", "point_b")),
+                                                action("condition_entity_nearby",
+                                                                params("entityType", "player", "radius", 8, "minCount", 1,
+                                                                                "skipCount", 1)),
+                                                action("goto_label", params("targetLabel", "point_a"))));
+        }
+
+        private static ActionTemplate playerDetectedRetreat() {
+                return template("player_detected_retreat", CATEGORY_FLOW,
+                                "发现玩家就撤离/换线",
+                                "当附近检测到玩家时，立即执行撤离动作或切到后续换线标签。",
+                                "适合挂机避人、稀有怪抢点、敏感区域脚本。",
+                                "把 targetLabel 改成你的撤离、换线或停止逻辑标签。",
+                                actions(
+                                                action("condition_entity_nearby",
+                                                                params("entityType", "player", "radius", 10, "minCount", 1,
+                                                                                "skipCount", 1)),
+                                                action("goto_label", params("targetLabel", "retreat_or_switch"))));
+        }
+
+        private static ActionTemplate targetMissingRetryNextPoint() {
+                return template("target_missing_retry_next_point", CATEGORY_FLOW,
+                                "目标不存在则重试后换点",
+                                "等待目标一小段时间；若仍未出现，则跳去当前步骤内的下一个点位标签。",
+                                "适合传送后 NPC 未加载、Boss 未刷新、交互实体偶发缺失。",
+                                "把 entityName 和 targetLabel 改成实际值；timeoutTicks 控制本点等待时长。",
+                                actions(
+                                                action("wait_until_entity_nearby",
+                                                                params("entityName", "目标名称关键字", "radius", 16,
+                                                                                "minCount", 1, "timeoutTicks", 80,
+                                                                                "timeoutSkipCount", 1)),
+                                                action("goto_label", params("targetLabel", "next_point"))));
+        }
+
+        private static ActionTemplate waitRespawnKillContinue() {
+                return template("wait_respawn_kill_continue", CATEGORY_COMBAT,
+                                "等待复活 -> 击杀 -> 继续",
+                                "在当前点等待目标刷新，击杀后立刻继续后续动作。",
+                                "适合刷单个精英、守定点 Boss、等刷新后打一轮就走。",
+                                "把实体名称、半径和后续逻辑改成实际值；若击杀确认要更稳，可改成等待数据包文本或计分板文本。",
+                                actions(
+                                                action("wait_until_entity_nearby",
+                                                                params("entityName", "Boss 名称关键字", "radius", 24,
+                                                                                "minCount", 1, "timeoutTicks", 200,
+                                                                                "timeoutSkipCount", 0)),
+                                                action("hunt", params("radius", 24, "entityType", "hostile",
+                                                                "huntUpRange", 8, "huntDownRange", 8,
+                                                                "enableNameWhitelist", true,
+                                                                "nameWhitelistText", "Boss 名称关键字",
+                                                                "showHuntRange", true))));
+        }
+
+        private static ActionTemplate safeMenuReopenRecovery() {
+                return template("safe_menu_reopen_recovery", CATEGORY_FLOW,
+                                "安全菜单重开恢复",
+                                "如果菜单没开出来或意外关闭，就重试打开并等待 GUI 标题恢复。",
+                                "适合传送菜单、商店菜单、分页奖励菜单等偶发失效场景。",
+                                "把 use_hotbar_item 的菜单名和 wait_until_gui_title 的标题改成实际值。",
+                                actions(
+                                                action("condition_gui_title",
+                                                                params("title", "菜单", "skipCount", 2)),
+                                                action("use_hotbar_item",
+                                                                params("itemName", "菜单", "matchMode", "CONTAINS",
+                                                                                "useMode", "RIGHT_CLICK",
+                                                                                "changeLocalSlot", true, "count", 1,
+                                                                                "switchDelayTicks", 1)),
+                                                action("wait_until_gui_title",
+                                                                params("title", "菜单", "timeoutTicks", 80,
+                                                                                "timeoutSkipCount", 0))));
+        }
+
+        private static ActionTemplate retryTargetScanThenNextPoint() {
+                return template("retry_target_scan_then_next_point", CATEGORY_FLOW,
+                                "重试扫描目标，失败后换点",
+                                "重复扫描附近目标；命中就继续当前点，重试耗尽后跳到下一个标签。",
+                                "适合传送后 NPC/Boss 偶尔没刷出来，需要本地重试几轮再换点。",
+                                "把目标名称、半径和 next_point 标签改成你的实际脚本。",
+                                actions(
+                                                action("retry_block",
+                                                                params("conditionsText",
+                                                                                "sequence.target_scan_found == true",
+                                                                                "bodyCount", 2, "retryCount", 3,
+                                                                                "retryDelayTicks", 10, "attemptVar",
+                                                                                "sequence.target_retry")),
+                                                action("capture_nearby_entity",
+                                                                params("varName", "sequence.target_scan", "entityName",
+                                                                                "目标名称关键字", "radius", 16)),
+                                                action("delay", params("ticks", 5)),
+                                                action("condition_expression",
+                                                                params("expressions",
+                                                                                strings("sequence.target_scan_found == true"),
+                                                                                "skipCount", 1)),
+                                                action("goto_label", params("targetLabel", "next_point"))));
+        }
+
+        private static ActionTemplate switchRouteByStateVar() {
+                return template("switch_route_by_state_var", CATEGORY_FLOW,
+                                "按状态变量切换路线",
+                                "根据一个状态变量值，跳入不同动作块。",
+                                "适合根据前置采集结果、模式变量、地图状态在一条步骤里走不同分支。",
+                                "sourceVar 填变量名；casesText 按 值=动作数 配置。当前模板示例为 farm / sell / default 三路。",
+                                actions(
+                                                action("switch_var",
+                                                                params("sourceVar", "sequence.route_state",
+                                                                                "casesText", "farm=2\nsell=2",
+                                                                                "defaultCount", 1)),
+                                                action("system_message", params("message", "进入刷怪路线")),
+                                                action("goto_label", params("targetLabel", "farm_route")),
+                                                action("system_message", params("message", "进入出售路线")),
+                                                action("goto_label", params("targetLabel", "sell_route")),
+                                                action("system_message", params("message", "进入默认路线"))));
+        }
+
+        private static ActionTemplate branchByPacketFieldStatus() {
+                return template("branch_by_packet_field_status", CATEGORY_PACKET,
+                                "按包字段状态分支",
+                                "先读取最近包字段，再根据状态值进入不同动作块。",
+                                "适合副本确认包、商店购买回执、活动状态 ACK 等场景。",
+                                "把 fieldKey 和各分支值改成你的抓包规则名或变量键。",
+                                actions(
+                                                action("capture_packet_field",
+                                                                params("varName", "sequence.packet_status",
+                                                                                "lookupMode", "LATEST_CAPTURE",
+                                                                                "fieldKey", "status", "fallbackValue",
+                                                                                "")),
+                                                action("switch_var",
+                                                                params("sourceVar", "sequence.packet_status_value_text",
+                                                                                "casesText", "ok=1\nretry=1",
+                                                                                "defaultCount", 1)),
+                                                action("system_message", params("message", "包字段状态: 成功")),
+                                                action("system_message", params("message", "包字段状态: 需要重试")),
+                                                action("system_message", params("message", "包字段状态: 未知"))));
+        }
+
+        private static ActionTemplate ifElsePlayerDetectedSwitchLine() {
+                return template("if_else_player_detected_switch_line", CATEGORY_FLOW,
+                                "If/Else 检测玩家并切线",
+                                "通过 if_else 块判断附近是否有玩家，有就执行换线块，没有就执行继续刷点块。",
+                                "适合避人挂机、Boss 点轮巡、资源点保护。",
+                                "把表达式里的变量名、动作块内容改成你的实际逻辑。",
+                                actions(
+                                                action("capture_entity_list",
+                                                                params("varName", "sequence.nearby_players",
+                                                                                "entityType", "player", "radius", 10,
+                                                                                "maxCount", 8)),
+                                                action("if_else",
+                                                                params("conditionsText",
+                                                                                "sequence.nearby_players_player_count > 0",
+                                                                                "thenCount", 2, "elseCount", 1)),
+                                                action("system_message", params("message", "附近有玩家，准备换线")),
+                                                action("goto_label", params("targetLabel", "switch_line")),
+                                                action("system_message", params("message", "附近无人，继续当前点"))));
+        }
+
+        private static ActionTemplate forEachPointPatrolCheck() {
+                return template("for_each_point_patrol_check", CATEGORY_FLOW,
+                                "遍历点列表轮巡检测",
+                                "按给定点列表逐个执行动作块，可配合区域检测、占点检测、调试输出使用。",
+                                "适合 Boss 多点轮巡、挂机点巡逻、资源点轮扫。",
+                                "把 pointsText 改成实际点位，动作块改成你的检测/传送/交互逻辑。",
+                                actions(
+                                                action("for_each_point",
+                                                                params("pointsText",
+                                                                                "[0,64,0]\n[10,64,10]\n[20,64,20]",
+                                                                                "bodyCount", 2, "pointVar",
+                                                                                "sequence.scan_point", "indexVar",
+                                                                                "sequence.scan_point_index")),
+                                                action("condition_player_in_area",
+                                                                params("center", "sequence.scan_point", "radius", 4,
+                                                                                "skipCount", 1)),
+                                                action("system_message", params("message", "命中巡逻点位"))));
+        }
+
+        private static ActionTemplate forEachListBatchNotify() {
+                return template("for_each_list_batch_notify", CATEGORY_FLOW,
+                                "遍历列表批量处理",
+                                "把一个列表变量逐项展开执行动作块。",
+                                "适合先 capture_entity_list / capture_scoreboard，再逐项处理或逐项打印。",
+                                "先把 sourceVar 改成你的列表变量，例如 sequence.targets_list。",
+                                actions(
+                                                action("for_each_list",
+                                                                params("sourceVar", "sequence.targets_list",
+                                                                                "bodyCount", 1, "itemVar",
+                                                                                "sequence.current_item", "indexVar",
+                                                                                "sequence.current_item_index")),
+                                                action("system_message", params("message", "处理列表当前项"))));
+        }
+
+        private static ActionTemplate whileConditionUntilAreaClear() {
+                return template("while_condition_until_area_clear", CATEGORY_FLOW,
+                                "条件循环直到区域清空",
+                                "只要条件还成立就重复执行动作块，直到条件失败或达到最大次数。",
+                                "适合守点清怪、持续检测区域内玩家、持续等待某状态消失。",
+                                "把循环条件和动作块改成你的实际逻辑；maxLoops=0 表示不限次数。",
+                                actions(
+                                                action("capture_entity_list",
+                                                                params("varName", "sequence.area_entities",
+                                                                                "entityType", "hostile", "radius", 12,
+                                                                                "maxCount", 16)),
+                                                action("while_condition",
+                                                                params("conditionsText",
+                                                                                "sequence.area_entities_hostile_count > 0",
+                                                                                "bodyCount", 2, "maxLoops", 5,
+                                                                                "loopVar", "sequence.clear_loop")),
+                                                action("hunt", params("radius", 12, "entityType", "hostile",
+                                                                "huntUpRange", 6, "huntDownRange", 6,
+                                                                "showHuntRange", true)),
+                                                action("capture_entity_list",
+                                                                params("varName", "sequence.area_entities",
+                                                                                "entityType", "hostile", "radius", 12,
+                                                                                "maxCount", 16))));
         }
 
         private static JsonObject moveInventoryToContainerParams(String expression) {

@@ -14,8 +14,18 @@ import net.minecraftforge.client.event.GuiOpenEvent;
 import net.minecraftforge.client.event.RenderGameOverlayEvent;
 import net.minecraftforge.client.event.RenderWorldLastEvent;
 import net.minecraft.client.gui.inventory.GuiChest;
+import net.minecraft.entity.EnumCreatureType;
 import net.minecraft.entity.EntityLivingBase;
+import net.minecraft.entity.boss.EntityDragon;
+import net.minecraft.entity.monster.IMob;
+import net.minecraft.entity.passive.EntityAmbientCreature;
+import net.minecraft.entity.passive.EntityAnimal;
+import net.minecraft.entity.passive.EntityVillager;
+import net.minecraft.entity.passive.EntityWaterMob;
+import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.item.ItemStack;
+import net.minecraft.entity.monster.EntityGolem;
+import net.minecraft.entity.EntityCreature;
 import net.minecraftforge.event.entity.living.LivingDeathEvent;
 import net.minecraftforge.event.entity.living.LivingHurtEvent;
 import net.minecraftforge.event.entity.player.AttackEntityEvent;
@@ -84,7 +94,7 @@ public class GlobalEventListener {
     private String lastAreaKey = "";
     private String lastWorldKey = "";
     private String lastScoreboardSignature = "";
-    private String lastNearbyEntitySignature = "";
+    private NearbyEntitySummary lastNearbyEntitySummary = NearbyEntitySummary.EMPTY;
     private PlayerListTriggerSupport.PlayerSnapshot lastPlayerListSnapshot = new PlayerListTriggerSupport.PlayerSnapshot(
             Collections.<PlayerListTriggerSupport.PlayerRecord>emptyList(), "");
     private String lastLegacyGuiClassName = "";
@@ -299,16 +309,15 @@ public class GlobalEventListener {
 
             if (needsNearbyEntityChecks && clientTickCounter % 5 == 0) {
                 NearbyEntitySummary nearbyEntitySummary = scanNearbyEntities(mc);
-                String nearbySignature = nearbyEntitySummary.signature;
-                if (!lastNearbyEntitySignature.isEmpty() && !nearbySignature.equals(lastNearbyEntitySignature)) {
+                if (!lastNearbyEntitySummary.isEmpty() && nearbyEntitySummary.hasChangedSince(lastNearbyEntitySummary)) {
                     JsonObject entityTrigger = new JsonObject();
-                    entityTrigger.addProperty("before", lastNearbyEntitySignature);
-                    entityTrigger.addProperty("after", nearbySignature);
-                    entityTrigger.addProperty("count", nearbyEntitySummary.count);
+                    lastNearbyEntitySummary.writeToTriggerData(entityTrigger, "before");
+                    nearbyEntitySummary.writeToTriggerData(entityTrigger, "after");
+                    entityTrigger.addProperty("count", nearbyEntitySummary.allCount);
                     triggerUnifiedEvent(NodeTriggerManager.TRIGGER_ENTITY_NEARBY,
                             LegacySequenceTriggerManager.TRIGGER_ENTITY_NEARBY, entityTrigger);
                 }
-                lastNearbyEntitySignature = nearbySignature;
+                lastNearbyEntitySummary = nearbyEntitySummary;
             }
 
             if (needsScoreboardChecks && clientTickCounter % 10 == 0) {
@@ -798,8 +807,14 @@ public class GlobalEventListener {
             return NearbyEntitySummary.EMPTY;
         }
         double radiusSq = ENTITY_NEARBY_TRIGGER_RADIUS * ENTITY_NEARBY_TRIGGER_RADIUS;
-        Set<String> names = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
-        int count = 0;
+        Set<String> allNames = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
+        Set<String> playerNames = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
+        Set<String> hostileNames = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
+        Set<String> passiveNames = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
+        int allCount = 0;
+        int playerCount = 0;
+        int hostileCount = 0;
+        int passiveCount = 0;
         for (Object entityObj : mc.world.loadedEntityList) {
             if (!(entityObj instanceof EntityLivingBase)) {
                 continue;
@@ -811,13 +826,61 @@ public class GlobalEventListener {
             if (mc.player.getDistanceSq(living) > radiusSq) {
                 continue;
             }
-            count++;
+            allCount++;
             String name = normalizeEntityName(living.getName());
             if (!name.isEmpty()) {
-                names.add(name);
+                allNames.add(name);
+            }
+            if (living instanceof EntityPlayer) {
+                playerCount++;
+                if (!name.isEmpty()) {
+                    playerNames.add(name);
+                }
+                continue;
+            }
+            if (isHostileNearbyEntity(living)) {
+                hostileCount++;
+                if (!name.isEmpty()) {
+                    hostileNames.add(name);
+                }
+                continue;
+            }
+            if (isPassiveNearbyEntity(living)) {
+                passiveCount++;
+                if (!name.isEmpty()) {
+                    passiveNames.add(name);
+                }
             }
         }
-        return new NearbyEntitySummary(String.join(", ", names), count);
+        return new NearbyEntitySummary(
+                String.join(", ", allNames), allCount,
+                String.join(", ", playerNames), playerCount,
+                String.join(", ", hostileNames), hostileCount,
+                String.join(", ", passiveNames), passiveCount);
+    }
+
+    private boolean isHostileNearbyEntity(EntityLivingBase entity) {
+        if (entity == null) {
+            return false;
+        }
+        return entity instanceof IMob
+                || entity instanceof EntityDragon
+                || entity.isCreatureType(EnumCreatureType.MONSTER, false);
+    }
+
+    private boolean isPassiveNearbyEntity(EntityLivingBase entity) {
+        if (entity == null) {
+            return false;
+        }
+        return entity instanceof EntityAnimal
+                || entity instanceof EntityAmbientCreature
+                || entity instanceof EntityWaterMob
+                || entity instanceof EntityVillager
+                || entity instanceof EntityGolem
+                || entity instanceof EntityCreature
+                || entity.isCreatureType(EnumCreatureType.CREATURE, false)
+                || entity.isCreatureType(EnumCreatureType.AMBIENT, false)
+                || entity.isCreatureType(EnumCreatureType.WATER_CREATURE, false);
     }
 
     private String normalizeEntityName(String name) {
@@ -848,14 +911,68 @@ public class GlobalEventListener {
     }
 
     private static final class NearbyEntitySummary {
-        private static final NearbyEntitySummary EMPTY = new NearbyEntitySummary("", 0);
+        private static final NearbyEntitySummary EMPTY = new NearbyEntitySummary("", 0, "", 0, "", 0, "", 0);
 
-        private final String signature;
-        private final int count;
+        private final String allSignature;
+        private final int allCount;
+        private final String playerSignature;
+        private final int playerCount;
+        private final String hostileSignature;
+        private final int hostileCount;
+        private final String passiveSignature;
+        private final int passiveCount;
 
-        private NearbyEntitySummary(String signature, int count) {
-            this.signature = signature;
-            this.count = count;
+        private NearbyEntitySummary(String allSignature, int allCount,
+                String playerSignature, int playerCount,
+                String hostileSignature, int hostileCount,
+                String passiveSignature, int passiveCount) {
+            this.allSignature = allSignature;
+            this.allCount = allCount;
+            this.playerSignature = playerSignature;
+            this.playerCount = playerCount;
+            this.hostileSignature = hostileSignature;
+            this.hostileCount = hostileCount;
+            this.passiveSignature = passiveSignature;
+            this.passiveCount = passiveCount;
+        }
+
+        private boolean isEmpty() {
+            return allSignature.isEmpty()
+                    && allCount <= 0
+                    && playerSignature.isEmpty()
+                    && playerCount <= 0
+                    && hostileSignature.isEmpty()
+                    && hostileCount <= 0
+                    && passiveSignature.isEmpty()
+                    && passiveCount <= 0;
+        }
+
+        private boolean hasChangedSince(NearbyEntitySummary previous) {
+            if (previous == null) {
+                return !isEmpty();
+            }
+            return !allSignature.equals(previous.allSignature)
+                    || allCount != previous.allCount
+                    || !playerSignature.equals(previous.playerSignature)
+                    || playerCount != previous.playerCount
+                    || !hostileSignature.equals(previous.hostileSignature)
+                    || hostileCount != previous.hostileCount
+                    || !passiveSignature.equals(previous.passiveSignature)
+                    || passiveCount != previous.passiveCount;
+        }
+
+        private void writeToTriggerData(JsonObject target, String prefix) {
+            if (target == null || prefix == null || prefix.isEmpty()) {
+                return;
+            }
+            target.addProperty(prefix, allSignature);
+            target.addProperty(prefix + "Player", playerSignature);
+            target.addProperty(prefix + "Hostile", hostileSignature);
+            target.addProperty(prefix + "Passive", passiveSignature);
+            target.addProperty(prefix + "Count", allCount);
+            target.addProperty(prefix + "PlayerCount", playerCount);
+            target.addProperty(prefix + "HostileCount", hostileCount);
+            target.addProperty(prefix + "PassiveCount", passiveCount);
         }
     }
 
