@@ -31,46 +31,16 @@ public class ShadowBaritoneForgeBridge {
 
     @SubscribeEvent
     public void onClientTick(net.minecraftforge.fml.common.gameevent.TickEvent.ClientTickEvent event) {
-        IBaritoneProvider provider;
-        try {
-            provider = BaritoneAPI.getProvider();
-        } catch (Throwable ignored) {
-            return;
-        }
-        if (provider == null) {
-            return;
-        }
-
-        if (event.phase == net.minecraftforge.fml.common.gameevent.TickEvent.Phase.START) {
-            this.tickProvider = TickEvent.createNextProvider();
-            fireWorldEventIfChanged(provider);
-            fireTick(provider, EventState.PRE);
-            kickStartGoalPathing(provider);
-        } else {
-            firePostTick(provider, EventState.POST);
-            this.tickProvider = null;
-        }
+        // Tick/world/player update events are already dispatched from MixinMinecraft.
+        // Re-dispatching them here drives Baritone twice per client tick, which can
+        // desynchronize path execution and block breaking input.
     }
 
     @SubscribeEvent
     public void onPlayerTick(net.minecraftforge.fml.common.gameevent.TickEvent.PlayerTickEvent event) {
-        if (event.player != mc.player || event.side.isServer()) {
-            return;
-        }
-        IBaritoneProvider provider;
-        try {
-            provider = BaritoneAPI.getProvider();
-        } catch (Throwable ignored) {
-            return;
-        }
-        if (provider == null) {
-            return;
-        }
-        if (event.phase == net.minecraftforge.fml.common.gameevent.TickEvent.Phase.START) {
-            firePlayerUpdate(provider, EventState.PRE);
-        } else {
-            firePlayerUpdate(provider, EventState.POST);
-        }
+        // Player update PRE/POST events are dispatched from MixinMinecraft around
+        // WorldClient.updateEntities(), after Baritone has already chosen this tick's
+        // look target and before the POST restore runs.
     }
 
     @SubscribeEvent

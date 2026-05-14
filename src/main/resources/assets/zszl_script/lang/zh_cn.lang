@@ -582,6 +582,8 @@ gui.signin_online.tip2=此界面仅保留总开关、签到、在线开关。
 # Auto Stacking
 gui.autostacking.title=自动叠加物品设置
 gui.autostacking.keywords=叠加物品关键词 (逗号分隔):
+gui.inventory.item.auto_raid.name=全自动团本
+gui.inventory.item.auto_raid.tooltip=§e全自动团本§r\n§7左键: 开启/关闭全自动团本\n§7右键: 打开全自动团本配置\n\n§7支持自动一键分配、玩家位置、重试次数、完成后退出动作。
 
 # Auto Follow Manager
 gui.autofollow.manager.title=自动追怪规则管理器
@@ -1293,6 +1295,8 @@ gui.path.action_editor.type.transfer_to_warehouse=转移物品到仓库
 gui.path.action_editor.type.warehouse_auto_deposit=仓库管理-自动存入
 gui.path.action_editor.type.auto_chest_click=点击容器槽位
 gui.path.action_editor.type.block_next_gui=屏蔽GUI
+gui.path.action_editor.type.hide_current_gui=隐藏当前GUI
+gui.path.action_editor.type.show_hidden_gui=显示已隐藏GUI
 gui.path.action_editor.type.close_container_window=关闭当前容器窗口
 gui.path.action_editor.type.hud_text_check=HUD文本识别
 gui.path.action_editor.type.condition_inventory_item=条件分支-背包物品
@@ -1358,6 +1362,8 @@ gui.path.action_editor.type.toggle_kill_aura=杀戮光环开关
 gui.path.action_editor.type.toggle_fly=飞行开关
 gui.path.action_editor.type.toggle_conditional_execution=条件执行开关
 gui.path.action_editor.type.toggle_auto_escape=自动逃离开关
+gui.path.action_editor.type.toggle_baritone_free_look=Baritone自由视角开关
+gui.path.action_editor.type.toggle_baritone_human_like=Baritone模拟真人开关
 gui.path.action_editor.type.toggle_other_feature=其他功能开关
 gui.path.action_editor.type.hunt=中心搜怪击杀
 gui.path.action_editor.type.follow_entity=跟随实体
@@ -2242,6 +2248,8 @@ path.action.desc.auto_chest_click=点击容器槽位: %s
 path.action.desc.transfer_to_warehouse=转移物品到仓库
 path.action.desc.warehouse_auto_deposit=仓库管理-自动存入
 path.action.desc.block_next_gui=屏蔽GUI: %s 次，屏蔽当前GUI: %s
+path.action.desc.hide_current_gui=隐藏当前GUI
+path.action.desc.show_hidden_gui=显示已隐藏GUI
 path.action.desc.close_container_window=关闭当前容器窗口
 path.action.desc.hunt=中心搜怪: 半径 %.1f, 攻击 %s, 距离 %.1f
 path.action.desc.use_skill=使用技能: %s

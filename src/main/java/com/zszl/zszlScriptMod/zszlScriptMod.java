@@ -24,6 +24,7 @@ import com.zszl.zszlScriptMod.handlers.ConditionalExecutionHandler;
 import com.zszl.zszlScriptMod.handlers.DungeonWarehouseHandler;
 import com.zszl.zszlScriptMod.handlers.AdExpPanelHandler;
 import com.zszl.zszlScriptMod.handlers.MailModGuiHandler;
+import com.zszl.zszlScriptMod.handlers.LootModGuiHandler;
 import com.zszl.zszlScriptMod.handlers.RefineModGuiHandler;
 import com.zszl.zszlScriptMod.handlers.QuickExchangeHandler;
 import com.zszl.zszlScriptMod.handlers.KillTimerHandler; // <-- 确保导入
@@ -31,6 +32,7 @@ import com.zszl.zszlScriptMod.handlers.KillAuraHandler;
 import com.zszl.zszlScriptMod.handlers.FreecamHandler;
 import com.zszl.zszlScriptMod.handlers.FlyHandler;
 import com.zszl.zszlScriptMod.handlers.GuiBlockerHandler;
+import com.zszl.zszlScriptMod.handlers.GuiVisibilityHandler;
 import com.zszl.zszlScriptMod.otherfeatures.handler.block.BlockFeatureManager;
 import com.zszl.zszlScriptMod.otherfeatures.handler.item.ItemFeatureManager;
 import com.zszl.zszlScriptMod.otherfeatures.handler.misc.MiscFeatureManager;
@@ -258,6 +260,7 @@ public class zszlScriptMod {
         LOGGER.info("Shulker Mining Rebound Fix Handler registered!");
 
         MinecraftForge.EVENT_BUS.register(new MailModGuiHandler());
+        MinecraftForge.EVENT_BUS.register(new LootModGuiHandler());
         MinecraftForge.EVENT_BUS.register(new RefineModGuiHandler());
         MinecraftForge.EVENT_BUS.register(new PasswordGuiHandler());
         MinecraftForge.EVENT_BUS.register(new GlobalThemedButtonHandler());
@@ -329,6 +332,7 @@ public class zszlScriptMod {
         AutoSigninOnlineHandler.stop();
         AutoEscapeHandler.resetRuntimeState();
         GuiBlockerHandler.reset();
+        GuiVisibilityHandler.reset();
         KillTimerHandler.clearRuntimeState();
         AdExpPanelHandler.clearRuntimeState();
         ShulkerMiningReboundFixHandler.INSTANCE.clearRuntimeState();
@@ -399,15 +403,6 @@ public class zszlScriptMod {
 
     @SubscribeEvent
     public void onKeyInput(InputEvent.KeyInputEvent event) {
-        if (mc.player != null && mc.world != null && Keyboard.getEventKeyState()) {
-            int keyCode = Keyboard.getEventKey();
-            if (keyCode != Keyboard.KEY_NONE) {
-                JsonObject triggerData = new JsonObject();
-                triggerData.addProperty("keyCode", keyCode);
-                triggerData.addProperty("keyName", Keyboard.getKeyName(keyCode));
-                LegacySequenceTriggerManager.triggerEvent(LegacySequenceTriggerManager.TRIGGER_KEY_INPUT, triggerData);
-            }
-        }
         consumeGuiToggleKey();
     }
 

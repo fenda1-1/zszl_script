@@ -7,6 +7,7 @@ import com.zszl.zszlScriptMod.config.DebugModule;
 import com.zszl.zszlScriptMod.config.ModConfig;
 import com.zszl.zszlScriptMod.handlers.AdExpPanelHandler;
 import com.zszl.zszlScriptMod.handlers.MailHelper;
+import com.zszl.zszlScriptMod.handlers.LootHelper;
 import com.zszl.zszlScriptMod.handlers.RefineHelper;
 import io.netty.buffer.ByteBufUtil;
 import io.netty.buffer.Unpooled;
@@ -205,6 +206,7 @@ public class OwlViewPacketDecoder {
 
                     if (operation.equals("View_set_removeGui")) {
                         MailHelper.INSTANCE.onViewGuiRemoved(componentId);
+                        LootHelper.INSTANCE.onLootViewClosed(componentId);
                         if (MailHelper.INSTANCE.isWaitingForFinalGuiClose()) {
                             MailHelper.INSTANCE.onFinalGuiClosed();
                         }
@@ -258,6 +260,7 @@ public class OwlViewPacketDecoder {
 
                             if (operation.startsWith("Component_CreateButton")) {
                                 MailHelper.INSTANCE.onCreateButtonCaptured(componentId, name);
+                                LootHelper.INSTANCE.onCreateButtonCaptured(componentId, parentId, name);
                                 RefineHelper.INSTANCE.onRefineBlueprintButtonCreated(componentId, parentId, name);
 
                                 // HEX兜底：当名称解析错位时，从原始字节恢复关键按钮名
@@ -324,6 +327,7 @@ public class OwlViewPacketDecoder {
             if (fallbackText != null && !fallbackText.isEmpty()) {
                 boolean accepted = MailHelper.INSTANCE.onMailLabelTextCaptured(mainComponentId, fallbackText,
                         "Label_init(hex-fallback)");
+                LootHelper.INSTANCE.onLootLabelTextCaptured(fallbackText);
                 if (accepted) {
                     ModConfig.debugPrint(DebugModule.MAIL_GUI,
                             "HEX兜底捕获邮件文本: componentId=" + mainComponentId + ", text=" + fallbackText);
@@ -338,6 +342,11 @@ public class OwlViewPacketDecoder {
             if (fallbackCaptured > 0) {
                 resultBuilder.append(" [REFINE_FALLBACK_CAPTURED=").append(fallbackCaptured).append("]");
             }
+        }
+
+        String lootFallback = fallbackCaptureLootByRaw(data, mainComponentId);
+        if (lootFallback != null && !lootFallback.isEmpty()) {
+            resultBuilder.append(" [LOOT_FALLBACK=").append(lootFallback).append("]");
         }
 
         if (buffer.readableBytes() > 0) {
@@ -386,6 +395,121 @@ public class OwlViewPacketDecoder {
                 return;
             }
         }
+    }
+
+    private static String fallbackCaptureLootByRaw(byte[] raw, int componentId) {
+        if (raw == null || raw.length == 0) {
+            return "";
+        }
+
+        String text = new String(raw, StandardCharsets.UTF_8);
+        StringBuilder hit = new StringBuilder();
+
+        if (componentId > 0 && text.contains("View_CreateViewGui") && text.contains("AdventureSpecialAward:")) {
+            String viewName = extractNullTerminatedText(text, "AdventureSpecialAward:");
+            LootHelper.INSTANCE.onLootViewCreated(componentId,
+                    viewName == null || viewName.isEmpty() ? "AdventureSpecialAward:raw" : viewName);
+            hit.append("view");
+        }
+
+        if (text.contains("adventure/specialAward/分配战利品")) {
+            int parentViewId = extractParentIdAfterMarker(raw,
+                    "EntityImage_CreatePixelImage".getBytes(StandardCharsets.US_ASCII));
+            LootHelper.INSTANCE.onLootImageSavePathCaptured("adventure/specialAward/分配战利品", parentViewId);
+            if (hit.length() > 0) {
+                hit.append(",");
+            }
+            hit.append("mainImage");
+        }
+
+        if (componentId > 0 && text.contains("Component_CreateButton") && text.contains("addItemButton:")) {
+            int parentId = extractParentIdAfterMarker(raw,
+                    "Component_CreateButton".getBytes(StandardCharsets.US_ASCII));
+            String buttonName = extractNullTerminatedText(text, "addItemButton:");
+            LootHelper.INSTANCE.onCreateButtonCaptured(componentId, parentId,
+                    buttonName == null || buttonName.isEmpty() ? "addItemButton:" : buttonName);
+            if (hit.length() > 0) {
+                hit.append(",");
+            }
+            hit.append("playerButton");
+        }
+
+        if (text.contains("Slot_set_indexSlot")) {
+            int rawSlotIndex = extractPackedIntAfterMarker(raw, "Slot_set_indexSlot".getBytes(StandardCharsets.US_ASCII));
+            if (rawSlotIndex >= 0) {
+                int slotIndex = LootHelper.INSTANCE.normalizeSlotIndex(rawSlotIndex);
+                LootHelper.INSTANCE.onLootSlotIndexCaptured(componentId > 0 ? componentId : 1, slotIndex);
+                if (hit.length() > 0) {
+                    hit.append(",");
+                }
+                hit.append("slotIndex");
+            }
+        }
+
+        if (text.contains("分配成功") && text.contains("邮箱")) {
+            LootHelper.INSTANCE.onLootLabelTextCaptured(text);
+            if (hit.length() > 0) {
+                hit.append(",");
+            }
+            hit.append("assignSuccess");
+        }
+
+        return hit.toString();
+    }
+
+    private static int extractPackedIntAfterMarker(byte[] raw, byte[] marker) {
+        int markerPos = indexOf(raw, marker, 0);
+        if (markerPos < 0) {
+            return -1;
+        }
+
+        int start = markerPos + marker.length;
+        for (int offset = 0; offset <= 2; offset++) {
+            int pos = start + offset;
+            if (pos < 0 || pos + 4 > raw.length) {
+                continue;
+            }
+            int value = ((raw[pos] & 0xFF) << 24)
+                    | ((raw[pos + 1] & 0xFF) << 16)
+                    | ((raw[pos + 2] & 0xFF) << 8)
+                    | (raw[pos + 3] & 0xFF);
+            int normalized = LootHelper.INSTANCE.normalizeSlotIndex(value);
+            if (normalized >= 0 && normalized <= 1024) {
+                return value;
+            }
+        }
+        return -1;
+    }
+
+    private static int extractParentIdAfterMarker(byte[] raw, byte[] marker) {
+        int markerPos = indexOf(raw, marker, 0);
+        if (markerPos < 0) {
+            return -1;
+        }
+        int pos = markerPos + marker.length + 2;
+        if (raw.length < pos + 4) {
+            return -1;
+        }
+        return ((raw[pos] & 0xFF) << 24)
+                | ((raw[pos + 1] & 0xFF) << 16)
+                | ((raw[pos + 2] & 0xFF) << 8)
+                | (raw[pos + 3] & 0xFF);
+    }
+
+    private static String extractNullTerminatedText(String text, String marker) {
+        int start = text.indexOf(marker);
+        if (start < 0) {
+            return "";
+        }
+        int end = start;
+        while (end < text.length()) {
+            char c = text.charAt(end);
+            if (c == '\u0000' || c == '\n' || c == '\r') {
+                break;
+            }
+            end++;
+        }
+        return text.substring(start, end).trim();
     }
 
     private static void appendParameters(StringBuilder builder, String operation, PacketBuffer buffer,
@@ -461,6 +585,7 @@ public class OwlViewPacketDecoder {
                         if (openFlag && !extraFlag) {
                             MailHelper.INSTANCE.onMailViewGuiOpenDetected(mainComponentId);
                         }
+                        LootHelper.INSTANCE.onLootViewOpenStateDetected(mainComponentId, openFlag, extraFlag);
                         RefineHelper.INSTANCE.onRefineViewOpenStateDetected(mainComponentId, openFlag, extraFlag);
                     }
                     break;
@@ -499,6 +624,9 @@ public class OwlViewPacketDecoder {
                             buffer.readByte();
                         }
                     }
+                    if ("SlotCustom_set_clearItem".equals(operation)) {
+                        LootHelper.INSTANCE.onLootSlotItemStateCaptured(mainComponentId, false);
+                    }
                     break;
 
                 case "View_CreateViewGui":
@@ -508,8 +636,27 @@ public class OwlViewPacketDecoder {
                         String viewName = readFlexibleText(buffer);
                         builder.append(" \"").append(viewName).append("\"");
                         if ("View_CreateViewGui".equals(operation)) {
+                            LootHelper.INSTANCE.onLootViewCreated(mainComponentId, viewName);
                             RefineHelper.INSTANCE.onRefineViewCreated(mainComponentId, viewName);
                         }
+                    }
+                    break;
+
+                case "ViewBackpack_set_addSlotIndex":
+                case "Slot_set_indexSlot":
+                    if (buffer.readableBytes() >= 4) {
+                        int rawSlotIndex = buffer.readInt();
+                        int slotIndex = LootHelper.INSTANCE.normalizeSlotIndex(rawSlotIndex);
+                        builder.append(" ").append(slotIndex);
+                        LootHelper.INSTANCE.onLootSlotIndexCaptured(mainComponentId, slotIndex);
+                    }
+                    break;
+
+                case "EntityImage_set_savePath":
+                    if (buffer.readableBytes() > 0) {
+                        String savePath = readFlexibleText(buffer);
+                        builder.append(" \"").append(savePath).append("\"");
+                        LootHelper.INSTANCE.onLootImageSavePathCaptured(savePath);
                     }
                     break;
 
@@ -528,6 +675,7 @@ public class OwlViewPacketDecoder {
                         builder.append(" \"").append(text).append("\"");
                         boolean accepted = MailHelper.INSTANCE.onMailLabelTextCaptured(mainComponentId, text,
                                 operation);
+                        LootHelper.INSTANCE.onLootLabelTextCaptured(text);
                         if (accepted) {
                             ModConfig.debugPrint(DebugModule.MAIL_GUI,
                                     "捕获邮件文本: componentId=" + mainComponentId + ", op=" + operation + ", text=" + text);
@@ -696,6 +844,7 @@ public class OwlViewPacketDecoder {
                         } catch (IOException | RuntimeException e) {
                             buffer.readerIndex(buffer.writerIndex());
                         }
+                        LootHelper.INSTANCE.onLootSlotItemStateCaptured(mainComponentId, true);
                     }
                     break;
 

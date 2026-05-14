@@ -31,6 +31,8 @@ public final class ActionDisplayCatalog {
         ACTION_DISPLAY_KEYS.put("warehouse_auto_deposit", "gui.path.action_editor.type.warehouse_auto_deposit");
         ACTION_DISPLAY_KEYS.put("autochestclick", "gui.path.action_editor.type.auto_chest_click");
         ACTION_DISPLAY_KEYS.put("blocknextgui", "gui.path.action_editor.type.block_next_gui");
+        ACTION_DISPLAY_KEYS.put("hidecurrentgui", "gui.path.action_editor.type.hide_current_gui");
+        ACTION_DISPLAY_KEYS.put("showhiddengui", "gui.path.action_editor.type.show_hidden_gui");
         ACTION_DISPLAY_KEYS.put("close_container_window", "gui.path.action_editor.type.close_container_window");
         ACTION_DISPLAY_KEYS.put("hud_text_check", "gui.path.action_editor.type.hud_text_check");
         ACTION_DISPLAY_KEYS.put("condition_inventory_item", "gui.path.action_editor.type.condition_inventory_item");
@@ -96,6 +98,8 @@ public final class ActionDisplayCatalog {
         ACTION_DISPLAY_KEYS.put("toggle_fly", "gui.path.action_editor.type.toggle_fly");
         ACTION_DISPLAY_KEYS.put("toggle_conditional_execution", "gui.path.action_editor.type.toggle_conditional_execution");
         ACTION_DISPLAY_KEYS.put("toggle_auto_escape", "gui.path.action_editor.type.toggle_auto_escape");
+        ACTION_DISPLAY_KEYS.put("toggle_baritone_free_look", "gui.path.action_editor.type.toggle_baritone_free_look");
+        ACTION_DISPLAY_KEYS.put("toggle_baritone_human_like", "gui.path.action_editor.type.toggle_baritone_human_like");
         ACTION_DISPLAY_KEYS.put("toggle_other_feature", "gui.path.action_editor.type.toggle_other_feature");
         ACTION_DISPLAY_KEYS.put("hunt", "gui.path.action_editor.type.hunt");
         ACTION_DISPLAY_KEYS.put("follow_entity", "gui.path.action_editor.type.follow_entity");

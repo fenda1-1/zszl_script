@@ -22,6 +22,7 @@ import com.zszl.zszlScriptMod.gui.config.GuiAutoEquipManager;
 import com.zszl.zszlScriptMod.gui.config.GuiAutoEscapeManager;
 import com.zszl.zszlScriptMod.gui.config.GuiAutoFollowManager;
 import com.zszl.zszlScriptMod.gui.config.GuiAutoPickupConfig;
+import com.zszl.zszlScriptMod.gui.config.GuiAutoRaidConfig;
 import com.zszl.zszlScriptMod.gui.config.GuiAutoSigninOnlineConfig;
 import com.zszl.zszlScriptMod.gui.config.GuiAutoSkillEditor;
 import com.zszl.zszlScriptMod.gui.config.GuiAutoStackingConfig;
@@ -67,6 +68,7 @@ import com.zszl.zszlScriptMod.handlers.EmbeddedNavigationHandler;
 import com.zszl.zszlScriptMod.handlers.FreecamHandler;
 import com.zszl.zszlScriptMod.handlers.KillAuraHandler;
 import com.zszl.zszlScriptMod.handlers.KillTimerHandler;
+import com.zszl.zszlScriptMod.handlers.LootHelper;
 import com.zszl.zszlScriptMod.handlers.ShulkerBoxStackingHandler;
 import com.zszl.zszlScriptMod.handlers.ShulkerMiningReboundFixHandler;
 import com.zszl.zszlScriptMod.handlers.WarehouseEventHandler;
@@ -646,10 +648,12 @@ abstract class GuiInventoryRenderInput extends GuiInventoryFeatureScreens {
                                 bgColor = 0xFF33AA33;
                             else if (command.equals("debug_settings") && ModConfig.isDebugModeEnabled)
                                 bgColor = 0xFF00AA00;
-                            else if (command.equals("toggle_auto_stack_shulker_boxes")
-                                    && ShulkerBoxStackingHandler.autoStackingEnabled)
-                                bgColor = 0xFF33AA33;
-                            else if (command.startsWith("path:") || command.startsWith("custom_path:")) {
+                        else if (command.equals("toggle_auto_stack_shulker_boxes")
+                                && ShulkerBoxStackingHandler.autoStackingEnabled)
+                            bgColor = 0xFF33AA33;
+                        else if (command.equals("toggle_auto_raid_loot") && LootHelper.autoRaidEnabled)
+                            bgColor = 0xFF33AA33;
+                        else if (command.startsWith("path:") || command.startsWith("custom_path:")) {
                                 String sequenceName = command.substring(command.indexOf(":") + 1);
                                 if (PathSequenceEventListener.instance.isTracking()
                                         && PathSequenceEventListener.instance.currentSequence != null
@@ -1575,6 +1579,19 @@ abstract class GuiInventoryRenderInput extends GuiInventoryFeatureScreens {
                         } else if (mouseButton == 1) {
                             closeOverlay();
                             mc.displayGuiScreen(new GuiAutoStackingConfig(null));
+                        }
+                    } else if (command.equals("toggle_auto_raid_loot")) {
+                        if (mouseButton == 0) {
+                            LootHelper.autoRaidEnabled = !LootHelper.autoRaidEnabled;
+                            LootHelper.saveConfig();
+                            if (mc.player != null) {
+                                String status = LootHelper.autoRaidEnabled ? "§a开启" : "§c关闭";
+                                mc.player.sendMessage(new TextComponentString("§e[全自动团本] 状态: " + status));
+                            }
+                            refreshGuiLists();
+                        } else if (mouseButton == 1) {
+                            closeOverlay();
+                            mc.displayGuiScreen(new GuiAutoRaidConfig(null));
                         }
                     }
                     commandHandled = true;

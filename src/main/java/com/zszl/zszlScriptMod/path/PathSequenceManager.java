@@ -5,6 +5,7 @@ import com.google.gson.*;
 import com.google.gson.reflect.TypeToken;
 import com.zszl.zszlScriptMod.zszlScriptMod;
 import com.zszl.zszlScriptMod.config.ModConfig;
+import com.zszl.zszlScriptMod.config.HumanLikeMovementConfig;
 import com.zszl.zszlScriptMod.gui.GuiInventory;
 import com.zszl.zszlScriptMod.gui.MainUiLayoutManager;
 import com.zszl.zszlScriptMod.handlers.AutoEatHandler;
@@ -16,6 +17,7 @@ import com.zszl.zszlScriptMod.handlers.ConditionalExecutionHandler;
 import com.zszl.zszlScriptMod.handlers.EmbeddedNavigationHandler;
 import com.zszl.zszlScriptMod.handlers.FlyHandler;
 import com.zszl.zszlScriptMod.handlers.GuiBlockerHandler;
+import com.zszl.zszlScriptMod.handlers.GuiVisibilityHandler;
 import com.zszl.zszlScriptMod.handlers.ItemFilterHandler;
 import com.zszl.zszlScriptMod.handlers.ItemSpreadHandler;
 import com.zszl.zszlScriptMod.handlers.KillAuraHandler;
@@ -24,6 +26,10 @@ import com.zszl.zszlScriptMod.otherfeatures.OtherFeatureGroupManager;
 import com.zszl.zszlScriptMod.otherfeatures.handler.movement.MovementFeatureManager;
 import com.zszl.zszlScriptMod.otherfeatures.handler.movement.SpeedHandler;
 import com.zszl.zszlScriptMod.otherfeatures.handler.render.RenderFeatureManager;
+import com.zszl.zszlScriptMod.shadowbaritone.api.BaritoneAPI;
+import com.zszl.zszlScriptMod.shadowbaritone.api.Settings;
+import com.zszl.zszlScriptMod.shadowbaritone.api.utils.SettingsUtil;
+import com.zszl.zszlScriptMod.shadowbaritone.utils.HumanLikeMovementController;
 import com.zszl.zszlScriptMod.system.ProfileManager;
 import com.zszl.zszlScriptMod.system.ServerFeatureVisibilityManager;
 import com.zszl.zszlScriptMod.path.template.LegacyActionTemplateManager;
@@ -516,6 +522,27 @@ public class PathSequenceManager {
 
         if (RenderFeatureManager.isManagedFeature(normalizedId)) {
             RenderFeatureManager.setEnabled(normalizedId, enabled);
+        }
+    }
+
+    private static void applyBaritoneFreeLookToggle(boolean enabled) {
+        Settings settings = BaritoneAPI.getSettings();
+        if (settings == null) {
+            return;
+        }
+        try {
+            SettingsUtil.parseAndApply(settings, "freelook", String.valueOf(enabled));
+            SettingsUtil.save(settings);
+        } catch (Exception e) {
+            zszlScriptMod.LOGGER.error("设置 Baritone 自由视角失败: enabled={}", enabled, e);
+        }
+    }
+
+    private static void applyBaritoneHumanLikeToggle(boolean enabled) {
+        HumanLikeMovementConfig.INSTANCE.enabled = enabled;
+        HumanLikeMovementConfig.save();
+        if (!enabled) {
+            HumanLikeMovementController.INSTANCE.reset();
         }
     }
 
@@ -1207,6 +1234,10 @@ public class PathSequenceManager {
                                 && params.get("blockCurrentGui").getAsBoolean();
                         return I18n.format("path.action.desc.block_next_gui", Math.max(1, count),
                                 blockCurrentGui ? I18n.format("path.common.yes") : I18n.format("path.common.no"));
+                    case "hidecurrentgui":
+                        return I18n.format("path.action.desc.hide_current_gui");
+                    case "showhiddengui":
+                        return I18n.format("path.action.desc.show_hidden_gui");
                     case "close_container_window":
                         return I18n.format("path.action.desc.close_container_window");
                     case "autoeat":
@@ -1249,6 +1280,16 @@ public class PathSequenceManager {
                                         : I18n.format("path.common.on"));
                     case "toggle_auto_escape":
                         return "自动逃离: "
+                                + ((params.has("enabled") && !params.get("enabled").getAsBoolean())
+                                        ? I18n.format("path.common.off")
+                                        : I18n.format("path.common.on"));
+                    case "toggle_baritone_free_look":
+                        return "Baritone自由视角: "
+                                + ((params.has("enabled") && !params.get("enabled").getAsBoolean())
+                                        ? I18n.format("path.common.off")
+                                        : I18n.format("path.common.on"));
+                    case "toggle_baritone_human_like":
+                        return "Baritone模拟真人: "
                                 + ((params.has("enabled") && !params.get("enabled").getAsBoolean())
                                         ? I18n.format("path.common.off")
                                         : I18n.format("path.common.on"));
@@ -2561,6 +2602,10 @@ public class PathSequenceManager {
                     boolean blockCurrentGui = params.has("blockCurrentGui")
                             && params.get("blockCurrentGui").getAsBoolean();
                     return player -> GuiBlockerHandler.blockGui(blockCount, blockCurrentGui);
+                case "hidecurrentgui":
+                    return player -> GuiVisibilityHandler.hideCurrentGui();
+                case "showhiddengui":
+                    return player -> GuiVisibilityHandler.showHiddenGui();
                 case "close_container_window":
                     return player -> {
                         Minecraft mc = Minecraft.getMinecraft();
@@ -2650,6 +2695,14 @@ public class PathSequenceManager {
                     final boolean toggleAutoEscapeEnabled = !params.has("enabled")
                             || params.get("enabled").getAsBoolean();
                     return player -> AutoEscapeHandler.setMasterEnabled(toggleAutoEscapeEnabled);
+                case "toggle_baritone_free_look":
+                    final boolean toggleBaritoneFreeLookEnabled = !params.has("enabled")
+                            || params.get("enabled").getAsBoolean();
+                    return player -> applyBaritoneFreeLookToggle(toggleBaritoneFreeLookEnabled);
+                case "toggle_baritone_human_like":
+                    final boolean toggleBaritoneHumanLikeEnabled = !params.has("enabled")
+                            || params.get("enabled").getAsBoolean();
+                    return player -> applyBaritoneHumanLikeToggle(toggleBaritoneHumanLikeEnabled);
                 case "toggle_other_feature":
                     final String targetOtherFeatureId = params.has("featureId")
                             ? params.get("featureId").getAsString()

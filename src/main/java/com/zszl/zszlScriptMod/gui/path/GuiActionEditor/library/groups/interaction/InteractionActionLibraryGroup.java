@@ -29,6 +29,8 @@ public final class InteractionActionLibraryGroup {
                         itemFactory.apply("move_inventory_items_to_chest_slots"),
                         itemFactory.apply("warehouse_auto_deposit"),
                         itemFactory.apply("blocknextgui"),
+                        itemFactory.apply("hidecurrentgui"),
+                        itemFactory.apply("showhiddengui"),
                         itemFactory.apply("close_container_window"),
                         itemFactory.apply("hud_text_check")));
     }

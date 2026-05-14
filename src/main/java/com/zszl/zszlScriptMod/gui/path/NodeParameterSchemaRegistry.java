@@ -139,11 +139,13 @@ public final class NodeParameterSchemaRegistry {
                                         "take_all_items_safe", "dropfiltereditems", "autochestclick",
                                         "move_inventory_items_to_chest_slots",
                                         "warehouse_auto_deposit",
-                                        "blocknextgui", "close_container_window", "hud_text_check", "autoeat",
+                                        "blocknextgui", "hidecurrentgui", "showhiddengui", "close_container_window", "hud_text_check", "autoeat",
                                         "autoequip", "autopickup",
                                         "toggle_autoeat", "toggle_autofishing", "toggle_kill_aura", "toggle_fly",
                                         "toggle_conditional_execution",
                                         "toggle_auto_escape",
+                                        "toggle_baritone_free_look",
+                                        "toggle_baritone_human_like",
                                         "runlastsequence", "run_sequence", "stop_current_sequence",
                                         "sequence_control",
                                         "goto_action", "skip_actions", "skip_steps", "repeat_actions",
@@ -483,6 +485,12 @@ public final class NodeParameterSchemaRegistry {
                 } else if ("toggle_auto_escape".equals(normalized)) {
                         schemas.add(FieldSchema.paramsField("enabled", "自动逃离总开关", FieldType.BOOLEAN, false,
                                         "true=开启自动逃离检测，false=关闭自动逃离检测。", "true / false", "true"));
+                } else if ("toggle_baritone_free_look".equals(normalized)) {
+                        schemas.add(FieldSchema.paramsField("enabled", "Baritone自由视角开关", FieldType.BOOLEAN, false,
+                                        "true=开启 Baritone 自由视角，false=关闭 Baritone 自由视角。", "true / false", "true"));
+                } else if ("toggle_baritone_human_like".equals(normalized)) {
+                        schemas.add(FieldSchema.paramsField("enabled", "Baritone模拟真人开关", FieldType.BOOLEAN, false,
+                                        "true=开启 Baritone 模拟真人，false=关闭 Baritone 模拟真人。", "true / false", "true"));
                 } else if ("runlastsequence".equals(normalized)) {
                 } else if ("run_sequence".equals(normalized)) {
                         schemas.add(FieldSchema.paramsField("sequenceName", "序列名", FieldType.GRAPH_REF, true,

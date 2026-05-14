@@ -102,6 +102,13 @@ public final class LookBehavior extends Behavior implements ILookBehavior {
         Target.Mode resolvedMode = Target.Mode.resolve(ctx, blockInteract);
         this.target = new Target(rotation, resolvedMode, blockInteract);
         this.movementRotation = rotation;
+        if (blockInteract
+                && resolvedMode == Target.Mode.CLIENT
+                && ctx.player() != null) {
+            Rotation actual = this.processor.peekRotation(rotation);
+            ctx.player().rotationYaw = actual.getYaw();
+            ctx.player().rotationPitch = actual.getPitch();
+        }
     }
 
     @Override

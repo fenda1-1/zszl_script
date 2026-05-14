@@ -117,6 +117,14 @@ public class MixinMinecraft {
                 }
         }
 
+        @Inject(method = "runTick", at = @At(value = "INVOKE", target = "net/minecraft/client/multiplayer/WorldClient.updateEntities()V", shift = At.Shift.BEFORE))
+        private void preUpdateEntities(CallbackInfo ci) {
+                IBaritone baritone = BaritoneAPI.getProvider().getBaritoneForPlayer(zszl$getPlayer());
+                if (baritone != null) {
+                        baritone.getGameEventHandler().onPlayerUpdate(new PlayerUpdateEvent(EventState.PRE));
+                }
+        }
+
         @Inject(method = "loadWorld(Lnet/minecraft/client/multiplayer/WorldClient;Ljava/lang/String;)V", at = @At("HEAD"))
         private void preLoadWorld(WorldClient world, String loadingMessage, CallbackInfo ci) {
                 // If we're unloading the world but one doesn't exist, ignore it

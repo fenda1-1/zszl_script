@@ -21,6 +21,8 @@ public final class ToggleActionLibraryGroup {
                         itemFactory.apply("toggle_fly"),
                         itemFactory.apply("toggle_conditional_execution"),
                         itemFactory.apply("toggle_auto_escape"),
+                        itemFactory.apply("toggle_baritone_free_look"),
+                        itemFactory.apply("toggle_baritone_human_like"),
                         itemFactory.apply("toggle_other_feature")));
     }
 }

@@ -1891,6 +1891,10 @@ public class GuiActionEditor extends ThemedGuiScreen {
                                 && currentParams.get("blockCurrentGui").getAsBoolean(),
                         I18n.format("path.common.yes"), I18n.format("path.common.no"));
                 break;
+            case "hidecurrentgui":
+                break;
+            case "showhiddengui":
+                break;
             case "close_container_window":
                 break;
             case "hud_text_check":
@@ -2065,6 +2069,8 @@ public class GuiActionEditor extends ThemedGuiScreen {
             case "toggle_fly":
             case "toggle_conditional_execution":
             case "toggle_auto_escape":
+            case "toggle_baritone_free_look":
+            case "toggle_baritone_human_like":
                 ActionUtilitySections.buildSimpleToggleSection(this, x, currentY, fieldWidth);
                 break;
             case "toggle_other_feature":

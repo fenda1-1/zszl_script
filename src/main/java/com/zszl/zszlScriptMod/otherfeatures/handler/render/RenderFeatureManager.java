@@ -1030,15 +1030,26 @@ public class RenderFeatureManager {
     }
 
     private static String normalizeBlockId(String rawBlockId) {
-        Block block = resolveBlock(rawBlockId);
-        return normalizeBlockId(block);
+        String normalized = safe(rawBlockId).toLowerCase(Locale.ROOT);
+        if (normalized.isEmpty()) {
+            return "";
+        }
+        if (!normalized.contains(":")) {
+            normalized = "minecraft:" + normalized;
+        }
+        try {
+            new ResourceLocation(normalized);
+            return normalized;
+        } catch (IllegalArgumentException ignored) {
+            return "";
+        }
     }
 
     private static String normalizeBlockId(Block block) {
         if (block == null || block == Blocks.AIR) {
             return "";
         }
-        ResourceLocation registryName = Block.REGISTRY.getNameForObject(block);
+        ResourceLocation registryName = block.getRegistryName();
         return registryName == null ? "" : registryName.toString();
     }
 

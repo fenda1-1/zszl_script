@@ -2001,6 +2001,10 @@ abstract class GuiInventoryBase {
         rslItemNames.add(I18n.format("gui.inventory.item.auto_stack.name"));
         itemTooltips.put("toggle_auto_stack_shulker_boxes", I18n.format("gui.inventory.item.auto_stack.tooltip"));
 
+        rslItems.add("toggle_auto_raid_loot");
+        rslItemNames.add(I18n.format("gui.inventory.item.auto_raid.name"));
+        itemTooltips.put("toggle_auto_raid_loot", I18n.format("gui.inventory.item.auto_raid.tooltip"));
+
         if (!isRslFeaturesHidden()) {
             categoryItems.put(I18n.format("gui.inventory.category.rsl"), rslItems);
             categoryItemNames.put(I18n.format("gui.inventory.category.rsl"), rslItemNames);

@@ -19,6 +19,7 @@ package com.zszl.zszlScriptMod.shadowbaritone.api.utils;
 
 import net.minecraft.block.Block;
 import net.minecraft.util.ResourceLocation;
+import net.minecraftforge.fml.common.registry.ForgeRegistries;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -28,7 +29,10 @@ public class BlockUtils {
     private static transient Map<String, Block> resourceCache = new HashMap<>();
 
     public static String blockToString(Block block) {
-        ResourceLocation loc = Block.REGISTRY.getNameForObject(block);
+        ResourceLocation loc = ForgeRegistries.BLOCKS.getKey(block);
+        if (loc == null) {
+            return "";
+        }
         String name = loc.getResourcePath(); // normally, only write the part after the minecraft:
         if (!loc.getResourceDomain().equals("minecraft")) {
             // Baritone is running on top of forge with mods installed, perhaps?
@@ -53,7 +57,14 @@ public class BlockUtils {
         if (block != null) {
             return block;
         }
-        block = Block.getBlockFromName(name.contains(":") ? name : "minecraft:" + name);
+        String blockId = name.contains(":") ? name : "minecraft:" + name;
+        ResourceLocation resourceLocation;
+        try {
+            resourceLocation = new ResourceLocation(blockId);
+        } catch (IllegalArgumentException ignored) {
+            return null;
+        }
+        block = ForgeRegistries.BLOCKS.getValue(resourceLocation);
         if (block != null) {
             Map<String, Block> copy = new HashMap<>(resourceCache); // read only copy is safe, wont throw
                                                                     // concurrentmodification
