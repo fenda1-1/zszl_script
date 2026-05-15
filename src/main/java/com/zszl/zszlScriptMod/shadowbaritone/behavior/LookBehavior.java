@@ -168,7 +168,10 @@ public final class LookBehavior extends Behavior implements ILookBehavior {
                     return;
                 }
 
+                boolean temporaryBlockInteractRotation = this.target.mode == Target.Mode.SERVER
+                        && this.target.blockInteract;
                 if (this.target.mode == Target.Mode.CLIENT
+                        || temporaryBlockInteractRotation
                         || humanLikeVisualControl
                         || this.killAuraVisualControlThisTick
                         || smoothLookVisualControl) {
@@ -188,6 +191,11 @@ public final class LookBehavior extends Behavior implements ILookBehavior {
                                         actual.getPitch());
                         ctx.player().rotationYaw = smoothed.yaw;
                         ctx.player().rotationPitch = smoothed.pitch;
+                    } else if (temporaryBlockInteractRotation) {
+                        final Rotation actual = this.processor.peekRotation(this.target.rotation);
+                        this.visualTargetThisTick = actual;
+                        ctx.player().rotationYaw = actual.getYaw();
+                        ctx.player().rotationPitch = actual.getPitch();
                     } else if (this.target.mode == Target.Mode.CLIENT) {
                         final Rotation actual = this.processor.peekRotation(this.target.rotation);
                         this.visualTargetThisTick = actual;

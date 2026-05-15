@@ -362,6 +362,57 @@ final class ActionParameterSections {
                 I18n.format("path.common.on"), I18n.format("path.common.off"));
     }
 
+    static void buildStackInventoryItemSection(GuiActionEditor editor, int x, int currentY, int fieldWidth) {
+        editor.initializeInventoryItemFilterExpressionEditorState();
+        editor.addSectionTitle("§b§l━━━ 物品过滤表达式 ━━━", x, currentY);
+        currentY += 25;
+        currentY += editor.addInventoryItemFilterExpressionCardEditor(fieldWidth, x, currentY);
+
+        editor.addSectionTitle("§b§l━━━ 来源和目标 ━━━", x, currentY);
+        currentY += 25;
+        editor.addDropdown(I18n.format("gui.path.action_editor.label.spread_source_scope"), "sourceScope",
+                I18n.format("gui.path.action_editor.help.spread_source_scope"), fieldWidth, x, currentY,
+                new String[] {
+                        I18n.format("gui.path.action_editor.option.spread_source.inventory"),
+                        I18n.format("gui.path.action_editor.option.spread_source.main"),
+                        I18n.format("gui.path.action_editor.option.spread_source.hotbar"),
+                        I18n.format("gui.path.action_editor.option.spread_source.container")
+                },
+                spreadSourceScopeToDisplay(editor.currentParams.has("sourceScope")
+                        ? editor.currentParams.get("sourceScope").getAsString()
+                        : ItemSpreadHandler.SOURCE_SCOPE_INVENTORY));
+        currentY += 40;
+        editor.addTextField(I18n.format("gui.path.action_editor.label.spread_source_slots"), "sourceSlotsText",
+                I18n.format("gui.path.action_editor.help.spread_source_slots"), fieldWidth, x, currentY, "");
+        currentY += 40;
+        editor.addDropdown(I18n.format("gui.path.action_editor.label.spread_target_scope"), "targetScope",
+                I18n.format("gui.path.action_editor.help.spread_target_scope"), fieldWidth, x, currentY,
+                new String[] {
+                        I18n.format("gui.path.action_editor.option.spread_target.inventory"),
+                        I18n.format("gui.path.action_editor.option.spread_target.main"),
+                        I18n.format("gui.path.action_editor.option.spread_target.hotbar")
+                },
+                spreadTargetScopeToDisplay(editor.currentParams.has("targetScope")
+                        ? editor.currentParams.get("targetScope").getAsString()
+                        : ItemSpreadHandler.TARGET_SCOPE_INVENTORY));
+        currentY += 40;
+        editor.addTextField(I18n.format("gui.path.action_editor.label.spread_target_slots"), "targetSlotsText",
+                I18n.format("gui.path.action_editor.help.spread_target_slots"), fieldWidth, x, currentY, "");
+        currentY += 40;
+
+        editor.addSectionTitle("§b§l━━━ 执行设置 ━━━", x, currentY);
+        currentY += 25;
+        editor.addTextField(I18n.format("gui.path.action_editor.label.delay_ticks"), "delayTicks",
+                I18n.format("gui.path.action_editor.help.spread_delay_ticks"), fieldWidth, x, currentY, "1");
+        currentY += 40;
+        editor.addToggle(I18n.format("gui.path.action_editor.label.normalize_delay_to_20tps"),
+                "normalizeDelayTo20Tps",
+                I18n.format("gui.path.action_editor.help.normalize_delay_to_20tps"), fieldWidth, x, currentY,
+                !editor.currentParams.has("normalizeDelayTo20Tps")
+                        || editor.currentParams.get("normalizeDelayTo20Tps").getAsBoolean(),
+                I18n.format("path.common.on"), I18n.format("path.common.off"));
+    }
+
     static void buildSilentUseSection(GuiActionEditor editor, int x, int currentY, int fieldWidth) {
         editor.addTextField(I18n.format("gui.path.action_editor.label.item_name"), "item",
                 I18n.format("gui.path.action_editor.help.item_name"), fieldWidth, x, currentY);

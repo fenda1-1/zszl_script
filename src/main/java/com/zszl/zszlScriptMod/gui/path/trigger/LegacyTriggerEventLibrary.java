@@ -25,6 +25,7 @@ public final class LegacyTriggerEventLibrary {
                 new LegacyTriggerEventItem(false, "站立不动", LegacySequenceTriggerManager.TRIGGER_PLAYER_IDLE, "当角色持续站立不动达到设定毫秒数时触发。"),
                 new LegacyTriggerEventItem(false, "定时器", LegacySequenceTriggerManager.TRIGGER_TIMER, "配置触发间隔秒数。"),
                 new LegacyTriggerEventItem(false, "低血量", LegacySequenceTriggerManager.TRIGGER_HP_LOW, "配置血量阈值。"),
+                new LegacyTriggerEventItem(false, "低饱食度", LegacySequenceTriggerManager.TRIGGER_FOOD_LOW, "配置饱食度阈值。"),
                 new LegacyTriggerEventItem(false, "受到伤害", LegacySequenceTriggerManager.TRIGGER_PLAYER_HURT, "配置伤害来源和最小伤害值。"),
                 new LegacyTriggerEventItem(false, "攻击实体", LegacySequenceTriggerManager.TRIGGER_ATTACK_ENTITY, "配置目标实体文本。"),
                 new LegacyTriggerEventItem(false, "击杀目标", LegacySequenceTriggerManager.TRIGGER_TARGET_KILL, "配置被击杀实体文本。"),

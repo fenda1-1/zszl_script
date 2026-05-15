@@ -198,14 +198,17 @@ public interface MovementHelper extends ActionCosts, Helper {
             if (!bsi.worldContainsLoadedChunk(x, z)) {
                 return true;
             }
-            // the check in BlockSnow.isPassable is layers < 5
-            // while actually, we want < 3 because 3 or greater makes it impassable in a 2
-            // high ceiling
-            if (state.getValue(BlockSnow.LAYERS) >= 3) {
+            int layers = state.getValue(BlockSnow.LAYERS);
+            // Under a low ceiling, thicker snow layers clip the player's head even though
+            // vanilla still reports them passable. In open space we should still allow
+            // normal traversal across 3-4 layers.
+            if (layers >= 5) {
                 return false;
             }
-            // ok, it's low enough we could walk through it, but is it supported?
-            return canWalkOn(bsi, x, y - 1, z);
+            if (layers >= 3 && !hasSnowHeadroom(bsi, x, y, z)) {
+                return false;
+            }
+            return true;
         }
 
         if (block instanceof BlockLiquid) {
@@ -574,6 +577,9 @@ public interface MovementHelper extends ActionCosts, Helper {
         if (block == Blocks.GLASS || block == Blocks.STAINED_GLASS) {
             return YES;
         }
+        if (block instanceof BlockSnow) {
+            return MAYBE;
+        }
         if (block instanceof BlockStairs) {
             return YES;
         }
@@ -600,6 +606,12 @@ public interface MovementHelper extends ActionCosts, Helper {
 
     static boolean canWalkOnPosition(BlockStateInterface bsi, int x, int y, int z, IBlockState state) {
         Block block = state.getBlock();
+        if (block instanceof BlockSnow) {
+            if (!bsi.worldContainsLoadedChunk(x, z)) {
+                return true;
+            }
+            return state.getValue(BlockSnow.LAYERS) >= 8 && hasSnowHeadroom(bsi, x, y, z);
+        }
         if (isWater(block)) {
             // since this is called literally millions of times per second, the benefit of
             // not allocating millions of useless "pos.up()"
@@ -628,6 +640,31 @@ public interface MovementHelper extends ActionCosts, Helper {
         }
 
         return false; // If we don't recognise it then we want to just return false to be safe.
+    }
+
+    static boolean hasSnowHeadroom(BlockStateInterface bsi, int x, int y, int z) {
+        if (!bsi.worldContainsLoadedChunk(x, z)) {
+            return true;
+        }
+        IBlockState above = bsi.get0(x, y + 1, z);
+        Block aboveBlock = above.getBlock();
+        if (aboveBlock == Blocks.AIR) {
+            return true;
+        }
+        if (aboveBlock instanceof BlockSnow) {
+            return above.getValue(BlockSnow.LAYERS) <= 3;
+        }
+        if (aboveBlock == Blocks.CARPET) {
+            return true;
+        }
+        Ternary passable = canWalkThroughBlockState(above);
+        if (passable == YES) {
+            return true;
+        }
+        if (passable == NO) {
+            return false;
+        }
+        return aboveBlock.isPassable(bsi.access, bsi.isPassableBlockPos.setPos(x, y + 1, z));
     }
 
     static boolean canWalkOn(CalculationContext context, int x, int y, int z, IBlockState state) {

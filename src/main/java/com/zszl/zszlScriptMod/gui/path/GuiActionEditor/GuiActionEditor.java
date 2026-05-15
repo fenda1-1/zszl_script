@@ -2100,6 +2100,9 @@ public class GuiActionEditor extends ThemedGuiScreen {
             case "spread_inventory_item":
                 ActionParameterSections.buildSpreadInventoryItemSection(this, x, currentY, fieldWidth);
                 break;
+            case "stack_inventory_item":
+                ActionParameterSections.buildStackInventoryItemSection(this, x, currentY, fieldWidth);
+                break;
             case "silentuse":
                 ActionParameterSections.buildSilentUseSection(this, x, currentY, fieldWidth);
                 break;
@@ -2420,7 +2423,8 @@ public class GuiActionEditor extends ThemedGuiScreen {
                 newParams.addProperty(key, displayToMoveChestNbtMode(value));
             } else if ("sourceScope".equals(key)) {
                 newParams.addProperty(key, displayToSpreadSourceScope(value));
-            } else if ("targetScope".equals(key) && "spread_inventory_item".equalsIgnoreCase(selectedType)) {
+            } else if ("targetScope".equals(key) && ("spread_inventory_item".equalsIgnoreCase(selectedType)
+                    || "stack_inventory_item".equalsIgnoreCase(selectedType))) {
                 newParams.addProperty(key, displayToSpreadTargetScope(value));
             } else if ("spreadMode".equals(key)) {
                 newParams.addProperty(key, displayToSpreadMode(value));
@@ -2520,7 +2524,8 @@ public class GuiActionEditor extends ThemedGuiScreen {
             newParams.remove("moveChestRules");
         }
 
-        if ("spread_inventory_item".equalsIgnoreCase(selectedType)) {
+        if ("spread_inventory_item".equalsIgnoreCase(selectedType)
+                || "stack_inventory_item".equalsIgnoreCase(selectedType)) {
             InventoryItemFilterExpressionEngine.writeExpressions(newParams, getInventoryItemFilterExpressionList());
             newParams.remove("itemName");
             newParams.remove("matchMode");
@@ -3697,7 +3702,8 @@ public class GuiActionEditor extends ThemedGuiScreen {
     boolean isInventoryItemFilterExpressionActionSelected() {
         return isConditionInventoryActionSelected()
                 || isMoveChestActionSelected()
-                || "spread_inventory_item".equalsIgnoreCase(getSelectedActionType());
+                || "spread_inventory_item".equalsIgnoreCase(getSelectedActionType())
+                || "stack_inventory_item".equalsIgnoreCase(getSelectedActionType());
     }
 
     void initializeInventoryItemFilterExpressionEditorState() {
@@ -4677,6 +4683,7 @@ public class GuiActionEditor extends ThemedGuiScreen {
         drawHuntWhitelistCustomSection(mouseX, mouseY);
         drawConditionInventoryCustomSection(mouseX, mouseY);
         drawMoveChestCustomSection(mouseX, mouseY);
+        drawSpreadInventoryItemCustomSection(mouseX, mouseY);
 
         if ("use_skill".equalsIgnoreCase(availableActionTypes.get(selectedTypeIndex))) {
             int x = getParamContentX();
@@ -4980,6 +4987,14 @@ public class GuiActionEditor extends ThemedGuiScreen {
         drawMoveChestSlotGrid(mouseX, mouseY, getMoveChestInventoryGridBaseY(),
                 getMoveChestInventoryRows(), getMoveChestInventoryCols(), moveChestSelectedInventorySlots,
                 moveChestInventorySlotRegions);
+    }
+
+    private void drawSpreadInventoryItemCustomSection(int mouseX, int mouseY) {
+        if (!"spread_inventory_item".equalsIgnoreCase(getSelectedActionType())
+                && !"stack_inventory_item".equalsIgnoreCase(getSelectedActionType())) {
+            return;
+        }
+        InventoryItemFilterExpressionEditorSupport.drawCustomSection(this, mouseX, mouseY);
     }
 
     private void drawMoveChestSlotGrid(int mouseX, int mouseY, int baseY, int rows, int cols,

@@ -228,6 +228,8 @@ public class GlobalEventListener {
                     || LegacySequenceTriggerManager.hasRulesForTrigger(LegacySequenceTriggerManager.TRIGGER_TIMER);
             boolean needsHpLowTriggers = NodeTriggerManager.hasGraphsForTrigger(NodeTriggerManager.TRIGGER_HP_LOW)
                     || LegacySequenceTriggerManager.hasRulesForTrigger(LegacySequenceTriggerManager.TRIGGER_HP_LOW);
+            boolean needsFoodLowTriggers = LegacySequenceTriggerManager
+                    .hasRulesForTrigger(LegacySequenceTriggerManager.TRIGGER_FOOD_LOW);
             boolean needsIdleTracking = LegacySequenceTriggerManager
                     .hasRulesForTrigger(LegacySequenceTriggerManager.TRIGGER_PLAYER_IDLE);
 
@@ -358,6 +360,13 @@ public class GlobalEventListener {
                 hpTrigger.addProperty("maxHp", mc.player.getMaxHealth());
                 NodeTriggerManager.trigger(NodeTriggerManager.TRIGGER_HP_LOW, hpTrigger);
                 LegacySequenceTriggerManager.triggerEvent(LegacySequenceTriggerManager.TRIGGER_HP_LOW, hpTrigger);
+            }
+
+            if (needsFoodLowTriggers) {
+                JsonObject foodTrigger = new JsonObject();
+                foodTrigger.addProperty("food", mc.player.getFoodStats().getFoodLevel());
+                foodTrigger.addProperty("maxFood", 20);
+                LegacySequenceTriggerManager.triggerEvent(LegacySequenceTriggerManager.TRIGGER_FOOD_LOW, foodTrigger);
             }
 
             final boolean deathAutoRejoinEnabled = DeathAutoRejoinHandler.deathAutoRejoinEnabled;

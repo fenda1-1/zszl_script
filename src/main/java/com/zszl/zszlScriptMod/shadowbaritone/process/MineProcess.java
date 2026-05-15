@@ -127,7 +127,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         }
         Optional<BlockPos> shaft = curr.stream()
                 .filter(pos -> pos.getX() == ctx.playerFeet().getX() && pos.getZ() == ctx.playerFeet().getZ())
-                .filter(pos -> pos.getY() >= ctx.playerFeet().getY())
+                .filter(pos -> pos.getY() >= ctx.playerFeet().getY() - 1)
                 .filter(pos -> !(BlockStateInterface.get(ctx, pos).getBlock() instanceof BlockAir)) // after breaking a
                                                                                                     // block, it takes
                                                                                                     // mineGoalUpdateInterval
@@ -149,7 +149,18 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                     }
                     return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
                 }
+                logDebug(String.format(
+                        "[MineDBG] same-column target not reachable yet pos=%s feet=%s onGround=%s safe=%s",
+                        pos, ctx.playerFeet(), ctx.player().onGround, isSafeToCancel));
             }
+        } else if (ctx.player().onGround) {
+            curr.stream()
+                    .filter(pos -> pos.getX() == ctx.playerFeet().getX() && pos.getZ() == ctx.playerFeet().getZ())
+                    .filter(pos -> pos.getY() >= ctx.playerFeet().getY() - 1)
+                    .findFirst()
+                    .ifPresent(pos -> logDebug(String.format(
+                            "[MineDBG] same-column target skipped pos=%s feet=%s shaftPresent=%s",
+                            pos, ctx.playerFeet(), shaft.isPresent())));
         }
         PathingCommand command = updateGoal();
         if (command == null) {

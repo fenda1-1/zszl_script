@@ -43,6 +43,7 @@ import net.minecraft.client.resources.I18n;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EnumCreatureType;
 import net.minecraft.entity.EntityLivingBase;
+import net.minecraft.entity.item.EntityEnderCrystal;
 import net.minecraft.entity.item.EntityArmorStand;
 import net.minecraft.entity.item.EntityItem;
 import net.minecraft.entity.boss.EntityDragon;
@@ -128,6 +129,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
     public static boolean targetHostile = true;
     public static boolean targetPassive = false;
     public static boolean targetPlayers = false;
+    public static boolean targetEnderCrystal = false;
     public static boolean onlyWeapon = false;
     public static boolean aimOnlyMode = false;
     public static boolean focusSingleTarget = true;
@@ -191,7 +193,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
     public static float maxTurnSpeed = 18.0F;
     public static int minAttackIntervalTicks = 2;
     public static int targetsPerAttack = 1;
-    public static final int DEFAULT_NO_DAMAGE_ATTACK_LIMIT = 5;
+    public static final int DEFAULT_NO_DAMAGE_ATTACK_LIMIT = 10;
     public static final int MAX_NO_DAMAGE_ATTACK_LIMIT = 100;
     public static int noDamageAttackLimit = DEFAULT_NO_DAMAGE_ATTACK_LIMIT;
 
@@ -213,6 +215,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
     private static final double HUNT_PICKUP_OVERLAP_GROWTH = 0.05D;
     private static final double HUNT_APPROACH_MIN_STAND_RADIUS = 0.85D;
     private static final double HUNT_APPROACH_TARGET_BUFFER = 0.35D;
+    private static final double HUNT_GOAL_REACHED_TOLERANCE_SQ = 0.36D;
     private static final double HUNT_NAVIGATION_RADIUS_SAMPLE_STEP = 0.75D;
     private static final double HUNT_NAVIGATION_ANGLE_SAMPLE_STEP_RADIANS = Math.toRadians(18.0D);
     private static final int HUNT_NAVIGATION_ANGLE_SAMPLE_PAIRS = 10;
@@ -387,6 +390,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
         public boolean targetHostile = true;
         public boolean targetPassive = false;
         public boolean targetPlayers = false;
+        public boolean targetEnderCrystal = false;
         public boolean onlyWeapon = false;
         public boolean aimOnlyMode = false;
         public boolean focusSingleTarget = true;
@@ -448,6 +452,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
             this.targetHostile = other.targetHostile;
             this.targetPassive = other.targetPassive;
             this.targetPlayers = other.targetPlayers;
+            this.targetEnderCrystal = other.targetEnderCrystal;
             this.onlyWeapon = other.onlyWeapon;
             this.aimOnlyMode = other.aimOnlyMode;
             this.focusSingleTarget = other.focusSingleTarget;
@@ -610,6 +615,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
         targetHostile = true;
         targetPassive = false;
         targetPlayers = false;
+        targetEnderCrystal = false;
         onlyWeapon = false;
         aimOnlyMode = false;
         focusSingleTarget = true;
@@ -698,6 +704,9 @@ public class KillAuraHandler implements AbstractGameEventListener {
             }
             if (json.has("targetPlayers")) {
                 targetPlayers = json.get("targetPlayers").getAsBoolean();
+            }
+            if (json.has("targetEnderCrystal")) {
+                targetEnderCrystal = json.get("targetEnderCrystal").getAsBoolean();
             }
             if (json.has("onlyWeapon")) {
                 onlyWeapon = json.get("onlyWeapon").getAsBoolean();
@@ -874,6 +883,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
             json.addProperty("targetHostile", targetHostile);
             json.addProperty("targetPassive", targetPassive);
             json.addProperty("targetPlayers", targetPlayers);
+            json.addProperty("targetEnderCrystal", targetEnderCrystal);
             json.addProperty("onlyWeapon", onlyWeapon);
             json.addProperty("aimOnlyMode", aimOnlyMode);
             json.addProperty("focusSingleTarget", focusSingleTarget);
@@ -1071,6 +1081,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
         targetHostile = safePreset.targetHostile;
         targetPassive = safePreset.targetPassive;
         targetPlayers = safePreset.targetPlayers;
+        targetEnderCrystal = safePreset.targetEnderCrystal;
         onlyWeapon = safePreset.onlyWeapon;
         aimOnlyMode = safePreset.aimOnlyMode;
         focusSingleTarget = safePreset.focusSingleTarget;
@@ -1594,6 +1605,11 @@ public class KillAuraHandler implements AbstractGameEventListener {
                 : null;
 
         List<EntityLivingBase> targets = findTargets(player);
+        EntityEnderCrystal crystalTarget = findBestEnderCrystalTarget(player);
+        if (shouldPrioritizeEnderCrystalTarget(player, crystalTarget, targets.isEmpty() ? null : targets.get(0))) {
+            handleEnderCrystalTarget(Minecraft.getMinecraft(), player, crystalTarget);
+            return;
+        }
         if (targets.isEmpty()) {
             this.currentTargetEntityId = -1;
             clearAimTargetTransition();
@@ -1929,6 +1945,216 @@ public class KillAuraHandler implements AbstractGameEventListener {
         return targets;
     }
 
+    private EntityEnderCrystal findBestEnderCrystalTarget(EntityPlayerSP player) {
+        if (player == null || player.world == null) {
+            return null;
+        }
+        EntityEnderCrystal best = null;
+        int bestWhitelistPriority = Integer.MAX_VALUE;
+        double bestDistanceSq = Double.MAX_VALUE;
+        for (Entity entity : player.world.loadedEntityList) {
+            if (!(entity instanceof EntityEnderCrystal)) {
+                continue;
+            }
+            EntityEnderCrystal crystal = (EntityEnderCrystal) entity;
+            if (!isValidEnderCrystalTarget(player, crystal)) {
+                continue;
+            }
+            String crystalName = getFilterableEntityName(crystal);
+            int whitelistPriority = enableNameWhitelist
+                    ? getNormalizedNameListMatchIndex(crystalName, nameWhitelist)
+                    : 0;
+            double distanceSq = player.getDistanceSq(crystal);
+            if (enableNameWhitelist) {
+                if (whitelistPriority < bestWhitelistPriority
+                        || (whitelistPriority == bestWhitelistPriority && distanceSq < bestDistanceSq)) {
+                    best = crystal;
+                    bestWhitelistPriority = whitelistPriority;
+                    bestDistanceSq = distanceSq;
+                }
+                continue;
+            }
+            if (distanceSq < bestDistanceSq) {
+                best = crystal;
+                bestDistanceSq = distanceSq;
+            }
+        }
+        return best;
+    }
+
+    private boolean isValidEnderCrystalTarget(EntityPlayerSP player, EntityEnderCrystal crystal) {
+        if (player == null || crystal == null || crystal.isDead || !crystal.isEntityAlive()) {
+            return false;
+        }
+        if (isNoDamageExcludedTarget(crystal)) {
+            return false;
+        }
+        if (isHuntEnabled() && !isWithinConfiguredHuntVerticalRange(player, crystal)) {
+            return false;
+        }
+        if (getTargetSearchDistanceSq(player, crystal) > getTargetSearchRadius() * getTargetSearchRadius()) {
+            return false;
+        }
+        if (!isHuntEnabled() && player.getDistanceSq(crystal) > attackRange * attackRange) {
+            return false;
+        }
+        if (AutoFollowHandler.hasActiveLockChaseRestriction()
+                && !AutoFollowHandler.isPositionWithinActiveLockChaseBounds(crystal.posX, crystal.posZ)) {
+            return false;
+        }
+        if (requireLineOfSight && !player.canEntityBeSeen(crystal)) {
+            return false;
+        }
+        String targetName = getFilterableEntityName(crystal);
+        boolean whitelistMatched = false;
+        if (enableNameBlacklist && matchesNameList(targetName, nameBlacklist)) {
+            return false;
+        }
+        if (enableNameWhitelist) {
+            if (getNormalizedNameListMatchIndex(targetName, nameWhitelist) == Integer.MAX_VALUE) {
+                return false;
+            }
+            whitelistMatched = true;
+        }
+        if (!whitelistMatched && !matchesEnabledTargetGroup(crystal)) {
+            return false;
+        }
+        return true;
+    }
+
+    private boolean shouldPrioritizeEnderCrystalTarget(EntityPlayerSP player, EntityEnderCrystal crystalTarget,
+            EntityLivingBase primaryLivingTarget) {
+        if (player == null || crystalTarget == null) {
+            return false;
+        }
+        if (primaryLivingTarget == null) {
+            return true;
+        }
+        if (enableNameWhitelist && nameWhitelist != null && !nameWhitelist.isEmpty()) {
+            int crystalPriority = getNormalizedNameListMatchIndex(getFilterableEntityName(crystalTarget), nameWhitelist);
+            int livingPriority = getNormalizedNameListMatchIndex(getFilterableEntityName(primaryLivingTarget), nameWhitelist);
+            if (crystalPriority != livingPriority) {
+                return crystalPriority < livingPriority;
+            }
+        }
+        return player.getDistanceSq(crystalTarget) <= player.getDistanceSq(primaryLivingTarget);
+    }
+
+    private void handleEnderCrystalTarget(Minecraft mc, EntityPlayerSP player, EntityEnderCrystal crystalTarget) {
+        if (mc == null || player == null || crystalTarget == null) {
+            return;
+        }
+        if (this.currentTargetEntityId != crystalTarget.getEntityId()) {
+            clearAimTargetTransition();
+            clearVisualRotationCache();
+        }
+        this.currentTargetEntityId = crystalTarget.getEntityId();
+        stopHuntPickupNavigation();
+        if (shouldRunHuntMovementForEntity(player, crystalTarget)) {
+            handleHuntMovementForEntity(player, crystalTarget);
+        } else {
+            stopHuntNavigation();
+        }
+
+        if (shouldRotateToTarget()) {
+            applyRotationToEntity(player, crystalTarget);
+        }
+
+        if (aimOnlyMode) {
+            decayTargetSwitchSmoothTicks();
+            return;
+        }
+        if (!canStartAttack(player) || mc.playerController == null) {
+            decayTargetSwitchSmoothTicks();
+            return;
+        }
+        if (!canAttackEntityTarget(player, crystalTarget, shouldRequireCrosshairHitForAttack(false))) {
+            decayTargetSwitchSmoothTicks();
+            return;
+        }
+
+        boolean attacked = false;
+        if (isMouseClickAttackMode()) {
+            attacked = performMouseClickAttack(mc);
+        } else if (isPacketAttackMode() && player.connection != null) {
+            player.connection.sendPacket(new CPacketUseEntity(crystalTarget));
+            attacked = true;
+        } else {
+            mc.playerController.attackEntity(player, crystalTarget);
+            attacked = true;
+        }
+        if (attacked) {
+            if (!isMouseClickAttackMode()) {
+                player.swingArm(EnumHand.MAIN_HAND);
+            }
+            this.attackCooldownTicks = isMouseClickAttackMode()
+                    ? sampleAttackSequenceDelayTicks()
+                    : minAttackIntervalTicks;
+        }
+        decayTargetSwitchSmoothTicks();
+    }
+
+    private boolean shouldRunHuntMovementForEntity(EntityPlayerSP player, Entity target) {
+        if (!isHuntEnabled() || player == null || target == null) {
+            return false;
+        }
+        double distance = player.getDistance(target);
+        boolean missingAttackLineOfSight = requireLineOfSight && !player.canEntityBeSeen(target);
+        if (isHuntFixedDistanceMode()) {
+            return missingAttackLineOfSight
+                    || Math.abs(distance - getEffectiveHuntFixedDistance()) > HUNT_FIXED_DISTANCE_TOLERANCE;
+        }
+        return missingAttackLineOfSight || distance > attackRange;
+    }
+
+    private void handleHuntMovementForEntity(EntityPlayerSP player, Entity target) {
+        if (player == null || target == null) {
+            stopHuntNavigation();
+            return;
+        }
+        int nowTick = player.ticksExisted;
+        int targetId = target.getEntityId();
+        double dx = target.posX - this.lastHuntTargetX;
+        double dz = target.posZ - this.lastHuntTargetZ;
+        double movedSq = dx * dx + dz * dz;
+        boolean previousGoalReached = hasReachedLastHuntGoal(player);
+
+        if (huntNavigationActive && !previousGoalReached) {
+            if (!EmbeddedNavigationHandler.INSTANCE.isPathingOrCalculating()
+                    && !Double.isNaN(this.lastHuntGoalX)
+                    && !Double.isNaN(this.lastHuntGoalY)
+                    && !Double.isNaN(this.lastHuntGoalZ)
+                    && (nowTick - this.lastHuntGotoTick) >= HUNT_GOTO_INTERVAL_TICKS) {
+                EmbeddedNavigationHandler.INSTANCE.startGoto(this.lastHuntGoalX, this.lastHuntGoalY, this.lastHuntGoalZ,
+                        true);
+                this.lastHuntGotoTick = nowTick;
+            }
+            return;
+        }
+
+        boolean shouldSendGoto = !huntNavigationActive
+                || previousGoalReached
+                || targetId != this.lastHuntTargetEntityId
+                || movedSq >= HUNT_GOTO_MOVE_THRESHOLD_SQ;
+        if (!shouldSendGoto) {
+            return;
+        }
+
+        if (isHuntFixedDistanceMode()) {
+            double distance = Math.max(0.0001D, player.getDistance(target));
+            double desired = getEffectiveHuntFixedDistance();
+            double ratio = Math.max(0.0D, (distance - desired) / distance);
+            double goalX = target.posX + (player.posX - target.posX) * ratio;
+            double goalZ = target.posZ + (player.posZ - target.posZ) * ratio;
+            EmbeddedNavigationHandler.INSTANCE.startGotoXZ(goalX, goalZ, true);
+            recordHuntNavigationDispatch(target, goalX, target.posY, goalZ, nowTick);
+            return;
+        }
+
+        EmbeddedNavigationHandler.INSTANCE.startGotoXZ(target.posX, target.posZ, true);
+        recordHuntNavigationDispatch(target, target.posX, target.posY, target.posZ, nowTick);
+    }
+
     private int compareCurrentTargetWithinDistanceHysteresis(TargetCandidate left, TargetCandidate right) {
         if (left == null || right == null || left.currentTargetPriority == right.currentTargetPriority) {
             return 0;
@@ -2055,6 +2281,98 @@ public class KillAuraHandler implements AbstractGameEventListener {
         }
         RayTraceResult blockRay = mc.world.rayTraceBlocks(eyePos, hitVec, false, true, false);
         return blockRay != null && blockRay.typeOfHit == RayTraceResult.Type.BLOCK;
+    }
+
+    private void applyRotationToEntity(EntityPlayerSP player, Entity target) {
+        Rotation rotation = getDesiredAimRotationForEntity(player, target);
+        if (player == null || rotation == null) {
+            return;
+        }
+        player.rotationYaw = rotation.getYaw();
+        player.rotationPitch = rotation.getPitch();
+    }
+
+    private Rotation getDesiredAimRotationForEntity(EntityPlayerSP player, Entity target) {
+        if (player == null || target == null || target.getEntityBoundingBox() == null) {
+            return null;
+        }
+        AxisAlignedBB box = target.getEntityBoundingBox();
+        Vec3d eyePos = player.getPositionEyes(1.0F);
+        double targetX = (box.minX + box.maxX) * 0.5D;
+        double targetY = (box.minY + box.maxY) * 0.5D;
+        double targetZ = (box.minZ + box.maxZ) * 0.5D;
+        double dx = targetX - eyePos.x;
+        double dy = targetY - eyePos.y;
+        double dz = targetZ - eyePos.z;
+        double horizontal = Math.sqrt(dx * dx + dz * dz);
+        float yaw = (float) (Math.toDegrees(Math.atan2(dz, dx)) - 90.0D);
+        float pitch = (float) (-Math.toDegrees(Math.atan2(dy, horizontal)));
+        return new Rotation(yaw, pitch);
+    }
+
+    private boolean canAttackEntityTarget(EntityPlayerSP player, Entity target, boolean requireCrosshairHit) {
+        if (player == null || target == null || target.isDead) {
+            return false;
+        }
+        String targetName = getFilterableEntityName(target);
+        boolean whitelistMatched = false;
+        if (enableNameBlacklist && matchesNameList(targetName, nameBlacklist)) {
+            return false;
+        }
+        if (enableNameWhitelist) {
+            if (getNormalizedNameListMatchIndex(targetName, nameWhitelist) == Integer.MAX_VALUE) {
+                return false;
+            }
+            whitelistMatched = true;
+        }
+        if (!whitelistMatched && !matchesEnabledTargetGroup(target)) {
+            return false;
+        }
+        if (requireLineOfSight && !player.canEntityBeSeen(target)) {
+            return false;
+        }
+        if (player.getDistanceSq(target) > attackRange * attackRange) {
+            return false;
+        }
+        if (requireCrosshairHit && getCrosshairHitDistanceSq(player, target) < 0.0D) {
+            return false;
+        }
+        return true;
+    }
+
+    private double getCrosshairHitDistanceSq(EntityPlayerSP player, Entity target) {
+        if (player == null) {
+            return -1.0D;
+        }
+        Vec3d eyePos = player.getPositionEyes(1.0F);
+        Vec3d lookVec = player.getLook(1.0F);
+        double searchDistance = Math.max(0.1D, attackRange);
+        Vec3d endPos = eyePos.addVector(lookVec.x * searchDistance, lookVec.y * searchDistance,
+                lookVec.z * searchDistance);
+        return getCrosshairHitDistanceSq(target, eyePos, endPos);
+    }
+
+    private double getCrosshairHitDistanceSq(Entity target, Vec3d eyePos, Vec3d endPos) {
+        if (target == null || eyePos == null || endPos == null || target.getEntityBoundingBox() == null) {
+            return -1.0D;
+        }
+        AxisAlignedBB boundingBox = target.getEntityBoundingBox();
+        double border = Math.max(0.0D, target.getCollisionBorderSize());
+        AxisAlignedBB hitBox = border > 0.0D ? boundingBox.grow(border) : boundingBox;
+        Vec3d hitVec;
+        if (containsPoint(hitBox, eyePos)) {
+            hitVec = eyePos;
+        } else {
+            RayTraceResult intercept = hitBox.calculateIntercept(eyePos, endPos);
+            if (intercept == null || intercept.hitVec == null) {
+                return -1.0D;
+            }
+            hitVec = intercept.hitVec;
+        }
+        if (requireLineOfSight && isCrosshairHitBlockedByWorld(eyePos, hitVec)) {
+            return -1.0D;
+        }
+        return eyePos.squareDistanceTo(hitVec);
     }
 
     private boolean isValidTarget(EntityPlayerSP player, EntityLivingBase target) {
@@ -3705,14 +4023,20 @@ public class KillAuraHandler implements AbstractGameEventListener {
         return isHuntEnabled() ? Math.max(attackRange, huntRadius) : attackRange;
     }
 
-    private boolean matchesEnabledTargetGroup(EntityLivingBase target) {
+    private boolean matchesEnabledTargetGroup(Entity target) {
+        if (target instanceof EntityEnderCrystal) {
+            return targetEnderCrystal;
+        }
+        if (!(target instanceof EntityLivingBase)) {
+            return false;
+        }
         if (target instanceof EntityPlayer) {
             return targetPlayers;
         }
-        if (isHostileTargetType(target)) {
+        if (isHostileTargetType((EntityLivingBase) target)) {
             return targetHostile;
         }
-        if (isPassiveTargetType(target)) {
+        if (isPassiveTargetType((EntityLivingBase) target)) {
             return targetPassive;
         }
         return false;
@@ -3934,10 +4258,24 @@ public class KillAuraHandler implements AbstractGameEventListener {
         double dx = target.posX - this.lastHuntTargetX;
         double dz = target.posZ - this.lastHuntTargetZ;
         double movedSq = dx * dx + dz * dz;
+        boolean previousGoalReached = hasReachedLastHuntGoal(player);
 
-        boolean shouldSendGoto = !huntNavigationActive || targetId != this.lastHuntTargetEntityId
-                || movedSq >= HUNT_GOTO_MOVE_THRESHOLD_SQ
-                || (nowTick - this.lastHuntGotoTick) >= HUNT_GOTO_INTERVAL_TICKS;
+        if (huntNavigationActive && !previousGoalReached) {
+            if (!EmbeddedNavigationHandler.INSTANCE.isPathingOrCalculating()
+                    && !Double.isNaN(this.lastHuntGoalX)
+                    && !Double.isNaN(this.lastHuntGoalY)
+                    && !Double.isNaN(this.lastHuntGoalZ)
+                    && (nowTick - this.lastHuntGotoTick) >= HUNT_GOTO_INTERVAL_TICKS) {
+                EmbeddedNavigationHandler.INSTANCE.startGoto(this.lastHuntGoalX, this.lastHuntGoalY, this.lastHuntGoalZ, true);
+                this.lastHuntGotoTick = nowTick;
+            }
+            return;
+        }
+
+        boolean shouldSendGoto = !huntNavigationActive
+                || previousGoalReached
+                || targetId != this.lastHuntTargetEntityId
+                || movedSq >= HUNT_GOTO_MOVE_THRESHOLD_SQ;
 
         if (shouldSendGoto) {
             if (isHuntFixedDistanceMode()) {
@@ -3977,7 +4315,24 @@ public class KillAuraHandler implements AbstractGameEventListener {
         }
     }
 
-    private void recordHuntNavigationDispatch(EntityLivingBase target, double goalX, double goalY, double goalZ, int nowTick) {
+    private boolean hasReachedLastHuntGoal(EntityPlayerSP player) {
+        if (player == null || !this.huntNavigationActive
+                || Double.isNaN(this.lastHuntGoalX)
+                || Double.isNaN(this.lastHuntGoalY)
+                || Double.isNaN(this.lastHuntGoalZ)) {
+            return false;
+        }
+        double dx = player.posX - this.lastHuntGoalX;
+        double dz = player.posZ - this.lastHuntGoalZ;
+        double horizontalDistanceSq = dx * dx + dz * dz;
+        if (horizontalDistanceSq > HUNT_GOAL_REACHED_TOLERANCE_SQ) {
+            return false;
+        }
+        double dy = Math.abs(player.posY - this.lastHuntGoalY);
+        return dy <= 1.25D;
+    }
+
+    private void recordHuntNavigationDispatch(Entity target, double goalX, double goalY, double goalZ, int nowTick) {
         if (target == null) {
             return;
         }
@@ -5055,7 +5410,10 @@ public class KillAuraHandler implements AbstractGameEventListener {
         float actualRange = MathHelper.clamp(scanRange, 1.0F, 64.0F);
         LinkedHashSet<String> unique = new LinkedHashSet<>();
         for (Entity entity : mc.world.loadedEntityList) {
-            if (!(entity instanceof EntityLivingBase) || entity == player || entity instanceof EntityArmorStand) {
+            if (entity == player || entity instanceof EntityArmorStand) {
+                continue;
+            }
+            if (!(entity instanceof EntityLivingBase) && !(entity instanceof EntityEnderCrystal)) {
                 continue;
             }
             if (player.getDistance(entity) > actualRange) {
@@ -5094,13 +5452,48 @@ public class KillAuraHandler implements AbstractGameEventListener {
         if (entity == null) {
             return "";
         }
+        if (entity instanceof EntityEnderCrystal) {
+            String translated = translateEntityNameKey("entity.EnderCrystal.name");
+            if (translated.isEmpty()) {
+                translated = translateEntityNameKey("entity.endercrystal.name");
+            }
+            if (!translated.isEmpty()) {
+                return translated;
+            }
+        }
 
         String displayName = entity.getDisplayName() == null ? "" : entity.getDisplayName().getUnformattedText();
         String normalized = normalizeFilterName(displayName);
+        if (looksLikeTranslationKey(normalized) && I18n.hasKey(normalized)) {
+            normalized = normalizeFilterName(I18n.format(normalized));
+        }
         if (!normalized.isEmpty()) {
             return normalized;
         }
-        return normalizeFilterName(entity.getName());
+        String fallbackName = normalizeFilterName(entity.getName());
+        if (looksLikeTranslationKey(fallbackName) && I18n.hasKey(fallbackName)) {
+            fallbackName = normalizeFilterName(I18n.format(fallbackName));
+        }
+        return fallbackName;
+    }
+
+    private static String translateEntityNameKey(String translationKey) {
+        String key = normalizeFilterName(translationKey);
+        if (key.isEmpty()) {
+            return "";
+        }
+        String translated = net.minecraft.util.text.translation.I18n.translateToLocal(key);
+        if (translated == null || translated.trim().isEmpty() || key.equals(translated)) {
+            return "";
+        }
+        return normalizeFilterName(translated);
+    }
+
+    private static boolean looksLikeTranslationKey(String value) {
+        return value != null
+                && !value.isEmpty()
+                && value.indexOf('.') >= 0
+                && value.chars().noneMatch(Character::isWhitespace);
     }
 
     private static String trimUnicodeWhitespace(String text) {
@@ -5417,6 +5810,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
         preset.targetHostile = targetHostile;
         preset.targetPassive = targetPassive;
         preset.targetPlayers = targetPlayers;
+        preset.targetEnderCrystal = targetEnderCrystal;
         preset.onlyWeapon = onlyWeapon;
         preset.aimOnlyMode = aimOnlyMode;
         preset.focusSingleTarget = focusSingleTarget;
@@ -5535,7 +5929,10 @@ public class KillAuraHandler implements AbstractGameEventListener {
             normalizedPreset.rotateOnlyOnAttack = false;
             normalizedPreset.relockOnlyWhenNoCrosshairTarget = false;
         }
-        if (!normalizedPreset.targetHostile && !normalizedPreset.targetPassive && !normalizedPreset.targetPlayers) {
+        if (!normalizedPreset.targetHostile
+                && !normalizedPreset.targetPassive
+                && !normalizedPreset.targetPlayers
+                && !normalizedPreset.targetEnderCrystal) {
             normalizedPreset.targetHostile = true;
         }
         if (HUNT_MODE_OFF.equals(normalizedPreset.huntMode)) {
@@ -5609,7 +6006,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
             visualizeHuntRadius = false;
         }
 
-        if (!targetHostile && !targetPassive && !targetPlayers) {
+        if (!targetHostile && !targetPassive && !targetPlayers && !targetEnderCrystal) {
             targetHostile = true;
         }
     }

@@ -43,12 +43,18 @@ public final class ItemSpreadHandler {
 
     private static volatile boolean spreadInProgress = false;
     private static volatile int pendingSpreadClicks = 0;
+    private static volatile boolean stackInProgress = false;
+    private static volatile int pendingStackClicks = 0;
 
     private ItemSpreadHandler() {
     }
 
     public static boolean isSpreadInProgress() {
         return spreadInProgress && pendingSpreadClicks > 0;
+    }
+
+    public static boolean isStackInProgress() {
+        return stackInProgress && pendingStackClicks > 0;
     }
 
     public static void spreadInventoryItem(JsonObject params) {
@@ -133,6 +139,53 @@ public final class ItemSpreadHandler {
         }
 
         scheduleClickPlan(container.windowId, clickPlan, delayTicks, normalizeDelayTo20Tps);
+    }
+
+    public static void stackInventoryItems(JsonObject params) {
+        Minecraft mc = Minecraft.getMinecraft();
+        EntityPlayerSP player = mc == null ? null : mc.player;
+        if (player == null || mc.playerController == null) {
+            return;
+        }
+        if (isStackInProgress()) {
+            zszlScriptMod.LOGGER.warn("[stack_inventory_item] 上一次叠加动作仍在执行，本次请求已忽略。");
+            return;
+        }
+        if (player.inventory.getItemStack() != null && !player.inventory.getItemStack().isEmpty()) {
+            zszlScriptMod.LOGGER.warn("[stack_inventory_item] 鼠标光标上已有物品，叠加动作取消。");
+            return;
+        }
+
+        Container container = player.openContainer != null ? player.openContainer : player.inventoryContainer;
+        if (container == null) {
+            return;
+        }
+
+        List<String> expressions = readItemFilterExpressions(params);
+        if (expressions.isEmpty()) {
+            zszlScriptMod.LOGGER.warn("[stack_inventory_item] 缺少物品过滤表达式，叠加动作取消。");
+            return;
+        }
+
+        SlotMaps slotMaps = resolveSlotMaps(container, player);
+        String sourceScope = readString(params, "sourceScope", SOURCE_SCOPE_INVENTORY);
+        String targetScope = readString(params, "targetScope", TARGET_SCOPE_INVENTORY);
+        int delayTicks = Math.max(0, readInt(params, "delayTicks", 1));
+        boolean normalizeDelayTo20Tps = readBoolean(params, "normalizeDelayTo20Tps", true);
+
+        List<SourceSlot> sources = collectSources(container, player, slotMaps, expressions, sourceScope, params);
+        if (sources.isEmpty()) {
+            zszlScriptMod.LOGGER.warn("[stack_inventory_item] 未找到符合表达式的来源物品。");
+            return;
+        }
+
+        List<ClickStep> clickPlan = buildStackClickPlan(container, slotMaps, player, sources, targetScope, params);
+        if (clickPlan.isEmpty()) {
+            zszlScriptMod.LOGGER.warn("[stack_inventory_item] 未找到可叠加的目标物品堆。");
+            return;
+        }
+
+        scheduleStackClickPlan(container.windowId, clickPlan, delayTicks, normalizeDelayTo20Tps);
     }
 
     private static List<String> readItemFilterExpressions(JsonObject params) {
@@ -363,6 +416,104 @@ public final class ItemSpreadHandler {
         return clickPlan;
     }
 
+    private static List<ClickStep> buildStackClickPlan(Container container, SlotMaps slotMaps, EntityPlayerSP player,
+            List<SourceSlot> sources, String targetScope, JsonObject params) {
+        List<ClickStep> clickPlan = new ArrayList<ClickStep>();
+        List<MergeGroup> groups = buildMergeGroups(sources);
+        for (MergeGroup group : groups) {
+            if (group == null || group.seedStack == null || group.seedStack.isEmpty()) {
+                continue;
+            }
+            List<TargetSlot> targets = collectTargets(container, slotMaps, group.seedStack, targetScope, params,
+                    false, Collections.<Integer>emptySet());
+            if (targets.isEmpty()) {
+                continue;
+            }
+            List<TargetSlot> partialTargets = new ArrayList<TargetSlot>();
+            for (TargetSlot target : targets) {
+                if (target != null && target.currentCount > 0 && target.capacity > target.currentCount) {
+                    partialTargets.add(target);
+                }
+            }
+            if (partialTargets.isEmpty()) {
+                continue;
+            }
+            partialTargets.sort((left, right) -> {
+                int countCompare = Integer.compare(right.currentCount, left.currentCount);
+                if (countCompare != 0) {
+                    return countCompare;
+                }
+                return Integer.compare(left.containerSlot, right.containerSlot);
+            });
+
+            List<MergeSourceState> sourceStates = new ArrayList<MergeSourceState>();
+            for (SourceSlot source : group.sources) {
+                if (source != null && source.stack != null && !source.stack.isEmpty()) {
+                    sourceStates.add(new MergeSourceState(source.containerSlot, source.actualInventorySlot,
+                            source.stack.getCount()));
+                }
+            }
+            sourceStates.sort((left, right) -> {
+                int countCompare = Integer.compare(left.remainingCount, right.remainingCount);
+                if (countCompare != 0) {
+                    return countCompare;
+                }
+                return Integer.compare(left.containerSlot, right.containerSlot);
+            });
+
+            for (TargetSlot target : partialTargets) {
+                int room = Math.max(0, target.capacity - target.currentCount);
+                if (room <= 0) {
+                    continue;
+                }
+                for (MergeSourceState sourceState : sourceStates) {
+                    if (sourceState == null || sourceState.remainingCount <= 0
+                            || sourceState.containerSlot == target.containerSlot
+                            || room <= 0) {
+                        continue;
+                    }
+                    int transfer = Math.min(room, sourceState.remainingCount);
+                    if (transfer <= 0) {
+                        continue;
+                    }
+                    clickPlan.add(new ClickStep(sourceState.containerSlot, 0));
+                    clickPlan.add(new ClickStep(target.containerSlot, 0));
+                    sourceState.remainingCount -= transfer;
+                    room -= transfer;
+                    if (sourceState.remainingCount > 0) {
+                        clickPlan.add(new ClickStep(sourceState.containerSlot, 0));
+                    }
+                }
+            }
+        }
+        return clickPlan;
+    }
+
+    private static List<MergeGroup> buildMergeGroups(List<SourceSlot> sources) {
+        List<MergeGroup> groups = new ArrayList<MergeGroup>();
+        if (sources == null) {
+            return groups;
+        }
+        for (SourceSlot source : sources) {
+            if (source == null || source.stack == null || source.stack.isEmpty() || source.stack.getCount() <= 0) {
+                continue;
+            }
+            MergeGroup matched = null;
+            for (MergeGroup group : groups) {
+                if (group != null && isSameStackType(group.seedStack, source.stack)) {
+                    matched = group;
+                    break;
+                }
+            }
+            if (matched == null) {
+                matched = new MergeGroup(source.stack.copy());
+                groups.add(matched);
+            }
+            matched.sources.add(source);
+        }
+        return groups;
+    }
+
     private static Integer resolveRemainderSlot(SlotMaps slotMaps, List<TargetDemand> demands, List<SourceSlot> sources,
             String remainderMode) {
         if (!REMAINDER_FIRST_EMPTY.equals(normalize(remainderMode))) {
@@ -415,6 +566,29 @@ public final class ItemSpreadHandler {
         }
     }
 
+    private static void scheduleStackClickPlan(final int windowId, List<ClickStep> clickPlan, int delayTicks,
+            boolean normalizeDelayTo20Tps) {
+        stackInProgress = true;
+        pendingStackClicks = clickPlan.size();
+        if (ModUtils.DelayScheduler.instance == null) {
+            for (ClickStep step : clickPlan) {
+                performClick(windowId, step);
+                markStackClickFinished();
+            }
+            return;
+        }
+        for (int i = 0; i < clickPlan.size(); i++) {
+            final ClickStep step = clickPlan.get(i);
+            ModUtils.DelayScheduler.instance.schedule(new Runnable() {
+                @Override
+                public void run() {
+                    performClick(windowId, step);
+                    markStackClickFinished();
+                }
+            }, i * delayTicks, normalizeDelayTo20Tps, "stack_inventory_item");
+        }
+    }
+
     private static void performClick(int windowId, ClickStep step) {
         Minecraft mc = Minecraft.getMinecraft();
         EntityPlayerSP player = mc == null ? null : mc.player;
@@ -432,6 +606,13 @@ public final class ItemSpreadHandler {
         pendingSpreadClicks = Math.max(0, pendingSpreadClicks - 1);
         if (pendingSpreadClicks <= 0) {
             spreadInProgress = false;
+        }
+    }
+
+    private static void markStackClickFinished() {
+        pendingStackClicks = Math.max(0, pendingStackClicks - 1);
+        if (pendingStackClicks <= 0) {
+            stackInProgress = false;
         }
     }
 
@@ -684,6 +865,27 @@ public final class ItemSpreadHandler {
         private ClickStep(int slot, int button) {
             this.slot = slot;
             this.button = button;
+        }
+    }
+
+    private static final class MergeGroup {
+        private final ItemStack seedStack;
+        private final List<SourceSlot> sources = new ArrayList<SourceSlot>();
+
+        private MergeGroup(ItemStack seedStack) {
+            this.seedStack = seedStack;
+        }
+    }
+
+    private static final class MergeSourceState {
+        private final int containerSlot;
+        private final int actualInventorySlot;
+        private int remainingCount;
+
+        private MergeSourceState(int containerSlot, int actualInventorySlot, int remainingCount) {
+            this.containerSlot = containerSlot;
+            this.actualInventorySlot = actualInventorySlot;
+            this.remainingCount = remainingCount;
         }
     }
 }

@@ -1101,6 +1101,31 @@ public final class PathConfigValidator {
                                 ItemSpreadHandler.REMAINDER_KEEP_CURSOR
                         }, variableContext, issues);
                 break;
+            case "stack_inventory_item":
+                validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "delayTicks", "延迟",
+                        variableContext, issues);
+                List<String> stackExpressions = InventoryItemFilterExpressionEngine.readExpressions(params);
+                if (!stackExpressions.isEmpty()) {
+                    validateItemFilterExpressionList(sequenceName, stepIndex, actionIndex,
+                            stackExpressions, "物品过滤表达式", issues);
+                } else if (isBlank(getString(params, "itemName"))) {
+                    issues.add(new Issue(Severity.ERROR, "stack_item_filter_missing", sequenceName, stepIndex,
+                            actionIndex, "叠加物品缺少过滤条件", "请至少添加一条物品过滤表达式。"));
+                }
+                validateSpreadEnum(sequenceName, stepIndex, actionIndex, params, "sourceScope", "来源范围",
+                        new String[] {
+                                ItemSpreadHandler.SOURCE_SCOPE_INVENTORY,
+                                ItemSpreadHandler.SOURCE_SCOPE_MAIN,
+                                ItemSpreadHandler.SOURCE_SCOPE_HOTBAR,
+                                ItemSpreadHandler.SOURCE_SCOPE_CONTAINER
+                        }, variableContext, issues);
+                validateSpreadEnum(sequenceName, stepIndex, actionIndex, params, "targetScope", "目标范围",
+                        new String[] {
+                                ItemSpreadHandler.TARGET_SCOPE_INVENTORY,
+                                ItemSpreadHandler.TARGET_SCOPE_MAIN,
+                                ItemSpreadHandler.TARGET_SCOPE_HOTBAR
+                        }, variableContext, issues);
+                break;
             case "use_held_item":
                 validateNonNegativeIntParam(sequenceName, stepIndex, actionIndex, params, "delayTicks", "延迟",
                         variableContext, issues);

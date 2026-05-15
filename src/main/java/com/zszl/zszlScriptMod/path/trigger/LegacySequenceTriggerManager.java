@@ -42,6 +42,7 @@ public final class LegacySequenceTriggerManager {
     public static final String TRIGGER_PLAYER_IDLE = "player_idle";
     public static final String TRIGGER_TIMER = "timer";
     public static final String TRIGGER_HP_LOW = "hp_low";
+    public static final String TRIGGER_FOOD_LOW = "food_low";
     public static final String TRIGGER_DEATH = "death";
     public static final String TRIGGER_RESPAWN = "respawn";
     public static final String TRIGGER_PLAYER_HURT = "player_hurt";
@@ -424,6 +425,8 @@ public final class LegacySequenceTriggerManager {
                 return evaluateTimer(params, eventData, containsPrefix);
             case TRIGGER_HP_LOW:
                 return evaluateHpLow(params, eventData, containsPrefix);
+            case TRIGGER_FOOD_LOW:
+                return evaluateFoodLow(params, eventData, containsPrefix);
             case TRIGGER_PLAYER_HURT:
                 return evaluateDamageEvent(params, eventData, containsPrefix);
             case TRIGGER_ATTACK_ENTITY:
@@ -550,6 +553,19 @@ public final class LegacySequenceTriggerManager {
         String detail = prefix + "低血量检查: 阈值<=" + formatDecimal(threshold)
                 + " | 当前=" + formatDecimal(hp) + "/" + formatDecimal(maxHp);
         String stateKey = "hp_low|" + bucketHalf(hp) + "|" + bucketHalf(maxHp) + "|" + bucketHalf(threshold);
+        return matched
+                ? RuleEvaluation.matched(detail + " | 已命中。", stateKey + "|match")
+                : RuleEvaluation.missed(detail + " | 未达到阈值。", stateKey + "|miss");
+    }
+
+    private static RuleEvaluation evaluateFoodLow(JsonObject params, JsonObject eventData, String prefix) {
+        double threshold = getDoubleParam(params, "foodThreshold", 12.0D);
+        double food = getDoubleParam(eventData, "food", Double.MAX_VALUE);
+        double maxFood = getDoubleParam(eventData, "maxFood", 20.0D);
+        boolean matched = food <= threshold;
+        String detail = prefix + "低饱食度检查: 阈值<=" + formatDecimal(threshold)
+                + " | 当前=" + formatDecimal(food) + "/" + formatDecimal(maxFood);
+        String stateKey = "food_low|" + bucketHalf(food) + "|" + bucketHalf(maxFood) + "|" + bucketHalf(threshold);
         return matched
                 ? RuleEvaluation.matched(detail + " | 已命中。", stateKey + "|match")
                 : RuleEvaluation.missed(detail + " | 未达到阈值。", stateKey + "|miss");
@@ -806,6 +822,12 @@ public final class LegacySequenceTriggerManager {
         return hp <= threshold;
     }
 
+    private static boolean matchesFoodLow(JsonObject params, JsonObject eventData) {
+        double threshold = getDoubleParam(params, "foodThreshold", 12.0D);
+        double food = getDoubleParam(eventData, "food", Double.MAX_VALUE);
+        return food <= threshold;
+    }
+
     private static boolean matchesEntityNearby(JsonObject params, JsonObject eventData) {
         String entityText = getStringParam(params, "entityText");
         int minCount = Math.max(0, getIntParam(params, "minCount", 1));
@@ -1001,6 +1023,9 @@ public final class LegacySequenceTriggerManager {
             case TRIGGER_HP_LOW:
                 return "当前血量 " + formatDecimal(getDoubleParam(eventData, "hp", 0.0D))
                         + "/" + formatDecimal(getDoubleParam(eventData, "maxHp", 0.0D));
+            case TRIGGER_FOOD_LOW:
+                return "当前饱食度 " + formatDecimal(getDoubleParam(eventData, "food", 0.0D))
+                        + "/" + formatDecimal(getDoubleParam(eventData, "maxFood", 20.0D));
             case TRIGGER_DEATH:
                 return "检测到玩家死亡。";
             case TRIGGER_RESPAWN:
@@ -1059,6 +1084,9 @@ public final class LegacySequenceTriggerManager {
             case TRIGGER_HP_LOW:
                 return bucketHalf(getDoubleParam(eventData, "hp", 0.0D))
                         + "|" + bucketHalf(getDoubleParam(eventData, "maxHp", 0.0D));
+            case TRIGGER_FOOD_LOW:
+                return bucketHalf(getDoubleParam(eventData, "food", 0.0D))
+                        + "|" + bucketHalf(getDoubleParam(eventData, "maxFood", 20.0D));
             case TRIGGER_INVENTORY_CHANGED:
             case TRIGGER_ENTITY_NEARBY:
             case TRIGGER_PLAYER_LIST:
@@ -1152,6 +1180,7 @@ public final class LegacySequenceTriggerManager {
         sanitizeIntParam(sanitized, "minFilledSlots", 0, 0);
         sanitizeDoubleParam(sanitized, "minDamage", 0.0D, 0.0D);
         sanitizeDoubleParam(sanitized, "hpThreshold", 6.0D, 0.0D);
+        sanitizeDoubleParam(sanitized, "foodThreshold", 12.0D, 0.0D);
         if (TRIGGER_PLAYER_LIST.equals(triggerType)) {
             PlayerListTriggerSupport.sanitizeParams(sanitized);
         }
@@ -1298,6 +1327,7 @@ public final class LegacySequenceTriggerManager {
                 || TRIGGER_PLAYER_IDLE.equals(value)
                 || TRIGGER_TIMER.equals(value)
                 || TRIGGER_HP_LOW.equals(value)
+                || TRIGGER_FOOD_LOW.equals(value)
                 || TRIGGER_DEATH.equals(value)
                 || TRIGGER_RESPAWN.equals(value)
                 || TRIGGER_PLAYER_HURT.equals(value)
@@ -1356,6 +1386,8 @@ public final class LegacySequenceTriggerManager {
                 return "定时器";
             case TRIGGER_HP_LOW:
                 return "低血量";
+            case TRIGGER_FOOD_LOW:
+                return "低饱食度";
             case TRIGGER_DEATH:
                 return "死亡";
             case TRIGGER_RESPAWN:

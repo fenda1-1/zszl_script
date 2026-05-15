@@ -1224,6 +1224,19 @@ public class PathSequenceManager {
                                 + " / 延迟"
                                 + (params.has("delayTicks") ? Math.max(0, params.get("delayTicks").getAsInt()) : 1)
                                 + " tick";
+                    case "stack_inventory_item":
+                        List<String> stackExpressions = InventoryItemFilterExpressionEngine.readExpressions(params);
+                        String stackSummary = stackExpressions.isEmpty()
+                                ? (params.has("itemName") ? params.get("itemName").getAsString() : "未设置")
+                                : InventoryItemFilterExpressionEngine.summarizeExpressions(stackExpressions);
+                        int stackTargetSlots = countIntListParam(params, "targetSlots", "targetSlotsText");
+                        return "叠加物品: "
+                                + stackSummary
+                                + " / 目标"
+                                + (stackTargetSlots > 0 ? stackTargetSlots + "格" : "按范围")
+                                + " / 延迟"
+                                + (params.has("delayTicks") ? Math.max(0, params.get("delayTicks").getAsInt()) : 1)
+                                + " tick";
                     case "transferitemstowarehouse":
                         return I18n.format("path.action.desc.transfer_to_warehouse");
                     case "warehouse_auto_deposit":
@@ -2593,6 +2606,8 @@ public class PathSequenceManager {
                     return player -> ItemFilterHandler.moveInventoryItemsToChestSlots(params);
                 case "spread_inventory_item":
                     return player -> ItemSpreadHandler.spreadInventoryItem(params);
+                case "stack_inventory_item":
+                    return player -> ItemSpreadHandler.stackInventoryItems(params);
                 case "transferitemstowarehouse":
                     return player -> ItemFilterHandler.transferItemsToWarehouse();
                 case "warehouse_auto_deposit":

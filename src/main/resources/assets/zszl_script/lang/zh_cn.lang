@@ -1287,6 +1287,7 @@ gui.path.action_editor.type.take_all_items_safe=安全全部拾取
 gui.path.action_editor.type.drop_filtered_items=丢弃已过滤物品
 gui.path.action_editor.type.move_inventory_items_to_chest_slots=容器物品批量移动
 gui.path.action_editor.type.spread_inventory_item=平摊物品到背包
+gui.path.action_editor.type.stack_inventory_item=叠加物品
 gui.path.action_editor.label.move_chest_direction=移动方向
 gui.path.action_editor.help.move_chest_direction=选择物品移动方向。默认背包->容器，也可切换为容器->背包
 gui.path.action_editor.option.move_chest_direction.inventory_to_chest=背包 -> 容器

@@ -215,6 +215,7 @@ public class GuiLegacySequenceTriggerRules extends ThemedGuiScreen {
     private GuiTextField packetChannelField;
     private GuiTextField timerIntervalField;
     private GuiTextField hpThresholdField;
+    private GuiTextField foodThresholdField;
     private GuiTextField areaFromField;
     private GuiTextField areaToField;
     private GuiTextField inventoryTextField;
@@ -340,14 +341,15 @@ public class GuiLegacySequenceTriggerRules extends ThemedGuiScreen {
         packetChannelField = createField(3105);
         timerIntervalField = createField(3106);
         hpThresholdField = createField(3107);
-        areaFromField = createField(3108);
-        areaToField = createField(3109);
-        inventoryTextField = createField(3110);
-        inventoryFullSlotsField = createField(3111);
-        itemPickupTextField = createField(3112);
-        itemPickupCountField = createField(3113);
-        entityTextField = createField(3114);
-        entityMinCountField = createField(3115);
+        foodThresholdField = createField(3108);
+        areaFromField = createField(3109);
+        areaToField = createField(3110);
+        inventoryTextField = createField(3111);
+        inventoryFullSlotsField = createField(3112);
+        itemPickupTextField = createField(3113);
+        itemPickupCountField = createField(3114);
+        entityTextField = createField(3115);
+        entityMinCountField = createField(3116);
     }
 
     private GuiTextField createField(int id) {
@@ -426,6 +428,7 @@ public class GuiLegacySequenceTriggerRules extends ThemedGuiScreen {
         editingPacketDirection = stringParam(params, "direction");
         timerIntervalField.setText(String.valueOf(intParam(params, "intervalSeconds", 1)));
         hpThresholdField.setText(floatText(doubleParam(params, "hpThreshold", 6.0D)));
+        foodThresholdField.setText(floatText(doubleParam(params, "foodThreshold", 12.0D)));
         areaFromField.setText(stringParam(params, "fromText"));
         areaToField.setText(stringParam(params, "toText"));
         inventoryTextField.setText(stringParam(params, "inventoryText"));
@@ -450,6 +453,7 @@ public class GuiLegacySequenceTriggerRules extends ThemedGuiScreen {
         idleDurationMsField.setText("1000");
         timerIntervalField.setText("1");
         hpThresholdField.setText("6");
+        foodThresholdField.setText("12");
         damageMinField.setText("0");
         inventoryFullSlotsField.setText("0");
         itemPickupCountField.setText("1");
@@ -467,6 +471,7 @@ public class GuiLegacySequenceTriggerRules extends ThemedGuiScreen {
         return Arrays.asList(nameField, categoryField, sequenceField, cooldownField, containsField, noteField, guiTitleField,
                 guiClassField, chatTextField, packetTextField, packetChannelField, eventTextField, keyNameField,
                 idleDurationMsField, damageSourceField, damageMinField, timerIntervalField, hpThresholdField,
+                foodThresholdField,
                 areaFromField, areaToField, inventoryTextField, inventoryFullSlotsField, itemPickupTextField,
                 itemPickupCountField, entityTextField, entityMinCountField);
     }
@@ -543,6 +548,8 @@ public class GuiLegacySequenceTriggerRules extends ThemedGuiScreen {
             params.addProperty("intervalSeconds", parseInt(timerIntervalField.getText(), 1, 1));
         } else if (LegacySequenceTriggerManager.TRIGGER_HP_LOW.equals(type)) {
             params.addProperty("hpThreshold", parseDouble(hpThresholdField.getText(), 6.0D, 0.0D));
+        } else if (LegacySequenceTriggerManager.TRIGGER_FOOD_LOW.equals(type)) {
+            params.addProperty("foodThreshold", parseDouble(foodThresholdField.getText(), 12.0D, 0.0D));
         } else if (LegacySequenceTriggerManager.TRIGGER_PLAYER_HURT.equals(type)) {
             putTrimmed(params, "damageSource", damageSourceField.getText());
             params.addProperty("minDamage", parseDouble(damageMinField.getText(), 0.0D, 0.0D));
@@ -1110,6 +1117,14 @@ public class GuiLegacySequenceTriggerRules extends ThemedGuiScreen {
                     "§7当当前血量小于等于这个值时触发。",
                     "§7例如 6 代表 3 颗心。");
             nextY += 24;
+            nextY = drawTextPreviewBox(nextY, "当前血量参考", buildCurrentHealthReference(), 0xFFB8C7D9);
+        } else if (LegacySequenceTriggerManager.TRIGGER_FOOD_LOW.equals(type)) {
+            drawField("阈值饱食度", foodThresholdField, nextY,
+                    "§e阈值饱食度",
+                    "§7当当前饱食度小于等于这个值时触发。",
+                    "§7满饱食度一般是 20。");
+            nextY += 24;
+            nextY = drawTextPreviewBox(nextY, "当前饱食度参考", buildCurrentFoodReference(), 0xFFB8C7D9);
         } else if (LegacySequenceTriggerManager.TRIGGER_PLAYER_HURT.equals(type)) {
             drawField("伤害来源包含", damageSourceField, nextY,
                     "§e伤害来源包含",
@@ -2392,6 +2407,9 @@ public class GuiLegacySequenceTriggerRules extends ThemedGuiScreen {
         if (LegacySequenceTriggerManager.TRIGGER_HP_LOW.equals(type)) {
             return Arrays.asList(hpThresholdField);
         }
+        if (LegacySequenceTriggerManager.TRIGGER_FOOD_LOW.equals(type)) {
+            return Arrays.asList(foodThresholdField);
+        }
         if (LegacySequenceTriggerManager.TRIGGER_PLAYER_HURT.equals(type)) {
             return Arrays.asList(damageSourceField, damageMinField);
         }
@@ -2445,6 +2463,21 @@ public class GuiLegacySequenceTriggerRules extends ThemedGuiScreen {
             }
         }
         return "当前事件没有额外说明。";
+    }
+
+    private String buildCurrentHealthReference() {
+        if (mc == null || mc.player == null) {
+            return "当前未进入世界，无法读取血量。";
+        }
+        return "当前血量: " + floatText(mc.player.getHealth())
+                + " / " + floatText(mc.player.getMaxHealth());
+    }
+
+    private String buildCurrentFoodReference() {
+        if (mc == null || mc.player == null || mc.player.getFoodStats() == null) {
+            return "当前未进入世界，无法读取饱食度。";
+        }
+        return "当前饱食度: " + mc.player.getFoodStats().getFoodLevel() + " / 20";
     }
 
     private String displayTriggerType(String type) {

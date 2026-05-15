@@ -72,6 +72,7 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
     private static final int BTN_NO_DAMAGE_ATTACK_LIMIT = 49;
     private static final int BTN_ONLY_ATTACK_WHEN_LOOKING_AT_TARGET = 50;
     private static final int BTN_HUNT_PICKUP_RULES = 51;
+    private static final int BTN_ENDER_CRYSTAL = 52;
 
     private static final int BTN_SAVE = 100;
     private static final int BTN_DEFAULT = 101;
@@ -109,6 +110,7 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
     private ToggleGuiButton hostileButton;
     private ToggleGuiButton passiveButton;
     private ToggleGuiButton playersButton;
+    private ToggleGuiButton enderCrystalButton;
     private ToggleGuiButton onlyWeaponButton;
     private ToggleGuiButton focusButton;
     private ToggleGuiButton ignoreInvisibleButton;
@@ -298,6 +300,8 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
         hostileButton = new ToggleGuiButton(BTN_HOSTILE, 0, 0, 100, 20, "", KillAuraHandler.targetHostile);
         passiveButton = new ToggleGuiButton(BTN_PASSIVE, 0, 0, 100, 20, "", KillAuraHandler.targetPassive);
         playersButton = new ToggleGuiButton(BTN_PLAYERS, 0, 0, 100, 20, "", KillAuraHandler.targetPlayers);
+        enderCrystalButton = new ToggleGuiButton(BTN_ENDER_CRYSTAL, 0, 0, 100, 20, "",
+                KillAuraHandler.targetEnderCrystal);
         focusButton = new ToggleGuiButton(BTN_FOCUS, 0, 0, 100, 20, "", KillAuraHandler.focusSingleTarget);
         ignoreInvisibleButton = new ToggleGuiButton(BTN_IGNORE_INVISIBLE, 0, 0, 100, 20, "",
                 KillAuraHandler.ignoreInvisible);
@@ -368,6 +372,7 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
         this.buttonList.add(hostileButton);
         this.buttonList.add(passiveButton);
         this.buttonList.add(playersButton);
+        this.buttonList.add(enderCrystalButton);
         this.buttonList.add(focusButton);
         this.buttonList.add(ignoreInvisibleButton);
         this.buttonList.add(aimOnlyButton);
@@ -488,6 +493,9 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
 
         playersButton.setEnabledState(KillAuraHandler.targetPlayers);
         playersButton.displayString = "攻击玩家: " + stateText(KillAuraHandler.targetPlayers);
+
+        enderCrystalButton.setEnabledState(KillAuraHandler.targetEnderCrystal);
+        enderCrystalButton.displayString = "攻击末影水晶: " + stateText(KillAuraHandler.targetEnderCrystal);
 
         focusButton.setEnabledState(KillAuraHandler.focusSingleTarget);
         focusButton.displayString = "锁定单一目标: " + stateText(KillAuraHandler.focusSingleTarget);
@@ -779,7 +787,10 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
 
         currentY += rowStep;
         placeContentButton(playersButton, leftX, currentY, buttonW, buttonHeight, layout);
-        placeContentButton(ignoreInvisibleButton, rightX, currentY, buttonW, buttonHeight, layout);
+        placeContentButton(enderCrystalButton, rightX, currentY, buttonW, buttonHeight, layout);
+
+        currentY += rowStep;
+        placeContentButton(ignoreInvisibleButton, leftX, currentY, fullWidth, buttonHeight, layout);
 
         currentY += rowStep;
         placeContentButton(noDamageAttackLimitButton, leftX, currentY, fullWidth, buttonHeight, layout);
@@ -921,6 +932,7 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
         hideButton(hostileButton);
         hideButton(passiveButton);
         hideButton(playersButton);
+        hideButton(enderCrystalButton);
         hideButton(focusButton);
         hideButton(ignoreInvisibleButton);
         hideButton(aimOnlyButton);
@@ -1495,6 +1507,10 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
             KillAuraHandler.targetPlayers = !KillAuraHandler.targetPlayers;
             enforceAtLeastOneTargetType();
             break;
+        case BTN_ENDER_CRYSTAL:
+            KillAuraHandler.targetEnderCrystal = !KillAuraHandler.targetEnderCrystal;
+            enforceAtLeastOneTargetType();
+            break;
         case BTN_FOCUS:
             KillAuraHandler.focusSingleTarget = !KillAuraHandler.focusSingleTarget;
             break;
@@ -2010,7 +2026,7 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
                     "§7同样会受黑白名单、攻击范围和可见性限制。", "§7执行序列模式不会使用这个选项。"), mouseX, mouseY);
         } else if (noDamageAttackLimitButton.visible && isMouseOver(mouseX, mouseY, noDamageAttackLimitButton)) {
             drawHoveringText(Arrays.asList("§e无伤排除", "§7连续攻击同一个目标达到次数后，若血量没有降低，",
-                    "§7会按实体ID临时排除该目标并重新索敌。", "§70 表示关闭，默认 5 次。"), mouseX, mouseY);
+                    "§7会按实体ID临时排除该目标并重新索敌。", "§70 表示关闭，默认 10 次。"), mouseX, mouseY);
         } else if (onlyWeaponButton.visible && isMouseOver(mouseX, mouseY, onlyWeaponButton)) {
             drawHoveringText(Arrays.asList("§e仅持武器生效", "§7开启后必须主手拿剑或斧头才会自动攻击。", "§7可避免误拿工具、食物或其他物品时乱打。"), mouseX,
                     mouseY);
@@ -2496,6 +2512,7 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
         KillAuraHandler.targetHostile = true;
         KillAuraHandler.targetPassive = false;
         KillAuraHandler.targetPlayers = false;
+        KillAuraHandler.targetEnderCrystal = false;
         KillAuraHandler.onlyWeapon = false;
         KillAuraHandler.aimOnlyMode = false;
         KillAuraHandler.focusSingleTarget = true;
@@ -2541,7 +2558,10 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
     }
 
     private void enforceAtLeastOneTargetType() {
-        if (!KillAuraHandler.targetHostile && !KillAuraHandler.targetPassive && !KillAuraHandler.targetPlayers) {
+        if (!KillAuraHandler.targetHostile
+                && !KillAuraHandler.targetPassive
+                && !KillAuraHandler.targetPlayers
+                && !KillAuraHandler.targetEnderCrystal) {
             KillAuraHandler.targetHostile = true;
         }
     }

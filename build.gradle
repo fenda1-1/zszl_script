@@ -329,6 +329,7 @@ task proguard(type: JavaExec) {
             writer.writeLine "# ShadowBaritone 依赖 ServiceLoader、mixin 配置和大量按类名定位的运行时逻辑。"
             writer.writeLine "# 若被重打包/重命名，运行时会出现 provider 初始化失败或 mixin 类名失效。"
             writer.writeLine "-keep class com.zszl.zszlScriptMod.shadowbaritone.** { *; }"
+            writer.writeLine "-keep class com.zszl.zszlScriptMod.utils.ReflectionCompat { *; }"
             writer.writeLine "-keep class dev.babbaj.pathfinder.** { *; }"
 
             writer.writeLine ""

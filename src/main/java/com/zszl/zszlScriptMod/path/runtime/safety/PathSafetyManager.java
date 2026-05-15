@@ -249,6 +249,7 @@ public final class PathSafetyManager {
             case "autochestclick":
             case "move_inventory_items_to_chest_slots":
             case "spread_inventory_item":
+            case "stack_inventory_item":
             case "transferitemstowarehouse":
             case "warehouse_auto_deposit":
             case "move_inventory_item_to_hotbar":

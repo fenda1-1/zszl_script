@@ -29,6 +29,7 @@ import com.zszl.zszlScriptMod.shadowbaritone.pathing.movement.MovementState;
 import com.zszl.zszlScriptMod.shadowbaritone.utils.BlockStateInterface;
 import com.google.common.collect.ImmutableSet;
 import net.minecraft.block.BlockFalling;
+import net.minecraft.block.BlockSnow;
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.init.Blocks;
 import net.minecraft.util.EnumFacing;
@@ -126,6 +127,12 @@ public class MovementAscend extends Movement {
         }
         IBlockState srcDown = context.get(x, y - 1, z);
         if (srcDown.getBlock() == Blocks.LADDER || srcDown.getBlock() == Blocks.VINE) {
+            return COST_INF;
+        }
+        IBlockState destFeet = context.get(destX, y + 1, destZ);
+        if (destFeet.getBlock() instanceof BlockSnow
+                && context.bsi.worldContainsLoadedChunk(destX, destZ)
+                && destFeet.getValue(BlockSnow.LAYERS) >= 4) {
             return COST_INF;
         }
         // we can jump from soul sand, but not from a bottom slab

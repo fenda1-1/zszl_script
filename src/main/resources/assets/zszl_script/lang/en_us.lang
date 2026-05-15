@@ -1287,6 +1287,7 @@ gui.path.action_editor.type.take_all_items_safe=Safely pick up all
 gui.path.action_editor.type.drop_filtered_items=Discard filtered items
 gui.path.action_editor.type.move_inventory_items_to_chest_slots=Moving container items in batches
 gui.path.action_editor.type.spread_inventory_item=Split items into backpack
+gui.path.action_editor.type.stack_inventory_item=Stack items
 gui.path.action_editor.label.move_chest_direction=moving direction
 gui.path.action_editor.help.move_chest_direction=Select the direction in which the item will move. Default backpack->container, you can also switch to container->backpack
 gui.path.action_editor.option.move_chest_direction.inventory_to_chest=Backpack -> Container

@@ -628,6 +628,7 @@ public class PathSequenceEventListener {
             case "autochestclick":
             case "move_inventory_items_to_chest_slots":
             case "spread_inventory_item":
+            case "stack_inventory_item":
             case "warehouse_auto_deposit":
             case "transferitemstowarehouse":
             case "move_inventory_item_to_hotbar":
@@ -2070,6 +2071,7 @@ public class PathSequenceEventListener {
         if (!"transferitemstowarehouse".equals(type)
                 && !"move_inventory_items_to_chest_slots".equals(type)
                 && !"spread_inventory_item".equals(type)
+                && !"stack_inventory_item".equals(type)
                 && !"warehouse_auto_deposit".equals(type)) {
             return false;
         }
@@ -2127,6 +2129,9 @@ public class PathSequenceEventListener {
         }
         if ("spread_inventory_item".equals(actionType)) {
             return ItemSpreadHandler.isSpreadInProgress();
+        }
+        if ("stack_inventory_item".equals(actionType)) {
+            return ItemSpreadHandler.isStackInProgress();
         }
         if ("warehouse_auto_deposit".equals(actionType)) {
             return WarehouseEventHandler.isAutoDepositRouteRunning();

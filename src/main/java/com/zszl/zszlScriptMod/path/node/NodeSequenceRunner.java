@@ -540,6 +540,7 @@ public class NodeSequenceRunner {
         if (!"transferitemstowarehouse".equals(normalized)
                 && !"move_inventory_items_to_chest_slots".equals(normalized)
                 && !"spread_inventory_item".equals(normalized)
+                && !"stack_inventory_item".equals(normalized)
                 && !"warehouse_auto_deposit".equals(normalized)) {
             return false;
         }
@@ -591,6 +592,9 @@ public class NodeSequenceRunner {
         }
         if ("spread_inventory_item".equals(actionType)) {
             return ItemSpreadHandler.isSpreadInProgress();
+        }
+        if ("stack_inventory_item".equals(actionType)) {
+            return ItemSpreadHandler.isStackInProgress();
         }
         if ("warehouse_auto_deposit".equals(actionType)) {
             return WarehouseEventHandler.isAutoDepositRouteRunning();
