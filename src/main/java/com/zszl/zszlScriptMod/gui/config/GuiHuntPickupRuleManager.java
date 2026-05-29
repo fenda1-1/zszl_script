@@ -60,9 +60,20 @@ public class GuiHuntPickupRuleManager extends AbstractThreePaneRuleManager<HuntP
     private String editorMode = KillAuraHandler.HUNT_PICKUP_RULE_MODE_ALLOW;
     private int selectedExpressionIndex = -1;
     private int expressionScrollOffset = 0;
+    private EditorStateSnapshot pendingRestoreState = null;
 
     public GuiHuntPickupRuleManager(GuiScreen parentScreen) {
         super(parentScreen);
+    }
+
+    @Override
+    public void initGui() {
+        EditorStateSnapshot restoreState = pendingRestoreState;
+        pendingRestoreState = null;
+        super.initGui();
+        if (restoreState != null) {
+            applyEditorStateSnapshot(restoreState);
+        }
     }
 
     @Override
@@ -626,6 +637,7 @@ public class GuiHuntPickupRuleManager extends AbstractThreePaneRuleManager<HuntP
         final boolean editing = editIndex >= 0 && editIndex < editorExpressions.size();
         String title = editing ? "编辑 Hunt 掉落过滤表达式" : "新增 Hunt 掉落过滤表达式";
         String initial = editing ? editorExpressions.get(editIndex) : "";
+        pendingRestoreState = captureEditorStateSnapshot();
         this.mc.displayGuiScreen(new GuiItemFilterExpressionEditor(this, title, initial, value -> {
             String expression = value == null ? "" : value.trim();
             if (expression.isEmpty()) {
@@ -651,8 +663,63 @@ public class GuiHuntPickupRuleManager extends AbstractThreePaneRuleManager<HuntP
             clampExpressionSelectionAndScroll();
             updateEditorButtonStates();
             setStatus("§a已更新表达式卡片", 0xFF8CFF9E);
+            pendingRestoreState = captureEditorStateSnapshot();
             this.mc.displayGuiScreen(this);
         }));
+    }
+
+    private EditorStateSnapshot captureEditorStateSnapshot() {
+        EditorStateSnapshot snapshot = new EditorStateSnapshot();
+        snapshot.selectedCategory = selectedCategory;
+        snapshot.selectedItemName = getSelectedItemName();
+        snapshot.creatingNew = creatingNew;
+        snapshot.editorScrollOffset = editorScrollOffset;
+        snapshot.name = nameField == null ? "" : safe(nameField.getText());
+        snapshot.category = categoryField == null ? "" : safe(categoryField.getText());
+        snapshot.maxDistance = maxDistanceField == null ? "" : safe(maxDistanceField.getText());
+        snapshot.priority = priorityField == null ? "" : safe(priorityField.getText());
+        snapshot.enabled = editorEnabled;
+        snapshot.mode = editorMode;
+        snapshot.expressions = new ArrayList<>(editorExpressions);
+        snapshot.selectedExpressionIndex = selectedExpressionIndex;
+        snapshot.expressionScrollOffset = expressionScrollOffset;
+        return snapshot;
+    }
+
+    private void applyEditorStateSnapshot(EditorStateSnapshot snapshot) {
+        if (snapshot == null) {
+            return;
+        }
+
+        if (!isBlank(snapshot.selectedCategory)) {
+            selectedCategory = snapshot.selectedCategory;
+        }
+        if (snapshot.creatingNew) {
+            creatingNew = true;
+            selectedVisibleIndex = -1;
+            clearEditorForNew();
+        } else if (!isBlank(snapshot.selectedItemName)) {
+            selectByItemName(snapshot.selectedItemName);
+        }
+
+        setText(nameField, snapshot.name);
+        setText(categoryField, snapshot.category);
+        setText(maxDistanceField, snapshot.maxDistance);
+        setText(priorityField, snapshot.priority);
+        editorEnabled = snapshot.enabled;
+        editorMode = KillAuraHandler.HUNT_PICKUP_RULE_MODE_BLOCK.equalsIgnoreCase(snapshot.mode)
+                ? KillAuraHandler.HUNT_PICKUP_RULE_MODE_BLOCK
+                : KillAuraHandler.HUNT_PICKUP_RULE_MODE_ALLOW;
+        editorExpressions.clear();
+        editorExpressions.addAll(normalizeExpressions(snapshot.expressions));
+        selectedExpressionIndex = editorExpressions.isEmpty()
+                ? -1
+                : Math.max(0, Math.min(snapshot.selectedExpressionIndex, editorExpressions.size() - 1));
+        expressionScrollOffset = Math.max(0, Math.min(snapshot.expressionScrollOffset, getExpressionMaxScroll()));
+        editorScrollOffset = snapshot.editorScrollOffset;
+        clampExpressionSelectionAndScroll();
+        clampEditorScroll();
+        layoutAllWidgets();
     }
 
     private int getExpressionIndexAt(int mouseX, int mouseY) {
@@ -787,5 +854,21 @@ public class GuiHuntPickupRuleManager extends AbstractThreePaneRuleManager<HuntP
 
     private String boolText(boolean enabled) {
         return enabled ? "§a开启" : "§c关闭";
+    }
+
+    private static class EditorStateSnapshot {
+        private String selectedCategory = CATEGORY_ALL;
+        private String selectedItemName = "";
+        private boolean creatingNew = false;
+        private int editorScrollOffset = 0;
+        private String name = "";
+        private String category = "";
+        private String maxDistance = "";
+        private String priority = "";
+        private boolean enabled = true;
+        private String mode = KillAuraHandler.HUNT_PICKUP_RULE_MODE_ALLOW;
+        private List<String> expressions = new ArrayList<>();
+        private int selectedExpressionIndex = -1;
+        private int expressionScrollOffset = 0;
     }
 }
