@@ -842,9 +842,11 @@ public class PacketCaptureHandler extends ChannelDuplexHandler {
                         }
                     }
                     if (!shouldSkipStandardBusinessPayload(inboundPacket)) {
+                        final String packetClassName = inboundPacket.getClass().getSimpleName();
                         boolean packetTriggerListeners = hasPacketTriggerListeners();
                         boolean recentPacketTextFeedNeeded = isRecentPacketTextFeedNeeded();
-                        boolean needsCapturedIdRules = CapturedIdRuleManager.hasEnabledRulesForChannel("", false);
+                        boolean needsCapturedIdRules = CapturedIdRuleManager.hasEnabledRulesForChannel(packetClassName, false)
+                                || CapturedIdRuleManager.hasEnabledRulesForChannel("", false);
                         boolean needsFieldRules = PacketFieldRuleManager.hasEnabledRulesForChannel("", false);
                         boolean needsRawSnapshot = recentPacketTextFeedNeeded || needsCapturedIdRules || needsFieldRules;
                         if (packetTriggerListeners || needsRawSnapshot) {
@@ -874,14 +876,20 @@ public class PacketCaptureHandler extends ChannelDuplexHandler {
 
                             if ((needsCapturedIdRules || needsFieldRules) && rawData != null) {
                                 final byte[] finalRawData = rawData;
+                                final String finalPacketClassName = packetClassName;
                                 PACKET_PROCESS_EXECUTOR.execute(() -> {
                                     try {
                                         if (needsCapturedIdRules) {
-                                            CapturedIdRuleManager.processPacket("", false, finalRawData, null);
+                                            String decodedForCapturedRules = decodePayload(finalRawData);
+                                            if (decodedForCapturedRules == null || decodedForCapturedRules.trim().isEmpty()) {
+                                                decodedForCapturedRules = decodePayloadFull(finalRawData);
+                                            }
+                                            CapturedIdRuleManager.processPacket(finalPacketClassName, false, finalRawData,
+                                                    decodedForCapturedRules);
                                         }
                                         if (needsFieldRules) {
                                             PacketFieldRuleManager.processPacket("", false, finalRawData,
-                                                    decodePayloadFull(finalRawData), inboundPacket.getClass().getSimpleName());
+                                                    decodePayloadFull(finalRawData), finalPacketClassName);
                                         }
                                         requestRuleSyncOnMainThread();
                                         requestSessionInitCheckOnMainThread();

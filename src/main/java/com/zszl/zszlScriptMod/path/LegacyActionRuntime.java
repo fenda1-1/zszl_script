@@ -6,6 +6,7 @@ import com.google.gson.JsonNull;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.zszl.zszlScriptMod.path.runtime.ScopedRuntimeVariables;
+import com.zszl.zszlScriptMod.utils.CapturedIdRuleManager;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.entity.EntityPlayerSP;
 import net.minecraft.client.gui.GuiScreen;
@@ -352,6 +353,8 @@ public final class LegacyActionRuntime {
                 "number",
                 "int",
                 "toint",
+                "hextodec",
+                "capdec",
                 "random",
                 "rand",
                 "randomint",
@@ -1243,6 +1246,10 @@ public final class LegacyActionRuntime {
         }
 
         private Object parseFunctionCall(String functionName) {
+            String normalizedName = functionName == null ? "" : functionName.trim().toLowerCase(Locale.ROOT);
+            if (isCapturedIdNameFunction(normalizedName)) {
+                return parseCapturedIdNameFunction(normalizedName);
+            }
             List<Object> args = new ArrayList<>();
             while (true) {
                 skipWhitespace();
@@ -1259,6 +1266,46 @@ public final class LegacyActionRuntime {
                 }
             }
             return evaluateFunction(functionName, args);
+        }
+
+        private boolean isCapturedIdNameFunction(String name) {
+            return "cap".equals(name)
+                    || "captured".equals(name)
+                    || "capturedid".equals(name)
+                    || "capdec".equals(name)
+                    || "captureddec".equals(name)
+                    || "capturediddec".equals(name);
+        }
+
+        private Object parseCapturedIdNameFunction(String functionName) {
+            skipWhitespace();
+            if (match(")")) {
+                throw error("函数 " + functionName + " 需要捕获ID名称参数");
+            }
+
+            String key;
+            if (index < expression.length()
+                    && (expression.charAt(index) == '\'' || expression.charAt(index) == '"')) {
+                key = parseQuotedString();
+            } else {
+                key = parseToken();
+                if (key.startsWith("$")) {
+                    Object resolved = getRuntimeValue(key.substring(1), runtimeVars, player, sequence, stepIndex,
+                            actionIndex);
+                    key = asString(resolved);
+                }
+            }
+            skipWhitespace();
+            if (!match(")")) {
+                throw error("函数 " + functionName + " 只支持一个捕获ID名称参数");
+            }
+
+            String hex = getCapturedIdHexValue(functionName, key);
+            if ("capdec".equals(functionName) || "captureddec".equals(functionName)
+                    || "capturediddec".equals(functionName)) {
+                return normalizeNumericResult(parseHexDecimalValue(functionName, hex));
+            }
+            return hex;
         }
 
         private String parseQuotedString() {
@@ -1580,10 +1627,16 @@ public final class LegacyActionRuntime {
                             && requireNumber(name, args.get(0)) <= requireNumber(name, args.get(2));
                 case "tonumber":
                 case "number":
+                    requireArgCountAtLeast(name, args, 1);
+                    return normalizeNumericResult(requireNumber(name, args.get(0)));
                 case "int":
                 case "toint":
                     requireArgCountAtLeast(name, args, 1);
-                    return normalizeNumericResult(requireNumber(name, args.get(0)));
+                    return normalizeNumericResult((long) requireNumber(name, args.get(0)));
+                case "hextodec":
+                case "hexdec":
+                    requireArgCountAtLeast(name, args, 1);
+                    return normalizeNumericResult(parseHexDecimalValue(name, asString(args.get(0))));
                 case "toboolean":
                 case "bool":
                 case "boolean":
@@ -1781,6 +1834,43 @@ public final class LegacyActionRuntime {
                 throw error("函数 " + functionName + " 需要数字参数");
             }
             return number.doubleValue();
+        }
+
+        private String getCapturedIdHexValue(String functionName, String key) {
+            String normalizedKey = key == null ? "" : key.trim();
+            if (normalizedKey.isEmpty()) {
+                throw error("函数 " + functionName + " 需要非空捕获ID名称");
+            }
+            if (validationMode) {
+                return "00 00 00 00";
+            }
+            String hex = CapturedIdRuleManager.getCapturedIdHex(normalizedKey);
+            if (hex == null || hex.trim().isEmpty()) {
+                throw error("函数 " + functionName + " 找不到已捕获ID: " + normalizedKey);
+            }
+            return hex;
+        }
+
+        private double parseHexDecimalValue(String functionName, String hexText) {
+            String normalized = hexText == null ? "" : hexText.replaceAll("[^0-9A-Fa-f]", "");
+            if (normalized.isEmpty()) {
+                if (validationMode) {
+                    return 0.0D;
+                }
+                throw error("函数 " + functionName + " 需要HEX文本");
+            }
+            if (normalized.length() % 2 != 0) {
+                normalized = "0" + normalized;
+            }
+            if (normalized.length() > 16) {
+                throw error("函数 " + functionName + " 最多支持8字节HEX值");
+            }
+
+            long value = 0L;
+            for (int i = 0; i < normalized.length(); i += 2) {
+                value = (value << 8) | Integer.parseInt(normalized.substring(i, i + 2), 16);
+            }
+            return (double) value;
         }
 
         private IllegalArgumentException error(String message) {

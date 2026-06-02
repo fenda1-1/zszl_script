@@ -184,8 +184,17 @@ public final class ExpressionTemplateCatalog {
                 "betweeninc", "betweeninclusive"));
         cards.add(card("toNumber / number / int",
                 "toNumber(temp.current_match)",
-                "把文本转成数字。", "toNumber(value)", "\"12\" -> 12",
+                "把文本转成数字；int/toInt 会截断小数部分。", "toNumber(value) / int(value)", "\"12\" -> 12，int(16.8) -> 16",
                 "number", "int", "toint"));
+        cards.add(card("捕获ID HEX",
+                "cap(dd)",
+                "读取捕获ID当前值，返回形如 00 00 00 2A 的HEX文本。", "cap(name) / cap(\"name\")",
+                "dd -> 00 00 00 2A", "captured", "cap", "hex"));
+        cards.add(card("捕获ID转数字",
+                "int(hextodec(cap(dd)) / 2.5)",
+                "把捕获ID的HEX值转成十进制后参与运算。capdec(name) 是 hextodec(cap(name)) 的短写。",
+                "hextodec(cap(name)) / capdec(name)", "00 00 00 2A / 2.5 -> 16",
+                "captured", "hextodec", "capdec", "math"));
         cards.add(card("toBoolean / bool / boolean",
                 "toBoolean(temp.current_match)",
                 "把文本或数字转成布尔值。", "toBoolean(value)", "\"true\" -> true",
