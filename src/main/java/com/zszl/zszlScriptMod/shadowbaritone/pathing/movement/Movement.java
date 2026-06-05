@@ -161,7 +161,7 @@ public abstract class Movement implements IMovement, MovementHelper {
             return true;
         }
         boolean somethingInTheWay = false;
-        for (BetterBlockPos blockPos : positionsToBreak) {
+        for (BetterBlockPos blockPos : preparationBreakPositions()) {
             if (!ctx.world()
                     .getEntitiesWithinAABB(EntityFallingBlock.class,
                             new AxisAlignedBB(0, 0, 0, 1, 1.1, 1).offset(blockPos))
@@ -275,7 +275,7 @@ public abstract class Movement implements IMovement, MovementHelper {
             return toBreakCached;
         }
         List<BlockPos> result = new ArrayList<>();
-        for (BetterBlockPos positionToBreak : positionsToBreak) {
+        for (BetterBlockPos positionToBreak : preparationBreakPositions()) {
             if (!MovementHelper.canWalkThrough(bsi, positionToBreak.x, positionToBreak.y, positionToBreak.z)) {
                 result.add(positionToBreak);
             }
@@ -306,5 +306,30 @@ public abstract class Movement implements IMovement, MovementHelper {
 
     public BlockPos[] toBreakAll() {
         return positionsToBreak;
+    }
+
+    protected List<BetterBlockPos> preparationBreakPositions() {
+        LinkedHashSet<BetterBlockPos> result = new LinkedHashSet<>();
+        addUpwardHeadClearance(result);
+        Collections.addAll(result, positionsToBreak);
+        return new ArrayList<>(result);
+    }
+
+    private void addUpwardHeadClearance(Set<BetterBlockPos> result) {
+        if (dest.y <= src.y) {
+            return;
+        }
+
+        result.add(src.up(2));
+        result.add(dest.up());
+
+        BetterBlockPos feet = null;
+        try {
+            feet = ctx.playerFeet();
+        } catch (Throwable ignored) {
+        }
+        if (feet != null && getValidPositions().contains(feet) && dest.y > feet.y) {
+            result.add(feet.up(2));
+        }
     }
 }

@@ -41,7 +41,7 @@ public class MovementAscend extends Movement {
     private int ticksWithoutPlacement = 0;
 
     public MovementAscend(IBaritone baritone, BetterBlockPos src, BetterBlockPos dest) {
-        super(baritone, src, dest, new BetterBlockPos[] { dest, src.up(2), dest.up() }, dest.down());
+        super(baritone, src, dest, new BetterBlockPos[] { src.up(2), dest, dest.up() }, dest.down());
     }
 
     @Override

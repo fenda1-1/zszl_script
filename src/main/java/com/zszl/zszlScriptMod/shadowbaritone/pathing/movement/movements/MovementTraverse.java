@@ -29,6 +29,7 @@ import com.zszl.zszlScriptMod.shadowbaritone.pathing.movement.CalculationContext
 import com.zszl.zszlScriptMod.shadowbaritone.pathing.movement.Movement;
 import com.zszl.zszlScriptMod.shadowbaritone.pathing.movement.MovementHelper;
 import com.zszl.zszlScriptMod.shadowbaritone.pathing.movement.MovementState;
+import com.zszl.zszlScriptMod.shadowbaritone.pathing.precompute.Ternary;
 import com.zszl.zszlScriptMod.shadowbaritone.utils.BlockStateInterface;
 import com.google.common.collect.ImmutableSet;
 import net.minecraft.block.*;
@@ -216,10 +217,7 @@ public class MovementTraverse extends Movement {
                 return state;
             }
             // and if it's fine to walk into the blocks in front
-            if (MovementHelper.avoidWalkingInto(pb0.getBlock())) {
-                return state;
-            }
-            if (MovementHelper.avoidWalkingInto(pb1.getBlock())) {
+            if (!MovementHelper.canWalkThrough(ctx, positionsToBreak[0]) || !canWalkWhileBreaking(pb0, pb1)) {
                 return state;
             }
             // and we aren't already pressed up against the block
@@ -507,6 +505,19 @@ public class MovementTraverse extends Movement {
             // dont spin around and walk forwards then spin around and place backwards for
             // every block
         }
+    }
+
+    static boolean canWalkWhileBreaking(IBlockState destHead, IBlockState destFeet) {
+        if (destHead == null || destFeet == null) {
+            return false;
+        }
+        return canWalkWhileBreaking(
+                MovementHelper.canWalkThroughBlockState(destHead),
+                MovementHelper.avoidWalkingInto(destFeet.getBlock()));
+    }
+
+    static boolean canWalkWhileBreaking(Ternary destHeadPassable, boolean avoidDestinationFeet) {
+        return destHeadPassable != Ternary.NO && !avoidDestinationFeet;
     }
 
     private BlockPos adjustFeetForLiquidTraversal(BlockPos feet) {
