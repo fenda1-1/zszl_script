@@ -32,11 +32,13 @@ import com.zszl.zszlScriptMod.utils.JsonConfigCharsetCompat;
 import com.zszl.zszlScriptMod.utils.ModUtils;
 import com.zszl.zszlScriptMod.utils.TickRangeSpec;
 import com.zszl.zszlScriptMod.zszlScriptMod;
+import net.minecraft.block.Block;
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.entity.EntityPlayerSP;
 import net.minecraft.client.renderer.BufferBuilder;
 import net.minecraft.client.renderer.GlStateManager;
+import net.minecraft.client.renderer.RenderGlobal;
 import net.minecraft.client.renderer.Tessellator;
 import net.minecraft.client.renderer.vertex.DefaultVertexFormats;
 import net.minecraft.client.resources.I18n;
@@ -71,6 +73,7 @@ import net.minecraft.util.math.RayTraceResult;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.util.text.TextComponentString;
 import net.minecraft.util.text.TextFormatting;
+import net.minecraft.world.World;
 import net.minecraftforge.client.event.RenderWorldLastEvent;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import net.minecraftforge.fml.common.gameevent.TickEvent;
@@ -126,6 +129,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
     public static boolean relockOnlyWhenNoCrosshairTarget = true;
     public static boolean onlyAttackWhenLookingAtTarget = true;
     public static boolean requireLineOfSight = true;
+    public static boolean throughWallAttack = false;
     public static boolean targetHostile = true;
     public static boolean targetPassive = false;
     public static boolean targetPlayers = false;
@@ -387,6 +391,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
         public boolean relockOnlyWhenNoCrosshairTarget = true;
         public boolean onlyAttackWhenLookingAtTarget = true;
         public boolean requireLineOfSight = true;
+        public boolean throughWallAttack = false;
         public boolean targetHostile = true;
         public boolean targetPassive = false;
         public boolean targetPlayers = false;
@@ -449,6 +454,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
             this.relockOnlyWhenNoCrosshairTarget = other.relockOnlyWhenNoCrosshairTarget;
             this.onlyAttackWhenLookingAtTarget = other.onlyAttackWhenLookingAtTarget;
             this.requireLineOfSight = other.requireLineOfSight;
+            this.throughWallAttack = other.throughWallAttack;
             this.targetHostile = other.targetHostile;
             this.targetPassive = other.targetPassive;
             this.targetPlayers = other.targetPlayers;
@@ -612,6 +618,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
         relockOnlyWhenNoCrosshairTarget = true;
         onlyAttackWhenLookingAtTarget = true;
         requireLineOfSight = true;
+        throughWallAttack = false;
         targetHostile = true;
         targetPassive = false;
         targetPlayers = false;
@@ -695,6 +702,9 @@ public class KillAuraHandler implements AbstractGameEventListener {
             }
             if (json.has("requireLineOfSight")) {
                 requireLineOfSight = json.get("requireLineOfSight").getAsBoolean();
+            }
+            if (json.has("throughWallAttack")) {
+                throughWallAttack = json.get("throughWallAttack").getAsBoolean();
             }
             if (json.has("targetHostile")) {
                 targetHostile = json.get("targetHostile").getAsBoolean();
@@ -880,6 +890,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
             json.addProperty("relockOnlyWhenNoCrosshairTarget", relockOnlyWhenNoCrosshairTarget);
             json.addProperty("onlyAttackWhenLookingAtTarget", onlyAttackWhenLookingAtTarget);
             json.addProperty("requireLineOfSight", requireLineOfSight);
+            json.addProperty("throughWallAttack", throughWallAttack);
             json.addProperty("targetHostile", targetHostile);
             json.addProperty("targetPassive", targetPassive);
             json.addProperty("targetPlayers", targetPlayers);
@@ -1078,6 +1089,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
         relockOnlyWhenNoCrosshairTarget = safePreset.relockOnlyWhenNoCrosshairTarget;
         onlyAttackWhenLookingAtTarget = safePreset.onlyAttackWhenLookingAtTarget;
         requireLineOfSight = safePreset.requireLineOfSight;
+        throughWallAttack = safePreset.throughWallAttack;
         targetHostile = safePreset.targetHostile;
         targetPassive = safePreset.targetPassive;
         targetPlayers = safePreset.targetPlayers;
@@ -1787,7 +1799,113 @@ public class KillAuraHandler implements AbstractGameEventListener {
         if (isHuntEnabled() && visualizeHuntRadius) {
             drawHuntRadiusAura(worldCenterX, worldCenterY, worldCenterZ, viewerX, viewerY, viewerZ, huntRadius);
         }
+        if (enabled && throughWallAttack) {
+            renderThroughWallAttackBlocks(player, viewerX, viewerY, viewerZ);
+        }
         renderHuntOrbitLoop();
+    }
+
+    private void renderThroughWallAttackBlocks(EntityPlayerSP player, double viewerX, double viewerY, double viewerZ) {
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc == null || mc.world == null || player == null || this.currentTargetEntityId == -1) {
+            return;
+        }
+        Entity entity = mc.world.getEntityByID(this.currentTargetEntityId);
+        if (!(entity instanceof EntityLivingBase) || entity.isDead) {
+            return;
+        }
+        EntityLivingBase target = (EntityLivingBase) entity;
+        if (target.getHealth() <= 0.0F || !isValidTarget(player, target)) {
+            return;
+        }
+
+        Vec3d from = player.getPositionEyes(1.0F);
+        Vec3d to = getEntityCenter(target);
+        List<BlockPos> blockingBlocks = collectBlockingBlocksBetween(mc.world, from, to, 80);
+        if (blockingBlocks.isEmpty()) {
+            return;
+        }
+
+        GlStateManager.pushMatrix();
+        GlStateManager.enableBlend();
+        GlStateManager.tryBlendFuncSeparate(GlStateManager.SourceFactor.SRC_ALPHA,
+                GlStateManager.DestFactor.ONE_MINUS_SRC_ALPHA, GlStateManager.SourceFactor.ONE,
+                GlStateManager.DestFactor.ZERO);
+        GlStateManager.disableTexture2D();
+        GlStateManager.disableDepth();
+        GlStateManager.depthMask(false);
+        GlStateManager.glLineWidth(2.0F);
+
+        for (BlockPos pos : blockingBlocks) {
+            AxisAlignedBB box = getWorldBlockOverlayBox(mc.world, pos);
+            if (box == null) {
+                continue;
+            }
+            AxisAlignedBB renderBox = box.offset(-viewerX, -viewerY, -viewerZ).grow(0.002D);
+            RenderGlobal.renderFilledBox(renderBox, 0.1F, 0.85F, 1.0F, 0.22F);
+            RenderGlobal.drawSelectionBoundingBox(renderBox, 0.15F, 0.95F, 1.0F, 0.65F);
+        }
+
+        GlStateManager.depthMask(true);
+        GlStateManager.enableDepth();
+        GlStateManager.enableTexture2D();
+        GlStateManager.disableBlend();
+        GlStateManager.popMatrix();
+    }
+
+    private List<BlockPos> collectBlockingBlocksBetween(World world, Vec3d from, Vec3d to, int maxBlocks) {
+        List<BlockPos> blocks = new ArrayList<>();
+        if (world == null || from == null || to == null || maxBlocks <= 0) {
+            return blocks;
+        }
+        double distance = from.distanceTo(to);
+        int steps = MathHelper.clamp((int) Math.ceil(distance * 8.0D), 1, 512);
+        Set<BlockPos> seen = new LinkedHashSet<>();
+        for (int i = 0; i <= steps && seen.size() < maxBlocks; i++) {
+            double t = i / (double) steps;
+            BlockPos pos = new BlockPos(
+                    from.x + (to.x - from.x) * t,
+                    from.y + (to.y - from.y) * t,
+                    from.z + (to.z - from.z) * t);
+            if (seen.contains(pos) || !isThroughWallOverlayBlock(world, pos)) {
+                continue;
+            }
+            seen.add(pos);
+        }
+        blocks.addAll(seen);
+        return blocks;
+    }
+
+    private boolean isThroughWallOverlayBlock(World world, BlockPos pos) {
+        if (world == null || pos == null || world.isAirBlock(pos)) {
+            return false;
+        }
+        IBlockState state = world.getBlockState(pos);
+        if (state == null || state.getBlock().isAir(state, world, pos) || state.getMaterial().isLiquid()) {
+            return false;
+        }
+        return state.getCollisionBoundingBox(world, pos) != Block.NULL_AABB;
+    }
+
+    private AxisAlignedBB getWorldBlockOverlayBox(World world, BlockPos pos) {
+        IBlockState state = world == null || pos == null ? null : world.getBlockState(pos);
+        if (state == null) {
+            return null;
+        }
+        AxisAlignedBB box = state.getCollisionBoundingBox(world, pos);
+        if (box == null || box == Block.NULL_AABB) {
+            return null;
+        }
+        return box.offset(pos);
+    }
+
+    private Vec3d getEntityCenter(Entity entity) {
+        AxisAlignedBB box = entity == null ? null : entity.getEntityBoundingBox();
+        if (box == null) {
+            return entity == null ? Vec3d.ZERO : entity.getPositionVector().addVector(0.0D, entity.height * 0.5D, 0.0D);
+        }
+        return new Vec3d((box.minX + box.maxX) * 0.5D, (box.minY + box.maxY) * 0.5D,
+                (box.minZ + box.maxZ) * 0.5D);
     }
 
     private void drawHuntRadiusAura(double worldCenterX, double worldCenterY, double worldCenterZ, double viewerX,
@@ -2002,7 +2120,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
                 && !AutoFollowHandler.isPositionWithinActiveLockChaseBounds(crystal.posX, crystal.posZ)) {
             return false;
         }
-        if (requireLineOfSight && !player.canEntityBeSeen(crystal)) {
+        if (shouldRequireAttackLineOfSight() && !player.canEntityBeSeen(crystal)) {
             return false;
         }
         String targetName = getFilterableEntityName(crystal);
@@ -2099,7 +2217,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
             return false;
         }
         double distance = player.getDistance(target);
-        boolean missingAttackLineOfSight = requireLineOfSight && !player.canEntityBeSeen(target);
+        boolean missingAttackLineOfSight = shouldRequireAttackLineOfSight() && !player.canEntityBeSeen(target);
         if (isHuntFixedDistanceMode()) {
             return missingAttackLineOfSight
                     || Math.abs(distance - getEffectiveHuntFixedDistance()) > HUNT_FIXED_DISTANCE_TOLERANCE;
@@ -2257,7 +2375,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
             }
             hitVec = intercept.hitVec;
         }
-        if (requireLineOfSight && isCrosshairHitBlockedByWorld(eyePos, hitVec)) {
+        if (shouldRequireAttackLineOfSight() && isCrosshairHitBlockedByWorld(eyePos, hitVec)) {
             return -1.0D;
         }
         return eyePos.squareDistanceTo(hitVec);
@@ -2328,7 +2446,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
         if (!whitelistMatched && !matchesEnabledTargetGroup(target)) {
             return false;
         }
-        if (requireLineOfSight && !player.canEntityBeSeen(target)) {
+        if (shouldRequireAttackLineOfSight() && !player.canEntityBeSeen(target)) {
             return false;
         }
         if (player.getDistanceSq(target) > attackRange * attackRange) {
@@ -2369,7 +2487,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
             }
             hitVec = intercept.hitVec;
         }
-        if (requireLineOfSight && isCrosshairHitBlockedByWorld(eyePos, hitVec)) {
+        if (shouldRequireAttackLineOfSight() && isCrosshairHitBlockedByWorld(eyePos, hitVec)) {
             return -1.0D;
         }
         return eyePos.squareDistanceTo(hitVec);
@@ -2440,7 +2558,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
                 && !AutoFollowHandler.isPositionWithinActiveLockChaseBounds(target.posX, target.posZ)) {
             return null;
         }
-        if (!ignoreLineOfSightRequirement && requireLineOfSight && !player.canEntityBeSeen(target)) {
+        if (!ignoreLineOfSightRequirement && shouldRequireAttackLineOfSight() && !player.canEntityBeSeen(target)) {
             return null;
         }
 
@@ -2580,7 +2698,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
         if (!isValidTarget(player, target, areaOptions)) {
             return false;
         }
-        if (requireLineOfSight && !player.canEntityBeSeen(target)) {
+        if (shouldRequireAttackLineOfSight() && !player.canEntityBeSeen(target)) {
             return false;
         }
         if (player.getDistanceSq(target) > attackRange * attackRange) {
@@ -4089,6 +4207,10 @@ public class KillAuraHandler implements AbstractGameEventListener {
         return relockOnlyWhenNoCrosshairTarget && shouldRotateToTarget();
     }
 
+    private static boolean shouldRequireAttackLineOfSight() {
+        return requireLineOfSight && !throughWallAttack;
+    }
+
     private boolean isSameEntity(EntityLivingBase left, EntityLivingBase right) {
         return left != null && right != null && left.getEntityId() == right.getEntityId();
     }
@@ -4610,7 +4732,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
         }
 
         double distance = player.getDistance(target);
-        boolean missingAttackLineOfSight = requireLineOfSight && !player.canEntityBeSeen(target);
+        boolean missingAttackLineOfSight = shouldRequireAttackLineOfSight() && !player.canEntityBeSeen(target);
         if (isHuntFixedDistanceMode()) {
             if (canStartOrbitHunt(player, target)) {
                 return true;
@@ -5807,6 +5929,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
         preset.relockOnlyWhenNoCrosshairTarget = relockOnlyWhenNoCrosshairTarget;
         preset.onlyAttackWhenLookingAtTarget = onlyAttackWhenLookingAtTarget;
         preset.requireLineOfSight = requireLineOfSight;
+        preset.throughWallAttack = throughWallAttack;
         preset.targetHostile = targetHostile;
         preset.targetPassive = targetPassive;
         preset.targetPlayers = targetPlayers;

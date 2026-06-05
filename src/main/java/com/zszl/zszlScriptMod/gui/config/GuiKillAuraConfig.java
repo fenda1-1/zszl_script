@@ -73,6 +73,7 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
     private static final int BTN_ONLY_ATTACK_WHEN_LOOKING_AT_TARGET = 50;
     private static final int BTN_HUNT_PICKUP_RULES = 51;
     private static final int BTN_ENDER_CRYSTAL = 52;
+    private static final int BTN_THROUGH_WALL_ATTACK = 53;
 
     private static final int BTN_SAVE = 100;
     private static final int BTN_DEFAULT = 101;
@@ -107,6 +108,7 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
     private ToggleGuiButton relockOnlyWhenNoCrosshairTargetButton;
     private ToggleGuiButton onlyAttackWhenLookingAtTargetButton;
     private ToggleGuiButton lineOfSightButton;
+    private ToggleGuiButton throughWallAttackButton;
     private ToggleGuiButton hostileButton;
     private ToggleGuiButton passiveButton;
     private ToggleGuiButton playersButton;
@@ -296,6 +298,8 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
                 20, "", KillAuraHandler.onlyAttackWhenLookingAtTarget);
         lineOfSightButton = new ToggleGuiButton(BTN_LINE_OF_SIGHT, 0, 0, 100, 20, "",
                 KillAuraHandler.requireLineOfSight);
+        throughWallAttackButton = new ToggleGuiButton(BTN_THROUGH_WALL_ATTACK, 0, 0, 100, 20, "",
+                KillAuraHandler.throughWallAttack);
         onlyWeaponButton = new ToggleGuiButton(BTN_ONLY_WEAPON, 0, 0, 100, 20, "", KillAuraHandler.onlyWeapon);
         hostileButton = new ToggleGuiButton(BTN_HOSTILE, 0, 0, 100, 20, "", KillAuraHandler.targetHostile);
         passiveButton = new ToggleGuiButton(BTN_PASSIVE, 0, 0, 100, 20, "", KillAuraHandler.targetPassive);
@@ -368,6 +372,7 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
         this.buttonList.add(relockOnlyWhenNoCrosshairTargetButton);
         this.buttonList.add(onlyAttackWhenLookingAtTargetButton);
         this.buttonList.add(lineOfSightButton);
+        this.buttonList.add(throughWallAttackButton);
         this.buttonList.add(onlyWeaponButton);
         this.buttonList.add(hostileButton);
         this.buttonList.add(passiveButton);
@@ -477,6 +482,9 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
 
         lineOfSightButton.setEnabledState(KillAuraHandler.requireLineOfSight);
         lineOfSightButton.displayString = "必须可见: " + stateText(KillAuraHandler.requireLineOfSight);
+
+        throughWallAttackButton.setEnabledState(KillAuraHandler.throughWallAttack);
+        throughWallAttackButton.displayString = "穿墙攻击: " + stateText(KillAuraHandler.throughWallAttack);
 
         onlyWeaponButton.setEnabledState(KillAuraHandler.onlyWeapon);
         onlyWeaponButton.displayString = "仅持武器生效: " + stateText(KillAuraHandler.onlyWeapon);
@@ -746,6 +754,9 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
         placeContentButton(focusButton, rightX, currentY, buttonW, buttonHeight, layout);
 
         currentY += rowStep;
+        placeContentButton(throughWallAttackButton, leftX, currentY, fullButtonWidth, buttonHeight, layout);
+
+        currentY += rowStep;
         if (showRotationControls) {
             placeContentButton(rotateButton, leftX, currentY, buttonW, buttonHeight, layout);
             placeContentButton(smoothRotateButton, rightX, currentY, buttonW, buttonHeight, layout);
@@ -928,6 +939,7 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
         hideButton(relockOnlyWhenNoCrosshairTargetButton);
         hideButton(onlyAttackWhenLookingAtTargetButton);
         hideButton(lineOfSightButton);
+        hideButton(throughWallAttackButton);
         hideButton(onlyWeaponButton);
         hideButton(hostileButton);
         hideButton(passiveButton);
@@ -1485,6 +1497,9 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
         case BTN_LINE_OF_SIGHT:
             KillAuraHandler.requireLineOfSight = !KillAuraHandler.requireLineOfSight;
             break;
+        case BTN_THROUGH_WALL_ATTACK:
+            KillAuraHandler.throughWallAttack = !KillAuraHandler.throughWallAttack;
+            break;
         case BTN_ONLY_WEAPON:
             KillAuraHandler.onlyWeapon = !KillAuraHandler.onlyWeapon;
             break;
@@ -2016,6 +2031,12 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
         } else if (huntVisualizeButton.visible && isMouseOver(mouseX, mouseY, huntVisualizeButton)) {
             drawHoveringText(Arrays.asList("§e显示追击半径光环", "§7开启后会在玩家脚底绘制一个追击半径的可视化光环。", "§7方便直观看到 Hunt 搜怪范围。"), mouseX,
                     mouseY);
+        } else if (lineOfSightButton.visible && isMouseOver(mouseX, mouseY, lineOfSightButton)) {
+            drawHoveringText(Arrays.asList("§e必须可见", "§7开启后目标必须在玩家视线可见范围内。", "§7关闭后可忽略实体可见性检查。"), mouseX, mouseY);
+        } else if (throughWallAttackButton.visible && isMouseOver(mouseX, mouseY, throughWallAttackButton)) {
+            drawHoveringText(Arrays.asList("§e穿墙攻击", "§7开启后攻击索敌会忽略墙体视线阻挡。",
+                    "§7当前目标与玩家之间的遮挡方块会用半透明覆盖层标出。",
+                    "§7如果服务器强制校验视线，实际命中仍可能被服务器拒绝。"), mouseX, mouseY);
         } else if (rangeButton.visible && isMouseOver(mouseX, mouseY, rangeButton)) {
             drawHoveringText(Arrays.asList("§e攻击范围", "§7现已支持 1 ~ 100 格。", "§7超过 6 格时，建议切换到 TP攻击 模式。",
                     "§7普通攻击 / 数据包攻击 / 模拟鼠标点击在超远距离下通常无法稳定命中。"), mouseX, mouseY);
