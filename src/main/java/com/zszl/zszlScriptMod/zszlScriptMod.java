@@ -347,6 +347,7 @@ public class zszlScriptMod {
         MiscFeatureManager.INSTANCE.onClientDisconnect();
         HumanLikeMovementController.INSTANCE.reset();
         SimulatedKeyInputManager.INSTANCE.reset();
+        PacketCaptureHandler.clearRuntimeState();
         LOGGER.info("Mod状态已完全重置。");
     }
 
@@ -357,7 +358,6 @@ public class zszlScriptMod {
         triggerData.addProperty("state", "disconnected");
         LegacySequenceTriggerManager.triggerEvent(LegacySequenceTriggerManager.TRIGGER_SERVER_DISCONNECT, triggerData);
         mc.addScheduledTask(zszlScriptMod::resetAllStates);
-        mc.addScheduledTask(PacketCaptureHandler::resetOwlViewSessionID);
         mc.addScheduledTask(FreecamHandler.INSTANCE::onClientDisconnect);
         mc.addScheduledTask(FlyHandler.INSTANCE::onClientDisconnect);
         mc.addScheduledTask(SpeedHandler.INSTANCE::onClientDisconnect);

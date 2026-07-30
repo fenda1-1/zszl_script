@@ -65,7 +65,7 @@ public class PacketFilterConfig {
                     INSTANCE.blacklistFilters = new ArrayList<>();
                 if (INSTANCE.maxCapturedPackets <= 0)
                     INSTANCE.maxCapturedPackets = 3000;
-                INSTANCE.maxCapturedPackets = Math.max(100, Math.min(50000, INSTANCE.maxCapturedPackets));
+                INSTANCE.maxCapturedPackets = Math.max(100, Math.min(10000, INSTANCE.maxCapturedPackets));
                 INSTANCE.adaptiveSamplingQueueThreshold = Math.max(200,
                         Math.min(10000, INSTANCE.adaptiveSamplingQueueThreshold));
                 INSTANCE.adaptiveSamplingModulo = Math.max(2, Math.min(64, INSTANCE.adaptiveSamplingModulo));

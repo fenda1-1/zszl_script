@@ -115,6 +115,8 @@ public class AutoFollowHandler {
     private static int currentReturnPointIndex = 0;
     private static boolean patrolWaitingAtPoint = false;
     private static long patrolWaitStartMs = 0L;
+    private static Vec3d lastPatrolProgressPosition = null;
+    private static long patrolStoppedSinceMs = 0L;
     private static Point randomPatrolPoint = null;
 
     private static Point lastPlayerPosition = null;
@@ -123,9 +125,6 @@ public class AutoFollowHandler {
     private static final int COMMAND_DELAY_TICKS = 3;
     private static boolean returningToCenterFromOutOfBounds = false;
     private static boolean outOfRecoveryRangeSequenceTriggered = false;
-    private static int returnStuckTicks = 0;
-    private static Vec3d lastReturnProgressCheckPosition = null;
-    private static final int RETURN_STUCK_RESTART_TICKS = 60;
     private static long lastOutOfBoundsNotifyMs = 0L;
     private static final long OUT_OF_BOUNDS_NOTIFY_COOLDOWN_MS = 2000L;
     private static final double OUT_OF_BOUNDS_RETURN_TOLERANCE = 1.5;
@@ -549,10 +548,9 @@ public class AutoFollowHandler {
         huntMovementStopped = false;
         centerReturnCommandIssued = false;
         outOfRecoveryRangeSequenceTriggered = false;
-        returnStuckTicks = 0;
-        lastReturnProgressCheckPosition = null;
         patrolWaitingAtPoint = false;
         patrolWaitStartMs = 0L;
+        resetPatrolStuckMonitor();
         randomPatrolPoint = null;
         lastMonsterScoreScanTick = -99999;
         replaceLastScoredMonsters(Collections.<ScoredMonsterInfo>emptyList());
@@ -576,6 +574,7 @@ public class AutoFollowHandler {
         currentReturnPointIndex = 0;
         patrolWaitingAtPoint = false;
         patrolWaitStartMs = 0L;
+        resetPatrolStuckMonitor();
         randomPatrolPoint = null;
         centerReturnCommandIssued = false;
     }
@@ -615,10 +614,9 @@ public class AutoFollowHandler {
             huntMovementStopped = false;
             centerReturnCommandIssued = false;
             outOfRecoveryRangeSequenceTriggered = false;
-            returnStuckTicks = 0;
-            lastReturnProgressCheckPosition = null;
             patrolWaitingAtPoint = false;
             patrolWaitStartMs = 0L;
+            resetPatrolStuckMonitor();
             replaceLastScoredMonsters(Collections.<ScoredMonsterInfo>emptyList());
             return;
         }
@@ -635,34 +633,6 @@ public class AutoFollowHandler {
             timeoutTicksCounter = 0;
             lastTimeoutCheckPosition = null;
 
-            if (returningToCenterFromOutOfBounds && escapeDestination == null) {
-                Point returnPoint = getCurrentReturnPoint();
-                double distToCenter = distanceToPoint(player.posX, player.posZ, returnPoint);
-                if (distToCenter <= activeRule.maxRecoveryDistance) {
-                    if (lastReturnProgressCheckPosition != null
-                            && currentPos.squareDistanceTo(lastReturnProgressCheckPosition) < STUCK_DISTANCE_THRESHOLD_SQ) {
-                        returnStuckTicks++;
-                        if (returnStuckTicks >= RETURN_STUCK_RESTART_TICKS) {
-                            player.sendMessage(new TextComponentString(
-                                    TextFormatting.AQUA + "[自动追怪] " + TextFormatting.YELLOW
-                                            + "在回归过程中超过3s未动，重启中。"));
-                            reloadState(false);
-                            lastTickPlayerPos = currentPos;
-                            return;
-                        }
-                    } else {
-                        returnStuckTicks = 0;
-                    }
-                    lastReturnProgressCheckPosition = currentPos;
-                } else {
-                    returnStuckTicks = 0;
-                    lastReturnProgressCheckPosition = null;
-                }
-            } else {
-                returnStuckTicks = 0;
-                lastReturnProgressCheckPosition = null;
-            }
-
             // 回归途中支持抢怪：若范围内刷出怪，立即中断回归并转为追怪
             if (escapeDestination == null && !shouldYieldChaseToKillAura(player)) {
                 Entity candidate = findNearestMonsterInRule(player);
@@ -672,16 +642,24 @@ public class AutoFollowHandler {
                     centerReturnCommandIssued = false;
                     patrolWaitingAtPoint = false;
                     patrolWaitStartMs = 0L;
+                    resetPatrolStuckMonitor();
                     huntTargetEntity = candidate;
                     lastHuntTargetEntityId = Integer.MIN_VALUE;
                     lastHuntTargetPos = null;
                     huntMovementStopped = false;
-                    returnStuckTicks = 0;
-                    lastReturnProgressCheckPosition = null;
                     handleBoundedMonsterChase(player);
                     lastTickPlayerPos = currentPos;
                     return;
                 }
+            }
+
+            Point unfinishedReturnPoint = getCurrentReturnPoint();
+            if (escapeDestination == null
+                    && !zszlScriptMod.ArriveAt(unfinishedReturnPoint.x, Double.NaN, unfinishedReturnPoint.z,
+                            getReturnArriveDistance())
+                    && handleInterruptedPatrolRoute(player, currentPos)) {
+                lastTickPlayerPos = currentPos;
+                return;
             }
 
             boolean arrived;
@@ -697,8 +675,6 @@ public class AutoFollowHandler {
                     lastHuntTargetPos = null;
                     huntMovementStopped = false;
                     centerReturnCommandIssued = false;
-                    returnStuckTicks = 0;
-                    lastReturnProgressCheckPosition = null;
                 }
             } else {
                 Point returnPoint = getCurrentReturnPoint();
@@ -713,10 +689,9 @@ public class AutoFollowHandler {
                     lastHuntTargetPos = null;
                     huntMovementStopped = false;
                     centerReturnCommandIssued = false;
-                    returnStuckTicks = 0;
-                    lastReturnProgressCheckPosition = null;
                     patrolWaitingAtPoint = true;
                     patrolWaitStartMs = System.currentTimeMillis();
+                    resetPatrolStuckMonitor();
                     player.sendMessage(new TextComponentString(
                             TextFormatting.AQUA + "[自动追怪] " + TextFormatting.GREEN + "已到达回归点，开始停留。"));
                 }
@@ -838,8 +813,6 @@ public class AutoFollowHandler {
                     }
                 } else {
                     outOfRecoveryRangeSequenceTriggered = false;
-                    returnStuckTicks = 0;
-                    lastReturnProgressCheckPosition = null;
                     returningToCenterFromOutOfBounds = true;
                     EmbeddedNavigationHandler.INSTANCE.stop();
                     startMoveToCurrentReturnPoint();
@@ -1098,10 +1071,63 @@ public class AutoFollowHandler {
         isMovingToPoint = true;
         patrolWaitingAtPoint = false;
         patrolWaitStartMs = 0L;
+        resetPatrolStuckMonitor();
         centerReturnCommandIssued = true;
         ModUtils.DelayScheduler.instance.schedule(() -> {
             EmbeddedNavigationHandler.INSTANCE.startGotoXZ(targetPoint.x, targetPoint.z);
         }, COMMAND_DELAY_TICKS);
+    }
+
+    private static boolean handleInterruptedPatrolRoute(EntityPlayerSP player, Vec3d currentPos) {
+        if (activeRule == null || player == null || currentPos == null) {
+            resetPatrolStuckMonitor();
+            return false;
+        }
+
+        long now = System.currentTimeMillis();
+        if (lastPatrolProgressPosition == null
+                || currentPos.squareDistanceTo(lastPatrolProgressPosition) >= STUCK_DISTANCE_THRESHOLD_SQ) {
+            lastPatrolProgressPosition = currentPos;
+            patrolStoppedSinceMs = now;
+            return false;
+        }
+        if (patrolStoppedSinceMs <= 0L) {
+            patrolStoppedSinceMs = now;
+            return false;
+        }
+
+        long timeoutMs = Math.max(1, activeRule.patrolStuckRestartSeconds) * 1000L;
+        if (now - patrolStoppedSinceMs < timeoutMs) {
+            return false;
+        }
+
+        boolean killAuraOwnsMovement = shouldYieldPatrolMovementToKillAura(player)
+                || KillAuraHandler.INSTANCE.isHuntPickupNavigationActive();
+        if (killAuraOwnsMovement) {
+            return false;
+        }
+
+        Point unfinishedPoint = getCurrentReturnPoint();
+        resetPatrolStuckMonitor();
+        centerReturnCommandIssued = true;
+        EmbeddedNavigationHandler.INSTANCE.startGotoXZ(unfinishedPoint.x, unfinishedPoint.z, true);
+        player.sendMessage(new TextComponentString(
+                TextFormatting.AQUA + "[自动追怪] " + TextFormatting.YELLOW
+                        + "巡逻寻路停留超过 " + Math.max(1, activeRule.patrolStuckRestartSeconds)
+                        + " 秒，已重启当前回点寻路。"));
+        return true;
+    }
+
+    private static boolean shouldYieldPatrolMovementToKillAura(EntityPlayerSP player) {
+        return player != null
+                && KillAuraHandler.enabled
+                && KillAuraHandler.isHuntEnabled()
+                && KillAuraHandler.INSTANCE.hasActiveTarget(player);
+    }
+
+    private static void resetPatrolStuckMonitor() {
+        lastPatrolProgressPosition = null;
+        patrolStoppedSinceMs = 0L;
     }
 
     private static Point getCurrentReturnPoint() {

@@ -86,7 +86,7 @@ public class GuiPacketFilter extends ThemedGuiScreen {
                 maxCaptured = Integer.parseInt(maxCapturedField.getText().trim());
             } catch (NumberFormatException ignored) {
             }
-            config.maxCapturedPackets = MathHelper.clamp(maxCaptured, 100, 50000);
+            config.maxCapturedPackets = MathHelper.clamp(maxCaptured, 100, 10000);
 
             PacketFilterConfig.save();
 

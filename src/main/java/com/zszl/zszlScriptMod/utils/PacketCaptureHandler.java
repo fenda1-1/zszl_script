@@ -4,16 +4,20 @@ package com.zszl.zszlScriptMod.utils;
 import com.google.gson.JsonObject;
 import com.zszl.zszlScriptMod.gui.packet.InputTimelineManager;
 import com.zszl.zszlScriptMod.gui.packet.PacketIdRecordManager;
+import java.lang.ref.SoftReference;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 
@@ -52,11 +56,24 @@ import net.minecraftforge.fml.common.network.internal.FMLProxyPacket;
 
 public class PacketCaptureHandler extends ChannelDuplexHandler {
 
-    private static final ExecutorService PACKET_PROCESS_EXECUTOR = Executors.newFixedThreadPool(2, r -> {
-        Thread t = new Thread(r, "zszl-packet-processor");
-        t.setDaemon(true);
-        return t;
-    });
+    private static final int MAX_PACKET_PROCESS_QUEUE = 512;
+    private static final long MAX_PACKET_PROCESS_RETAINED_BYTES = 16L * 1024 * 1024;
+    private static final int MAX_BUSINESS_TASKS = 1024;
+    private static final long MAX_BUSINESS_TASK_RETAINED_BYTES = 16L * 1024 * 1024;
+    private static final long MAX_CAPTURE_QUEUE_BYTES = 16L * 1024 * 1024;
+    private static final long MAX_CAPTURED_RAW_BYTES_PER_DIRECTION = 24L * 1024 * 1024;
+    private static final int MAX_SINGLE_CAPTURE_BYTES = 2 * 1024 * 1024;
+    private static final int MAX_RECENT_ENTRY_CHARS = 64 * 1024;
+    private static final int MAX_RECENT_TEXT_CHARS = 1024 * 1024;
+    private static final int MAX_CAPTURED_DERIVED_CHARS = 256 * 1024;
+    private static final AtomicLong droppedPacketProcessTaskCount = new AtomicLong();
+    private static final AtomicLong packetProcessRetainedBytes = new AtomicLong();
+    private static final ThreadPoolExecutor PACKET_PROCESS_EXECUTOR = new ThreadPoolExecutor(2, 2, 0L,
+            TimeUnit.MILLISECONDS, new ArrayBlockingQueue<>(MAX_PACKET_PROCESS_QUEUE), r -> {
+                Thread t = new Thread(r, "zszl-packet-processor");
+                t.setDaemon(true);
+                return t;
+            }, new ThreadPoolExecutor.AbortPolicy());
 
     private static final String OWL_CONTROL_CHANNEL = "OwlControlChannel";
     private static final String OWL_VIEW_CHANNEL = "OwlViewChannel";
@@ -75,16 +92,20 @@ public class PacketCaptureHandler extends ChannelDuplexHandler {
     private static final int MAX_CAPTURE_PROCESS_BYTES_PER_TICK = 256 * 1024;
     private static final long MAX_CAPTURE_PROCESS_NANOS_PER_TICK = 2_000_000L;
     private static final int MAX_CAPTURED_PACKETS = 3000;
-    private static final int CAPTURE_TRIM_BATCH = 120;
     private static final int MAX_RECENT_TEXT_DECODE_BYTES = 64 * 1024;
     private static final long UI_SNAPSHOT_INTERVAL_MS = 500L;
     private static final long AGGREGATION_WINDOW_MS = 500L;
     private static final long MAX_BUSINESS_TASK_NANOS_PER_TICK = 1_500_000L;
-    private final ConcurrentLinkedQueue<PendingPacketSnapshot> pendingCaptureQueue = new ConcurrentLinkedQueue<>();
-    private final AtomicBoolean captureDrainScheduled = new AtomicBoolean(false);
-    private volatile long lastCaptureDropWarnAt = 0L;
+    private static final ConcurrentLinkedQueue<PendingPacketSnapshot> pendingCaptureQueue = new ConcurrentLinkedQueue<>();
+    private static final AtomicLong pendingCaptureBytes = new AtomicLong();
+    private static final AtomicBoolean captureDrainScheduled = new AtomicBoolean(false);
+    private static volatile long lastCaptureDropWarnAt = 0L;
     private static final AtomicBoolean businessTaskScheduled = new AtomicBoolean(false);
-    private static final ConcurrentLinkedQueue<Runnable> pendingBusinessTasks = new ConcurrentLinkedQueue<>();
+    private static final ArrayBlockingQueue<PendingBusinessTask> pendingBusinessTasks = new ArrayBlockingQueue<>(
+            MAX_BUSINESS_TASKS);
+    private static final AtomicLong pendingBusinessTaskBytes = new AtomicLong();
+    private static final AtomicLong capturedSentRawBytes = new AtomicLong();
+    private static final AtomicLong capturedReceivedRawBytes = new AtomicLong();
     private static volatile int lastKnownCaptureQueueSize = 0;
     private static volatile long sampledPacketCount = 0L;
     private static volatile long droppedPacketCount = 0L;
@@ -141,10 +162,10 @@ public class PacketCaptureHandler extends ChannelDuplexHandler {
         public final Integer packetId;
         public final String channel;
         public final byte[] rawData;
-        private volatile String hexData;
-        private volatile String decodedData;
-        private volatile String decodedDetailData;
-        private volatile String decodedFullData;
+        private volatile SoftReference<String> hexData;
+        private volatile SoftReference<String> decodedData;
+        private volatile SoftReference<String> decodedDetailData;
+        private volatile SoftReference<String> decodedFullData;
         private final int payloadSize;
         private volatile long lastTimestamp;
         private volatile int occurrenceCount;
@@ -158,7 +179,8 @@ public class PacketCaptureHandler extends ChannelDuplexHandler {
             this.packetId = packetId;
             this.channel = channel;
             this.rawData = rawData == null ? new byte[0] : rawData;
-            this.decodedData = decodedData;
+            this.decodedData = decodedData == null ? null
+                    : new SoftReference<>(boundCapturedDerivedData(decodedData));
             this.payloadSize = this.rawData.length;
             this.lastTimestamp = timestamp;
             this.occurrenceCount = 1;
@@ -191,57 +213,62 @@ public class PacketCaptureHandler extends ChannelDuplexHandler {
         }
 
         public String getHexData() {
-            String local = hexData;
+            String local = dereference(hexData);
             if (local == null) {
                 local = bytesToHex(rawData);
-                hexData = local == null ? "" : local;
+                hexData = new SoftReference<>(local == null ? "" : local);
             }
-            return hexData;
+            return local == null ? "" : local;
         }
 
         public String getDecodedData() {
-            String local = decodedData;
+            String local = dereference(decodedData);
             if (local == null) {
                 if (isFmlPacket && OWL_CONTROL_CHANNEL.equals(channel)) {
                     local = OwlViewPacketDecoder.decode(channel, rawData);
                 } else {
                     local = decodePayload(rawData);
                 }
-                decodedData = local == null ? "" : local;
+                local = boundCapturedDerivedData(local);
+                decodedData = new SoftReference<>(local == null ? "" : local);
             }
-            return decodedData;
+            return local == null ? "" : local;
         }
 
         public String getDecodedDetailData() {
-            String local = decodedDetailData;
+            String local = dereference(decodedDetailData);
             if (local == null) {
                 if (isFmlPacket && OWL_CONTROL_CHANNEL.equals(channel)) {
                     local = getDecodedData();
                 } else {
                     local = PacketPayloadDecoder.decodeDetailed(rawData);
-                    if ((local == null || local.trim().isEmpty()) && decodedData != null) {
-                        local = decodedData;
+                    String cachedDecoded = dereference(decodedData);
+                    if ((local == null || local.trim().isEmpty()) && cachedDecoded != null) {
+                        local = cachedDecoded;
                     }
                 }
-                decodedDetailData = local == null ? "" : local;
+                local = boundCapturedDerivedData(local);
+                decodedDetailData = new SoftReference<>(local == null ? "" : local);
             }
-            return decodedDetailData;
+            return local == null ? "" : local;
         }
 
         public String getDecodedFullData() {
-            String local = decodedFullData;
+            String local = dereference(decodedFullData);
             if (local == null) {
                 if (isFmlPacket && OWL_CONTROL_CHANNEL.equals(channel)) {
                     local = getDecodedData();
                 } else {
                     local = PacketPayloadDecoder.decodeFull(rawData);
-                    if ((local == null || local.trim().isEmpty()) && decodedData != null) {
-                        local = decodedData;
+                    String cachedDecoded = dereference(decodedData);
+                    if ((local == null || local.trim().isEmpty()) && cachedDecoded != null) {
+                        local = cachedDecoded;
                     }
                 }
-                decodedFullData = local == null ? "" : local;
+                local = boundCapturedDerivedData(local);
+                decodedFullData = new SoftReference<>(local == null ? "" : local);
             }
-            return decodedFullData;
+            return local == null ? "" : local;
         }
 
         public boolean canAggregate(CapturedPacketData other) {
@@ -320,11 +347,28 @@ public class PacketCaptureHandler extends ChannelDuplexHandler {
     private static String bytesToHex(byte[] bytes) {
         if (bytes == null)
             return null;
-        StringBuilder hex = new StringBuilder();
-        for (byte b : bytes) {
-            hex.append(String.format("%02X ", b));
+        int bytesToEncode = Math.min(bytes.length, MAX_CAPTURED_DERIVED_CHARS / 3);
+        final char[] digits = "0123456789ABCDEF".toCharArray();
+        StringBuilder hex = new StringBuilder(bytesToEncode * 3 + 16);
+        for (int i = 0; i < bytesToEncode; i++) {
+            int value = bytes[i] & 0xFF;
+            hex.append(digits[value >>> 4]).append(digits[value & 0x0F]).append(' ');
+        }
+        if (bytes.length > bytesToEncode) {
+            hex.append("...");
         }
         return hex.toString().trim();
+    }
+
+    private static String dereference(SoftReference<String> reference) {
+        return reference == null ? null : reference.get();
+    }
+
+    private static String boundCapturedDerivedData(String value) {
+        if (value == null || value.length() <= MAX_CAPTURED_DERIVED_CHARS) {
+            return value;
+        }
+        return value.substring(0, MAX_CAPTURED_DERIVED_CHARS) + "...";
     }
 
     private static int indexOf(byte[] source, byte[] target) {
@@ -423,13 +467,89 @@ public class PacketCaptureHandler extends ChannelDuplexHandler {
     }
 
     public static void clearAllPackets() {
-        capturedPackets.clear();
-        capturedReceivedPackets.clear();
+        synchronized (capturedPackets) {
+            capturedPackets.clear();
+        }
+        synchronized (capturedReceivedPackets) {
+            capturedReceivedPackets.clear();
+        }
+        synchronized (pendingCaptureQueue) {
+            pendingCaptureQueue.clear();
+            pendingCaptureBytes.set(0L);
+        }
+        capturedSentRawBytes.set(0L);
+        capturedReceivedRawBytes.set(0L);
         sampledPacketCount = 0L;
         droppedPacketCount = 0L;
         activeSamplingModulo = 1;
         lastKnownCaptureQueueSize = 0;
+        lastUiSnapshot = new PacketCaptureUiSnapshot(0, 0, 0, 0, 1, true, true,
+                System.currentTimeMillis());
         InputTimelineManager.clear();
+    }
+
+    /** Releases all packet-capture state that must not survive a server session. */
+    public static void clearRuntimeState() {
+        isCapturing = false;
+        clearAllPackets();
+        pendingBusinessTasks.clear();
+        pendingBusinessTaskBytes.set(0L);
+        List<Runnable> abandonedProcessTasks = new ArrayList<>();
+        PACKET_PROCESS_EXECUTOR.getQueue().drainTo(abandonedProcessTasks);
+        for (Runnable abandonedTask : abandonedProcessTasks) {
+            if (abandonedTask instanceof RetainedPacketProcessTask) {
+                ((RetainedPacketProcessTask) abandonedTask).releaseReservation();
+            }
+        }
+        businessTaskScheduled.set(false);
+        captureDrainScheduled.set(false);
+        ruleSyncDirty.set(false);
+        sessionInitDirty.set(false);
+        droppedPacketProcessTaskCount.set(0L);
+        synchronized (recentOwlViewIncomingHex) {
+            recentOwlViewIncomingHex.clear();
+        }
+        synchronized (recentOwlViewDecoded) {
+            recentOwlViewDecoded.clear();
+        }
+        clearRecentPacketTexts();
+        resetOwlViewSessionID();
+    }
+
+    private static class PendingBusinessTask {
+        final Runnable action;
+        final int retainedBytes;
+
+        PendingBusinessTask(Runnable action, int retainedBytes) {
+            this.action = action;
+            this.retainedBytes = retainedBytes;
+        }
+    }
+
+    private static class RetainedPacketProcessTask implements Runnable {
+        private final Runnable action;
+        private final int retainedBytes;
+        private final AtomicBoolean released = new AtomicBoolean(false);
+
+        RetainedPacketProcessTask(Runnable action, int retainedBytes) {
+            this.action = action;
+            this.retainedBytes = retainedBytes;
+        }
+
+        @Override
+        public void run() {
+            try {
+                action.run();
+            } finally {
+                releaseReservation();
+            }
+        }
+
+        void releaseReservation() {
+            if (released.compareAndSet(false, true)) {
+                packetProcessRetainedBytes.updateAndGet(value -> Math.max(0L, value - retainedBytes));
+            }
+        }
     }
 
     public static int getPendingCaptureQueueSize() {
@@ -500,16 +620,20 @@ public class PacketCaptureHandler extends ChannelDuplexHandler {
         if (rawData == null || rawData.length == 0) {
             return;
         }
-        StringBuilder hex = new StringBuilder(rawData.length * 3);
-        for (byte b : rawData) {
-            hex.append(String.format("%02X ", b));
+        int bytesToEncode = Math.min(rawData.length, MAX_RECENT_TEXT_DECODE_BYTES);
+        final char[] digits = "0123456789ABCDEF".toCharArray();
+        StringBuilder hex = new StringBuilder(bytesToEncode * 3 + 16);
+        for (int i = 0; i < bytesToEncode; i++) {
+            int value = rawData[i] & 0xFF;
+            hex.append(digits[value >>> 4]).append(digits[value & 0x0F]).append(' ');
+        }
+        if (rawData.length > bytesToEncode) {
+            hex.append("...");
         }
         String hexData = hex.toString().trim();
         synchronized (recentOwlViewIncomingHex) {
             recentOwlViewIncomingHex.add(hexData);
-            while (recentOwlViewIncomingHex.size() > MAX_RECENT_OWLVIEW_HEX) {
-                recentOwlViewIncomingHex.remove(0);
-            }
+            trimRecentStrings(recentOwlViewIncomingHex, MAX_RECENT_OWLVIEW_HEX, MAX_RECENT_TEXT_CHARS);
         }
     }
 
@@ -527,12 +651,28 @@ public class PacketCaptureHandler extends ChannelDuplexHandler {
         return PathSequenceEventListener.instance != null && PathSequenceEventListener.instance.isTracking();
     }
 
-    private void enqueueBusinessTask(Runnable task) {
+    private boolean enqueueBusinessTask(Runnable task) {
+        return enqueueBusinessTask(task, 0);
+    }
+
+    private boolean enqueueBusinessTask(Runnable task, int retainedBytes) {
         if (task == null) {
-            return;
+            return false;
         }
-        pendingBusinessTasks.offer(task);
+        int safeRetainedBytes = Math.max(0, retainedBytes);
+        long reserved = pendingBusinessTaskBytes.addAndGet(safeRetainedBytes);
+        if (reserved > MAX_BUSINESS_TASK_RETAINED_BYTES) {
+            pendingBusinessTaskBytes.addAndGet(-safeRetainedBytes);
+            droppedPacketCount++;
+            return false;
+        }
+        if (!pendingBusinessTasks.offer(new PendingBusinessTask(task, safeRetainedBytes))) {
+            pendingBusinessTaskBytes.addAndGet(-safeRetainedBytes);
+            droppedPacketCount++;
+            return false;
+        }
         scheduleBusinessTaskDrain();
+        return true;
     }
 
     private void scheduleBusinessTaskDrain() {
@@ -544,19 +684,23 @@ public class PacketCaptureHandler extends ChannelDuplexHandler {
 
     private void requestRuleSyncOnMainThread() {
         if (ruleSyncDirty.compareAndSet(false, true)) {
-            enqueueBusinessTask(() -> {
+            if (!enqueueBusinessTask(() -> {
                 ruleSyncDirty.set(false);
                 MailHelper.INSTANCE.syncCapturedValuesFromRules();
-            });
+            })) {
+                ruleSyncDirty.set(false);
+            }
         }
     }
 
     private void requestSessionInitCheckOnMainThread() {
         if (sessionInitDirty.compareAndSet(false, true)) {
-            enqueueBusinessTask(() -> {
+            if (!enqueueBusinessTask(() -> {
                 sessionInitDirty.set(false);
                 tryInitializeMailBySessionChange();
-            });
+            })) {
+                sessionInitDirty.set(false);
+            }
         }
     }
 
@@ -568,12 +712,13 @@ public class PacketCaptureHandler extends ChannelDuplexHandler {
             if (System.nanoTime() - startNanos >= MAX_BUSINESS_TASK_NANOS_PER_TICK) {
                 break;
             }
-            Runnable task = pendingBusinessTasks.poll();
+            PendingBusinessTask task = pendingBusinessTasks.poll();
             if (task == null) {
                 break;
             }
+            pendingBusinessTaskBytes.updateAndGet(value -> Math.max(0L, value - task.retainedBytes));
             try {
-                task.run();
+                task.action.run();
             } catch (Exception e) {
                 zszlScriptMod.LOGGER.error("[PacketCapture] 执行业务任务失败", e);
             }
@@ -656,8 +801,9 @@ public class PacketCaptureHandler extends ChannelDuplexHandler {
                             }
                         }
                     } else if (!skipStandardSerialization) {
+                        PacketBuffer rawBuffer = null;
                         try {
-                            PacketBuffer rawBuffer = new PacketBuffer(Unpooled.buffer());
+                            rawBuffer = new PacketBuffer(Unpooled.buffer());
                             inboundPacket.writePacketData(rawBuffer);
                             byte[] rawData = new byte[rawBuffer.readableBytes()];
                             rawBuffer.readBytes(rawData);
@@ -674,12 +820,20 @@ public class PacketCaptureHandler extends ChannelDuplexHandler {
                                 Packet<?> rebuilt = inboundPacket.getClass().newInstance();
                                 PacketBuffer modifiedBuffer = new PacketBuffer(
                                         Unpooled.wrappedBuffer(interceptResult.payload));
-                                rebuilt.readPacketData(modifiedBuffer);
+                                try {
+                                    rebuilt.readPacketData(modifiedBuffer);
+                                } finally {
+                                    modifiedBuffer.release();
+                                }
                                 inboundMsg = rebuilt;
                             }
                         } catch (Exception rebuildEx) {
                             zszlScriptMod.LOGGER.warn("[PacketIntercept] 重建标准S->C包失败，回退原包: {}",
                                     inboundPacket.getClass().getSimpleName(), rebuildEx);
+                        } finally {
+                            if (rawBuffer != null) {
+                                rawBuffer.release();
+                            }
                         }
                     }
                 } finally {
@@ -710,6 +864,7 @@ public class PacketCaptureHandler extends ChannelDuplexHandler {
                 ByteBuf payload = fmlPacket.payload();
                 final byte[] rawData = new byte[payload.readableBytes()];
                 payload.getBytes(payload.readerIndex(), rawData);
+                final String packetClassName = fmlPacket.getClass().getSimpleName();
 
                 enqueueBusinessTask(() -> {
 
@@ -725,13 +880,13 @@ public class PacketCaptureHandler extends ChannelDuplexHandler {
                         decoded = null;
                     }
                     if (recentPacketTextFeedNeeded || packetTriggerListeners) {
-                        storeRecentPacketText(channel, fmlPacket.getClass().getSimpleName(), decoded, rawData);
+                        storeRecentPacketText(channel, packetClassName, decoded, rawData);
                     }
 
                     if (packetTriggerListeners) {
                         JsonObject triggerData = new JsonObject();
                         triggerData.addProperty("channel", channel);
-                        triggerData.addProperty("packetClass", fmlPacket.getClass().getSimpleName());
+                        triggerData.addProperty("packetClass", packetClassName);
                         triggerData.addProperty("direction", "inbound");
                         if (decoded != null) {
                             triggerData.addProperty("packet", decoded);
@@ -747,7 +902,7 @@ public class PacketCaptureHandler extends ChannelDuplexHandler {
                     final String finalChannel = channel;
                     final byte[] finalRawData = rawData;
                     if (needsCapturedIdRules || needsFieldRules) {
-                        PACKET_PROCESS_EXECUTOR.execute(() -> {
+                        executePacketProcessTask(() -> {
                             try {
                                 if (needsCapturedIdRules) {
                                     CapturedIdRuleManager.processPacket(finalChannel, false, finalRawData, finalDecoded);
@@ -758,16 +913,16 @@ public class PacketCaptureHandler extends ChannelDuplexHandler {
                                             : decodePayloadFull(finalRawData);
                                     PacketFieldRuleManager.processPacket(finalChannel, false, finalRawData,
                                             decodedForRules,
-                                            fmlPacket.getClass().getSimpleName());
+                                            packetClassName);
                                 }
                                 requestRuleSyncOnMainThread();
                                 requestSessionInitCheckOnMainThread();
                             } catch (Exception e) {
                                 zszlScriptMod.LOGGER.error("[PacketCapture] 异步处理数据包失败: {}", finalChannel, e);
                             }
-                        });
+                        }, finalRawData.length);
                     }
-                });
+                }, rawData.length);
                 }
             } else if (businessProcessingEnabled && inboundMsg instanceof Packet) {
                 Packet<?> inboundPacket = (Packet<?>) inboundMsg;
@@ -853,9 +1008,13 @@ public class PacketCaptureHandler extends ChannelDuplexHandler {
                             byte[] rawData = null;
                             if (needsRawSnapshot) {
                                 PacketBuffer rawBuffer = new PacketBuffer(Unpooled.buffer());
-                                inboundPacket.writePacketData(rawBuffer);
-                                rawData = new byte[rawBuffer.readableBytes()];
-                                rawBuffer.readBytes(rawData);
+                                try {
+                                    inboundPacket.writePacketData(rawBuffer);
+                                    rawData = new byte[rawBuffer.readableBytes()];
+                                    rawBuffer.readBytes(rawData);
+                                } finally {
+                                    rawBuffer.release();
+                                }
                             }
 
                             if (recentPacketTextFeedNeeded && rawData != null) {
@@ -877,7 +1036,7 @@ public class PacketCaptureHandler extends ChannelDuplexHandler {
                             if ((needsCapturedIdRules || needsFieldRules) && rawData != null) {
                                 final byte[] finalRawData = rawData;
                                 final String finalPacketClassName = packetClassName;
-                                PACKET_PROCESS_EXECUTOR.execute(() -> {
+                                executePacketProcessTask(() -> {
                                     try {
                                         if (needsCapturedIdRules) {
                                             String decodedForCapturedRules = decodePayload(finalRawData);
@@ -896,7 +1055,7 @@ public class PacketCaptureHandler extends ChannelDuplexHandler {
                                     } catch (Exception e) {
                                         zszlScriptMod.LOGGER.error("[PacketCapture] 异步处理标准数据包失败", e);
                                     }
-                                });
+                                }, finalRawData.length);
                             }
                         }
                     }
@@ -955,12 +1114,13 @@ public class PacketCaptureHandler extends ChannelDuplexHandler {
                 ByteBuf outboundPayload = fmlPacket.payload();
                 byte[] outboundData = new byte[outboundPayload.readableBytes()];
                 outboundPayload.getBytes(outboundPayload.readerIndex(), outboundData);
+                final String packetClassName = fmlPacket.getClass().getSimpleName();
                 String outboundDecoded = null;
                 if ("OwlViewChannel".equals(channel) || "OwlControlChannel".equals(channel)) {
                     outboundDecoded = OwlViewPacketDecoder.decode(channel, outboundData);
                 }
                 if (recentPacketTextFeedNeeded || packetTriggerListeners) {
-                    storeRecentPacketText(channel, fmlPacket.getClass().getSimpleName(), outboundDecoded, outboundData);
+                    storeRecentPacketText(channel, packetClassName, outboundDecoded, outboundData);
                 }
                 if ("OwlViewChannel".equals(channel)) {
                     MailHelper.INSTANCE.onOutboundOwlViewPacket(channel, outboundData);
@@ -969,7 +1129,7 @@ public class PacketCaptureHandler extends ChannelDuplexHandler {
                 if (packetTriggerListeners) {
                     JsonObject triggerData = new JsonObject();
                     triggerData.addProperty("channel", channel);
-                    triggerData.addProperty("packetClass", fmlPacket.getClass().getSimpleName());
+                    triggerData.addProperty("packetClass", packetClassName);
                     triggerData.addProperty("direction", "outbound");
                     if (outboundDecoded != null) {
                         triggerData.addProperty("packet", outboundDecoded);
@@ -984,7 +1144,7 @@ public class PacketCaptureHandler extends ChannelDuplexHandler {
                 final String finalChannel = channel;
                 final byte[] finalOutboundData = outboundData;
                 if (needsCapturedIdRules || needsFieldRules) {
-                    PACKET_PROCESS_EXECUTOR.execute(() -> {
+                    executePacketProcessTask(() -> {
                         try {
                             if (needsCapturedIdRules) {
                                 CapturedIdRuleManager.processPacket(finalChannel, true, finalOutboundData,
@@ -992,7 +1152,7 @@ public class PacketCaptureHandler extends ChannelDuplexHandler {
                             }
                             if (needsFieldRules) {
                                 PacketFieldRuleManager.processPacket(finalChannel, true, finalOutboundData,
-                                        finalOutboundDecoded, fmlPacket.getClass().getSimpleName());
+                                        finalOutboundDecoded, packetClassName);
                             }
                             enqueueBusinessTask(() -> {
                                 if (isSwitchLineConfirmClickPacket(finalChannel, finalOutboundData)) {
@@ -1001,13 +1161,13 @@ public class PacketCaptureHandler extends ChannelDuplexHandler {
                                     ModConfig.debugPrint(DebugModule.MAIL_GUI,
                                             "检测到换线确定按键点击，已自动清空全部已捕获ID，等待新线路重新捕获。");
                                 }
-                            });
+                            }, finalOutboundData.length);
                             requestRuleSyncOnMainThread();
                             requestSessionInitCheckOnMainThread();
                         } catch (Exception e) {
                             zszlScriptMod.LOGGER.error("[PacketCapture] 异步处理出站数据包失败: {}", finalChannel, e);
                         }
-                    });
+                    }, finalOutboundData.length);
                 }
                 }
             }
@@ -1025,6 +1185,28 @@ public class PacketCaptureHandler extends ChannelDuplexHandler {
 
     private static String decodePayload(byte[] data) {
         return PacketPayloadDecoder.decode(data);
+    }
+
+    private static boolean executePacketProcessTask(Runnable task, int retainedBytes) {
+        if (task == null) {
+            return false;
+        }
+        int safeRetainedBytes = Math.max(0, retainedBytes);
+        long reserved = packetProcessRetainedBytes.addAndGet(safeRetainedBytes);
+        if (reserved > MAX_PACKET_PROCESS_RETAINED_BYTES) {
+            packetProcessRetainedBytes.addAndGet(-safeRetainedBytes);
+            droppedPacketProcessTaskCount.incrementAndGet();
+            return false;
+        }
+        RetainedPacketProcessTask retainedTask = new RetainedPacketProcessTask(task, safeRetainedBytes);
+        try {
+            PACKET_PROCESS_EXECUTOR.execute(retainedTask);
+            return true;
+        } catch (RejectedExecutionException rejected) {
+            retainedTask.releaseReservation();
+            droppedPacketProcessTaskCount.incrementAndGet();
+            return false;
+        }
     }
 
     private static String decodePayloadFull(byte[] data) {
@@ -1047,19 +1229,39 @@ public class PacketCaptureHandler extends ChannelDuplexHandler {
                 return;
             }
 
-            if (pendingCaptureQueue.size() >= MAX_CAPTURE_QUEUE) {
-                pendingCaptureQueue.poll();
+            int snapshotBytes = snapshot.rawData == null ? 0 : snapshot.rawData.length;
+            if (snapshotBytes > MAX_SINGLE_CAPTURE_BYTES) {
                 droppedPacketCount++;
-                long now = System.currentTimeMillis();
-                if (now - lastCaptureDropWarnAt > 3000L) {
-                    lastCaptureDropWarnAt = now;
-                    zszlScriptMod.LOGGER.warn("[PacketCapture] 捕获流量过高，已丢弃最旧待处理包以防止卡顿。queue={}",
-                            pendingCaptureQueue.size());
-                }
+                return;
             }
 
-            pendingCaptureQueue.offer(snapshot);
-            lastKnownCaptureQueueSize = pendingCaptureQueue.size();
+            boolean droppedForCapacity = false;
+            synchronized (pendingCaptureQueue) {
+                while (!pendingCaptureQueue.isEmpty()
+                        && (pendingCaptureQueue.size() >= MAX_CAPTURE_QUEUE
+                                || pendingCaptureBytes.get() + snapshotBytes > MAX_CAPTURE_QUEUE_BYTES)) {
+                    PendingPacketSnapshot dropped = pendingCaptureQueue.poll();
+                    if (dropped != null) {
+                        pendingCaptureBytes.addAndGet(-(dropped.rawData == null ? 0 : dropped.rawData.length));
+                        droppedPacketCount++;
+                        droppedForCapacity = true;
+                    }
+                }
+                if (pendingCaptureBytes.get() + snapshotBytes > MAX_CAPTURE_QUEUE_BYTES) {
+                    droppedPacketCount++;
+                    return;
+                }
+                pendingCaptureQueue.offer(snapshot);
+                pendingCaptureBytes.addAndGet(snapshotBytes);
+                lastKnownCaptureQueueSize = pendingCaptureQueue.size();
+            }
+
+            long now = System.currentTimeMillis();
+            if (droppedForCapacity && now - lastCaptureDropWarnAt > 3000L) {
+                lastCaptureDropWarnAt = now;
+                zszlScriptMod.LOGGER.warn("[PacketCapture] 捕获流量过高，已限流以防止内存持续增长。queue={}",
+                        lastKnownCaptureQueueSize);
+            }
             scheduleDrainCaptureQueue();
         } catch (Exception e) {
             zszlScriptMod.LOGGER.error("捕获并序列化数据包时出错: " + packet.getClass().getName(), e);
@@ -1085,15 +1287,26 @@ public class PacketCaptureHandler extends ChannelDuplexHandler {
             FMLProxyPacket fmlPacket = (FMLProxyPacket) packet;
             channel = fmlPacket.channel();
             ByteBuf payload = fmlPacket.payload();
+            if (payload.readableBytes() > MAX_SINGLE_CAPTURE_BYTES) {
+                return null;
+            }
             rawData = new byte[payload.readableBytes()];
             payload.getBytes(payload.readerIndex(), rawData);
         } else {
             PacketBuffer buffer = new PacketBuffer(Unpooled.buffer());
-            EnumPacketDirection direction = isSent ? EnumPacketDirection.SERVERBOUND : EnumPacketDirection.CLIENTBOUND;
-            packetId = EnumConnectionState.PLAY.getPacketId(direction, packet);
-            packet.writePacketData(buffer);
-            rawData = new byte[buffer.readableBytes()];
-            buffer.readBytes(rawData);
+            try {
+                EnumPacketDirection direction = isSent ? EnumPacketDirection.SERVERBOUND
+                        : EnumPacketDirection.CLIENTBOUND;
+                packetId = EnumConnectionState.PLAY.getPacketId(direction, packet);
+                packet.writePacketData(buffer);
+                if (buffer.readableBytes() > MAX_SINGLE_CAPTURE_BYTES) {
+                    return null;
+                }
+                rawData = new byte[buffer.readableBytes()];
+                buffer.readBytes(rawData);
+            } finally {
+                buffer.release();
+            }
         }
 
         return new PendingPacketSnapshot(packetClassName, isFml, packetId, channel, rawData, isSent);
@@ -1250,7 +1463,10 @@ public class PacketCaptureHandler extends ChannelDuplexHandler {
 
         Minecraft mc = Minecraft.getMinecraft();
         if (mc.player == null) {
-            pendingCaptureQueue.clear();
+            synchronized (pendingCaptureQueue) {
+                pendingCaptureQueue.clear();
+                pendingCaptureBytes.set(0L);
+            }
             lastKnownCaptureQueueSize = 0;
             return;
         }
@@ -1266,7 +1482,14 @@ public class PacketCaptureHandler extends ChannelDuplexHandler {
                 break;
             }
 
-            PendingPacketSnapshot snapshot = pendingCaptureQueue.poll();
+            PendingPacketSnapshot snapshot;
+            synchronized (pendingCaptureQueue) {
+                snapshot = pendingCaptureQueue.poll();
+                if (snapshot != null) {
+                    int rawBytes = snapshot.rawData == null ? 0 : snapshot.rawData.length;
+                    pendingCaptureBytes.updateAndGet(value -> Math.max(0L, value - rawBytes));
+                }
+            }
             if (snapshot == null) {
                 break;
             }
@@ -1275,9 +1498,9 @@ public class PacketCaptureHandler extends ChannelDuplexHandler {
                     snapshot.packetId, snapshot.channel, snapshot.rawData, null);
 
             if (snapshot.isSent) {
-                appendCapturedPacket(capturedPackets, packetData);
+                appendCapturedPacket(capturedPackets, packetData, capturedSentRawBytes);
             } else {
-                appendCapturedPacket(capturedReceivedPackets, packetData);
+                appendCapturedPacket(capturedReceivedPackets, packetData, capturedReceivedRawBytes);
             }
             PacketIdRecordManager.recordCapturedPacket(snapshot.isSent, packetData);
 
@@ -1293,22 +1516,36 @@ public class PacketCaptureHandler extends ChannelDuplexHandler {
         }
     }
 
-    private static void appendCapturedPacket(List<CapturedPacketData> target, CapturedPacketData data) {
+    private static void appendCapturedPacket(List<CapturedPacketData> target, CapturedPacketData data,
+            AtomicLong retainedRawBytes) {
         synchronized (target) {
             int limit = resolveMaxCapturedPackets();
+            boolean added = false;
             if (!target.isEmpty()) {
                 CapturedPacketData last = target.get(target.size() - 1);
                 if (last.canAggregate(data)) {
                     last.mergeFrom(data);
                 } else {
                     target.add(data);
+                    added = true;
                 }
             } else {
                 target.add(data);
+                added = true;
             }
-            if (target.size() > limit + CAPTURE_TRIM_BATCH) {
-                int toRemove = target.size() - limit;
-                target.subList(0, toRemove).clear();
+            long currentBytes = added ? retainedRawBytes.addAndGet(data.getPayloadSize()) : retainedRawBytes.get();
+            int countTrim = Math.max(0, target.size() - limit);
+            for (int i = 0; i < countTrim; i++) {
+                currentBytes -= target.get(i).getPayloadSize();
+            }
+            int removeCount = countTrim;
+            while (removeCount < target.size() && currentBytes > MAX_CAPTURED_RAW_BYTES_PER_DIRECTION) {
+                currentBytes -= target.get(removeCount).getPayloadSize();
+                removeCount++;
+            }
+            if (removeCount > 0) {
+                target.subList(0, removeCount).clear();
+                retainedRawBytes.set(Math.max(0L, currentBytes));
             }
         }
     }
@@ -1344,8 +1581,8 @@ public class PacketCaptureHandler extends ChannelDuplexHandler {
         if (value < 100) {
             return 100;
         }
-        if (value > 50000) {
-            return 50000;
+        if (value > 10000) {
+            return 10000;
         }
         return value;
     }
@@ -1354,10 +1591,8 @@ public class PacketCaptureHandler extends ChannelDuplexHandler {
         if (decoded == null)
             return;
         synchronized (recentOwlViewDecoded) {
-            recentOwlViewDecoded.add(decoded);
-            while (recentOwlViewDecoded.size() > MAX_RECENT_OWLVIEW_HEX) {
-                recentOwlViewDecoded.remove(0);
-            }
+            recentOwlViewDecoded.add(truncateRecentEntry(decoded));
+            trimRecentStrings(recentOwlViewDecoded, MAX_RECENT_OWLVIEW_HEX, MAX_RECENT_TEXT_CHARS);
         }
     }
 
@@ -1390,17 +1625,33 @@ public class PacketCaptureHandler extends ChannelDuplexHandler {
             }
         }
 
-        String packetText = sb.toString().trim();
+        String packetText = truncateRecentEntry(sb.toString().trim());
         if (packetText.isEmpty()) {
             return;
         }
 
         synchronized (recentPacketTexts) {
             recentPacketTexts.add(packetText);
-            while (recentPacketTexts.size() > MAX_RECENT_PACKET_TEXTS) {
-                recentPacketTexts.remove(0);
-            }
+            trimRecentStrings(recentPacketTexts, MAX_RECENT_PACKET_TEXTS, MAX_RECENT_TEXT_CHARS);
             recentPacketTextVersion++;
+        }
+    }
+
+    private static String truncateRecentEntry(String value) {
+        if (value == null || value.length() <= MAX_RECENT_ENTRY_CHARS) {
+            return value;
+        }
+        return value.substring(0, MAX_RECENT_ENTRY_CHARS) + "...";
+    }
+
+    private static void trimRecentStrings(List<String> values, int maxEntries, int maxChars) {
+        int totalChars = 0;
+        for (String value : values) {
+            totalChars += value == null ? 0 : value.length();
+        }
+        while (!values.isEmpty() && (values.size() > maxEntries || totalChars > maxChars)) {
+            String removed = values.remove(0);
+            totalChars -= removed == null ? 0 : removed.length();
         }
     }
 

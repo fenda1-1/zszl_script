@@ -17,7 +17,6 @@
 
 package com.zszl.zszlScriptMod.shadowbaritone.cache;
 
-import com.zszl.zszlScriptMod.shadowbaritone.Baritone;
 import com.zszl.zszlScriptMod.shadowbaritone.api.cache.ICachedWorld;
 import com.zszl.zszlScriptMod.shadowbaritone.api.cache.IWaypointCollection;
 import com.zszl.zszlScriptMod.shadowbaritone.api.cache.IWorldData;
@@ -46,10 +45,7 @@ public class WorldData implements IWorldData {
     }
 
     public void onClose() {
-        Baritone.getExecutor().execute(() -> {
-            System.out.println("Started saving the world in a new thread");
-            cache.save();
-        });
+        cache.close();
     }
 
     @Override

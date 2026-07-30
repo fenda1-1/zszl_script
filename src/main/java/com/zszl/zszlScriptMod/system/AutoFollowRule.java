@@ -12,6 +12,7 @@ import java.util.Locale;
 
 public class AutoFollowRule {
     public static final int DEFAULT_RETURN_STAY_MILLIS = 3000;
+    public static final int DEFAULT_PATROL_STUCK_RESTART_SECONDS = 2;
     public static final double DEFAULT_RETURN_ARRIVE_DISTANCE = 1.0;
     public static final double DEFAULT_MONSTER_VERTICAL_RANGE = 5.0;
     public static final double DEFAULT_MONSTER_UPWARD_RANGE = 3.0;
@@ -57,6 +58,7 @@ public class AutoFollowRule {
     public AutoFollowHandler.Point point3;
     public List<AutoFollowHandler.Point> returnPoints;
     public int returnStayMillis;
+    public int patrolStuckRestartSeconds;
     public double returnArriveDistance;
     public String patrolMode;
     public double monsterVerticalRange; // 旧版兼容字段
@@ -91,6 +93,7 @@ public class AutoFollowRule {
         this.point3 = new AutoFollowHandler.Point(0, 0);
         this.returnPoints = new ArrayList<>();
         this.returnStayMillis = DEFAULT_RETURN_STAY_MILLIS;
+        this.patrolStuckRestartSeconds = DEFAULT_PATROL_STUCK_RESTART_SECONDS;
         this.returnArriveDistance = DEFAULT_RETURN_ARRIVE_DISTANCE;
         this.patrolMode = PATROL_MODE_ORDER;
         this.monsterVerticalRange = DEFAULT_MONSTER_VERTICAL_RANGE;
@@ -163,6 +166,9 @@ public class AutoFollowRule {
 
         if (returnStayMillis <= 0) {
             returnStayMillis = DEFAULT_RETURN_STAY_MILLIS;
+        }
+        if (patrolStuckRestartSeconds <= 0) {
+            patrolStuckRestartSeconds = DEFAULT_PATROL_STUCK_RESTART_SECONDS;
         }
         if (returnArriveDistance <= 0) {
             returnArriveDistance = DEFAULT_RETURN_ARRIVE_DISTANCE;

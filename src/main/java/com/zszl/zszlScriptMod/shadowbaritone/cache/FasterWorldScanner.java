@@ -286,15 +286,19 @@ public enum FasterWorldScanner implements IWorldScanner {
             return Block.BLOCK_STATE_IDS;
         } else {
             PacketBuffer buf = new PacketBuffer(Unpooled.buffer());
-            palette.write(buf);
-            int size = buf.readVarInt();
-            ObjectIntIdentityMap<IBlockState> states = new ObjectIntIdentityMap<>();
-            for (int i = 0; i < size; i++) {
-                IBlockState state = Block.BLOCK_STATE_IDS.getByValue(buf.readVarInt());
-                assert state != null;
-                states.put(state, i);
+            try {
+                palette.write(buf);
+                int size = buf.readVarInt();
+                ObjectIntIdentityMap<IBlockState> states = new ObjectIntIdentityMap<>();
+                for (int i = 0; i < size; i++) {
+                    IBlockState state = Block.BLOCK_STATE_IDS.getByValue(buf.readVarInt());
+                    assert state != null;
+                    states.put(state, i);
+                }
+                return states;
+            } finally {
+                buf.release();
             }
-            return states;
         }
     }
 }

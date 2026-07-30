@@ -137,6 +137,7 @@ public class GuiAutoFollowManager extends ThemedGuiScreen {
     private GuiTextField returnPointXField;
     private GuiTextField returnPointZField;
     private GuiTextField returnStayMillisField;
+    private GuiTextField patrolStuckRestartSecondsField;
     private GuiTextField returnArriveDistanceField;
     private GuiTextField maxRecoveryDistanceField;
     private GuiTextField monsterVerticalRangeField;
@@ -269,6 +270,7 @@ public class GuiAutoFollowManager extends ThemedGuiScreen {
         returnPointXField = createField(2007);
         returnPointZField = createField(2008);
         returnStayMillisField = createField(2009);
+        patrolStuckRestartSecondsField = createField(2021);
         returnArriveDistanceField = createField(2017);
         maxRecoveryDistanceField = createField(2010);
         monsterVerticalRangeField = createField(2011);
@@ -371,6 +373,7 @@ public class GuiAutoFollowManager extends ThemedGuiScreen {
         placeButton(btnRemoveReturnPoint, 7, editorFieldX + (actionWidth + actionGap) * 2, actionWidth, 20);
 
         placeField(returnStayMillisField, getReturnStayRow(), editorFieldX, returnSectionLeftWidth);
+        placeField(patrolStuckRestartSecondsField, getPatrolStuckRestartRow(), editorFieldX, returnSectionLeftWidth);
         placeField(returnArriveDistanceField, getReturnArriveRow(), editorFieldX, returnSectionLeftWidth);
         placeButton(btnTogglePatrolMode, getPatrolModeRow(), editorFieldX, returnSectionLeftWidth, 20);
 
@@ -486,6 +489,10 @@ public class GuiAutoFollowManager extends ThemedGuiScreen {
     }
 
     private int getReturnArriveRow() {
+        return getPatrolStuckRestartRow() + 1;
+    }
+
+    private int getPatrolStuckRestartRow() {
         return getReturnStayRow() + 1;
     }
 
@@ -998,6 +1005,9 @@ public class GuiAutoFollowManager extends ThemedGuiScreen {
         setText(returnStayMillisField, String.valueOf(model.returnStayMillis > 0
                 ? model.returnStayMillis
                 : AutoFollowRule.DEFAULT_RETURN_STAY_MILLIS));
+        setText(patrolStuckRestartSecondsField, String.valueOf(model.patrolStuckRestartSeconds > 0
+                ? model.patrolStuckRestartSeconds
+                : AutoFollowRule.DEFAULT_PATROL_STUCK_RESTART_SECONDS));
         setText(returnArriveDistanceField, formatDouble(model.returnArriveDistance > 0
                 ? model.returnArriveDistance
                 : AutoFollowRule.DEFAULT_RETURN_ARRIVE_DISTANCE));
@@ -2012,6 +2022,9 @@ public class GuiAutoFollowManager extends ThemedGuiScreen {
         if (row == getReturnStayRow()) {
             return "停留毫秒：到达回点或随机巡逻点后停留的时间；如果没有回点，也会按这个时间在范围内随机巡逻。";
         }
+        if (row == getPatrolStuckRestartRow()) {
+            return "停留防卡重启时间：前往下一个回点时若被战斗或拾取打断并停住，超过该秒数后会重启未完成的回点寻路。默认2秒。";
+        }
         if (row == getReturnArriveRow()) {
             return "到达归点范围：距离当前回点或随机巡逻点在多少格以内时，判定为已到达并开始停留。默认1。";
         }
@@ -2282,6 +2295,9 @@ public class GuiAutoFollowManager extends ThemedGuiScreen {
         if (row == returnStayRow) {
             return "停留毫秒";
         }
+        if (row == getPatrolStuckRestartRow()) {
+            return "防卡重启秒数";
+        }
         if (row == getReturnArriveRow()) {
             return "到达归点范围";
         }
@@ -2362,6 +2378,7 @@ public class GuiAutoFollowManager extends ThemedGuiScreen {
         fields.add(returnPointXField);
         fields.add(returnPointZField);
         fields.add(returnStayMillisField);
+        fields.add(patrolStuckRestartSecondsField);
         fields.add(returnArriveDistanceField);
         fields.add(maxRecoveryDistanceField);
         fields.add(monsterVerticalRangeField);
@@ -2445,6 +2462,10 @@ public class GuiAutoFollowManager extends ThemedGuiScreen {
                         : AutoFollowRule.DEFAULT_LOCK_CHASE_OUT_OF_BOUNDS_DISTANCE));
         base.returnStayMillis = Math.max(1, parseInt(returnStayMillisField.getText(),
                 base.returnStayMillis > 0 ? base.returnStayMillis : AutoFollowRule.DEFAULT_RETURN_STAY_MILLIS));
+        base.patrolStuckRestartSeconds = Math.max(1, parseInt(patrolStuckRestartSecondsField.getText(),
+                base.patrolStuckRestartSeconds > 0
+                        ? base.patrolStuckRestartSeconds
+                        : AutoFollowRule.DEFAULT_PATROL_STUCK_RESTART_SECONDS));
         base.returnArriveDistance = Math.max(0.1, parseDouble(returnArriveDistanceField.getText(),
                 base.returnArriveDistance > 0
                         ? base.returnArriveDistance
@@ -2487,6 +2508,7 @@ public class GuiAutoFollowManager extends ThemedGuiScreen {
                 src.point3 == null ? 0.0 : src.point3.z);
         copy.returnPoints = copyReturnPoints(src.returnPoints);
         copy.returnStayMillis = src.returnStayMillis;
+        copy.patrolStuckRestartSeconds = src.patrolStuckRestartSeconds;
         copy.returnArriveDistance = src.returnArriveDistance;
         copy.patrolMode = src.patrolMode;
         copy.monsterVerticalRange = src.monsterVerticalRange;
@@ -2524,6 +2546,7 @@ public class GuiAutoFollowManager extends ThemedGuiScreen {
         target.point3 = source.point3;
         target.returnPoints = copyReturnPoints(source.returnPoints);
         target.returnStayMillis = source.returnStayMillis;
+        target.patrolStuckRestartSeconds = source.patrolStuckRestartSeconds;
         target.returnArriveDistance = source.returnArriveDistance;
         target.patrolMode = source.patrolMode;
         target.monsterVerticalRange = source.monsterVerticalRange;
@@ -3585,6 +3608,7 @@ public class GuiAutoFollowManager extends ThemedGuiScreen {
                 + " 首点(" + formatDouble(primary == null ? 0 : primary.x)
                 + ", " + formatDouble(primary == null ? 0 : primary.z) + ")"
                 + " 停留:" + Math.max(1, rule.returnStayMillis) + "ms"
+                + " 防卡:" + Math.max(1, rule.patrolStuckRestartSeconds) + "s"
                 + " 到达:" + formatDouble(rule.returnArriveDistance <= 0
                 ? AutoFollowRule.DEFAULT_RETURN_ARRIVE_DISTANCE
                 : rule.returnArriveDistance)

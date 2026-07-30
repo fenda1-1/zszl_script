@@ -42,7 +42,17 @@ import java.util.Optional;
  */
 public class WorldProvider implements IWorldProvider {
 
-    private static final Map<Path, WorldData> worldCache = new HashMap<>();
+    private static final Map<Path, WorldCacheEntry> worldCache = new HashMap<>();
+
+    private static final class WorldCacheEntry {
+        final WorldData data;
+        int references;
+
+        WorldCacheEntry(WorldData data) {
+            this.data = data;
+            this.references = 1;
+        }
+    }
 
     private final Baritone baritone;
     private final IPlayerContext ctx;
@@ -72,6 +82,12 @@ public class WorldProvider implements IWorldProvider {
      * @param world The new world
      */
     public final void initWorld(World world) {
+        if (this.currentWorld != null) {
+            if (this.mcWorld == world) {
+                return;
+            }
+            this.closeWorld();
+        }
         this.mcWorld = world;
         this.getSaveDirectories(world).ifPresent(dirs -> {
             final Path worldDir = dirs.getFirst();
@@ -97,7 +113,14 @@ public class WorldProvider implements IWorldProvider {
             System.out.println("Baritone world data dir: " + worldDataDir);
             synchronized (worldCache) {
                 final int dimension = world.provider.getDimensionType().getId();
-                this.currentWorld = worldCache.computeIfAbsent(worldDataDir, d -> new WorldData(d, dimension));
+                WorldCacheEntry entry = worldCache.get(worldDataDir);
+                if (entry == null) {
+                    entry = new WorldCacheEntry(new WorldData(worldDataDir, dimension));
+                    worldCache.put(worldDataDir, entry);
+                } else {
+                    entry.references++;
+                }
+                this.currentWorld = entry.data;
             }
         });
     }
@@ -109,7 +132,19 @@ public class WorldProvider implements IWorldProvider {
         if (world == null) {
             return;
         }
-        world.onClose();
+        boolean shouldClose = false;
+        synchronized (worldCache) {
+            WorldCacheEntry entry = worldCache.get(world.directory);
+            if (entry == null || entry.data != world) {
+                shouldClose = true;
+            } else if (--entry.references <= 0) {
+                worldCache.remove(world.directory);
+                shouldClose = true;
+            }
+        }
+        if (shouldClose) {
+            world.onClose();
+        }
     }
 
     private Path getWorldDataDirectory(Path parent, World world) {

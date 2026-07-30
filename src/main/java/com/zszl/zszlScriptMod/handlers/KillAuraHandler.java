@@ -3,6 +3,7 @@ package com.zszl.zszlScriptMod.handlers;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import com.google.gson.reflect.TypeToken;
+import com.zszl.zszlScriptMod.PerformanceMonitor;
 import com.zszl.zszlScriptMod.config.DebugModule;
 import com.zszl.zszlScriptMod.config.ModConfig;
 import com.zszl.zszlScriptMod.path.LegacyActionRuntime;
@@ -1526,6 +1527,11 @@ public class KillAuraHandler implements AbstractGameEventListener {
 
     @SubscribeEvent
     public void onClientTick(TickEvent.ClientTickEvent event) {
+        if (!PerformanceMonitor.isFeatureEnabled("kill_aura")) {
+            return;
+        }
+        PerformanceMonitor.PerformanceTimer timer = PerformanceMonitor.startTimer("kill_aura");
+        try {
         if (event.phase != TickEvent.Phase.END) {
             return;
         }
@@ -1696,6 +1702,9 @@ public class KillAuraHandler implements AbstractGameEventListener {
             }
         }
         decayTargetSwitchSmoothTicks();
+        } finally {
+            timer.stop();
+        }
     }
 
     @Override
@@ -1776,6 +1785,11 @@ public class KillAuraHandler implements AbstractGameEventListener {
 
     @SubscribeEvent
     public void onRenderWorldLast(RenderWorldLastEvent event) {
+        if (!PerformanceMonitor.isFeatureEnabled("kill_aura")) {
+            return;
+        }
+        PerformanceMonitor.PerformanceTimer timer = PerformanceMonitor.startTimer("kill_aura");
+        try {
         if (!enabled && this.areaHuntControlTicks <= 0) {
             return;
         }
@@ -1803,6 +1817,9 @@ public class KillAuraHandler implements AbstractGameEventListener {
             renderThroughWallAttackBlocks(player, viewerX, viewerY, viewerZ);
         }
         renderHuntOrbitLoop();
+        } finally {
+            timer.stop();
+        }
     }
 
     private void renderThroughWallAttackBlocks(EntityPlayerSP player, double viewerX, double viewerY, double viewerZ) {
@@ -4721,6 +4738,10 @@ public class KillAuraHandler implements AbstractGameEventListener {
         this.huntPickupNavigationActive = false;
         this.lastHuntPickupGotoTick = -99999;
         this.lastHuntPickupTargetEntityId = Integer.MIN_VALUE;
+    }
+
+    public boolean isHuntPickupNavigationActive() {
+        return this.huntPickupNavigationActive;
     }
 
     private boolean shouldRunHuntMovement(EntityPlayerSP player, EntityLivingBase target) {
