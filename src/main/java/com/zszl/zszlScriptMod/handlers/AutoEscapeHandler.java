@@ -7,6 +7,7 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.google.gson.reflect.TypeToken;
+import com.zszl.zszlScriptMod.PerformanceMonitor;
 import com.zszl.zszlScriptMod.gui.GuiInventory;
 import com.zszl.zszlScriptMod.path.PathSequenceEventListener;
 import com.zszl.zszlScriptMod.path.PathSequenceManager;
@@ -302,6 +303,11 @@ public class AutoEscapeHandler {
 
     @SubscribeEvent
     public void onPlayerTick(TickEvent.PlayerTickEvent event) {
+        if (!PerformanceMonitor.isFeatureEnabled("auto_escape")) {
+            return;
+        }
+        PerformanceMonitor.PerformanceTimer timer = PerformanceMonitor.startTimer("auto_escape");
+        try {
         if (event.phase != TickEvent.Phase.START || mc.player == null || mc.world == null || event.player != mc.player) {
             return;
         }
@@ -374,6 +380,9 @@ public class AutoEscapeHandler {
             if (System.currentTimeMillis() >= restartExecuteAtMs && !anyThreatPresent) {
                 runPendingRestartSequence();
             }
+        }
+        } finally {
+            timer.stop();
         }
     }
 

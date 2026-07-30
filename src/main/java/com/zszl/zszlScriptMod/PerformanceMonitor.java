@@ -50,12 +50,26 @@ public class PerformanceMonitor {
         DEFAULT_FEATURE_STATES.put("auto_equip", true);
         DEFAULT_FEATURE_STATES.put("auto_pickup", true);
         DEFAULT_FEATURE_STATES.put("auto_follow", true);
+        DEFAULT_FEATURE_STATES.put("auto_escape", true);
+        DEFAULT_FEATURE_STATES.put("kill_aura", true);
         DEFAULT_FEATURE_STATES.put("path_sequence", true);
         DEFAULT_FEATURE_STATES.put("conditional_execution", true);
         DEFAULT_FEATURE_STATES.put("debuff_detector", true);
         DEFAULT_FEATURE_STATES.put("freecam", true);
         DEFAULT_FEATURE_STATES.put("goto_open", true);
         DEFAULT_FEATURE_STATES.put("warehouse", true);
+        DEFAULT_FEATURE_STATES.put("block_replacement", true);
+        DEFAULT_FEATURE_STATES.put("render_features_tick", true);
+        DEFAULT_FEATURE_STATES.put("render_features_world", true);
+        DEFAULT_FEATURE_STATES.put("render_features_overlay", true);
+        DEFAULT_FEATURE_STATES.put("trigger_system", true);
+        DEFAULT_FEATURE_STATES.put("death_auto_rejoin", true);
+        DEFAULT_FEATURE_STATES.put("shulker_stacking", true);
+        DEFAULT_FEATURE_STATES.put("auto_skill", true);
+        DEFAULT_FEATURE_STATES.put("auto_eat", true);
+        DEFAULT_FEATURE_STATES.put("auto_signin_online", true);
+        DEFAULT_FEATURE_STATES.put("auto_use_item", true);
+        DEFAULT_FEATURE_STATES.put("timed_message", true);
 
         // Packet/network features that can cause lag
         DEFAULT_FEATURE_STATES.put("packet_capture_inbound", true);
@@ -263,6 +277,11 @@ public class PerformanceMonitor {
         return new ConcurrentHashMap<>(performanceStats);
     }
 
+    public static double getCpuUsagePercent(String featureName) {
+        PerformanceStats stats = getPerformanceStats(featureName);
+        return stats == null ? 0.0D : stats.getCpuUsagePercent();
+    }
+
     /**
      * Reset performance statistics for a feature
      */
@@ -318,7 +337,7 @@ public class PerformanceMonitor {
                 // Record the measurement
                 PerformanceStats stats = performanceStats.get(featureName);
                 if (stats != null) {
-                    stats.recordMeasurement(duration);
+                    stats.recordMeasurement(duration, startTime, endTime);
                 }
 
                 maybeTemporarilyDisableFeature(featureName, duration);
@@ -347,11 +366,32 @@ public class PerformanceMonitor {
         private final AtomicLong measurementCount = new AtomicLong(0);
         private final AtomicLong minTime = new AtomicLong(Long.MAX_VALUE);
         private final AtomicLong maxTime = new AtomicLong(0);
+        private final AtomicLong windowTotalTime = new AtomicLong(0);
         private volatile long lastMeasurement = 0;
+        private volatile long windowStartTime = 0;
+        private volatile long windowLastTime = 0;
 
         public void recordMeasurement(long nanoTime) {
+            long endTime = System.nanoTime();
+            recordMeasurement(nanoTime, endTime - nanoTime, endTime);
+        }
+
+        public void recordMeasurement(long nanoTime, long measurementTimeNanos) {
+            recordMeasurement(nanoTime, measurementTimeNanos - nanoTime, measurementTimeNanos);
+        }
+
+        public void recordMeasurement(long nanoTime, long measurementStartNanos, long measurementEndNanos) {
             totalTime.addAndGet(nanoTime);
             measurementCount.incrementAndGet();
+            if (windowStartTime == 0L) {
+                synchronized (this) {
+                    if (windowStartTime == 0L) {
+                        windowStartTime = Math.max(0L, measurementStartNanos);
+                    }
+                }
+            }
+            windowTotalTime.addAndGet(nanoTime);
+            windowLastTime = Math.max(windowLastTime, measurementEndNanos);
 
             // Update min/max atomically
             long currentMin = minTime.get();
@@ -384,6 +424,10 @@ public class PerformanceMonitor {
             return totalTime.get();
         }
 
+        public long getWindowTotalTimeNanos() {
+            return windowTotalTime.get();
+        }
+
         public long getMeasurementCount() {
             return measurementCount.get();
         }
@@ -408,12 +452,27 @@ public class PerformanceMonitor {
             return getLastMeasurementNanos() / 1_000_000.0;
         }
 
+        public double getCpuUsagePercent() {
+            return getCpuUsagePercent(System.nanoTime());
+        }
+
+        public double getCpuUsagePercent(long nowNanos) {
+            long start = windowStartTime;
+            if (start <= 0L || nowNanos <= start) {
+                return 0.0D;
+            }
+            return (windowTotalTime.get() * 100.0D) / (double) (nowNanos - start);
+        }
+
         public void reset() {
             totalTime.set(0);
             measurementCount.set(0);
             minTime.set(Long.MAX_VALUE);
             maxTime.set(0);
+            windowTotalTime.set(0);
             lastMeasurement = 0;
+            windowStartTime = 0;
+            windowLastTime = 0;
         }
     }
 }

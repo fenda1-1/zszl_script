@@ -6,6 +6,7 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.zszl.zszlScriptMod.PerformanceMonitor;
 import com.zszl.zszlScriptMod.path.trigger.PlayerListTriggerSupport;
 import net.minecraft.block.Block;
 import net.minecraft.block.state.IBlockState;
@@ -1673,6 +1674,11 @@ public class PathSequenceEventListener {
 
     @SubscribeEvent
     public void onPlayerTick(TickEvent.PlayerTickEvent event) {
+        if (!PerformanceMonitor.isFeatureEnabled("path_sequence")) {
+            return;
+        }
+        PerformanceMonitor.PerformanceTimer timer = PerformanceMonitor.startTimer("path_sequence");
+        try {
         // ==================== 核心修复 ====================
         // 在方法最开始添加此检查，确保只处理主玩家的事件。
         if (mc.player == null || event.player != mc.player) {
@@ -2017,6 +2023,9 @@ public class PathSequenceEventListener {
                 consumeDebugProgress("执行动作完成");
                 return;
             }
+        }
+        } finally {
+            timer.stop();
         }
     }
 

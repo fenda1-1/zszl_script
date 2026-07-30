@@ -3,6 +3,7 @@ package com.zszl.zszlScriptMod.handlers;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.zszl.zszlScriptMod.PerformanceMonitor;
 import com.zszl.zszlScriptMod.system.ProfileManager;
 import com.zszl.zszlScriptMod.zszlScriptMod;
 import com.zszl.zszlScriptMod.utils.PacketCaptureHandler;
@@ -118,6 +119,11 @@ public class DebuffMechanicDetector {
 
     @SubscribeEvent
     public void onPlayerTick(TickEvent.PlayerTickEvent event) {
+        if (!PerformanceMonitor.isFeatureEnabled("debuff_detector")) {
+            return;
+        }
+        PerformanceMonitor.PerformanceTimer timer = PerformanceMonitor.startTimer("debuff_detector");
+        try {
         if (event.phase != TickEvent.Phase.END || mc.player == null || currentState == State.IDLE) {
             return;
         }
@@ -189,6 +195,9 @@ public class DebuffMechanicDetector {
             case FAILED:
                 stopDetection();
                 break;
+        }
+        } finally {
+            timer.stop();
         }
     }
 

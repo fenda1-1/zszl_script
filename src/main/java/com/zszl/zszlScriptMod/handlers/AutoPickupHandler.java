@@ -4,6 +4,7 @@ package com.zszl.zszlScriptMod.handlers;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.reflect.TypeToken;
+import com.zszl.zszlScriptMod.PerformanceMonitor;
 import com.zszl.zszlScriptMod.zszlScriptMod;
 import com.zszl.zszlScriptMod.config.DebugModule;
 import com.zszl.zszlScriptMod.config.ModConfig;
@@ -369,6 +370,11 @@ public class AutoPickupHandler {
 
     @SubscribeEvent
     public void onPlayerTick(TickEvent.PlayerTickEvent event) {
+        if (!PerformanceMonitor.isFeatureEnabled("auto_pickup")) {
+            return;
+        }
+        PerformanceMonitor.PerformanceTimer timer = PerformanceMonitor.startTimer("auto_pickup");
+        try {
         if (event.phase != TickEvent.Phase.END
                 || event.side != Side.CLIENT
                 || event.player != mc.player
@@ -451,6 +457,9 @@ public class AutoPickupHandler {
         }
 
         syncInventoryPickupValidation(nowTick);
+        } finally {
+            timer.stop();
+        }
     }
 
     public boolean shouldPrioritizeNavigation(EntityPlayerSP player) {

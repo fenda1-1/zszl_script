@@ -119,10 +119,12 @@ public class GlobalEventListener {
     public void onPlayerTick(TickEvent.PlayerTickEvent event) {
         // 自动追怪性能监控
         if (PerformanceMonitor.isFeatureEnabled("auto_follow")) {
-            PerformanceMonitor.PerformanceTimer timer = new PerformanceMonitor.PerformanceTimer("auto_follow");
-            timer.start();
-            autoFollowHandler.onPlayerTick(event);
-            timer.stop();
+            PerformanceMonitor.PerformanceTimer timer = PerformanceMonitor.startTimer("auto_follow");
+            try {
+                autoFollowHandler.onPlayerTick(event);
+            } finally {
+                timer.stop();
+            }
         }
 
         if (event.phase == TickEvent.Phase.END) {
@@ -130,11 +132,10 @@ public class GlobalEventListener {
             if (ArenaItemHandler.arenaProcessingEnabled && ArenaItemHandler.dropMode == DropMode.TIMED) {
                 if (tickCounter % (ArenaItemHandler.timedDropIntervalSeconds * 20) == 0) {
                     // 竞技场物品处理性能监控
-                    if (PerformanceMonitor.isFeatureEnabled("warehouse")) {
-                        PerformanceMonitor.PerformanceTimer timer = new PerformanceMonitor.PerformanceTimer(
-                                "warehouse");
-                        timer.start();
+                    PerformanceMonitor.PerformanceTimer timer = PerformanceMonitor.startTimer("warehouse");
+                    try {
                         ArenaItemHandler.processItems();
+                    } finally {
                         timer.stop();
                     }
                 }
@@ -186,7 +187,14 @@ public class GlobalEventListener {
                 ArenaItemHandler.arenaProcessingEnabled &&
                 ArenaItemHandler.dropMode == DropMode.ON_CHEST_OPEN) {
 
-            ModUtils.DelayScheduler.instance.schedule(ArenaItemHandler::processItems, 10);
+            ModUtils.DelayScheduler.instance.schedule(() -> {
+                PerformanceMonitor.PerformanceTimer timer = PerformanceMonitor.startTimer("warehouse");
+                try {
+                    ArenaItemHandler.processItems();
+                } finally {
+                    timer.stop();
+                }
+            }, 10);
         }
 
         if (event.getGui() instanceof GuiChest) {
@@ -205,33 +213,35 @@ public class GlobalEventListener {
         }
 
         if (event.phase == TickEvent.Phase.START) {
-            clientTickCounter++;
-            NodeTriggerManager.tick();
-            GuiInspectionManager.onClientTick();
-            boolean needsAreaChangedChecks = NodeTriggerManager.hasGraphsForTrigger(NodeTriggerManager.TRIGGER_AREA_CHANGED)
-                    || LegacySequenceTriggerManager.hasRulesForTrigger(LegacySequenceTriggerManager.TRIGGER_AREA_CHANGED);
-            boolean needsWorldChangedChecks = LegacySequenceTriggerManager
-                    .hasRulesForTrigger(LegacySequenceTriggerManager.TRIGGER_WORLD_CHANGED);
-            boolean needsInventoryChangedChecks = NodeTriggerManager
-                    .hasGraphsForTrigger(NodeTriggerManager.TRIGGER_INVENTORY_CHANGED)
-                    || NodeTriggerManager.hasGraphsForTrigger(NodeTriggerManager.TRIGGER_INVENTORY_FULL)
-                    || LegacySequenceTriggerManager.hasRulesForTrigger(LegacySequenceTriggerManager.TRIGGER_INVENTORY_CHANGED)
-                    || LegacySequenceTriggerManager.hasRulesForTrigger(LegacySequenceTriggerManager.TRIGGER_INVENTORY_FULL);
-            boolean needsNearbyEntityChecks = NodeTriggerManager
-                    .hasGraphsForTrigger(NodeTriggerManager.TRIGGER_ENTITY_NEARBY)
-                    || LegacySequenceTriggerManager.hasRulesForTrigger(LegacySequenceTriggerManager.TRIGGER_ENTITY_NEARBY);
-            boolean needsScoreboardChecks = LegacySequenceTriggerManager
-                    .hasRulesForTrigger(LegacySequenceTriggerManager.TRIGGER_SCOREBOARD_CHANGED);
-            boolean needsPlayerListChecks = LegacySequenceTriggerManager
-                    .hasRulesForTrigger(LegacySequenceTriggerManager.TRIGGER_PLAYER_LIST);
-            boolean needsTimerTriggers = NodeTriggerManager.hasGraphsForTrigger(NodeTriggerManager.TRIGGER_TIMER)
-                    || LegacySequenceTriggerManager.hasRulesForTrigger(LegacySequenceTriggerManager.TRIGGER_TIMER);
-            boolean needsHpLowTriggers = NodeTriggerManager.hasGraphsForTrigger(NodeTriggerManager.TRIGGER_HP_LOW)
-                    || LegacySequenceTriggerManager.hasRulesForTrigger(LegacySequenceTriggerManager.TRIGGER_HP_LOW);
-            boolean needsFoodLowTriggers = LegacySequenceTriggerManager
-                    .hasRulesForTrigger(LegacySequenceTriggerManager.TRIGGER_FOOD_LOW);
-            boolean needsIdleTracking = LegacySequenceTriggerManager
-                    .hasRulesForTrigger(LegacySequenceTriggerManager.TRIGGER_PLAYER_IDLE);
+            PerformanceMonitor.PerformanceTimer triggerTimer = PerformanceMonitor.startTimer("trigger_system");
+            try {
+                clientTickCounter++;
+                NodeTriggerManager.tick();
+                GuiInspectionManager.onClientTick();
+                boolean needsAreaChangedChecks = NodeTriggerManager.hasGraphsForTrigger(NodeTriggerManager.TRIGGER_AREA_CHANGED)
+                        || LegacySequenceTriggerManager.hasRulesForTrigger(LegacySequenceTriggerManager.TRIGGER_AREA_CHANGED);
+                boolean needsWorldChangedChecks = LegacySequenceTriggerManager
+                        .hasRulesForTrigger(LegacySequenceTriggerManager.TRIGGER_WORLD_CHANGED);
+                boolean needsInventoryChangedChecks = NodeTriggerManager
+                        .hasGraphsForTrigger(NodeTriggerManager.TRIGGER_INVENTORY_CHANGED)
+                        || NodeTriggerManager.hasGraphsForTrigger(NodeTriggerManager.TRIGGER_INVENTORY_FULL)
+                        || LegacySequenceTriggerManager.hasRulesForTrigger(LegacySequenceTriggerManager.TRIGGER_INVENTORY_CHANGED)
+                        || LegacySequenceTriggerManager.hasRulesForTrigger(LegacySequenceTriggerManager.TRIGGER_INVENTORY_FULL);
+                boolean needsNearbyEntityChecks = NodeTriggerManager
+                        .hasGraphsForTrigger(NodeTriggerManager.TRIGGER_ENTITY_NEARBY)
+                        || LegacySequenceTriggerManager.hasRulesForTrigger(LegacySequenceTriggerManager.TRIGGER_ENTITY_NEARBY);
+                boolean needsScoreboardChecks = LegacySequenceTriggerManager
+                        .hasRulesForTrigger(LegacySequenceTriggerManager.TRIGGER_SCOREBOARD_CHANGED);
+                boolean needsPlayerListChecks = LegacySequenceTriggerManager
+                        .hasRulesForTrigger(LegacySequenceTriggerManager.TRIGGER_PLAYER_LIST);
+                boolean needsTimerTriggers = NodeTriggerManager.hasGraphsForTrigger(NodeTriggerManager.TRIGGER_TIMER)
+                        || LegacySequenceTriggerManager.hasRulesForTrigger(LegacySequenceTriggerManager.TRIGGER_TIMER);
+                boolean needsHpLowTriggers = NodeTriggerManager.hasGraphsForTrigger(NodeTriggerManager.TRIGGER_HP_LOW)
+                        || LegacySequenceTriggerManager.hasRulesForTrigger(LegacySequenceTriggerManager.TRIGGER_HP_LOW);
+                boolean needsFoodLowTriggers = LegacySequenceTriggerManager
+                        .hasRulesForTrigger(LegacySequenceTriggerManager.TRIGGER_FOOD_LOW);
+                boolean needsIdleTracking = LegacySequenceTriggerManager
+                        .hasRulesForTrigger(LegacySequenceTriggerManager.TRIGGER_PLAYER_IDLE);
 
             boolean playerDeadNow = mc.player.isDead || mc.player.getHealth() <= 0.0F;
             if (playerDeadNow && !wasPlayerDeadLastTick) {
@@ -412,10 +422,10 @@ public class GlobalEventListener {
                                 DeathAutoRejoinHandler.deathRespawnCenterY,
                                 DeathAutoRejoinHandler.deathRespawnCenterZ,
                                 DeathAutoRejoinHandler.deathRespawnRadius);
-                        runGuarded("启动死亡自动重进流程时出错", () -> {
-                            deathRejoinAwaitRespawnArea = false;
-                            startDeathAutoRejoinFlow("检测到死亡后进入复活区" + areaDesc);
-                        });
+                    runGuarded("death_auto_rejoin", "启动死亡自动重进流程时出错", () -> {
+                        deathRejoinAwaitRespawnArea = false;
+                        startDeathAutoRejoinFlow("检测到死亡后进入复活区" + areaDesc);
+                    });
                     } else if (!deathRejoinAwaitRespawnArea
                             && enteredDeathRespawnArea) {
                         String areaDesc = String.format("(%.1f,%.1f,%.1f ±%.1f)",
@@ -423,9 +433,9 @@ public class GlobalEventListener {
                                 DeathAutoRejoinHandler.deathRespawnCenterY,
                                 DeathAutoRejoinHandler.deathRespawnCenterZ,
                                 DeathAutoRejoinHandler.deathRespawnRadius);
-                        runGuarded("进入复活区触发死亡自动重进流程时出错", () -> {
-                            startDeathAutoRejoinFlow("检测到进入复活区" + areaDesc);
-                        });
+                    runGuarded("death_auto_rejoin", "进入复活区触发死亡自动重进流程时出错", () -> {
+                        startDeathAutoRejoinFlow("检测到进入复活区" + areaDesc);
+                    });
                     } else if (deathRejoinAwaitRespawnArea
                             && clientTickCounter - deathRejoinAwaitStartTick > DEATH_RESPAWN_WAIT_TIMEOUT_TICKS) {
                         deathRejoinAwaitRespawnArea = false;
@@ -437,7 +447,7 @@ public class GlobalEventListener {
                 }
 
                 if (deathRejoinFlowActive) {
-                    runGuarded("执行死亡自动重进流程时出错", () -> updateDeathAutoRejoinFlow(clientTickCounter));
+                    runGuarded("death_auto_rejoin", "执行死亡自动重进流程时出错", () -> updateDeathAutoRejoinFlow(clientTickCounter));
                 }
                 wasPlayerDeadLastTick = playerDeadNow;
             }
@@ -460,11 +470,14 @@ public class GlobalEventListener {
 
             // 每 2 tick：非关键缓存/检查，降低高频开销
             if (clientTickCounter % 2 == 0) {
-                runGuarded("执行自动叠加潜影盒时出错", () -> {
+                runGuarded("shulker_stacking", "执行自动叠加潜影盒时出错", () -> {
                     if (ShulkerBoxStackingHandler.autoStackingEnabled) {
                         ShulkerBoxStackingHandler.executeStacking();
                     }
                 });
+            }
+            } finally {
+                triggerTimer.stop();
             }
         }
 
@@ -505,30 +518,30 @@ public class GlobalEventListener {
             });
 
             // 每 tick：技能通常要求高时效
-            runGuarded("更新自动技能时出错", () -> {
+            runGuarded("auto_skill", "更新自动技能时出错", () -> {
                 AutoSkillHandler.updateAutoSkills();
             });
 
             // 每 4 tick：进食检查可降频（约 0.2 秒）
             if (clientTickCounter % 4 == 0) {
-                runGuarded("执行自动进食检查时出错", () -> {
+                runGuarded("auto_eat", "执行自动进食检查时出错", () -> {
                     AutoEatHandler.checkAutoEat(mc.player);
                 });
             }
 
             // 每 20 tick：签到/在线后台逻辑降频
             if (clientTickCounter % 20 == 0) {
-                runGuarded("执行签到/在线后台功能时出错", AutoSigninOnlineHandler::tick);
+                runGuarded("auto_signin_online", "执行签到/在线后台功能时出错", AutoSigninOnlineHandler::tick);
             }
 
             // 每 2 tick：静默使用物品降频（约 0.1 秒），减少主线程持续调用压力
             if (clientTickCounter % 2 == 0) {
-                runGuarded("执行静默使用物品时出错", () -> {
+                runGuarded("auto_use_item", "执行静默使用物品时出错", () -> {
                     AutoUseItemHandler.INSTANCE.tick();
                 });
             }
 
-            runGuarded("执行定时发送消息时出错", () -> {
+            runGuarded("timed_message", "执行定时发送消息时出错", () -> {
                 ChatOptimizationConfig config = ChatOptimizationConfig.INSTANCE;
                 if (config.enableTimedMessage && config.timedMessages != null && !config.timedMessages.isEmpty()) {
                     timedMessageTickCounter++;
@@ -990,6 +1003,17 @@ public class GlobalEventListener {
             task.run();
         } catch (Exception e) {
             zszlScriptMod.LOGGER.error(errorMessage, e);
+        }
+    }
+
+    private void runGuarded(String featureName, String errorMessage, Runnable task) {
+        PerformanceMonitor.PerformanceTimer timer = PerformanceMonitor.startTimer(featureName);
+        try {
+            task.run();
+        } catch (Exception e) {
+            zszlScriptMod.LOGGER.error(errorMessage, e);
+        } finally {
+            timer.stop();
         }
     }
 

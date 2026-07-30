@@ -4,6 +4,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import com.zszl.zszlScriptMod.PerformanceMonitor;
 import com.zszl.zszlScriptMod.shadowbaritone.api.utils.BlockUtils;
 import com.zszl.zszlScriptMod.system.ProfileManager;
 import com.zszl.zszlScriptMod.zszlScriptMod;
@@ -543,6 +544,11 @@ public class RenderFeatureManager {
 
     @SubscribeEvent
     public void onClientTick(TickEvent.ClientTickEvent event) {
+        if (!PerformanceMonitor.isFeatureEnabled("render_features_tick")) {
+            return;
+        }
+        PerformanceMonitor.PerformanceTimer timer = PerformanceMonitor.startTimer("render_features_tick");
+        try {
         if (event.phase != TickEvent.Phase.END) {
             return;
         }
@@ -557,15 +563,26 @@ public class RenderFeatureManager {
         applyBrightness();
         applyAntiBob();
         RenderFeatureSupport.onClientTick(mc, player);
+        } finally {
+            timer.stop();
+        }
     }
 
     @SubscribeEvent
     public void onRenderWorldLast(RenderWorldLastEvent event) {
+        if (!PerformanceMonitor.isFeatureEnabled("render_features_world")) {
+            return;
+        }
+        PerformanceMonitor.PerformanceTimer timer = PerformanceMonitor.startTimer("render_features_world");
+        try {
         Minecraft mc = Minecraft.getMinecraft();
         if (mc.world == null || mc.player == null) {
             return;
         }
         RenderFeatureSupport.renderWorld(mc, event.getPartialTicks());
+        } finally {
+            timer.stop();
+        }
     }
 
     @SubscribeEvent
@@ -582,6 +599,11 @@ public class RenderFeatureManager {
 
     @SubscribeEvent
     public void onRenderOverlayPost(RenderGameOverlayEvent.Post event) {
+        if (!PerformanceMonitor.isFeatureEnabled("render_features_overlay")) {
+            return;
+        }
+        PerformanceMonitor.PerformanceTimer timer = PerformanceMonitor.startTimer("render_features_overlay");
+        try {
         if (event.getType() != RenderGameOverlayEvent.ElementType.ALL) {
             return;
         }
@@ -600,6 +622,9 @@ public class RenderFeatureManager {
         }
         if (isEnabled("entity_info")) {
             RenderFeatureSupport.renderEntityInfo(mc);
+        }
+        } finally {
+            timer.stop();
         }
     }
 

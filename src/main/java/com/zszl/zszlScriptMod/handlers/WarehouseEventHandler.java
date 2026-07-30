@@ -1,6 +1,7 @@
 // 文件路径: src/main/java/com/zszl/zszlScriptMod/handlers/WarehouseEventHandler.java
 package com.zszl.zszlScriptMod.handlers;
 
+import com.zszl.zszlScriptMod.PerformanceMonitor;
 import com.zszl.zszlScriptMod.zszlScriptMod;
 import com.zszl.zszlScriptMod.config.DebugModule;
 import com.zszl.zszlScriptMod.config.ModConfig;
@@ -156,9 +157,11 @@ public class WarehouseEventHandler extends Gui {
                 continue;
             }
 
+            if (!GoToAndOpenHandler.start(next)) {
+                continue;
+            }
             autoDepositCurrentTarget = next;
             autoDepositOpenWaitTicks = 0;
-            GoToAndOpenHandler.start(next);
             if (mc.player != null) {
                 mc.player.sendMessage(new TextComponentString("§b[仓库] 前往箱子: " + next));
             }
@@ -224,6 +227,8 @@ public class WarehouseEventHandler extends Gui {
 
     @SubscribeEvent
     public void onPlayerTick(TickEvent.PlayerTickEvent event) {
+        PerformanceMonitor.PerformanceTimer timer = PerformanceMonitor.startTimer("warehouse");
+        try {
         if (event.phase != TickEvent.Phase.END || mc.player == null)
             return;
 
@@ -276,9 +281,14 @@ public class WarehouseEventHandler extends Gui {
                 }
             }
         }
+        } finally {
+            timer.stop();
+        }
     }
 
     public void onGuiOpen(GuiOpenEvent event) {
+        PerformanceMonitor.PerformanceTimer timer = PerformanceMonitor.startTimer("warehouse");
+        try {
         isStandardChestGui = false;
         currentOpenChestData = null;
         designatedItemScrollOffset = 0;
@@ -320,6 +330,8 @@ public class WarehouseEventHandler extends Gui {
         final BlockPos finalChestPos = chestPos;
 
         ModUtils.DelayScheduler.instance.schedule(() -> {
+            PerformanceMonitor.PerformanceTimer delayedTimer = PerformanceMonitor.startTimer("warehouse");
+            try {
             if (!(mc.currentScreen instanceof GuiChest) || mc.player == null || mc.player.openContainer != container)
                 return;
 
@@ -340,15 +352,26 @@ public class WarehouseEventHandler extends Gui {
                     }
                 }
             }
+            } finally {
+                delayedTimer.stop();
+            }
         }, 10);
+        } finally {
+            timer.stop();
+        }
     }
 
     @SubscribeEvent
     public void onRenderWorldLast(RenderWorldLastEvent event) {
+        PerformanceMonitor.PerformanceTimer timer = PerformanceMonitor.startTimer("warehouse");
+        try {
         if (!chestsToHighlight.isEmpty()) {
             for (BlockPos pos : chestsToHighlight) {
                 renderHighlightBox(pos, event.getPartialTicks());
             }
+        }
+        } finally {
+            timer.stop();
         }
     }
 
@@ -425,6 +448,8 @@ public class WarehouseEventHandler extends Gui {
 
     @SubscribeEvent
     public void onDrawScreenPost(GuiScreenEvent.DrawScreenEvent.Post event) {
+        PerformanceMonitor.PerformanceTimer timer = PerformanceMonitor.startTimer("warehouse");
+        try {
         if (!(event.getGui() instanceof GuiChest) || !isStandardChestGui || currentOpenChestData == null) {
             return;
         }
@@ -495,6 +520,9 @@ public class WarehouseEventHandler extends Gui {
                     "§7匹配“指定存放物品”的背包物品。");
             gui.drawHoveringText(tooltip, event.getMouseX(), event.getMouseY());
         }
+        } finally {
+            timer.stop();
+        }
     }
 
     private void initializeAndDrawButtons(int panelX, int funcY, int panelWidth, int mouseX, int mouseY,
@@ -509,6 +537,8 @@ public class WarehouseEventHandler extends Gui {
 
     @SubscribeEvent
     public void onMouseInputPre(GuiScreenEvent.MouseInputEvent.Pre event) throws IOException {
+        PerformanceMonitor.PerformanceTimer timer = PerformanceMonitor.startTimer("warehouse");
+        try {
         if (!(event.getGui() instanceof GuiChest) || !isStandardChestGui || currentOpenChestData == null)
             return;
 
@@ -529,6 +559,9 @@ public class WarehouseEventHandler extends Gui {
                 return;
             }
         }
+        } finally {
+            timer.stop();
+        }
     }
 
     @SubscribeEvent
@@ -539,6 +572,8 @@ public class WarehouseEventHandler extends Gui {
     // !! 核心修复：添加完整的鼠标输入处理，包括滚轮和拖拽 !!
     @SubscribeEvent
     public void onMouseInput(GuiScreenEvent.MouseInputEvent.Post event) {
+        PerformanceMonitor.PerformanceTimer timer = PerformanceMonitor.startTimer("warehouse");
+        try {
         if (!(event.getGui() instanceof GuiChest) || !isStandardChestGui)
             return;
 
@@ -559,6 +594,9 @@ public class WarehouseEventHandler extends Gui {
 
         if (isDraggingDesignatedScrollbar) {
             handleMouseDrag(event.getGui());
+        }
+        } finally {
+            timer.stop();
         }
     }
 

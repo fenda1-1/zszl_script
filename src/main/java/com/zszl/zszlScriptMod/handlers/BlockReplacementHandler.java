@@ -5,6 +5,7 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.google.gson.reflect.TypeToken;
+import com.zszl.zszlScriptMod.PerformanceMonitor;
 import com.zszl.zszlScriptMod.system.BlockReplacementRule;
 import com.zszl.zszlScriptMod.system.ProfileManager;
 import com.zszl.zszlScriptMod.zszlScriptMod;
@@ -484,6 +485,11 @@ public class BlockReplacementHandler {
 
     @SubscribeEvent
     public void onRenderWorldLast(RenderWorldLastEvent event) {
+        if (!PerformanceMonitor.isFeatureEnabled("block_replacement")) {
+            return;
+        }
+        PerformanceMonitor.PerformanceTimer timer = PerformanceMonitor.startTimer("block_replacement");
+        try {
         if (mc.player == null || mc.world == null) {
             return;
         }
@@ -578,6 +584,9 @@ public class BlockReplacementHandler {
         GlStateManager.enableLighting();
         GlStateManager.disableBlend();
         GlStateManager.popMatrix();
+        } finally {
+            timer.stop();
+        }
     }
 
     @SubscribeEvent

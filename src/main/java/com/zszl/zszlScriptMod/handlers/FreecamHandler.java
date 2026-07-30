@@ -4,6 +4,7 @@ package com.zszl.zszlScriptMod.handlers;
 
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import com.zszl.zszlScriptMod.PerformanceMonitor;
 import com.zszl.zszlScriptMod.system.ProfileManager;
 import com.zszl.zszlScriptMod.zszlScriptMod;
 import net.minecraft.client.Minecraft;
@@ -137,6 +138,11 @@ public class FreecamHandler {
 
     @SubscribeEvent
     public void onPlayerTick(TickEvent.PlayerTickEvent event) {
+        if (!PerformanceMonitor.isFeatureEnabled("freecam")) {
+            return;
+        }
+        PerformanceMonitor.PerformanceTimer timer = PerformanceMonitor.startTimer("freecam");
+        try {
         if (event.phase != TickEvent.Phase.START || event.player != Minecraft.getMinecraft().player) {
             return;
         }
@@ -181,10 +187,18 @@ public class FreecamHandler {
             }
         }
         // 此处不再有其他代码
+        } finally {
+            timer.stop();
+        }
     }
 
     @SubscribeEvent
     public void onClientTick(TickEvent.ClientTickEvent event) {
+        if (!PerformanceMonitor.isFeatureEnabled("freecam")) {
+            return;
+        }
+        PerformanceMonitor.PerformanceTimer timer = PerformanceMonitor.startTimer("freecam");
+        try {
         if (event.phase != TickEvent.Phase.END) {
             return;
         }
@@ -199,6 +213,9 @@ public class FreecamHandler {
         }
 
         KillAuraHandler.INSTANCE.applyMovementProtection(mc.player, true, enableNoCollision, enableAntiKnockback);
+        } finally {
+            timer.stop();
+        }
     }
 
     @SubscribeEvent

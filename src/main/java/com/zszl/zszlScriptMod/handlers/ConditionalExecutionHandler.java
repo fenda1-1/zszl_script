@@ -7,6 +7,7 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.google.gson.reflect.TypeToken;
+import com.zszl.zszlScriptMod.PerformanceMonitor;
 import com.zszl.zszlScriptMod.config.DebugModule;
 import com.zszl.zszlScriptMod.config.ModConfig;
 import com.zszl.zszlScriptMod.zszlScriptMod;
@@ -445,6 +446,11 @@ public class ConditionalExecutionHandler {
 
     @SubscribeEvent
     public void onPlayerTick(TickEvent.PlayerTickEvent event) {
+        if (!PerformanceMonitor.isFeatureEnabled("conditional_execution")) {
+            return;
+        }
+        PerformanceMonitor.PerformanceTimer timer = PerformanceMonitor.startTimer("conditional_execution");
+        try {
         if (event == null
                 || event.phase != TickEvent.Phase.START
                 || event.side != Side.CLIENT
@@ -597,6 +603,9 @@ public class ConditionalExecutionHandler {
 
         updateAntiStuckState(PathSequenceEventListener.instance.isTracking() && activeRule != null,
                 highestPriorityRuleInRange);
+        } finally {
+            timer.stop();
+        }
     }
 
     private static List<ConditionalRule> snapshotRules() {

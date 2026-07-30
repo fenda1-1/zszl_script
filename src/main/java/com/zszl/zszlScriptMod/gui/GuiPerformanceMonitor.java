@@ -15,6 +15,7 @@ import org.lwjgl.opengl.GL11;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 
@@ -30,7 +31,7 @@ public class GuiPerformanceMonitor extends ThemedGuiScreen {
 
     private static final int PANEL_MARGIN = 15;
     private static final int PANEL_TOP = 10;
-    private static final int CARD_HEIGHT = 132;
+    private static final int CARD_HEIGHT = 150;
     private static final int CARD_MARGIN = 10;
     private static final int SCROLLBAR_WIDTH = 8;
     private static final int CONTENT_PADDING = 16;
@@ -41,12 +42,26 @@ public class GuiPerformanceMonitor extends ThemedGuiScreen {
             "auto_equip",
             "auto_pickup",
             "auto_follow",
+            "auto_escape",
+            "kill_aura",
             "path_sequence",
             "conditional_execution",
             "debuff_detector",
             "freecam",
             "goto_open",
             "warehouse",
+            "block_replacement",
+            "render_features_tick",
+            "render_features_world",
+            "render_features_overlay",
+            "trigger_system",
+            "death_auto_rejoin",
+            "shulker_stacking",
+            "auto_skill",
+            "auto_eat",
+            "auto_signin_online",
+            "auto_use_item",
+            "timed_message",
             "packet_capture_inbound",
             "packet_capture_outbound",
             "packet_intercept",
@@ -105,6 +120,7 @@ public class GuiPerformanceMonitor extends ThemedGuiScreen {
         GuiTheme.drawTitleBar(panelX, panelY, panelWidth, I18n.format("gui.performance.title"), this.fontRenderer);
         drawCenteredString(this.fontRenderer, I18n.format("gui.performance.subtitle"), this.width / 2, panelY + 24,
                 GuiTheme.SUB_TEXT);
+        drawHotspotSummary(panelX, panelWidth);
         drawGuardControls(panelX, panelWidth);
 
         startScissor(getContentAreaX(), getContentAreaY(), getContentAreaWidth(), getVisibleContentHeight());
@@ -174,26 +190,31 @@ public class GuiPerformanceMonitor extends ThemedGuiScreen {
         drawString(this.fontRenderer, buttonText, textX, textY, GuiTheme.LABEL_TEXT);
 
         if (stats != null && stats.getMeasurementCount() > 0) {
+            double cpuUsagePercent = stats.getCpuUsagePercent();
             drawString(this.fontRenderer, I18n.format("gui.performance.stats"), x + 10, y + 46, GuiTheme.TITLE_RIGHT);
             drawString(this.fontRenderer,
-                    I18n.format("gui.performance.avg", stats.getAverageTimeMillis()),
-                    x + 10, y + 61, GuiTheme.LABEL_TEXT);
-            drawString(this.fontRenderer, I18n.format("gui.performance.max", stats.getMaxTimeMillis()),
-                    x + 10, y + 76, GuiTheme.LABEL_TEXT);
-            drawString(this.fontRenderer, I18n.format("gui.performance.min", stats.getMinTimeMillis()),
-                    x + 10, y + 91, GuiTheme.LABEL_TEXT);
+                    String.format("CPU平均: %.2f%%", cpuUsagePercent),
+                    x + 10, y + 61, getCpuColor(cpuUsagePercent));
             drawString(this.fontRenderer,
-                    I18n.format("gui.performance.count", stats.getMeasurementCount()),
-                    x + 10, y + 106, GuiTheme.SUB_TEXT);
+                    I18n.format("gui.performance.avg", stats.getAverageTimeMillis()),
+                    x + 10, y + 76, GuiTheme.LABEL_TEXT);
+            drawString(this.fontRenderer, I18n.format("gui.performance.max", stats.getMaxTimeMillis()),
+                    x + 10, y + 91, GuiTheme.LABEL_TEXT);
+            drawString(this.fontRenderer, I18n.format("gui.performance.min", stats.getMinTimeMillis()),
+                    x + 10, y + 106, GuiTheme.LABEL_TEXT);
+            drawString(this.fontRenderer,
+                    String.format("次数: %d  累计: %.1fms", stats.getMeasurementCount(),
+                            stats.getTotalTimeNanos() / 1_000_000.0D),
+                    x + 10, y + 121, GuiTheme.SUB_TEXT);
 
             if (featureName.startsWith("packet_")) {
                 PacketCaptureHandler.PacketCaptureUiSnapshot snapshot = PacketCaptureHandler.getUiSnapshot();
                 String extra = "队列:" + snapshot.queueSize + " 丢弃:" + snapshot.droppedCount
                         + " 采样:1/" + Math.max(1, snapshot.samplingModulo);
-                drawString(this.fontRenderer, extra, x + 10, y + 118, GuiTheme.SUB_TEXT);
+                drawString(this.fontRenderer, extra, x + 10, y + 136, GuiTheme.SUB_TEXT);
             }
         } else {
-            drawString(this.fontRenderer, I18n.format("gui.performance.no_data"), x + 10, y + 68, GuiTheme.SUB_TEXT);
+            drawString(this.fontRenderer, "无计时数据：未触发或暂未接入", x + 10, y + 68, GuiTheme.SUB_TEXT);
             if (featureName.startsWith("packet_")) {
                 PacketCaptureHandler.PacketCaptureUiSnapshot snapshot = PacketCaptureHandler.getUiSnapshot();
                 String extra = "队列:" + snapshot.queueSize + " 丢弃:" + snapshot.droppedCount
@@ -443,6 +464,38 @@ public class GuiPerformanceMonitor extends ThemedGuiScreen {
                 GuiTheme.SUB_TEXT);
     }
 
+    private void drawHotspotSummary(int panelX, int panelWidth) {
+        List<String> names = getFeatureNames();
+        String topFeature = "";
+        double topCpu = 0.0D;
+        for (String featureName : names) {
+            PerformanceMonitor.PerformanceStats stats = PerformanceMonitor.getPerformanceStats(featureName);
+            if (stats == null || stats.getMeasurementCount() <= 0) {
+                continue;
+            }
+            double cpu = stats.getCpuUsagePercent();
+            if (cpu > topCpu) {
+                topCpu = cpu;
+                topFeature = featureName;
+            }
+        }
+        String text = topFeature.isEmpty()
+                ? "CPU热点: 暂无计时数据"
+                : String.format("CPU热点: %s  %.2f%%", getDisplayName(topFeature), topCpu);
+        drawString(this.fontRenderer, text, panelX + panelWidth - this.fontRenderer.getStringWidth(text),
+                PANEL_TOP + 24, getCpuColor(topCpu));
+    }
+
+    private int getCpuColor(double cpuUsagePercent) {
+        if (cpuUsagePercent >= 20.0D) {
+            return GuiTheme.STATE_DANGER;
+        }
+        if (cpuUsagePercent >= 5.0D) {
+            return GuiTheme.STATE_WARNING;
+        }
+        return GuiTheme.STATE_SUCCESS;
+    }
+
     private void applyGuardSettings() {
         try {
             double thresholdMillis = Double.parseDouble(thresholdField.getText().trim());
@@ -479,7 +532,30 @@ public class GuiPerformanceMonitor extends ThemedGuiScreen {
                 ordered.add(feature);
             }
         }
+        ordered.sort(new Comparator<String>() {
+            @Override
+            public int compare(String left, String right) {
+                PerformanceMonitor.PerformanceStats leftStats = PerformanceMonitor.getPerformanceStats(left);
+                PerformanceMonitor.PerformanceStats rightStats = PerformanceMonitor.getPerformanceStats(right);
+                double leftCpu = leftStats == null || leftStats.getMeasurementCount() <= 0
+                        ? -1.0D
+                        : leftStats.getCpuUsagePercent();
+                double rightCpu = rightStats == null || rightStats.getMeasurementCount() <= 0
+                        ? -1.0D
+                        : rightStats.getCpuUsagePercent();
+                int cpuCompare = Double.compare(rightCpu, leftCpu);
+                if (cpuCompare != 0) {
+                    return cpuCompare;
+                }
+                return Integer.compare(getFeatureOrder(left), getFeatureOrder(right));
+            }
+        });
         return ordered;
+    }
+
+    private int getFeatureOrder(String featureName) {
+        int index = FEATURE_ORDER.indexOf(featureName);
+        return index >= 0 ? index : FEATURE_ORDER.size();
     }
 
     private String getDisplayName(String featureName) {
@@ -490,6 +566,10 @@ public class GuiPerformanceMonitor extends ThemedGuiScreen {
                 return "自动拾取 - Auto Pickup";
             case "auto_follow":
                 return "自动追怪 - Auto Follow";
+            case "auto_escape":
+                return "自动逃离 - Auto Escape";
+            case "kill_aura":
+                return "杀戮光环 - Kill Aura";
             case "path_sequence":
                 return "路径序列 - Path Sequence";
             case "conditional_execution":
@@ -502,6 +582,30 @@ public class GuiPerformanceMonitor extends ThemedGuiScreen {
                 return "前往并打开 - Go To & Open";
             case "warehouse":
                 return "仓库系统 - Warehouse";
+            case "block_replacement":
+                return "方块替换 - Block Replace";
+            case "render_features_tick":
+                return "渲染功能Tick - Render Tick";
+            case "render_features_world":
+                return "世界渲染功能 - Render World";
+            case "render_features_overlay":
+                return "覆盖层渲染 - Render Overlay";
+            case "trigger_system":
+                return "触发器系统 - Triggers";
+            case "death_auto_rejoin":
+                return "死亡自动重进 - Death Rejoin";
+            case "shulker_stacking":
+                return "潜影盒叠加 - Shulker Stack";
+            case "auto_skill":
+                return "自动技能 - Auto Skill";
+            case "auto_eat":
+                return "自动进食 - Auto Eat";
+            case "auto_signin_online":
+                return "签到在线 - Sign-in Online";
+            case "auto_use_item":
+                return "静默用物 - Auto Use Item";
+            case "timed_message":
+                return "定时消息 - Timed Message";
             case "packet_capture_inbound":
                 return "入站捕获 - Inbound Capture";
             case "packet_capture_outbound":
