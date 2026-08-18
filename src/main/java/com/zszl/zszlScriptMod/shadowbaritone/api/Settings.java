@@ -473,6 +473,22 @@ public final class Settings {
     public final Setting<Boolean> overshootTraverse = new Setting<>(true);
 
     /**
+     * Slow down before Baritone path corners according to current horizontal
+     * velocity, preventing high-speed overshoot correction oscillation.
+     */
+    public final Setting<Boolean> adaptivePathingSpeedControl = new Setting<>(true);
+
+    /**
+     * Maximum horizontal speed used while committing to a sharp path corner.
+     */
+    public final Setting<Double> adaptivePathingCornerSpeed = new Setting<>(0.42D);
+
+    /**
+     * Expected horizontal deceleration used to calculate the corner brake distance.
+     */
+    public final Setting<Double> adaptivePathingBrakeAcceleration = new Setting<>(0.16D);
+
+    /**
      * When breaking blocks for a movement, wait until all falling blocks have
      * settled before continuing
      */

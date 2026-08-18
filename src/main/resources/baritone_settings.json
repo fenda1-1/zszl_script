@@ -191,7 +191,25 @@
       "key": "overshootTraverse",
       "defaultValue": "true",
       "type": "boolean",
-      "desc": "横移超步视为成功"
+      "desc": "横移越过目标时自动推进路线，不回头反复修正"
+    },
+    {
+      "key": "adaptivePathingSpeedControl",
+      "defaultValue": "true",
+      "type": "boolean",
+      "desc": "高速寻路时按拐角距离自动减速，避免反复折返"
+    },
+    {
+      "key": "adaptivePathingCornerSpeed",
+      "defaultValue": "0.42",
+      "type": "double",
+      "desc": "高速寻路锐角拐弯时的最大速度（格/tick）"
+    },
+    {
+      "key": "adaptivePathingBrakeAcceleration",
+      "defaultValue": "0.16",
+      "type": "double",
+      "desc": "高速寻路拐弯刹车强度（格/tick²）"
     },
     {
       "key": "pauseMiningForFallingBlocks",

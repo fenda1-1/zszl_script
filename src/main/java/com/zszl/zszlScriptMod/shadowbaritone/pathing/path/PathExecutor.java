@@ -33,6 +33,7 @@ import com.zszl.zszlScriptMod.shadowbaritone.pathing.calc.AbstractNodeCostSearch
 import com.zszl.zszlScriptMod.shadowbaritone.pathing.movement.CalculationContext;
 import com.zszl.zszlScriptMod.shadowbaritone.pathing.movement.Movement;
 import com.zszl.zszlScriptMod.shadowbaritone.pathing.movement.MovementHelper;
+import com.zszl.zszlScriptMod.shadowbaritone.pathing.movement.PathingSpeedController;
 import com.zszl.zszlScriptMod.shadowbaritone.pathing.movement.movements.*;
 import com.zszl.zszlScriptMod.shadowbaritone.utils.BlockStateInterface;
 import net.minecraft.block.BlockLiquid;
@@ -654,6 +655,9 @@ public class PathExecutor implements IPathExecutor, Helper {
         // first and foremost, if allowSprint is off, or if we don't have enough hunger,
         // don't try and sprint
         if (!new CalculationContext(behavior.baritone, false).canSprint) {
+            return false;
+        }
+        if (PathingSpeedController.shouldHoldSprint(ctx.player())) {
             return false;
         }
         IMovement current = path.movements().get(pathPosition);

@@ -76,6 +76,22 @@ public class MovementTraverse extends Movement {
         return ImmutableSet.of(src, dest);
     }
 
+    private boolean hasPassedDestinationWithoutLeavingLane() {
+        int directionX = Integer.signum(dest.x - src.x);
+        int directionZ = Integer.signum(dest.z - src.z);
+        if (Math.abs(directionX) + Math.abs(directionZ) != 1) {
+            return false;
+        }
+
+        double along = (ctx.player().posX - (dest.x + 0.5D)) * directionX
+                + (ctx.player().posZ - (dest.z + 0.5D)) * directionZ;
+        double lateral = directionX != 0
+                ? Math.abs(ctx.player().posZ - (dest.z + 0.5D))
+                : Math.abs(ctx.player().posX - (dest.x + 0.5D));
+        double forwardVelocity = ctx.player().motionX * directionX + ctx.player().motionZ * directionZ;
+        return along > 0.08D && lateral <= 0.65D && forwardVelocity >= -0.02D;
+    }
+
     public static double cost(CalculationContext context, int x, int y, int z, int destX, int destZ) {
         IBlockState pb0 = context.get(destX, y + 1, destZ);
         IBlockState pb1 = context.get(destX, y, destZ);
@@ -387,6 +403,9 @@ public class MovementTraverse extends Movement {
             }
             if (Baritone.settings().overshootTraverse.value && (pathFeet.equals(dest.add(getDirection()))
                     || pathFeet.equals(dest.add(getDirection()).add(getDirection())))) {
+                return state.setStatus(MovementStatus.SUCCESS);
+            }
+            if (Baritone.settings().overshootTraverse.value && hasPassedDestinationWithoutLeavingLane()) {
                 return state.setStatus(MovementStatus.SUCCESS);
             }
             Block low = BlockStateInterface.get(ctx, src).getBlock();

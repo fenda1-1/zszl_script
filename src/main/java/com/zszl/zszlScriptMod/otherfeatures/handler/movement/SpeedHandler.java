@@ -5,6 +5,7 @@ import com.google.gson.JsonParser;
 import com.zszl.zszlScriptMod.shadowbaritone.Baritone;
 import com.zszl.zszlScriptMod.shadowbaritone.api.BaritoneAPI;
 import com.zszl.zszlScriptMod.shadowbaritone.api.utils.Rotation;
+import com.zszl.zszlScriptMod.shadowbaritone.pathing.movement.PathingSpeedController;
 import com.zszl.zszlScriptMod.system.ProfileManager;
 import com.zszl.zszlScriptMod.utils.ReflectionCompat;
 import com.zszl.zszlScriptMod.zszlScriptMod;
@@ -65,6 +66,7 @@ public class SpeedHandler {
     private static final double ORBIT_PATH_LOCK_MIN_PARALLEL_STEP = 0.055D;
     private static final double ORBIT_PATH_RECOVERY_REFERENCE = 0.18D;
     private static final double ORBIT_PATH_RECOVERY_MAX_PENALTY = 0.72D;
+    private PathingSpeedController.MotionPlan activePathingMotionPlan;
 
     private SpeedHandler() {
     }
@@ -227,6 +229,11 @@ public class SpeedHandler {
         }
 
         updateGroundAirState(player);
+        this.activePathingMotionPlan = PathingSpeedController.plan(player, getRawConfiguredHorizontalSpeed(player));
+        if (this.activePathingMotionPlan.isBraking()) {
+            applyPathingControlledSpeed(player);
+            return;
+        }
         switch (speedMode) {
         case MODE_GROUND:
             applyGroundSpeed(player);
@@ -461,8 +468,40 @@ public class SpeedHandler {
     }
 
     private double getConfiguredHorizontalSpeed(EntityPlayerSP player) {
+        double baseSpeed = getBaseMoveSpeed(player);
+        double configuredSpeed = getRawConfiguredHorizontalSpeed(player);
+        if (this.activePathingMotionPlan != null && this.activePathingMotionPlan.isActive()) {
+            configuredSpeed = Math.min(configuredSpeed, this.activePathingMotionPlan.getTargetSpeed());
+        }
+        double minimumSpeed = this.activePathingMotionPlan != null && this.activePathingMotionPlan.isBraking()
+                ? baseSpeed * 0.20D
+                : baseSpeed;
+        return Math.max(minimumSpeed, configuredSpeed);
+    }
+
+    private double getRawConfiguredHorizontalSpeed(EntityPlayerSP player) {
         double configuredSpeed = vanillaSpeed;
         return Math.max(getBaseMoveSpeed(player), configuredSpeed);
+    }
+
+    private void applyPathingControlledSpeed(EntityPlayerSP player) {
+        resetTimer();
+        slowDown = false;
+
+        double baseSpeed = getBaseMoveSpeed(player);
+        double targetSpeed = getConfiguredHorizontalSpeed(player);
+        double currentSpeed = getHorizontalSpeed(player);
+        double trackedSpeed = Math.max(currentSpeed, playerSpeed > 1.0E-4D ? playerSpeed : baseSpeed);
+        double deceleration = this.activePathingMotionPlan != null && this.activePathingMotionPlan.isHardBrake()
+                ? Math.max(0.10D, trackedSpeed * 0.42D)
+                : Math.max(0.06D, trackedSpeed * 0.24D);
+        playerSpeed = approachDouble(trackedSpeed, targetSpeed, deceleration);
+
+        if (player.onGround && player.movementInput != null && !player.movementInput.jump && player.motionY < 0.0D) {
+            player.motionY = 0.0D;
+        }
+        player.setSprinting(false);
+        setHorizontalSpeed(player, playerSpeed);
     }
 
     private void setHorizontalSpeed(EntityPlayerSP player, double speed) {
@@ -503,6 +542,10 @@ public class SpeedHandler {
     }
 
     private void applyTimerState() {
+        if (this.activePathingMotionPlan != null && this.activePathingMotionPlan.isBraking()) {
+            resetTimer();
+            return;
+        }
         if (useTimerBoost) {
             setTimer(timerSpeed);
         } else {
@@ -550,7 +593,10 @@ public class SpeedHandler {
             turnSlowdown *= 0.60D;
         }
 
-        double stabilizedTargetSpeed = Math.max(baseSpeed * 0.85D, targetSpeed * turnSlowdown);
+        double minimumTargetSpeed = this.activePathingMotionPlan != null && this.activePathingMotionPlan.isBraking()
+                ? baseSpeed * 0.20D
+                : baseSpeed * 0.85D;
+        double stabilizedTargetSpeed = Math.max(minimumTargetSpeed, targetSpeed * turnSlowdown);
 
         double speedRatio = currentSpeed / Math.max(0.05D, baseSpeed);
         double lateralCorrectionFactor = 0.34D;
@@ -942,6 +988,7 @@ public class SpeedHandler {
         lastOrbitDirectionX = Double.NaN;
         lastOrbitDirectionZ = Double.NaN;
         orbitDirectionGraceTicks = 0;
+        activePathingMotionPlan = null;
     }
 
     private void updateGroundAirState(EntityPlayerSP player) {
