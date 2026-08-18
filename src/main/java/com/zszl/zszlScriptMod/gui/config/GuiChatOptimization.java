@@ -114,6 +114,7 @@ public class GuiChatOptimization extends ThemedGuiScreen {
     private double originalChatScale;
     private double originalChatWidth;
     private boolean committed;
+    private boolean openingChildInput;
     private double lastAppliedScale = -1.0D;
     private double lastAppliedWidth = -1.0D;
 
@@ -144,6 +145,8 @@ public class GuiChatOptimization extends ThemedGuiScreen {
         this.draggingScrollbar = false;
         this.draggingTimedMessageScrollbar = false;
         this.draggingPreview = false;
+        this.openingChildInput = false;
+        ensureTimedMessageList();
 
         this.originalChatScale = this.mc.options.chatScale().get();
         this.originalChatWidth = this.mc.options.chatWidth().get();
@@ -322,6 +325,8 @@ public class GuiChatOptimization extends ThemedGuiScreen {
                     this.settings.timedMessageMode.getDisplayName());
             return;
         case BTN_TIMED_ADD:
+            ensureTimedMessageList();
+            this.openingChildInput = true;
             this.mc.setScreen(new GuiTextInput(this, I18n.format("gui.chatopt.input_new"), newMessage -> {
                 if (newMessage != null && !newMessage.trim().isEmpty()) {
                     if (this.settings.timedMessages.size() == 1
@@ -329,6 +334,7 @@ public class GuiChatOptimization extends ThemedGuiScreen {
                         this.settings.timedMessages.clear();
                     }
                     this.settings.timedMessages.add(newMessage);
+                    this.selectedTimedMessageIndex = this.settings.timedMessages.size() - 1;
                 }
                 this.mc.setScreen(this);
             }));
@@ -337,6 +343,7 @@ public class GuiChatOptimization extends ThemedGuiScreen {
             if (this.selectedTimedMessageIndex >= 0
                     && this.selectedTimedMessageIndex < this.settings.timedMessages.size()) {
                 String oldMessage = this.settings.timedMessages.get(this.selectedTimedMessageIndex);
+                this.openingChildInput = true;
                 this.mc.setScreen(new GuiTextInput(this, I18n.format("gui.chatopt.input_edit"), oldMessage, edited -> {
                     if (edited != null && !edited.trim().isEmpty() && this.selectedTimedMessageIndex >= 0
                             && this.selectedTimedMessageIndex < this.settings.timedMessages.size()) {
@@ -753,8 +760,6 @@ public class GuiChatOptimization extends ThemedGuiScreen {
 
     @Override
     protected void mouseClicked(int mouseX, int mouseY, int mouseButton) throws IOException {
-        super.mouseClicked(mouseX, mouseY, mouseButton);
-
         if (mouseButton == 0 && handleGroupClick(mouseX, mouseY)) {
             return;
         }
@@ -778,7 +783,7 @@ public class GuiChatOptimization extends ThemedGuiScreen {
             }
         }
 
-        if (this.selectedGroup == ConfigGroup.TIMED && translatedX >= this.timedListX
+        if (mouseButton == 0 && this.selectedGroup == ConfigGroup.TIMED && translatedX >= this.timedListX
                 && translatedX <= this.timedListX + this.timedListW && translatedY >= this.timedListY
                 && translatedY <= this.timedListY + this.timedListH) {
             int clickedIndex = (translatedY - this.timedListY) / 15 + this.timedMessageScrollOffset;
@@ -788,15 +793,11 @@ public class GuiChatOptimization extends ThemedGuiScreen {
             return;
         }
 
-        for (GuiButton button : this.scrollableButtons) {
-            if (button.visible && button.mousePressed(this.mc, translatedX, translatedY)) {
-                button.playPressSound(this.mc.getSoundManager());
-                this.actionPerformed(button);
-                return;
-            }
+        if (mouseButton == 0 && handleScrollableButtonClick(translatedX, translatedY)) {
+            return;
         }
         for (GuiSlider slider : this.sliders) {
-            if (slider.visible && slider.mousePressed(this.mc, translatedX, translatedY)) {
+            if (mouseButton == 0 && slider.visible && slider.mousePressed(this.mc, translatedX, translatedY)) {
                 return;
             }
         }
@@ -812,6 +813,8 @@ public class GuiChatOptimization extends ThemedGuiScreen {
             this.dragStartX = mouseX;
             this.dragStartY = mouseY;
         }
+
+        super.mouseClicked(mouseX, mouseY, mouseButton);
     }
 
     @Override
@@ -894,7 +897,7 @@ public class GuiChatOptimization extends ThemedGuiScreen {
     @Override
     public void onGuiClosed() {
         Keyboard.enableRepeatEvents(false);
-        if (!this.committed) {
+        if (!this.committed && !this.openingChildInput) {
             restoreOriginalPreviewOptions();
             ChatOptimizationConfig.load();
         }
@@ -1070,6 +1073,33 @@ public class GuiChatOptimization extends ThemedGuiScreen {
             }
         }
         return null;
+    }
+
+    private boolean handleScrollableButtonClick(int mouseX, int mouseY) throws IOException {
+        for (GuiButton button : this.scrollableButtons) {
+            if (!button.visible || !button.enabled || !button.isMouseOver(mouseX, mouseY)) {
+                continue;
+            }
+            button.playPressSound(this.mc.getSoundManager());
+            this.actionPerformed(button);
+            return true;
+        }
+        return false;
+    }
+
+    private void ensureTimedMessageList() {
+        if (this.settings == null) {
+            this.settings = ChatOptimizationConfig.INSTANCE;
+        }
+        if (this.settings.timedMessages == null) {
+            this.settings.timedMessages = new ArrayList<>();
+        }
+        if (this.settings.timedMessages.isEmpty()) {
+            this.settings.timedMessages.add("");
+        }
+        if (this.settings.timedMessageMode == null) {
+            this.settings.timedMessageMode = ChatOptimizationConfig.TimedMessageMode.SEQUENTIAL;
+        }
     }
 
     private boolean isTextFieldVisible(GuiTextField field) {
