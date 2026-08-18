@@ -168,6 +168,12 @@ public final class Settings {
     public final Setting<Boolean> assumeStep = new Setting<>(false);
 
     /**
+     * Maximum whole-block height that Baritone may treat as a single traversable
+     * ascent. Values are clamped to the inclusive range 1 to 100.
+     */
+    public final Setting<Integer> routeHeightRange = new Setting<>(1);
+
+    /**
      * Assume safe walk functionality; don't sneak on a backplace traverse.
      * <p>
      * Warning: if you do something janky like sneak-backplace from an ender chest,

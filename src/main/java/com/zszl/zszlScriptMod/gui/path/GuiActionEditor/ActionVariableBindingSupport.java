@@ -452,6 +452,11 @@ final class ActionVariableBindingSupport {
                 draft.addProperty(key, isHex ? "HEX" : "DEC");
             } else if ("clickType".equals(key)) {
                 draft.addProperty(key, displayToClickType(value));
+                if ("普通点击".equals(value) || "Shift快速移动".equals(value)) {
+                    draft.addProperty("button", 0);
+                } else if (displayUsesRightMouseButton(value)) {
+                    draft.addProperty("button", 1);
+                }
             } else if ("onlyOnSlotChange".equals(key)) {
                 draft.addProperty(key, displayOnOffToBool(value));
             } else if ("locatorMode".equals(key)) {

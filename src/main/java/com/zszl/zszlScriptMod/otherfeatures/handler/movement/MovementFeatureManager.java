@@ -71,8 +71,8 @@ public class MovementFeatureManager {
                 "在大多数 GUI 界面保持 WASD、跳跃和下蹲输入可用。聊天输入框默认不接管。左键快速开关，右键打开移动设置。",
                 null, 0.0F, 0.0F, 0.0F, true));
         register(new FeatureState("auto_step", "自动台阶",
-                "自动抬升 1 到 2 格台阶，减少卡在小坡、半砖或低矮障碍上的情况。左键快速开关，右键打开移动设置。",
-                "台阶高度", 1.50F, 1.00F, 2.00F, true));
+                "自动抬升 1 到 100 格台阶，减少卡在小坡、半砖或高差障碍上的情况。仅支持整数格。左键快速开关，右键打开移动设置。",
+                "台阶高度", 1.00F, 1.00F, 100.00F, true));
         register(new FeatureState("block_phase", "方块穿透",
                 "卡进实体方块边缘或持续顶墙时，自动寻找最近安全偏移并轻量脱困，目标是减少卡住而不是粗暴穿墙。左键快速开关，右键打开移动设置。",
                 "脱困强度", 0.12F, 0.05F, 0.40F, true));
@@ -157,6 +157,10 @@ public class MovementFeatureManager {
             return !valueLabel.isEmpty() && maxValue > minValue;
         }
 
+        public boolean usesIntegerValue() {
+            return "auto_step".equals(id);
+        }
+
         public boolean isEnabled() {
             return enabled;
         }
@@ -178,7 +182,8 @@ public class MovementFeatureManager {
                 this.value = defaultValue;
                 return;
             }
-            this.value = MathHelper.clamp(value, minValue, maxValue);
+            float clamped = MathHelper.clamp(value, minValue, maxValue);
+            this.value = usesIntegerValue() ? Math.round(clamped) : clamped;
         }
 
         private void setStatusHudEnabledInternal(boolean statusHudEnabled) {

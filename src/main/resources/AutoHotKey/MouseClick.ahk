@@ -28,6 +28,7 @@ y := A_Args[3 + argOffset]
 button := A_Args[4 + argOffset]
 ; 检查第5个参数是否存在且是否为 "true"
 moveMouse := (A_Args.Length > 4 + argOffset and A_Args[5 + argOffset] = "true")
+withShift := (A_Args.Length > 5 + argOffset and A_Args[6 + argOffset] = "true")
 
 ; 优先锁定当前 Java 进程对应的 Minecraft 窗口，避免多开串窗。
 targetWin := (pid != "") ? ("ahk_pid " . pid . " ahk_class LWJGL") : "ahk_class LWJGL"
@@ -46,8 +47,13 @@ if (moveMouse) {
     MouseMove(x, y)
     ; 短暂延迟，确保鼠标移动到位
     Sleep(50)
-    ; 执行标准的鼠标点击
+    if (withShift) {
+        Send("{Shift down}")
+    }
     Click(button)
+    if (withShift) {
+        Send("{Shift up}")
+    }
 } else {
     ; --- 静默点击模式 (后台模式) ---
     ; ControlClick可以直接在后台向窗口的指定坐标发送点击消息
@@ -59,7 +65,13 @@ if (moveMouse) {
     ;   - Button: 点击的按钮
     ;   - ClickCount: 点击次数
     ;   - Options: NA 选项表示不激活窗口并且使用更可靠的发送模式
+    if (withShift) {
+        Send("{Shift down}")
+    }
     ControlClick("x" . x . " y" . y, targetWin, , button, 1, "NA")
+    if (withShift) {
+        Send("{Shift up}")
+    }
 }
 
 ExitApp()

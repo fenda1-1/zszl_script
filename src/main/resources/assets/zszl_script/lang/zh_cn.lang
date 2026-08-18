@@ -1450,7 +1450,7 @@ gui.path.action_editor.help.x=屏幕X坐标 (基于 %s 宽)
 gui.path.action_editor.label.y=Y坐标
 gui.path.action_editor.help.y=屏幕Y坐标 (基于 %s 高)
 gui.path.action_editor.label.left_click=鼠标按键
-gui.path.action_editor.help.left_click=可选左键、右键或中键；旧配置里的 true/false 仍兼容为左/右键
+gui.path.action_editor.help.left_click=可选左键、右键、Shift左键、Shift右键或中键；旧配置里的 true/false 仍兼容为左/右键
 gui.path.action_editor.label.screen_locator_mode=屏幕定位模式
 gui.path.action_editor.help.screen_locator_mode=坐标=按 X/Y 点击；按钮文本=按当前 GUI 按钮文字定位；槽位文本=按当前容器槽位物品名定位；元素路径=按扫描出来的 GUI 元素路径定位
 gui.path.action_editor.label.slot_locator_mode=槽位定位模式
@@ -1488,7 +1488,7 @@ gui.path.action_editor.option.no_sequence_available=无可用序列
 gui.path.action_editor.label.button=按钮
 gui.path.action_editor.help.button=通常0=左键,1=右键,SWAP模式时为快捷栏槽位(0-8)
 gui.path.action_editor.label.click_type=点击类型
-gui.path.action_editor.help.click_type=可选: PICKUP/QUICK_MOVE/SWAP/THROW/PICKUP_ALL/QUICK_CRAFT/CLONE
+gui.path.action_editor.help.click_type=可选普通点击、右键、Shift快速移动、Shift右键，以及 PICKUP/QUICK_MOVE/SWAP/THROW/PICKUP_ALL/QUICK_CRAFT/CLONE 高级类型
 gui.path.action_editor.label.yaw=水平朝向(Yaw)
 gui.path.action_editor.help.yaw=示例: 90.0, -180.0
 gui.path.action_editor.label.pitch=垂直朝向(Pitch)

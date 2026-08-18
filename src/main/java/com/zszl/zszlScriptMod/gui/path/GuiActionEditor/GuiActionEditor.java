@@ -181,7 +181,7 @@ public class GuiActionEditor extends ThemedGuiScreen {
             "§l粗", "§n下", "§o斜", "§m删", "§k乱", "§r重"
     };
     private static final String[] CLICK_TYPE_DISPLAY_OPTIONS = new String[] {
-            "普通点击", "Shift快速移动", "数字键交换", "丢弃", "收集同类", "拖拽分发", "创造复制"
+            "普通点击", "右键", "Shift快速移动", "Shift右键", "数字键交换", "丢弃", "收集同类", "拖拽分发", "创造复制"
     };
     static final String CONDITION_EXPRESSION_OPERATOR_CUSTOM = "自定义表达式";
     static final String CONDITION_EXPRESSION_OPERATOR_RANGE_CLOSED = "区间 [a,b]";
@@ -1618,7 +1618,7 @@ public class GuiActionEditor extends ThemedGuiScreen {
                 currentY += 40;
                 addDropdown(I18n.format("gui.path.action_editor.label.left_click"), "left",
                         I18n.format("gui.path.action_editor.help.left_click"), fieldWidth, x, currentY,
-                        new String[] { "左键", "右键", "中键" },
+                        new String[] { "左键", "右键", "Shift左键", "Shift右键", "中键" },
                         leftToDisplay(currentParams.has("left") ? currentParams.get("left").getAsString() : "true"));
                 break;
             case "setview":
@@ -1692,7 +1692,8 @@ public class GuiActionEditor extends ThemedGuiScreen {
                         CLICK_TYPE_DISPLAY_OPTIONS,
                         clickTypeToDisplay(
                                 currentParams.has("clickType") ? currentParams.get("clickType").getAsString()
-                                        : "PICKUP"));
+                                        : "PICKUP",
+                                currentParams.has("button") ? currentParams.get("button").getAsInt() : 0));
                 break;
             case "rightclickblock":
                 addDropdown(I18n.format("gui.path.action_editor.label.target_locator_mode"), "locatorMode",
@@ -1833,7 +1834,8 @@ public class GuiActionEditor extends ThemedGuiScreen {
                         CLICK_TYPE_DISPLAY_OPTIONS,
                         clickTypeToDisplay(
                                 currentParams.has("clickType") ? currentParams.get("clickType").getAsString()
-                                        : "PICKUP"));
+                                        : "PICKUP",
+                                currentParams.has("button") ? currentParams.get("button").getAsInt() : 0));
                 break;
             case ACTION_MOVE_INVENTORY_ITEMS_TO_CHEST_SLOTS:
                 initializeMoveChestSelectionState();
@@ -2393,6 +2395,11 @@ public class GuiActionEditor extends ThemedGuiScreen {
                 newParams.addProperty(key, isHex ? "HEX" : "DEC");
             } else if ("clickType".equals(key)) {
                 newParams.addProperty(key, displayToClickType(value));
+                if ("普通点击".equals(value) || "Shift快速移动".equals(value)) {
+                    newParams.addProperty("button", 0);
+                } else if (displayUsesRightMouseButton(value)) {
+                    newParams.addProperty("button", 1);
+                }
             } else if ("enabled".equals(key)
                     || "autoMoveFoodEnabled".equals(key)
                     || "eatWithLookDown".equals(key)

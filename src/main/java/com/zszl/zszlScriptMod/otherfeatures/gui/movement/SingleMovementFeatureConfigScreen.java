@@ -281,7 +281,7 @@ public class SingleMovementFeatureConfigScreen extends ThemedGuiScreen {
         this.stateDropdown.setSelectedIndex(this.draftEnabled ? 0 : 1);
         this.hudDropdown.setSelectedIndex(this.draftStatusHudEnabled ? 0 : 1);
         this.valueButton.enabled = state != null && state.supportsValue();
-        this.valueButton.displayString = state != null && state.supportsValue() ? formatFloat(this.draftValue) : "";
+        this.valueButton.displayString = state != null && state.supportsValue() ? formatValue(state, this.draftValue) : "";
     }
 
     private FeatureState getFeature() {
@@ -343,23 +343,32 @@ public class SingleMovementFeatureConfigScreen extends ThemedGuiScreen {
         if (state == null || !state.supportsValue()) {
             return;
         }
-        this.draftValue = clampFloat(this.draftValue, state.minValue, state.maxValue);
+        this.draftValue = normalizeValue(state, this.draftValue);
     }
 
     private void openValueInput(FeatureState state) {
-        String title = "输入 " + state.valueLabel + " (" + formatFloat(state.minValue) + " - "
-                + formatFloat(state.maxValue) + ")";
-        mc.displayGuiScreen(new GuiTextInput(this, title, formatFloat(this.draftValue), value -> {
+        String title = "输入 " + state.valueLabel + " (" + formatValue(state, state.minValue) + " - "
+                + formatValue(state, state.maxValue) + ")";
+        mc.displayGuiScreen(new GuiTextInput(this, title, formatValue(state, this.draftValue), value -> {
             float parsed = this.draftValue;
             try {
-                parsed = Float.parseFloat(value.trim());
+                parsed = state.usesIntegerValue() ? Integer.parseInt(value.trim()) : Float.parseFloat(value.trim());
             } catch (Exception ignored) {
             }
-            this.draftValue = clampFloat(parsed, state.minValue, state.maxValue);
+            this.draftValue = normalizeValue(state, parsed);
             refreshControlTexts();
             relayoutControls();
             mc.displayGuiScreen(this);
         }));
+    }
+
+    private float normalizeValue(FeatureState state, float value) {
+        float clamped = clampFloat(value, state.minValue, state.maxValue);
+        return state.usesIntegerValue() ? Math.round(clamped) : clamped;
+    }
+
+    private String formatValue(FeatureState state, float value) {
+        return state.usesIntegerValue() ? String.valueOf(Math.round(value)) : formatFloat(value);
     }
 
     @Override

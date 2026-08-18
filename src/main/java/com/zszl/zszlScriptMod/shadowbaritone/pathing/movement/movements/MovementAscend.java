@@ -52,7 +52,7 @@ public class MovementAscend extends Movement {
 
     @Override
     public double calculateCost(CalculationContext context) {
-        return cost(context, src.x, src.y, src.z, dest.x, dest.z);
+        return cost(context, src.x, src.y, src.z, dest.x, dest.y, dest.z);
     }
 
     @Override
@@ -69,20 +69,29 @@ public class MovementAscend extends Movement {
     }
 
     public static double cost(CalculationContext context, int x, int y, int z, int destX, int destZ) {
-        IBlockState toPlace = context.get(destX, y, destZ);
+        return cost(context, x, y, z, destX, y + 1, destZ);
+    }
+
+    public static double cost(CalculationContext context, int x, int y, int z, int destX, int destY, int destZ) {
+        int height = destY - y;
+        if (height < 1 || height > context.routeHeightRange) {
+            return COST_INF;
+        }
+        IBlockState toPlace = context.get(destX, destY - 1, destZ);
         double additionalPlacementCost = 0;
-        if (!MovementHelper.canWalkOn(context, destX, y, destZ, toPlace)) {
-            additionalPlacementCost = context.costOfPlacingAt(destX, y, destZ, toPlace);
+        if (!MovementHelper.canWalkOn(context, destX, destY - 1, destZ, toPlace)) {
+            additionalPlacementCost = context.costOfPlacingAt(destX, destY - 1, destZ, toPlace);
             if (additionalPlacementCost >= COST_INF) {
                 return COST_INF;
             }
-            if (!MovementHelper.isReplaceable(destX, y, destZ, toPlace, context.bsi)) {
+            if (!MovementHelper.isReplaceable(destX, destY - 1, destZ, toPlace, context.bsi)) {
                 return COST_INF;
             }
             boolean foundPlaceOption = false;
             for (int i = 0; i < 5; i++) {
                 int againstX = destX + HORIZONTALS_BUT_ALSO_DOWN_____SO_EVERY_DIRECTION_EXCEPT_UP[i].getFrontOffsetX();
-                int againstY = y + HORIZONTALS_BUT_ALSO_DOWN_____SO_EVERY_DIRECTION_EXCEPT_UP[i].getFrontOffsetY();
+                int againstY = destY - 1
+                        + HORIZONTALS_BUT_ALSO_DOWN_____SO_EVERY_DIRECTION_EXCEPT_UP[i].getFrontOffsetY();
                 int againstZ = destZ + HORIZONTALS_BUT_ALSO_DOWN_____SO_EVERY_DIRECTION_EXCEPT_UP[i].getFrontOffsetZ();
                 if (againstX == x && againstZ == z) { // we might be able to backplace now, but it doesn't matter
                                                       // because it will have been broken by the time we'd need to use
@@ -129,7 +138,7 @@ public class MovementAscend extends Movement {
         if (srcDown.getBlock() == Blocks.LADDER || srcDown.getBlock() == Blocks.VINE) {
             return COST_INF;
         }
-        IBlockState destFeet = context.get(destX, y + 1, destZ);
+        IBlockState destFeet = context.get(destX, destY, destZ);
         if (destFeet.getBlock() instanceof BlockSnow
                 && context.bsi.worldContainsLoadedChunk(destX, destZ)
                 && destFeet.getValue(BlockSnow.LAYERS) >= 4) {
@@ -160,6 +169,10 @@ public class MovementAscend extends Movement {
             walk += context.jumpPenalty;
         }
 
+        if (height > 1) {
+            walk *= height;
+        }
+
         double totalCost = walk + additionalPlacementCost;
         // start with srcUp2 since we already have its state
         // includeFalling isn't needed because of the falling check above -- if srcUp3
@@ -169,11 +182,11 @@ public class MovementAscend extends Movement {
         if (totalCost >= COST_INF) {
             return COST_INF;
         }
-        totalCost += MovementHelper.getMiningDurationTicks(context, destX, y + 1, destZ, false);
+        totalCost += MovementHelper.getMiningDurationTicks(context, destX, destY, destZ, false);
         if (totalCost >= COST_INF) {
             return COST_INF;
         }
-        totalCost += MovementHelper.getMiningDurationTicks(context, destX, y + 2, destZ, true);
+        totalCost += MovementHelper.getMiningDurationTicks(context, destX, destY + 1, destZ, true);
         return totalCost;
     }
 

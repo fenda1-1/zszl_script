@@ -24,6 +24,7 @@ if (A_Args.Length < 3 + argOffset) {
 x := A_Args[1 + argOffset]
 y := A_Args[2 + argOffset]
 button := A_Args[3 + argOffset]
+withShift := (A_Args.Length > 3 + argOffset and A_Args[4 + argOffset] = "true")
 
 ; 优先锁定当前 Java 进程对应的 Minecraft 窗口，避免多开串窗。
 targetWin := (pid != "") ? ("ahk_pid " . pid . " ahk_class LWJGL") : "ahk_class LWJGL"
@@ -44,6 +45,10 @@ if (button = "Left") {
     downMsg := 0x0204 ; WM_RBUTTONDOWN
     upMsg   := 0x0205 ; WM_RBUTTONUP
     wParam  := 0x0002 ; MK_RBUTTON
+}
+
+if (withShift) {
+    wParam |= 0x0004 ; MK_SHIFT
 }
 
 ; --- 核心逻辑：发送完整的消息序列 ---

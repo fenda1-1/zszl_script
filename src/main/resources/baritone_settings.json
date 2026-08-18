@@ -74,6 +74,12 @@
       "desc": "假设拥有自动上台阶能力"
     },
     {
+      "key": "routeHeightRange",
+      "defaultValue": "1",
+      "type": "int",
+      "desc": "路线高度范围（1-100整数格；小于等于此高度的上升可纳入路线）"
+    },
+    {
       "key": "assumeSafeWalk",
       "defaultValue": "false",
       "type": "boolean",

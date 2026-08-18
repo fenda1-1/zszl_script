@@ -35,6 +35,12 @@ public final class ActionEditorDisplayConverters {
     }
 
     public static String leftToDisplay(String leftRaw) {
+        if ("shift_left".equalsIgnoreCase(leftRaw) || "shift-left".equalsIgnoreCase(leftRaw)) {
+            return "Shift左键";
+        }
+        if ("shift_right".equalsIgnoreCase(leftRaw) || "shift-right".equalsIgnoreCase(leftRaw)) {
+            return "Shift右键";
+        }
         if ("middle".equalsIgnoreCase(leftRaw)) {
             return "中键";
         }
@@ -45,6 +51,12 @@ public final class ActionEditorDisplayConverters {
     }
 
     public static String displayToMouseButton(String display) {
+        if ("Shift左键".equals(display)) {
+            return "shift_left";
+        }
+        if ("Shift右键".equals(display)) {
+            return "shift_right";
+        }
         if ("中键".equals(display)) {
             return "middle";
         }
@@ -58,8 +70,23 @@ public final class ActionEditorDisplayConverters {
         return ModUtils.clickTypeToDisplayName(clickType);
     }
 
+    public static String clickTypeToDisplay(String clickType, int button) {
+        String normalizedType = ModUtils.normalizeClickTypeName(clickType);
+        if ("PICKUP".equals(normalizedType) && button == 1) {
+            return "右键";
+        }
+        if ("QUICK_MOVE".equals(normalizedType) && button == 1) {
+            return "Shift右键";
+        }
+        return clickTypeToDisplay(clickType);
+    }
+
     public static String displayToClickType(String display) {
         return ModUtils.normalizeClickTypeName(display);
+    }
+
+    public static boolean displayUsesRightMouseButton(String display) {
+        return "右键".equals(display) || "Shift右键".equals(display);
     }
 
     public static String directionToDisplay(String direction) {

@@ -186,6 +186,12 @@ public class PathSequenceManager {
                 return buttonElement.getAsBoolean() ? "left" : "right";
             }
             String raw = buttonElement == null ? "" : buttonElement.getAsString();
+            if ("shift_left".equalsIgnoreCase(raw) || "shift-left".equalsIgnoreCase(raw)) {
+                return "shift_left";
+            }
+            if ("shift_right".equalsIgnoreCase(raw) || "shift-right".equalsIgnoreCase(raw)) {
+                return "shift_right";
+            }
             if ("middle".equalsIgnoreCase(raw)) {
                 return "middle";
             }
@@ -195,6 +201,11 @@ public class PathSequenceManager {
         } catch (Exception ignored) {
         }
         return "left";
+    }
+
+    private static boolean isShiftModifiedMouseButton(String mouseButton) {
+        return "shift_left".equalsIgnoreCase(mouseButton) || "shift-right".equalsIgnoreCase(mouseButton)
+                || "shift_right".equalsIgnoreCase(mouseButton) || "shift-left".equalsIgnoreCase(mouseButton);
     }
 
     private static String describeEntityTypeDisplay(String entityType) {
@@ -255,6 +266,12 @@ public class PathSequenceManager {
 
     private static String getClickMouseButtonText(JsonObject params) {
         String mouseButton = getClickMouseButton(params);
+        if ("shift_left".equalsIgnoreCase(mouseButton)) {
+            return "Shift左键";
+        }
+        if ("shift_right".equalsIgnoreCase(mouseButton)) {
+            return "Shift右键";
+        }
         if ("middle".equalsIgnoreCase(mouseButton)) {
             return "中键";
         }
@@ -1115,6 +1132,7 @@ public class PathSequenceManager {
                                 : 1;
                         String chestClickType = params.has("clickType") ? params.get("clickType").getAsString()
                                 : "PICKUP";
+                        int chestButton = params.has("button") ? params.get("button").getAsInt() : 0;
                         if (params.has("locatorMode")
                                 && !ActionTargetLocator.SLOT_MODE_DIRECT
                                         .equalsIgnoreCase(params.get("locatorMode").getAsString())) {
@@ -1129,10 +1147,12 @@ public class PathSequenceManager {
                                                             : "按物品文本 " + (params.has("locatorText")
                                                                     ? params.get("locatorText").getAsString()
                                                                     : "")))
+                                    + " / 按键: " + (chestButton == 1 ? "右键" : "左键")
                                     + " / 类型: " + ModUtils.clickTypeToDisplayName(chestClickType)
                                     + " / 延迟: " + chestDelayTicks + " tick";
                         }
                         return "点击容器槽位: " + params.get("slot").getAsInt()
+                                + " / 按键: " + (chestButton == 1 ? "右键" : "左键")
                                 + " / 类型: " + ModUtils.clickTypeToDisplayName(chestClickType)
                                 + " / 延迟: " + chestDelayTicks + " tick";
                     case "move_inventory_items_to_chest_slots":
@@ -2277,7 +2297,7 @@ public class PathSequenceManager {
                 case "key":
                     final String keyName = params.has("key") ? params.get("key").getAsString() : "";
                     final String keyState = params.has("state") ? params.get("state").getAsString() : "Press";
-                    return player -> ModUtils.simulateKey(keyName, keyState);
+                    return player -> ModUtils.simulateActionKey(keyName, keyState);
                 case "skip_actions":
                 case "skip_steps":
                     return player -> {
@@ -2319,8 +2339,9 @@ public class PathSequenceManager {
 
                     return player -> {
                         if (!isClickCoordinateMode(clickLocatorMode)) {
-                            if (ActionTargetLocator.tryInvokeCurrentScreenClick(clickLocatorMode, clickLocatorText,
-                                    clickLocatorMatchMode, clickMouseButton)) {
+                            if (!isShiftModifiedMouseButton(clickMouseButton)
+                                    && ActionTargetLocator.tryInvokeCurrentScreenClick(clickLocatorMode,
+                                            clickLocatorText, clickLocatorMatchMode, clickMouseButton)) {
                                 return;
                             }
                             ActionTargetLocator.ClickPoint point = ActionTargetLocator.resolveScreenClickPoint(
@@ -2586,6 +2607,7 @@ public class PathSequenceManager {
                             : 1;
                     final String chestClickType = params.has("clickType") ? params.get("clickType").getAsString()
                             : "PICKUP";
+                    final int chestButton = params.has("button") ? params.get("button").getAsInt() : 0;
                     return new ModUtils.DelayAction(chestClickDelayTicks, () -> {
                         int resolvedSlot = slot;
                         if (!ActionTargetLocator.SLOT_MODE_DIRECT.equalsIgnoreCase(chestSlotLocatorMode)) {
@@ -2600,7 +2622,7 @@ public class PathSequenceManager {
                             }
                             resolvedSlot = slotResult.getSlotIndex();
                         }
-                        ModUtils.clickChestSlotNow(resolvedSlot, chestClickType);
+                        ModUtils.clickChestSlotNow(resolvedSlot, chestButton, chestClickType);
                     });
                 case "move_inventory_items_to_chest_slots":
                     return player -> ItemFilterHandler.moveInventoryItemsToChestSlots(params);

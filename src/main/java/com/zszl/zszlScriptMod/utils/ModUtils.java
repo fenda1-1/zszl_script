@@ -838,6 +838,11 @@ public class ModUtils {
     }
 
     public static void autoChestClick(EntityPlayerSP player, int chestSlotIndex, int delayTicks, String clickTypeName) {
+        autoChestClick(player, chestSlotIndex, delayTicks, 0, clickTypeName);
+    }
+
+    public static void autoChestClick(EntityPlayerSP player, int chestSlotIndex, int delayTicks, int button,
+            String clickTypeName) {
         if (ModConfig.isDebugModeEnabled && Minecraft.getMinecraft().player != null) {
             Minecraft.getMinecraft().player
                     .sendMessage(new TextComponentString(
@@ -848,10 +853,14 @@ public class ModUtils {
 
         int actualDelayTicks = Math.max(0, delayTicks);
 
-        new DelayAction(actualDelayTicks, () -> clickChestSlotNow(chestSlotIndex, clickTypeName)).accept(player);
+        new DelayAction(actualDelayTicks, () -> clickChestSlotNow(chestSlotIndex, button, clickTypeName)).accept(player);
     }
 
     public static void clickChestSlotNow(int chestSlotIndex, String clickTypeName) {
+        clickChestSlotNow(chestSlotIndex, 0, clickTypeName);
+    }
+
+    public static void clickChestSlotNow(int chestSlotIndex, int button, String clickTypeName) {
         Minecraft mc = Minecraft.getMinecraft();
         EntityPlayerSP player = mc.player;
         if (player == null || mc.playerController == null) {
@@ -867,8 +876,9 @@ public class ModUtils {
         }
 
         ClickType clickType = resolveClickType(clickTypeName);
-        mc.playerController.windowClick(gui.inventorySlots.windowId, chestSlotIndex, 0, clickType, player);
-        zszlScriptMod.LOGGER.info("自动点击箱子格子: {} type={}", chestSlotIndex, normalizeClickTypeName(clickTypeName));
+        mc.playerController.windowClick(gui.inventorySlots.windowId, chestSlotIndex, button, clickType, player);
+        zszlScriptMod.LOGGER.info("自动点击箱子格子: {} button={} type={}", chestSlotIndex, button,
+                normalizeClickTypeName(clickTypeName));
     }
 
     public static int resolveLwjglKeyCode(String keyName) {
@@ -1082,10 +1092,12 @@ public class ModUtils {
         switch (raw) {
             case "普通点击":
             case "左键点击":
+            case "右键":
                 return "PICKUP";
             case "Shift快速移动":
             case "快速移动":
             case "Shift点击":
+            case "Shift右键":
                 return "QUICK_MOVE";
             case "数字键交换":
             case "交换":
@@ -1263,6 +1275,20 @@ public class ModUtils {
         }
     }
 
+    /** Simulates a path action through this JVM's LWJGL keyboard event stream. */
+    public static void simulateActionKey(String key, String state) {
+        if (ModConfig.isDebugModeEnabled && Minecraft.getMinecraft().player != null) {
+            Minecraft.getMinecraft().player
+                    .sendMessage(new TextComponentString(String.format("§d[调试] §7模拟原始按键: §f%s, §7状态: §f%s", key,
+                            state)));
+        }
+        try {
+            SimulatedKeyInputManager.simulateActionKey(key, state);
+        } catch (Exception e) {
+            zszlScriptMod.LOGGER.error("模拟菜单按键失败", e);
+        }
+    }
+
     /**
      * 模拟鼠标点击。
      * 默认优先走原版世界点击或当前 GUI 事件注入，仅在 GUI 注入失败时才回退到 AHK。
@@ -1277,19 +1303,27 @@ public class ModUtils {
             return;
         }
 
+        final boolean withShift = isShiftModifiedMouseButton(mouseButton);
+        final String baseMouseButton = getBaseMouseButton(mouseButton);
         Runnable task = () -> {
-            try {
-                if (trySimulateMouseClickDirect(mc, x, y, mouseButton, originalWidth, originalHeight)) {
-                    debugMouseClickRoute("原生/GUI 注入", x, y, originalWidth, originalHeight, mouseButton);
-                    return;
-                }
+            Runnable clickTask = () -> {
+                try {
+                    if (trySimulateMouseClickDirect(mc, x, y, baseMouseButton, originalWidth, originalHeight)) {
+                        debugMouseClickRoute("原生/GUI 注入", x, y, originalWidth, originalHeight, mouseButton);
+                        return;
+                    }
 
-                if (mc.currentScreen != null) {
-                    performAhkMouseClickFallback(x, y, mouseButton, originalWidth, originalHeight);
-                    return;
+                    if (mc.currentScreen != null) {
+                        performAhkMouseClickFallback(x, y, mouseButton, originalWidth, originalHeight);
+                    }
+                } catch (Exception e) {
+                    zszlScriptMod.LOGGER.error("模拟鼠标点击失败", e);
                 }
-            } catch (Exception e) {
-                zszlScriptMod.LOGGER.error("模拟鼠标点击失败", e);
+            };
+            if (withShift) {
+                SimulatedKeyInputManager.runWithSimulatedShift(clickTask);
+            } else {
+                clickTask.run();
             }
         };
 
@@ -1411,15 +1445,18 @@ public class ModUtils {
 
                 String xCoordinate = String.valueOf(actualX);
                 String yCoordinate = String.valueOf(actualY);
-                String buttonText = "middle".equalsIgnoreCase(mouseButton)
+                boolean withShift = isShiftModifiedMouseButton(mouseButton);
+                String baseMouseButton = getBaseMouseButton(mouseButton);
+                String buttonText = "middle".equalsIgnoreCase(baseMouseButton)
                         ? "Middle"
-                        : ("right".equalsIgnoreCase(mouseButton) ? "Right" : "Left");
+                        : ("right".equalsIgnoreCase(baseMouseButton) ? "Right" : "Left");
 
                 if (ModConfig.ahkMoveMouseMode) {
                     AHKExecutor.executeTargetedAHKScript("MouseClick.ahk", Display.getTitle(), xCoordinate, yCoordinate,
-                            buttonText, "true");
+                            buttonText, "true", String.valueOf(withShift));
                 } else {
-                    AHKExecutor.executeTargetedAHKScript("GuiClick.ahk", xCoordinate, yCoordinate, buttonText);
+                    AHKExecutor.executeTargetedAHKScript("GuiClick.ahk", xCoordinate, yCoordinate, buttonText,
+                            String.valueOf(withShift));
                 }
             } catch (Exception e) {
                 zszlScriptMod.LOGGER.error("AHK fallback 模拟鼠标点击失败", e);
@@ -1438,6 +1475,23 @@ public class ModUtils {
                     route, mouseButton, x, y, originalWidth, originalHeight);
             mc.player.sendMessage(new TextComponentString(debugMsg));
         }
+    }
+
+    private static boolean isShiftModifiedMouseButton(String mouseButton) {
+        String normalized = mouseButton == null ? "" : mouseButton.trim().toLowerCase(Locale.ROOT);
+        return "shift_left".equals(normalized) || "shift-left".equals(normalized)
+                || "shift_right".equals(normalized) || "shift-right".equals(normalized);
+    }
+
+    private static String getBaseMouseButton(String mouseButton) {
+        String normalized = mouseButton == null ? "" : mouseButton.trim().toLowerCase(Locale.ROOT);
+        if ("shift_right".equals(normalized) || "shift-right".equals(normalized)) {
+            return "right";
+        }
+        if ("shift_left".equals(normalized) || "shift-left".equals(normalized)) {
+            return "left";
+        }
+        return normalized;
     }
 
     private static String normalizeDisplayName(String name) {

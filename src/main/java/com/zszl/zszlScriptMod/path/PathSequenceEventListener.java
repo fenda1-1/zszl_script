@@ -6965,7 +6965,7 @@ public class PathSequenceEventListener {
 
             for (Map.Entry<String, String> entry : this.heldKeys.entrySet()) {
                 try {
-                    ModUtils.simulateKey(entry.getKey(), entry.getValue());
+                    ModUtils.simulateActionKey(entry.getKey(), entry.getValue());
                 } catch (Exception e) {
                     zszlScriptMod.LOGGER.warn("[hunt_attack_sequence] 释放按键失败: {}", entry.getKey(), e);
                 }

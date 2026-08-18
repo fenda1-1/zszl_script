@@ -101,51 +101,51 @@ public enum Moves {
         }
     },
 
-    ASCEND_NORTH(0, +1, -1) {
+    ASCEND_NORTH(0, +1, -1, false, true) {
         @Override
         public Movement apply0(CalculationContext context, BetterBlockPos src) {
-            return new MovementAscend(context.getBaritone(), src, new BetterBlockPos(src.x, src.y + 1, src.z - 1));
+            return ascendMovement(context, src, src.x, src.z - 1);
         }
 
         @Override
-        public double cost(CalculationContext context, int x, int y, int z) {
-            return MovementAscend.cost(context, x, y, z, x, z - 1);
+        public void apply(CalculationContext context, int x, int y, int z, MutableMoveResult result) {
+            applyAscend(context, x, y, z, x, z - 1, result);
         }
     },
 
-    ASCEND_SOUTH(0, +1, +1) {
+    ASCEND_SOUTH(0, +1, +1, false, true) {
         @Override
         public Movement apply0(CalculationContext context, BetterBlockPos src) {
-            return new MovementAscend(context.getBaritone(), src, new BetterBlockPos(src.x, src.y + 1, src.z + 1));
+            return ascendMovement(context, src, src.x, src.z + 1);
         }
 
         @Override
-        public double cost(CalculationContext context, int x, int y, int z) {
-            return MovementAscend.cost(context, x, y, z, x, z + 1);
+        public void apply(CalculationContext context, int x, int y, int z, MutableMoveResult result) {
+            applyAscend(context, x, y, z, x, z + 1, result);
         }
     },
 
-    ASCEND_EAST(+1, +1, 0) {
+    ASCEND_EAST(+1, +1, 0, false, true) {
         @Override
         public Movement apply0(CalculationContext context, BetterBlockPos src) {
-            return new MovementAscend(context.getBaritone(), src, new BetterBlockPos(src.x + 1, src.y + 1, src.z));
+            return ascendMovement(context, src, src.x + 1, src.z);
         }
 
         @Override
-        public double cost(CalculationContext context, int x, int y, int z) {
-            return MovementAscend.cost(context, x, y, z, x + 1, z);
+        public void apply(CalculationContext context, int x, int y, int z, MutableMoveResult result) {
+            applyAscend(context, x, y, z, x + 1, z, result);
         }
     },
 
-    ASCEND_WEST(-1, +1, 0) {
+    ASCEND_WEST(-1, +1, 0, false, true) {
         @Override
         public Movement apply0(CalculationContext context, BetterBlockPos src) {
-            return new MovementAscend(context.getBaritone(), src, new BetterBlockPos(src.x - 1, src.y + 1, src.z));
+            return ascendMovement(context, src, src.x - 1, src.z);
         }
 
         @Override
-        public double cost(CalculationContext context, int x, int y, int z) {
-            return MovementAscend.cost(context, x, y, z, x - 1, z);
+        public void apply(CalculationContext context, int x, int y, int z, MutableMoveResult result) {
+            applyAscend(context, x, y, z, x - 1, z, result);
         }
     },
 
@@ -652,6 +652,27 @@ public enum Moves {
         MutableMoveResult res = new MutableMoveResult();
         MovementNarrowGapTraverse.cost(context, src.x, src.y, src.z, destX, destZ, res);
         return new MovementNarrowGapTraverse(context.getBaritone(), src, new BetterBlockPos(res.x, res.y, res.z));
+    }
+
+    private static Movement ascendMovement(CalculationContext context, BetterBlockPos src, int destX, int destZ) {
+        MutableMoveResult result = new MutableMoveResult();
+        applyAscend(context, src.x, src.y, src.z, destX, destZ, result);
+        return new MovementAscend(context.getBaritone(), src, new BetterBlockPos(result.x, result.y, result.z));
+    }
+
+    private static void applyAscend(CalculationContext context, int x, int y, int z, int destX, int destZ,
+            MutableMoveResult result) {
+        result.x = destX;
+        result.y = y + 1;
+        result.z = destZ;
+        for (int height = 1; height <= context.routeHeightRange && y + height <= 256; height++) {
+            double cost = MovementAscend.cost(context, x, y, z, destX, y + height, destZ);
+            if (cost < Movement.COST_INF) {
+                result.y = y + height;
+                result.cost = cost;
+                return;
+            }
+        }
     }
 
     private static Movement narrowGapMovement(CalculationContext context, BetterBlockPos src, int destX, int destZ,

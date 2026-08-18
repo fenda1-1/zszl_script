@@ -279,6 +279,9 @@ public class SettingsUtil {
             throw new IllegalStateException(ioMethod + " parser returned incorrect type, expected " + intendedType
                     + " got " + parsed + " which is " + parsed.getClass());
         }
+        if ("routeheightrange".equals(settingName)) {
+            parsed = Math.max(1, Math.min(100, (Integer) parsed));
+        }
         setting.value = parsed;
         BaritoneParkourSettingsHelper.onSettingApplied(settingName, settingValue);
     }

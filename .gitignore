@@ -10,7 +10,7 @@ bin/
 .metadata/
 .classpath
 .project
-
+novel-helper
 # IntelliJ IDEA
 out/
 *.ipr

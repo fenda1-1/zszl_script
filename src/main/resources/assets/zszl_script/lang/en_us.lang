@@ -1450,7 +1450,7 @@ gui.path.action_editor.help.x=Screen X coordinate (based on %s width)
 gui.path.action_editor.label.y=Y coordinate
 gui.path.action_editor.help.y=Screen Y coordinate (based on %s height)
 gui.path.action_editor.label.left_click=mouse buttons
-gui.path.action_editor.help.left_click=Optional left click, right click or middle click; true/false in the old configuration is still compatible with left/right click
+gui.path.action_editor.help.left_click=Choose left click, right click, Shift+left click, Shift+right click, or middle click; true/false in the old configuration is still compatible with left/right click
 gui.path.action_editor.label.screen_locator_mode=Screen positioning mode
 gui.path.action_editor.help.screen_locator_mode=Coordinates = click by X/Y; button text = position according to the current GUI button text; slot text = position according to the current container slot item name; element path = position according to the scanned GUI element path
 gui.path.action_editor.label.slot_locator_mode=Slot location mode
@@ -1488,7 +1488,7 @@ gui.path.action_editor.option.no_sequence_available=No sequence available
 gui.path.action_editor.label.button=button
 gui.path.action_editor.help.button=Usually 0=left click, 1=right click, in SWAP mode it is the shortcut bar slot (0-8)
 gui.path.action_editor.label.click_type=click type
-gui.path.action_editor.help.click_type=Optional: PICKUP/QUICK_MOVE/SWAP/THROW/PICKUP_ALL/QUICK_CRAFT/CLONE
+gui.path.action_editor.help.click_type=Choose normal click, right click, Shift+quick move, Shift+right click, or an advanced type: PICKUP/QUICK_MOVE/SWAP/THROW/PICKUP_ALL/QUICK_CRAFT/CLONE
 gui.path.action_editor.label.yaw=Horizontal orientation (Yaw)
 gui.path.action_editor.help.yaw=Example: 90.0, -180.0
 gui.path.action_editor.label.pitch=Vertical orientation (Pitch)

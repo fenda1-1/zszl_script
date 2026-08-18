@@ -27,6 +27,7 @@
     "MixinGuiScreen",
     "MixinItemStack",
     "MixinItemTool",
+    "MixinKeyboard",
     "MixinMinecraft",
     "MixinMouseHelper",
     "MixinMovementInputFromOptions",
