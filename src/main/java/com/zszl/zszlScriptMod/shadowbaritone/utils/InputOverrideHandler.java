@@ -18,17 +18,27 @@
 package com.zszl.zszlScriptMod.shadowbaritone.utils;
 
 import com.mojang.blaze3d.platform.InputConstants;
+import com.zszl.zszlScriptMod.baritone.compat.HumanLikeMovementController;
+import com.zszl.zszlScriptMod.config.HumanLikeMovementConfig;
 import com.zszl.zszlScriptMod.shadowbaritone.Baritone;
 import com.zszl.zszlScriptMod.shadowbaritone.api.BaritoneAPI;
 import com.zszl.zszlScriptMod.shadowbaritone.api.event.events.TickEvent;
 import com.zszl.zszlScriptMod.shadowbaritone.api.event.events.WorldEvent;
+import com.zszl.zszlScriptMod.shadowbaritone.api.pathing.calc.IPath;
+import com.zszl.zszlScriptMod.shadowbaritone.api.pathing.goals.Goal;
+import com.zszl.zszlScriptMod.shadowbaritone.api.utils.BetterBlockPos;
 import com.zszl.zszlScriptMod.shadowbaritone.api.utils.IInputOverrideHandler;
+import com.zszl.zszlScriptMod.shadowbaritone.api.utils.interfaces.IGoalRenderPos;
 import com.zszl.zszlScriptMod.shadowbaritone.api.utils.input.Input;
 import com.zszl.zszlScriptMod.shadowbaritone.behavior.Behavior;
+import com.zszl.zszlScriptMod.shadowbaritone.pathing.movement.MovementHelper;
+import com.zszl.zszlScriptMod.shadowbaritone.pathing.path.PathExecutor;
 import com.zszl.zszlScriptMod.system.SimulatedKeyInputManager;
 import com.zszl.zszlScriptMod.compat.legacy.org.lwjgl.input.Keyboard;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.player.KeyboardInput;
+import net.minecraft.core.BlockPos;
+import net.minecraft.util.Mth;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -87,7 +97,6 @@ public final class InputOverrideHandler extends Behavior implements IInputOverri
     @Override
     public final void clearAllKeys() {
         this.inputForceStateMap.clear();
-        releaseCompatibilityMovementKeys();
     }
 
     @Override
@@ -99,6 +108,7 @@ public final class InputOverrideHandler extends Behavior implements IInputOverri
             return;
         }
         if (ctx.player() == null) {
+            HumanLikeMovementController.INSTANCE.reset();
             releaseCompatibilityMovementKeys();
             return;
         }
@@ -113,6 +123,7 @@ public final class InputOverrideHandler extends Behavior implements IInputOverri
                 ensureKeyboardInput(true);
                 syncCompatibilityMovementKeys();
             } else {
+                HumanLikeMovementController.INSTANCE.reset();
                 releaseCompatibilityMovementKeys();
                 ensureKeyboardInput(false);
             }
@@ -128,12 +139,16 @@ public final class InputOverrideHandler extends Behavior implements IInputOverri
                 }
             }
         }
+        if (!inControl()) {
+            HumanLikeMovementController.INSTANCE.reset();
+        }
         // only set it if it was previously incorrect
         // gotta do it this way, or else it constantly thinks you're beginning a double tap W sprint lol
     }
 
     @Override
     public void onWorldEvent(WorldEvent event) {
+        HumanLikeMovementController.INSTANCE.reset();
         releaseCompatibilityMovementKeys();
     }
 
@@ -182,31 +197,17 @@ public final class InputOverrideHandler extends Behavior implements IInputOverri
         if (ctx.minecraft() == null || ctx.minecraft().options == null) {
             return;
         }
-        float desiredForward = 0.0F;
-        float desiredStrafe = 0.0F;
-
-        boolean jump = isInputForcedDown(Input.JUMP);
-        boolean sneak = isInputForcedDown(Input.SNEAK);
-
-        if (isInputForcedDown(Input.MOVE_FORWARD)) {
-            desiredForward += 1.0F;
-        }
-        if (isInputForcedDown(Input.MOVE_BACK)) {
-            desiredForward -= 1.0F;
-        }
-        if (isInputForcedDown(Input.MOVE_LEFT)) {
-            desiredStrafe += 1.0F;
-        }
-        if (isInputForcedDown(Input.MOVE_RIGHT)) {
-            desiredStrafe -= 1.0F;
-        }
-
-        setCompatibilityMovementKey(ctx.minecraft().options.keyUp, desiredForward > COMPATIBILITY_KEY_THRESHOLD);
-        setCompatibilityMovementKey(ctx.minecraft().options.keyDown, desiredForward < -COMPATIBILITY_KEY_THRESHOLD);
-        setCompatibilityMovementKey(ctx.minecraft().options.keyLeft, desiredStrafe > COMPATIBILITY_KEY_THRESHOLD);
-        setCompatibilityMovementKey(ctx.minecraft().options.keyRight, desiredStrafe < -COMPATIBILITY_KEY_THRESHOLD);
-        setCompatibilityMovementKey(ctx.minecraft().options.keyJump, jump);
-        setCompatibilityMovementKey(ctx.minecraft().options.keyShift, sneak);
+        HumanLikeMovementController.MovementState movementState = getMovementState();
+        setCompatibilityMovementKey(ctx.minecraft().options.keyUp,
+                movementState.moveForward > COMPATIBILITY_KEY_THRESHOLD);
+        setCompatibilityMovementKey(ctx.minecraft().options.keyDown,
+                movementState.moveForward < -COMPATIBILITY_KEY_THRESHOLD);
+        setCompatibilityMovementKey(ctx.minecraft().options.keyLeft,
+                movementState.moveStrafe > COMPATIBILITY_KEY_THRESHOLD);
+        setCompatibilityMovementKey(ctx.minecraft().options.keyRight,
+                movementState.moveStrafe < -COMPATIBILITY_KEY_THRESHOLD);
+        setCompatibilityMovementKey(ctx.minecraft().options.keyJump, movementState.jump);
+        setCompatibilityMovementKey(ctx.minecraft().options.keyShift, movementState.sneak);
     }
 
     private void releaseCompatibilityMovementKeys() {
@@ -239,6 +240,228 @@ public final class InputOverrideHandler extends Behavior implements IInputOverri
         }
         compatibilityMovementStateMap.put(legacyKeyCode, down);
         SimulatedKeyInputManager.simulateKeyCode(legacyKeyCode, down ? "Down" : "Up");
+    }
+
+    HumanLikeMovementController.MovementState getMovementState() {
+        float desiredForward = 0.0F;
+        float desiredStrafe = 0.0F;
+
+        boolean desiredJump = isInputForcedDown(Input.JUMP);
+        boolean desiredSneak = isInputForcedDown(Input.SNEAK);
+
+        if (isInputForcedDown(Input.MOVE_FORWARD)) {
+            desiredForward += 1.0F;
+        }
+        if (isInputForcedDown(Input.MOVE_BACK)) {
+            desiredForward -= 1.0F;
+        }
+        if (isInputForcedDown(Input.MOVE_LEFT)) {
+            desiredStrafe += 1.0F;
+        }
+        if (isInputForcedDown(Input.MOVE_RIGHT)) {
+            desiredStrafe -= 1.0F;
+        }
+
+        float yawDifferenceDeg = 0.0F;
+        boolean decoupleMovementFromVisualYaw = handlerUsesDecoupledMovementYaw();
+        if (decoupleMovementFromVisualYaw && (desiredForward != 0.0F || desiredStrafe != 0.0F)) {
+            yawDifferenceDeg = Mth.wrapDegrees(getMovementYaw() - getPlayerYaw());
+            float yawDelta = (float) Math.toRadians(yawDifferenceDeg);
+            float sin = Mth.sin(yawDelta);
+            float cos = Mth.cos(yawDelta);
+            float rawStrafe = desiredStrafe;
+            float rawForward = desiredForward;
+
+            desiredStrafe = rawStrafe * cos - rawForward * sin;
+            desiredForward = rawStrafe * sin + rawForward * cos;
+        }
+
+        if (!shouldApplyHumanLikeMovement()) {
+            return new HumanLikeMovementController.MovementState(desiredForward, desiredStrafe, desiredJump,
+                    desiredSneak);
+        }
+
+        HumanLikeMovementConfig config = HumanLikeMovementConfig.INSTANCE;
+        if (config == null) {
+            return new HumanLikeMovementController.MovementState(desiredForward, desiredStrafe, desiredJump,
+                    desiredSneak);
+        }
+
+        float straightPathFactor = computeStraightPathFactor();
+        if (desiredForward < 0.0F || Math.abs(desiredStrafe) > 0.12F || desiredJump) {
+            straightPathFactor *= 0.45F;
+        }
+        PassageMetrics passageMetrics = computePassageMetrics();
+        float finalApproachProgress = computeFinalApproachProgress(config);
+
+        return HumanLikeMovementController.INSTANCE.applyMovement(
+                desiredForward,
+                desiredStrafe,
+                desiredJump,
+                desiredSneak,
+                yawDifferenceDeg,
+                ctx.player().getX(),
+                ctx.player().getY(),
+                ctx.player().getZ(),
+                ctx.player().onGround(),
+                finalApproachProgress,
+                passageMetrics.narrowPassageFactor,
+                straightPathFactor,
+                passageMetrics.obstacleEdgeBias);
+    }
+
+    private boolean handlerUsesDecoupledMovementYaw() {
+        return baritone.getLookBehavior().shouldDecoupleMovementFromVisualYaw();
+    }
+
+    private boolean shouldApplyHumanLikeMovement() {
+        return ctx.player() != null
+                && HumanLikeMovementController.INSTANCE.isEnabled()
+                && baritone.getPathingBehavior().isPathing();
+    }
+
+    private float computeFinalApproachProgress(HumanLikeMovementConfig config) {
+        if (ctx.player() == null || config.finalApproachDistance <= 0.0F) {
+            return 0.0F;
+        }
+        BlockPos goalPos = resolveGoalPos();
+        if (goalPos == null) {
+            return 0.0F;
+        }
+        double dx = ctx.player().getX() - (goalPos.getX() + 0.5D);
+        double dy = ctx.player().getY() - goalPos.getY();
+        double dz = ctx.player().getZ() - (goalPos.getZ() + 0.5D);
+        double distance = Math.sqrt(dx * dx + dz * dz + dy * dy * 0.35D);
+        return Mth.clamp((float) (1.0D - distance / config.finalApproachDistance), 0.0F, 1.0F);
+    }
+
+    private BlockPos resolveGoalPos() {
+        Goal goal = baritone.getPathingBehavior().getGoal();
+        if (goal instanceof IGoalRenderPos) {
+            return ((IGoalRenderPos) goal).getGoalPos();
+        }
+        PathExecutor current = baritone.getPathingBehavior().getCurrent();
+        if (current != null) {
+            return current.getPath().getDest();
+        }
+        return null;
+    }
+
+    private float computeStraightPathFactor() {
+        PathExecutor executor = baritone.getPathingBehavior().getCurrent();
+        if (executor == null) {
+            return 0.0F;
+        }
+        IPath path = executor.getPath();
+        if (path == null || path.positions().size() < 2) {
+            return 0.0F;
+        }
+        int currentIndex = Mth.clamp(executor.getPosition(), 0, Math.max(0, path.positions().size() - 2));
+        BetterBlockPos baseStart = path.positions().get(currentIndex);
+        BetterBlockPos baseEnd = path.positions().get(currentIndex + 1);
+        double baseDx = baseEnd.x - baseStart.x;
+        double baseDz = baseEnd.z - baseStart.z;
+        double baseLen = Math.sqrt(baseDx * baseDx + baseDz * baseDz);
+        if (baseLen <= 1.0E-6D) {
+            return 0.0F;
+        }
+
+        int lookahead = Math.min(4, path.positions().size() - 1 - currentIndex);
+        float weightedScore = 0.0F;
+        float totalWeight = 0.0F;
+        for (int step = 1; step <= lookahead; step++) {
+            BetterBlockPos from = path.positions().get(currentIndex + step - 1);
+            BetterBlockPos to = path.positions().get(currentIndex + step);
+            double dx = to.x - from.x;
+            double dz = to.z - from.z;
+            double len = Math.sqrt(dx * dx + dz * dz);
+            if (len <= 1.0E-6D) {
+                continue;
+            }
+            float alignment = (float) ((dx * baseDx + dz * baseDz) / (len * baseLen));
+            alignment = Mth.clamp(alignment, 0.0F, 1.0F);
+            if (to.y != from.y) {
+                alignment *= 0.7F;
+            }
+            float weight = 1.0F / step;
+            weightedScore += alignment * weight;
+            totalWeight += weight;
+        }
+        if (totalWeight <= 0.0F) {
+            return 0.0F;
+        }
+        return Mth.clamp(weightedScore / totalWeight, 0.0F, 1.0F);
+    }
+
+    private PassageMetrics computePassageMetrics() {
+        float[] travelDirection = getTravelDirection();
+        if (travelDirection == null) {
+            return PassageMetrics.EMPTY;
+        }
+        float leftX = -travelDirection[1];
+        float leftZ = travelDirection[0];
+        float rightX = travelDirection[1];
+        float rightZ = -travelDirection[0];
+
+        double leftOpenness = sampleSideOpenness(leftX, leftZ);
+        double rightOpenness = sampleSideOpenness(rightX, rightZ);
+
+        float narrowFactor = 1.0F - Mth.clamp((float) Math.min(leftOpenness, rightOpenness), 0.0F, 1.0F);
+        BetterBlockPos feet = ctx.playerFeet();
+        if (!MovementHelper.canWalkThrough(ctx, feet.above()) || !MovementHelper.canWalkThrough(ctx, feet.above(2))) {
+            narrowFactor = Math.max(narrowFactor, 0.7F);
+        }
+
+        float obstacleEdgeBias = Mth.clamp((float) (rightOpenness - leftOpenness), -1.0F, 1.0F);
+        return new PassageMetrics(narrowFactor, obstacleEdgeBias);
+    }
+
+    private float[] getTravelDirection() {
+        PathExecutor executor = baritone.getPathingBehavior().getCurrent();
+        if (executor != null) {
+            IPath path = executor.getPath();
+            if (path != null && path.positions().size() >= 2) {
+                int currentIndex = Mth.clamp(executor.getPosition(), 0, Math.max(0, path.positions().size() - 2));
+                BetterBlockPos from = path.positions().get(currentIndex);
+                BetterBlockPos to = path.positions().get(currentIndex + 1);
+                double dx = to.x - from.x;
+                double dz = to.z - from.z;
+                double len = Math.sqrt(dx * dx + dz * dz);
+                if (len > 1.0E-6D) {
+                    return new float[]{(float) (dx / len), (float) (dz / len)};
+                }
+            }
+        }
+
+        float yawRadians = getMovementYaw() * ((float) Math.PI / 180.0F);
+        return new float[]{-Mth.sin(yawRadians), Mth.cos(yawRadians)};
+    }
+
+    private double sampleSideOpenness(float directionX, float directionZ) {
+        BetterBlockPos feet = ctx.playerFeet();
+        double openness = 0.0D;
+        for (int distance = 1; distance <= 2; distance++) {
+            float weight = distance == 1 ? 0.6F : 0.4F;
+            double sampleX = ctx.player().getX() + directionX * distance;
+            double sampleZ = ctx.player().getZ() + directionZ * distance;
+            BetterBlockPos sample = new BetterBlockPos(BlockPos.containing(sampleX, feet.getY(), sampleZ));
+            if (MovementHelper.canWalkThrough(ctx, sample) && MovementHelper.canWalkThrough(ctx, sample.above())) {
+                openness += weight;
+            }
+        }
+        return openness;
+    }
+
+    private static final class PassageMetrics {
+        private static final PassageMetrics EMPTY = new PassageMetrics(0.0F, 0.0F);
+
+        private final float narrowPassageFactor;
+        private final float obstacleEdgeBias;
+
+        private PassageMetrics(float narrowPassageFactor, float obstacleEdgeBias) {
+            this.narrowPassageFactor = narrowPassageFactor;
+            this.obstacleEdgeBias = obstacleEdgeBias;
+        }
     }
 }
 

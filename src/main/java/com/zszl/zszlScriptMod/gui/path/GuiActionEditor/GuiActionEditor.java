@@ -55,6 +55,7 @@ import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiScreen;
 import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.ScaledResolution;
 import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
 import com.zszl.zszlScriptMod.gui.components.ThemedButton;
+import com.zszl.zszlScriptMod.gui.components.GuiTextInput;
 import com.zszl.zszlScriptMod.gui.components.GuiTheme;
 import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.gui.GuiTextField;
 import com.zszl.zszlScriptMod.compat.legacy.net.minecraft.client.resources.I18n;
@@ -5256,6 +5257,10 @@ public class GuiActionEditor extends ThemedGuiScreen {
             return;
         }
 
+        if (openHuntVerticalRangeInputIfClicked(mouseX, mouseY, mouseButton)) {
+            return;
+        }
+
         if (mouseButton == 0) {
             ExpressionEditorBinding expressionBinding = getExpressionEditorBindingAt(mouseX, mouseY);
             if (expressionBinding != null) {
@@ -5329,6 +5334,47 @@ public class GuiActionEditor extends ThemedGuiScreen {
                 }
             }
         }
+    }
+
+    private boolean openHuntVerticalRangeInputIfClicked(int mouseX, int mouseY, int mouseButton) {
+        if (mouseButton != 0 || !isHuntActionSelected()) {
+            return false;
+        }
+
+        for (int i = 0; i < paramFields.size() && i < paramFieldKeys.size(); i++) {
+            String key = paramFieldKeys.get(i);
+            if (!"huntUpRange".equals(key) && !"huntDownRange".equals(key)) {
+                continue;
+            }
+
+            GuiTextField field = paramFields.get(i);
+            if (field == null || !field.getVisible() || !field.isEnabled()
+                    || !isPointInside(mouseX, mouseY, field.x, field.y, field.width, field.height)) {
+                continue;
+            }
+
+            String label = "huntUpRange".equals(key) ? "向上追击范围" : "向下追击范围";
+            String initialValue = field.getText();
+            final int fieldIndex = i;
+            mc.setScreen(new GuiTextInput(this, "输入" + label + " (0.0 - 100.0)", initialValue, value -> {
+                try {
+                    double parsed = Double.parseDouble(value == null ? "" : value.trim());
+                    if (!Double.isFinite(parsed)) {
+                        return;
+                    }
+                    double clamped = Math.max(0.0D, Math.min(100.0D, parsed));
+                    String normalized = String.format(Locale.ROOT, "%.2f", clamped);
+                    paramFields.get(fieldIndex).setText(normalized);
+                    currentParams.addProperty(key, clamped);
+                    hasUnsavedChanges = true;
+                    pendingSwitchActionType = null;
+                } catch (NumberFormatException ignored) {
+                }
+                mc.setScreen(this);
+            }));
+            return true;
+        }
+        return false;
     }
 
     @Override

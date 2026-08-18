@@ -34,7 +34,7 @@
     },
     {
       "name": "quest_accept_command",
-      "enabled": true,
+      "enabled": false,
       "channel": "standard",
       "direction": "inbound",
       "source": "decoded",
@@ -50,7 +50,7 @@
     },
     {
       "name": "quest_reject_command",
-      "enabled": true,
+      "enabled": false,
       "channel": "standard",
       "direction": "inbound",
       "source": "decoded",

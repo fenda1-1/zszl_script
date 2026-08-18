@@ -770,7 +770,9 @@ public class PathSequenceManager {
                             return "右键点击方块: 按名称 "
                                     + (params.has("locatorText") ? params.get("locatorText").getAsString() : "");
                         }
-                        return I18n.format("path.action.desc.right_click_block", params.get("pos").toString());
+                        BlockPos blockPos = tryParseTargetPos(params);
+                        return I18n.format("path.action.desc.right_click_block",
+                                blockPos == null ? String.valueOf(params.get("pos")) : blockPos.toString());
                     case "rightclickentity":
                         if (params.has("locatorMode")
                                 && ActionTargetLocator.TARGET_MODE_NAME
@@ -2073,9 +2075,7 @@ public class PathSequenceManager {
                     float pitch = params.get("pitch").getAsFloat();
                     return player -> ModUtils.setPlayerViewAngles(player, yaw, pitch);
                 case "rightclickblock":
-                    JsonArray posArray = params.getAsJsonArray("pos");
-                    final BlockPos pos = new BlockPos(posArray.get(0).getAsInt(), posArray.get(1).getAsInt(),
-                            posArray.get(2).getAsInt());
+                    final BlockPos pos = tryParseTargetPos(params);
                     final double blockRange = params.has("range") ? params.get("range").getAsDouble() : 10.0D;
                     final String blockLocatorMode = params.has("locatorMode")
                             ? params.get("locatorMode").getAsString()
@@ -2096,6 +2096,9 @@ public class PathSequenceManager {
                                         blockLocatorText);
                                 return;
                             }
+                        } else if (resolvedPos == null) {
+                            zszlScriptMod.LOGGER.warn("[legacy_path] rightclickblock 缺少有效坐标参数: {}", params);
+                            return;
                         }
                         ModUtils.rightClickOnBlock(player, resolvedPos);
                     };
@@ -3548,6 +3551,21 @@ public class PathSequenceManager {
 
     private static boolean isRemovedBuiltinServerCategory(String category) {
         return false;
+    }
+
+    private static BlockPos tryParseTargetPos(JsonObject params) {
+        if (params == null || !params.has("pos") || !params.get("pos").isJsonArray()) {
+            return null;
+        }
+        JsonArray posArray = params.getAsJsonArray("pos");
+        if (posArray == null || posArray.size() < 3) {
+            return null;
+        }
+        try {
+            return new BlockPos(posArray.get(0).getAsInt(), posArray.get(1).getAsInt(), posArray.get(2).getAsInt());
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 
     public static void saveCategories() {

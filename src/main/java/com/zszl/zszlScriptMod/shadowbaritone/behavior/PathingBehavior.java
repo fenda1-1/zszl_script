@@ -577,7 +577,7 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
                 transformed = new GoalXZ(pos.getX(), pos.getZ());
             }
         }
-        Favoring favoring = new Favoring(context.getBaritone().getPlayerContext(), previous, context);
+        Favoring favoring = new Favoring(context.getBaritone().getPlayerContext(), previous, context, goal);
         BetterBlockPos feet = ctx.playerFeet();
         var realStart = new BetterBlockPos(start);
         var sub = feet.subtract(realStart);

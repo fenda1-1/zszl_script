@@ -17,8 +17,7 @@
 
 package com.zszl.zszlScriptMod.shadowbaritone.utils;
 
-import com.zszl.zszlScriptMod.shadowbaritone.api.utils.input.Input;
-import net.minecraft.util.Mth;
+import com.zszl.zszlScriptMod.baritone.compat.HumanLikeMovementController;
 import net.minecraft.world.phys.Vec2;
 
 public class PlayerMovementInput extends net.minecraft.client.player.ClientInput {
@@ -31,52 +30,29 @@ public class PlayerMovementInput extends net.minecraft.client.player.ClientInput
 
     @Override
     public void tick() {
-        boolean desiredJump = handler.isInputForcedDown(Input.JUMP);
-        boolean desiredSneak = handler.isInputForcedDown(Input.SNEAK);
-        float desiredForward = 0.0F;
-        float desiredStrafe = 0.0F;
+        HumanLikeMovementController.MovementState movementState = handler.getMovementState();
+        float desiredForward = movementState.moveForward;
+        float desiredStrafe = movementState.moveStrafe;
 
-        boolean forward = handler.isInputForcedDown(Input.MOVE_FORWARD);
-        boolean backward = handler.isInputForcedDown(Input.MOVE_BACK);
-        boolean left = handler.isInputForcedDown(Input.MOVE_LEFT);
-        boolean right = handler.isInputForcedDown(Input.MOVE_RIGHT);
-
-        if (forward) {
-            desiredForward++;
-        }
-
-        if (backward) {
-            desiredForward--;
-        }
-
-        if (left) {
-            desiredStrafe++;
-        }
-
-        if (right) {
-            desiredStrafe--;
-        }
-
-        boolean decoupleMovementFromVisualYaw = handler.baritone.getLookBehavior().shouldDecoupleMovementFromVisualYaw();
-        if (decoupleMovementFromVisualYaw && (desiredForward != 0.0F || desiredStrafe != 0.0F)) {
-            float yawDifferenceDeg = Mth.wrapDegrees(handler.getMovementYaw() - handler.getPlayerYaw());
-            float yawDelta = (float) Math.toRadians(yawDifferenceDeg);
-            float sin = Mth.sin(yawDelta);
-            float cos = Mth.cos(yawDelta);
-            float rawStrafe = desiredStrafe;
-            float rawForward = desiredForward;
-
-            desiredStrafe = rawStrafe * cos - rawForward * sin;
-            desiredForward = rawStrafe * sin + rawForward * cos;
-        }
-
-        if (desiredSneak) {
+        if (movementState.sneak) {
             desiredStrafe *= 0.3F;
             desiredForward *= 0.3F;
         }
 
+        boolean forward = desiredForward > 0.12F;
+        boolean backward = desiredForward < -0.12F;
+        boolean left = desiredStrafe > 0.12F;
+        boolean right = desiredStrafe < -0.12F;
+
         this.moveVector = new Vec2(desiredStrafe, desiredForward);
-        this.keyPresses = new net.minecraft.world.entity.player.Input(forward, backward, left, right, desiredJump, desiredSneak, false);
+        this.keyPresses = new net.minecraft.world.entity.player.Input(
+                forward,
+                backward,
+                left,
+                right,
+                movementState.jump,
+                movementState.sneak,
+                false);
     }
 }
 

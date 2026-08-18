@@ -117,6 +117,9 @@ public final class RenderFeatureManager {
     public static float crosshairThickness = 2.0F;
     public static boolean antiBobRemoveViewBobbing = true;
     public static boolean antiBobRemoveHurtShake = true;
+    public static boolean groundSpeedShowTitle = true;
+    public static boolean groundSpeedShowUnit = true;
+    public static int groundSpeedDecimalPlaces = 1;
     public static boolean radarPlayers = true;
     public static boolean radarMonsters = true;
     public static boolean radarAnimals = false;
@@ -305,6 +308,11 @@ public final class RenderFeatureManager {
             antiBobRemoveViewBobbing = true;
             antiBobRemoveHurtShake = true;
             break;
+        case "ground_speed":
+            groundSpeedShowTitle = true;
+            groundSpeedShowUnit = true;
+            groundSpeedDecimalPlaces = 1;
+            break;
         case "radar":
             radarPlayers = true;
             radarMonsters = true;
@@ -368,7 +376,9 @@ public final class RenderFeatureManager {
         case "anti_bob":
             return isEnabled(normalizedId) ? "已抑制镜头晃动" : "未启用";
         case "ground_speed":
-            return isEnabled(normalizedId) ? "当前地速 " + formatFloat(getCurrentHorizontalSpeedBlocksPerSecond()) + " 格/秒"
+            return isEnabled(normalizedId)
+                    ? "当前地速 " + formatGroundSpeed(getCurrentHorizontalSpeedBlocksPerSecond())
+                            + (groundSpeedShowUnit ? " 格/秒" : "")
                     : "未启用";
         case "radar":
             return isEnabled(normalizedId) ? "雷达范围 " + formatFloat(radarMaxDistance) + " 格" : "未启用";
@@ -704,6 +714,11 @@ public final class RenderFeatureManager {
             crosshairThickness = readFloat(root, "crosshair_thickness", "crosshairThickness", crosshairThickness);
             antiBobRemoveViewBobbing = readBoolean(root, "anti_bob_remove_view_bobbing", "antiBobRemoveViewBobbing", antiBobRemoveViewBobbing);
             antiBobRemoveHurtShake = readBoolean(root, "anti_bob_remove_hurt_shake", "antiBobRemoveHurtShake", antiBobRemoveHurtShake);
+            groundSpeedShowTitle = !root.has("ground_speed_show_title") || root.get("ground_speed_show_title").getAsBoolean();
+            groundSpeedShowUnit = !root.has("ground_speed_show_unit") || root.get("ground_speed_show_unit").getAsBoolean();
+            groundSpeedDecimalPlaces = Math.max(0,
+                    Math.min(3, readInt(root, "ground_speed_decimal_places", "groundSpeedDecimalPlaces",
+                            groundSpeedDecimalPlaces)));
             radarPlayers = readBoolean(root, "radar_players", "radarPlayers", radarPlayers);
             radarMonsters = readBoolean(root, "radar_monsters", "radarMonsters", radarMonsters);
             radarAnimals = readBoolean(root, "radar_animals", "radarAnimals", radarAnimals);
@@ -783,6 +798,9 @@ public final class RenderFeatureManager {
             root.addProperty("crosshair_thickness", crosshairThickness);
             root.addProperty("anti_bob_remove_view_bobbing", antiBobRemoveViewBobbing);
             root.addProperty("anti_bob_remove_hurt_shake", antiBobRemoveHurtShake);
+            root.addProperty("ground_speed_show_title", groundSpeedShowTitle);
+            root.addProperty("ground_speed_show_unit", groundSpeedShowUnit);
+            root.addProperty("ground_speed_decimal_places", Math.max(0, Math.min(3, groundSpeedDecimalPlaces)));
             root.addProperty("radar_players", radarPlayers);
             root.addProperty("radar_monsters", radarMonsters);
             root.addProperty("radar_animals", radarAnimals);
@@ -869,6 +887,9 @@ public final class RenderFeatureManager {
         crosshairThickness = 2.0F;
         antiBobRemoveViewBobbing = true;
         antiBobRemoveHurtShake = true;
+        groundSpeedShowTitle = true;
+        groundSpeedShowUnit = true;
+        groundSpeedDecimalPlaces = 1;
         radarPlayers = true;
         radarMonsters = true;
         radarAnimals = false;
@@ -1050,6 +1071,11 @@ public final class RenderFeatureManager {
 
     private static String formatFloat(float value) {
         return String.format(Locale.ROOT, "%.1f", value);
+    }
+
+    public static String formatGroundSpeed(float value) {
+        int decimals = Math.max(0, Math.min(3, groundSpeedDecimalPlaces));
+        return String.format(Locale.ROOT, "%." + decimals + "f", value);
     }
 
     private static float getCurrentHorizontalSpeedBlocksPerSecond() {

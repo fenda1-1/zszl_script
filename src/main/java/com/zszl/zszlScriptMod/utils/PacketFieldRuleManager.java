@@ -728,7 +728,7 @@ public final class PacketFieldRuleManager {
                 if (!isBlank(decoded)) {
                     return decoded;
                 }
-                return rawData == null || rawData.length == 0 ? "" : PacketPayloadDecoder.decodeFull(rawData);
+                return "";
         }
     }
 

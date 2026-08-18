@@ -219,7 +219,7 @@ public class HumanLikeMovementConfig {
         routeAnchorRadius = clamp(routeAnchorRadius, 0.0F, 16.0F);
         startTurnThreshold = clamp(startTurnThreshold, 0.0F, 90.0F);
         microPauseChance = clamp(microPauseChance, 0.0F, 0.5F);
-        lightHopChance = clamp(lightHopChance, 0.0F, 0.15F);
+        lightHopChance = clamp(lightHopChance, 0.0F, 0.85F);
         lightHopCooldownTicks = clamp(lightHopCooldownTicks, 5, 200);
         microPauseMinTicks = clamp(microPauseMinTicks, 0, 40);
         microPauseMaxTicks = clamp(microPauseMaxTicks, microPauseMinTicks, 60);

@@ -9,6 +9,8 @@ import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.client.input.MouseButtonInfo;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.Slot;
@@ -218,11 +220,10 @@ public final class ActionTargetLocator {
                         continue;
                     }
                     BlockPos current = center.offset(x, y, z);
-                    String searchText = buildBlockSearchText(current);
-                    if (!matches(searchText, query, matchMode)) {
+                    if (!matchesBlock(current, query, matchMode)) {
                         continue;
                     }
-                    matches.add(new BlockMatch(current, distSq, searchText));
+                    matches.add(new BlockMatch(current, distSq, buildBlockSearchText(current)));
                 }
             }
         }
@@ -368,6 +369,23 @@ public final class ActionTargetLocator {
             builder.append(blockEntity.getType()).append(' ');
         }
         return normalize(builder.toString());
+    }
+
+    private static boolean matchesBlock(BlockPos pos, String normalizedQuery, String matchMode) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc == null || mc.level == null || pos == null) {
+            return false;
+        }
+        Block block = mc.level.getBlockState(pos).getBlock();
+        if (block == null) {
+            return false;
+        }
+        String displayName = block.getName() == null ? "" : block.getName().getString();
+        if (matches(normalize(displayName), normalizedQuery, matchMode)) {
+            return true;
+        }
+        Identifier blockId = BuiltInRegistries.BLOCK.getKey(block);
+        return blockId != null && matches(normalize(blockId.toString()), normalizedQuery, matchMode);
     }
 
     private static String buildEntitySearchText(Entity entity) {

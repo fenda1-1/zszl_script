@@ -79,6 +79,11 @@ public abstract class MixinChatComponent {
         ChatOptimizationConfig settings = ChatOptimizationConfig.INSTANCE;
         Component originalMessage = message == null ? Component.empty() : message;
         String rawText = originalMessage.getString();
+        boolean system = tag != null && "System".equalsIgnoreCase(Optionull.map(tag, GuiMessageTag::logTag));
+        if (system && rawText.isBlank()) {
+            ci.cancel();
+            return;
+        }
         long now = System.currentTimeMillis();
 
         zszl$cleanupSpamTracker(now, settings);
@@ -132,7 +137,6 @@ public abstract class MixinChatComponent {
             }
         }
 
-        boolean system = tag != null && "System".equalsIgnoreCase(Optionull.map(tag, GuiMessageTag::logTag));
         ChatEventHandler.triggerDisplayedChatMessage(originalMessage, displayMessage, system);
         ci.cancel();
     }

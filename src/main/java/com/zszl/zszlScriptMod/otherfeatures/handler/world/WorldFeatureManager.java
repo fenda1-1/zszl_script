@@ -26,7 +26,11 @@ public final class WorldFeatureManager {
 
     private static final Map<String, FeatureState> FEATURES = new LinkedHashMap<>();
     private static long visualWorldTime = 6000L;
-
+    public static boolean coordDisplayShowX = true;
+    public static boolean coordDisplayShowY = true;
+    public static boolean coordDisplayShowZ = true;
+    public static boolean coordDisplayShowFacing = true;
+    public static boolean coordDisplayShowBiome = true;
     private long cachedNaturalWorldTime = 6000L;
     private float cachedNaturalRainStrength = 0.0F;
     private float cachedNaturalThunderStrength = 0.0F;
@@ -155,6 +159,11 @@ public final class WorldFeatureManager {
         saveConfig();
     }
 
+    public static boolean isFeatureStatusHudEnabled(String featureId) {
+        FeatureState state = getFeature(featureId);
+        return state != null && state.statusHudEnabled;
+    }
+
     public static void resetFeature(String featureId) {
         FeatureState state = getFeature(featureId);
         if (state == null) {
@@ -166,6 +175,22 @@ public final class WorldFeatureManager {
         if ("time_modifier".equals(state.id)) {
             visualWorldTime = (long) state.defaultValue;
         }
+        if ("coord_display".equals(state.id)) {
+            resetCoordDisplayOptions();
+        }
+        saveConfig();
+    }
+
+    public static void resetAllToDefaults() {
+        for (FeatureState state : FEATURES.values()) {
+            state.enabled = false;
+            state.value = state.defaultValue;
+            state.statusHudEnabled = true;
+            if ("time_modifier".equals(state.id)) {
+                visualWorldTime = (long) state.defaultValue;
+            }
+        }
+        resetCoordDisplayOptions();
         saveConfig();
     }
 
@@ -203,7 +228,7 @@ public final class WorldFeatureManager {
 
         List<String> activeNames = new ArrayList<>();
         for (FeatureState state : FEATURES.values()) {
-            if (state != null && state.enabled && (state.statusHudEnabled || forcePreview)) {
+            if (state != null && state.enabled && state.statusHudEnabled) {
                 activeNames.add(state.name);
             }
         }
@@ -232,30 +257,6 @@ public final class WorldFeatureManager {
         }
         return lines;
     }
-
-    public static String getCoordInfo() {
-        if (!isEnabled("coord_display")) {
-            return "";
-        }
-        BlockPos pos = INSTANCE.lastPlayerPos;
-        if (pos == null) {
-            pos = BlockPos.ZERO;
-        }
-        StringBuilder builder = new StringBuilder();
-        builder.append("§fXYZ: §a")
-                .append(pos.getX()).append(" §f/ §a")
-                .append(pos.getY()).append(" §f/ §a")
-                .append(pos.getZ());
-        if (!INSTANCE.lastBiomeName.isEmpty()) {
-            builder.append(" §7生物群系: §b").append(INSTANCE.lastBiomeName);
-        }
-        return builder.toString();
-    }
-
-    public static List<StructureInfo> getNearbyStructures() {
-        return new ArrayList<>(INSTANCE.nearbyStructures);
-    }
-
     public static String getFeatureRuntimeSummaryLegacy(String featureId) {
         FeatureState state = getFeature(featureId);
         if (state == null) {
@@ -274,7 +275,54 @@ public final class WorldFeatureManager {
         return state.supportsValue() ? "已启用 / " + formatFloat(state.value) : "已启用";
     }
 
+    public static void setCoordDisplayFieldEnabled(String key, boolean enabled) {
+        String normalized = safe(key).toLowerCase(Locale.ROOT);
+        if ("show_x".equals(normalized)) {
+            coordDisplayShowX = enabled;
+        } else if ("show_y".equals(normalized)) {
+            coordDisplayShowY = enabled;
+        } else if ("show_z".equals(normalized)) {
+            coordDisplayShowZ = enabled;
+        } else if ("show_facing".equals(normalized)) {
+            coordDisplayShowFacing = enabled;
+        } else if ("show_biome".equals(normalized)) {
+            coordDisplayShowBiome = enabled;
+        } else {
+            return;
+        }
+        saveConfig();
+    }
+
+    public static boolean isCoordDisplayFieldEnabled(String key) {
+        String normalized = safe(key).toLowerCase(Locale.ROOT);
+        if ("show_x".equals(normalized)) {
+            return coordDisplayShowX;
+        }
+        if ("show_y".equals(normalized)) {
+            return coordDisplayShowY;
+        }
+        if ("show_z".equals(normalized)) {
+            return coordDisplayShowZ;
+        }
+        if ("show_facing".equals(normalized)) {
+            return coordDisplayShowFacing;
+        }
+        if ("show_biome".equals(normalized)) {
+            return coordDisplayShowBiome;
+        }
+        return false;
+    }
+
+    public static void resetCoordDisplayOptions() {
+        coordDisplayShowX = true;
+        coordDisplayShowY = true;
+        coordDisplayShowZ = true;
+        coordDisplayShowFacing = true;
+        coordDisplayShowBiome = true;
+    }
+
     public static void loadConfig() {
+        resetCoordDisplayOptions();
         try {
             Path file = ProfileManager.getCurrentProfileDir().resolve("other_features_world.json");
             if (!Files.exists(file)) {
@@ -285,16 +333,35 @@ public final class WorldFeatureManager {
                     ? root.getAsJsonObject("features")
                     : root;
             for (FeatureState state : FEATURES.values()) {
-                if (features.has(state.id) && features.get(state.id).isJsonObject()) {
-                    JsonObject json = features.getAsJsonObject(state.id);
-                    if (json.has("enabled")) {
-                        state.enabled = json.get("enabled").getAsBoolean();
+                if (!features.has(state.id) || !features.get(state.id).isJsonObject()) {
+                    continue;
+                }
+                JsonObject json = features.getAsJsonObject(state.id);
+                if (json.has("enabled")) {
+                    state.enabled = json.get("enabled").getAsBoolean();
+                }
+                if (json.has("value")) {
+                    state.value = clamp(json.get("value").getAsFloat(), state.minValue, state.maxValue);
+                }
+                if (json.has("statusHudEnabled")) {
+                    state.statusHudEnabled = json.get("statusHudEnabled").getAsBoolean();
+                }
+                if ("coord_display".equals(state.id) && json.has("options") && json.get("options").isJsonObject()) {
+                    JsonObject options = json.getAsJsonObject("options");
+                    if (options.has("showX")) {
+                        coordDisplayShowX = options.get("showX").getAsBoolean();
                     }
-                    if (json.has("value")) {
-                        state.value = clamp(json.get("value").getAsFloat(), state.minValue, state.maxValue);
+                    if (options.has("showY")) {
+                        coordDisplayShowY = options.get("showY").getAsBoolean();
                     }
-                    if (json.has("statusHudEnabled")) {
-                        state.statusHudEnabled = json.get("statusHudEnabled").getAsBoolean();
+                    if (options.has("showZ")) {
+                        coordDisplayShowZ = options.get("showZ").getAsBoolean();
+                    }
+                    if (options.has("showFacing")) {
+                        coordDisplayShowFacing = options.get("showFacing").getAsBoolean();
+                    }
+                    if (options.has("showBiome")) {
+                        coordDisplayShowBiome = options.get("showBiome").getAsBoolean();
                     }
                 }
             }
@@ -318,6 +385,15 @@ public final class WorldFeatureManager {
                 json.addProperty("enabled", state.enabled);
                 json.addProperty("value", state.value);
                 json.addProperty("statusHudEnabled", state.statusHudEnabled);
+                if ("coord_display".equals(state.id)) {
+                    JsonObject options = new JsonObject();
+                    options.addProperty("showX", coordDisplayShowX);
+                    options.addProperty("showY", coordDisplayShowY);
+                    options.addProperty("showZ", coordDisplayShowZ);
+                    options.addProperty("showFacing", coordDisplayShowFacing);
+                    options.addProperty("showBiome", coordDisplayShowBiome);
+                    json.add("options", options);
+                }
                 features.add(state.id, json);
             }
             root.add("features", features);
@@ -391,8 +467,10 @@ public final class WorldFeatureManager {
             parts.add("§b雨强: " + formatFloat(getFeature("weather_control").value));
         }
         if (isEnabled("coord_display") && getFeature("coord_display").statusHudEnabled) {
-            parts.add(String.format(Locale.ROOT, "§f%d,%d,%d",
-                    lastPlayerPos.getX(), lastPlayerPos.getY(), lastPlayerPos.getZ()));
+            String coordInfo = getCoordInfo();
+            if (!coordInfo.isEmpty()) {
+                parts.add(coordInfo);
+            }
         }
         if (parts.isEmpty()) {
             return "";
@@ -405,6 +483,10 @@ public final class WorldFeatureManager {
             builder.append(parts.get(i));
         }
         return builder.toString();
+    }
+
+    public static List<StructureInfo> getNearbyStructures() {
+        return new ArrayList<>(INSTANCE.nearbyStructures);
     }
 
     private String buildFeatureRuntimeSummary(String featureId) {
@@ -424,11 +506,56 @@ public final class WorldFeatureManager {
         case "weather_control":
             return "当前雨强 " + formatFloat(state.value);
         case "coord_display":
-            return lastPlayerPos.getX() + ", " + lastPlayerPos.getY() + ", " + lastPlayerPos.getZ()
-                    + (lastBiomeName.isEmpty() ? "" : " / " + lastBiomeName);
+            String coordInfo = getCoordInfo();
+            return coordInfo.isEmpty() ? "未选择任何 HUD 字段" : coordInfo;
         default:
             return state.supportsValue() ? "已启用 / " + formatFloat(state.value) : "已启用";
         }
+    }
+
+    public static String getCoordInfo() {
+        if (!isEnabled("coord_display")) {
+            return "";
+        }
+        Minecraft mc = Minecraft.getInstance();
+        if (mc == null || mc.player == null) {
+            return "";
+        }
+
+        BlockPos pos = INSTANCE.lastPlayerPos == null ? BlockPos.ZERO : INSTANCE.lastPlayerPos;
+        List<String> parts = new ArrayList<>();
+        if (coordDisplayShowX) {
+            parts.add("§fX: §a" + pos.getX());
+        }
+        if (coordDisplayShowY) {
+            parts.add("§fY: §a" + pos.getY());
+        }
+        if (coordDisplayShowZ) {
+            parts.add("§fZ: §a" + pos.getZ());
+        }
+        if (coordDisplayShowFacing) {
+            parts.add("§7[§f" + getCardinalDirection(mc.player.getYRot()) + "§7]");
+        }
+        if (coordDisplayShowBiome && !INSTANCE.lastBiomeName.isEmpty()) {
+            parts.add("§7生物群系: §b" + INSTANCE.lastBiomeName);
+        }
+        if (parts.isEmpty()) {
+            return "";
+        }
+        return String.join(" §7| ", parts);
+    }
+
+    private static String getCardinalDirection(float yaw) {
+        yaw = Mth.wrapDegrees(yaw);
+        if (yaw < -157.5F) return "北";
+        if (yaw < -112.5F) return "东北";
+        if (yaw < -67.5F) return "东";
+        if (yaw < -22.5F) return "东南";
+        if (yaw < 22.5F) return "南";
+        if (yaw < 67.5F) return "西南";
+        if (yaw < 112.5F) return "西";
+        if (yaw < 157.5F) return "西北";
+        return "北";
     }
 
     private String formatWorldTime(long time) {

@@ -17,6 +17,7 @@
 
 package com.zszl.zszlScriptMod.shadowbaritone.behavior;
 
+import com.zszl.zszlScriptMod.baritone.compat.HumanLikeMovementController;
 import com.zszl.zszlScriptMod.shadowbaritone.Baritone;
 import com.zszl.zszlScriptMod.shadowbaritone.api.Settings;
 import com.zszl.zszlScriptMod.shadowbaritone.api.behavior.ILookBehavior;
@@ -132,7 +133,19 @@ public final class LookBehavior extends Behavior implements ILookBehavior {
             case POST: {
                 // Reset the player's rotations back to their original values
                 if (this.prevRotation != null) {
-                    if (isSmoothLookEnabled()) {
+                    if (shouldUseHumanLikeVisualRotation()) {
+                        Rotation visualTarget = this.visualTargetThisTick != null
+                                ? this.visualTargetThisTick
+                                : this.target.rotation;
+                        HumanLikeMovementController.RotationState rotationState = HumanLikeMovementController.INSTANCE
+                                .smoothRotation(
+                                        this.prevRotation.getYaw(),
+                                        this.prevRotation.getPitch(),
+                                        visualTarget.getYaw(),
+                                        visualTarget.getPitch());
+                        ctx.player().setYRot(rotationState.yaw);
+                        ctx.player().setXRot(rotationState.pitch);
+                    } else if (isSmoothLookEnabled()) {
                         Rotation visualTarget = this.visualTargetThisTick != null
                                 ? this.visualTargetThisTick
                                 : this.target.rotation;
@@ -250,6 +263,15 @@ public final class LookBehavior extends Behavior implements ILookBehavior {
         return ctx.player() != null
                 && (ctx.player().isFallFlying() ? Baritone.settings().elytraSmoothLook.value
                         : Baritone.settings().smoothLook.value);
+    }
+
+    private boolean shouldUseHumanLikeVisualRotation() {
+        return this.target != null
+                && !this.target.blockInteract
+                && ctx.player() != null
+                && !ctx.player().isFallFlying()
+                && baritone.getPathingBehavior().isPathing()
+                && HumanLikeMovementController.INSTANCE.isEnabled();
     }
 
     private Rotation smoothLookLikeKillAura(Rotation currentRotation, Rotation targetRotation) {

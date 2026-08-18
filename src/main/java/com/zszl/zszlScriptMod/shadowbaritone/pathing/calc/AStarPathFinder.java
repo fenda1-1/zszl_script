@@ -160,7 +160,7 @@ public final class AStarPathFinder extends AbstractNodeCostSearch {
                 long hashCode = BetterBlockPos.longHash(res.x, res.y, res.z);
                 if (isFavoring) {
                     // see issue #18
-                    actionCost *= favoring.calculate(hashCode);
+                    actionCost *= favoring.calculate(hashCode, res.x, res.y, res.z);
                 }
                 PathNode neighbor = getNodeAtPosition(res.x, res.y, res.z, hashCode);
                 double tentativeCost = currentNode.cost + actionCost;
