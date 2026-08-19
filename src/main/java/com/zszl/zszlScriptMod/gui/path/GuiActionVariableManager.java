@@ -9,6 +9,7 @@ import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
 import com.zszl.zszlScriptMod.path.ActionVariableRegistry;
 import com.zszl.zszlScriptMod.path.PathSequenceManager;
 import com.zszl.zszlScriptMod.path.runtime.ScopedRuntimeVariables;
+import com.zszl.zszlScriptMod.utils.PinyinSearchHelper;
 import com.zszl.zszlScriptMod.path.runtime.log.ExecutionLogManager;
 import com.zszl.zszlScriptMod.path.runtime.log.ExecutionLogManager.ExecutionEvent;
 import com.zszl.zszlScriptMod.path.runtime.log.ExecutionLogManager.SessionSnapshot;
@@ -362,12 +363,12 @@ public class GuiActionVariableManager extends ThemedGuiScreen {
                         .extractScopeKey(entry.getVariableName()))
                 .thenComparing(entry -> ActionVariableRegistry.extractBaseName(entry.getVariableName()).toLowerCase()));
 
-        String keyword = searchField == null ? "" : safe(searchField.getText()).trim().toLowerCase();
+        String keyword = searchField == null ? "" : PinyinSearchHelper.normalizeQuery(searchField.getText());
         variables.clear();
         for (ActionVariableRegistry.VariableEntry entry : all) {
-            String full = safe(entry.getVariableName()).toLowerCase();
-            String base = safe(ActionVariableRegistry.extractBaseName(entry.getVariableName())).toLowerCase();
-            if (keyword.isEmpty() || full.contains(keyword) || base.contains(keyword)) {
+            String full = safe(entry.getVariableName());
+            String base = safe(ActionVariableRegistry.extractBaseName(entry.getVariableName()));
+            if (keyword.isEmpty() || PinyinSearchHelper.matchesNormalized(full + " " + base, keyword)) {
                 variables.add(entry);
             }
         }

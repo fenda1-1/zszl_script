@@ -969,19 +969,21 @@ public final class KillAuraOrbitProcess extends BaritoneProcessHelper {
         double desiredAngle = Math.atan2(desiredZ - target.posZ, desiredX - target.posX);
         int baseX = MathHelper.floor(desiredX);
         int baseZ = MathHelper.floor(desiredZ);
+        int minFeetY = playerFeetY;
         int maxFeetY = playerFeetY + 1;
-        int minFeetY = playerFeetY - 4;
-        BetterBlockPos best = null;
-        double bestScore = Double.MAX_VALUE;
         Vec3d previousCenter = previous == null ? null : nodeCenter(previous);
+        BetterBlockPos best = null;
 
-        for (int searchRadius = 0; searchRadius <= MAX_SEARCH_RADIUS; searchRadius++) {
-            for (int dx = -searchRadius; dx <= searchRadius; dx++) {
-                for (int dz = -searchRadius; dz <= searchRadius; dz++) {
-                    if (searchRadius > 0 && Math.max(Math.abs(dx), Math.abs(dz)) != searchRadius) {
-                        continue;
-                    }
-                    for (int y = maxFeetY; y >= minFeetY; y--) {
+        // Evaluate all nearby X/Z positions on the current layer before
+        // considering the next layer above it.
+        for (int y = minFeetY; y <= maxFeetY && best == null; y++) {
+            double bestLayerScore = Double.MAX_VALUE;
+            for (int searchRadius = 0; searchRadius <= MAX_SEARCH_RADIUS; searchRadius++) {
+                for (int dx = -searchRadius; dx <= searchRadius; dx++) {
+                    for (int dz = -searchRadius; dz <= searchRadius; dz++) {
+                        if (searchRadius > 0 && Math.max(Math.abs(dx), Math.abs(dz)) != searchRadius) {
+                            continue;
+                        }
                         BetterBlockPos candidate = new BetterBlockPos(baseX + dx, y, baseZ + dz);
                         if (!isStandableOrbitFeet(candidate, target, maxFeetY)) {
                             continue;
@@ -1013,8 +1015,8 @@ public final class KillAuraOrbitProcess extends BaritoneProcessHelper {
                         double heightPenalty = Math.abs(candidate.y - playerFeetY) * 0.9D;
                         double score = radiusPenalty + anglePenalty + desiredPenalty + continuityPenalty + heightPenalty;
 
-                        if (score < bestScore) {
-                            bestScore = score;
+                        if (score < bestLayerScore) {
+                            bestLayerScore = score;
                             best = candidate;
                         }
                     }
@@ -1031,15 +1033,15 @@ public final class KillAuraOrbitProcess extends BaritoneProcessHelper {
         }
         int baseX = MathHelper.floor(guidePoint.x);
         int baseZ = MathHelper.floor(guidePoint.z);
+        int minFeetY = playerFeetY;
         int maxFeetY = playerFeetY + 1;
-        int minFeetY = playerFeetY - 2;
-        for (int searchRadius = 0; searchRadius <= 1; searchRadius++) {
-            for (int dx = -searchRadius; dx <= searchRadius; dx++) {
-                for (int dz = -searchRadius; dz <= searchRadius; dz++) {
-                    if (searchRadius > 0 && Math.max(Math.abs(dx), Math.abs(dz)) != searchRadius) {
-                        continue;
-                    }
-                    for (int y = maxFeetY; y >= minFeetY; y--) {
+        for (int y = minFeetY; y <= maxFeetY; y++) {
+            for (int searchRadius = 0; searchRadius <= 1; searchRadius++) {
+                for (int dx = -searchRadius; dx <= searchRadius; dx++) {
+                    for (int dz = -searchRadius; dz <= searchRadius; dz++) {
+                        if (searchRadius > 0 && Math.max(Math.abs(dx), Math.abs(dz)) != searchRadius) {
+                            continue;
+                        }
                         if (isBaseStandableOrbitFeet(new BetterBlockPos(baseX + dx, y, baseZ + dz), maxFeetY)) {
                             return true;
                         }

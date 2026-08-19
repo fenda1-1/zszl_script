@@ -10,6 +10,7 @@ import com.zszl.zszlScriptMod.gui.path.GuiSequenceSelector;
 import com.zszl.zszlScriptMod.handlers.AutoFollowHandler;
 import com.zszl.zszlScriptMod.handlers.KillAuraHandler;
 import com.zszl.zszlScriptMod.system.AutoFollowRule;
+import com.zszl.zszlScriptMod.utils.PinyinSearchHelper;
 import net.minecraft.client.gui.GuiButton;
 import net.minecraft.client.gui.GuiScreen;
 import net.minecraft.client.gui.GuiTextField;
@@ -21,6 +22,7 @@ import net.minecraft.util.math.Vec3d;
 import org.lwjgl.input.Keyboard;
 import org.lwjgl.input.Mouse;
 
+import java.awt.Rectangle;
 import java.io.IOException;
 import java.text.DecimalFormat;
 import java.util.ArrayList;
@@ -56,6 +58,9 @@ public class GuiAutoFollowManager extends ThemedGuiScreen {
     private static final int BTN_ENTITY_TYPE_BASE = 200;
 
     private static final int TREE_ROW_HEIGHT = 18;
+    private static final int TREE_SEARCH_FIELD_HEIGHT = 16;
+    private static final int TREE_SEARCH_TOP_OFFSET = 24;
+    private static final int TREE_SEARCH_BOTTOM_GAP = 4;
     private static final int CARD_HEIGHT = 56;
     private static final int CARD_GAP = 6;
     private static final long CARD_DOUBLE_CLICK_WINDOW_MS = 300L;
@@ -128,6 +133,7 @@ public class GuiAutoFollowManager extends ThemedGuiScreen {
     private int editorRowStartY;
     private int editorVisibleRows;
 
+    private GuiTextField treeSearchField;
     private GuiTextField nameField;
     private GuiTextField categoryField;
     private GuiTextField point1XField;
@@ -135,10 +141,12 @@ public class GuiAutoFollowManager extends ThemedGuiScreen {
     private GuiTextField point2XField;
     private GuiTextField point2ZField;
     private GuiTextField returnPointXField;
+    private GuiTextField returnPointYField;
     private GuiTextField returnPointZField;
     private GuiTextField returnStayMillisField;
     private GuiTextField patrolStuckRestartSecondsField;
     private GuiTextField returnArriveDistanceField;
+    private GuiTextField monsterChaseYLimitField;
     private GuiTextField maxRecoveryDistanceField;
     private GuiTextField monsterVerticalRangeField;
     private GuiTextField monsterUpwardRangeField;
@@ -200,12 +208,14 @@ public class GuiAutoFollowManager extends ThemedGuiScreen {
     private boolean treeDragging = false;
     private DragPayload activeDragPayload = null;
     private TreeDropTarget currentTreeDropTarget = null;
+    private Rectangle treeSearchClearBounds = null;
 
     private String statusMessage = "§7使用指南：左键筛选/折叠分组，右键分组或卡片打开菜单，双击规则卡片可快速开关，滚轮可滚动右侧规则编辑器";
     private int statusColor = 0xFFB8C7D9;
     private final String[] editorSections = new String[] { "基础", "巡逻", "目标筛选", "评分调试", "高级" };
     private int activeEditorSection = 0;
     private int editorTabScrollOffset = 0;
+    private String treeSearchQuery = "";
 
     public GuiAutoFollowManager(GuiScreen parent) {
         this.parentScreen = parent;
@@ -218,6 +228,7 @@ public class GuiAutoFollowManager extends ThemedGuiScreen {
         applyReadableUiScaleForLargeScreen(1180, 660);
 
         recalcLayout();
+        initTreeSearchField();
         initEditorFields();
         initButtons();
         refreshData(false);
@@ -258,6 +269,35 @@ public class GuiAutoFollowManager extends ThemedGuiScreen {
         editorFieldX = editorX + 92;
         editorRowStartY = editorY + 52;
         editorVisibleRows = Math.max(1, (editorHeight - 62) / EDITOR_ROW_HEIGHT);
+        layoutTreeSearchField();
+    }
+
+    private void initTreeSearchField() {
+        if (treeSearchField == null) {
+            treeSearchField = new GuiTextField(2024, this.fontRenderer, 0, 0, 100, TREE_SEARCH_FIELD_HEIGHT);
+            treeSearchField.setMaxStringLength(120);
+            treeSearchField.setCanLoseFocus(true);
+            treeSearchField.setEnableBackgroundDrawing(false);
+            treeSearchField.setText(treeSearchQuery);
+        }
+        layoutTreeSearchField();
+    }
+
+    private void layoutTreeSearchField() {
+        if (treeSearchField == null) {
+            return;
+        }
+        if (treeCollapsed) {
+            treeSearchField.x = -2000;
+            treeSearchField.y = -2000;
+            treeSearchField.setFocused(false);
+            treeSearchClearBounds = null;
+            return;
+        }
+        treeSearchField.x = treeX + 6;
+        treeSearchField.y = treeY + TREE_SEARCH_TOP_OFFSET;
+        treeSearchField.width = Math.max(30, treeWidth - 20);
+        treeSearchField.height = TREE_SEARCH_FIELD_HEIGHT;
     }
 
     private void initEditorFields() {
@@ -269,9 +309,11 @@ public class GuiAutoFollowManager extends ThemedGuiScreen {
         point2ZField = createField(2006);
         returnPointXField = createField(2007);
         returnPointZField = createField(2008);
+        returnPointYField = createField(2023);
         returnStayMillisField = createField(2009);
         patrolStuckRestartSecondsField = createField(2021);
         returnArriveDistanceField = createField(2017);
+        monsterChaseYLimitField = createField(2022);
         maxRecoveryDistanceField = createField(2010);
         monsterVerticalRangeField = createField(2011);
         monsterUpwardRangeField = createField(2012);
@@ -351,7 +393,8 @@ public class GuiAutoFollowManager extends ThemedGuiScreen {
         int pointButtonWidth = Math.min(84, fullFieldWidth);
 
         int returnSectionLeftWidth = getReturnSectionLeftWidth(fullFieldWidth);
-        int returnHalfWidth = Math.max(60, (returnSectionLeftWidth - 10) / 2);
+        int returnThirdWidth = Math.max(1, (fullFieldWidth - 20) / 3);
+        int returnLastWidth = Math.max(1, fullFieldWidth - returnThirdWidth * 2 - 20);
         int actionGap = 6;
         int actionWidth = Math.max(52, (returnSectionLeftWidth - actionGap * 2) / 3);
 
@@ -366,11 +409,15 @@ public class GuiAutoFollowManager extends ThemedGuiScreen {
         placeField(point2ZField, 4, editorFieldX + halfWidth + 10, halfWidth);
         placeButton(btnGetP2, 5, editorFieldX, pointButtonWidth, 20);
 
-        placeField(returnPointXField, 6, editorFieldX, returnHalfWidth);
-        placeField(returnPointZField, 6, editorFieldX + returnHalfWidth + 10, returnHalfWidth);
-        placeButton(btnGetP3, 7, editorFieldX, actionWidth, 20);
-        placeButton(btnAddReturnPoint, 7, editorFieldX + actionWidth + actionGap, actionWidth, 20);
-        placeButton(btnRemoveReturnPoint, 7, editorFieldX + (actionWidth + actionGap) * 2, actionWidth, 20);
+        placeField(monsterChaseYLimitField, getMonsterChaseYLimitRow(), editorFieldX, halfWidth);
+
+        placeField(returnPointXField, getReturnPointInputRow(), editorFieldX, returnThirdWidth);
+        placeField(returnPointYField, getReturnPointInputRow(), editorFieldX + returnThirdWidth + 10, returnThirdWidth);
+        placeField(returnPointZField, getReturnPointInputRow(), editorFieldX + returnThirdWidth * 2 + 20, returnLastWidth);
+        placeButton(btnGetP3, getReturnPointActionRow(), editorFieldX, actionWidth, 20);
+        placeButton(btnAddReturnPoint, getReturnPointActionRow(), editorFieldX + actionWidth + actionGap, actionWidth, 20);
+        placeButton(btnRemoveReturnPoint, getReturnPointActionRow(), editorFieldX + (actionWidth + actionGap) * 2,
+                actionWidth, 20);
 
         placeField(returnStayMillisField, getReturnStayRow(), editorFieldX, returnSectionLeftWidth);
         placeField(patrolStuckRestartSecondsField, getPatrolStuckRestartRow(), editorFieldX, returnSectionLeftWidth);
@@ -476,8 +523,20 @@ public class GuiAutoFollowManager extends ThemedGuiScreen {
         return editorRowStartY + visibleIndex * EDITOR_ROW_HEIGHT;
     }
 
+    private int getMonsterChaseYLimitRow() {
+        return 6;
+    }
+
+    private int getReturnPointInputRow() {
+        return getMonsterChaseYLimitRow() + 1;
+    }
+
+    private int getReturnPointActionRow() {
+        return getReturnPointInputRow() + 1;
+    }
+
     private int getReturnListStartRow() {
-        return 8;
+        return getReturnPointActionRow() + 1;
     }
 
     private int getReturnHintRow() {
@@ -682,10 +741,10 @@ public class GuiAutoFollowManager extends ThemedGuiScreen {
         switch (activeEditorSection) {
             case 0: // 基础
                 startRow = 0;
-                endRow = 5;
+                endRow = getMonsterChaseYLimitRow();
                 break;
             case 1: // 巡逻
-                startRow = 6;
+                startRow = getReturnPointInputRow();
                 endRow = getMaxRecoveryRow();
                 break;
             case 2: // 目标筛选
@@ -949,12 +1008,20 @@ public class GuiAutoFollowManager extends ThemedGuiScreen {
     private void rebuildTreeRows() {
         visibleTreeRows.clear();
         visibleTreeRows.add(TreeRow.allRow("全部规则"));
+        String normalizedSearch = PinyinSearchHelper.normalizeQuery(treeSearchQuery);
+        boolean searchActive = !normalizedSearch.isEmpty();
         for (String category : categories) {
+            boolean categoryMatches = PinyinSearchHelper.matchesNormalized(category, normalizedSearch);
+            boolean hasMatchingRule = categoryMatches || categoryHasMatchingRule(category, normalizedSearch);
+            if (searchActive && !hasMatchingRule) {
+                continue;
+            }
             visibleTreeRows.add(TreeRow.categoryRow(category));
-            if (expandedCategories.contains(category)) {
+            if (expandedCategories.contains(category) || searchActive) {
                 for (int ruleIndex = 0; ruleIndex < allRules.size(); ruleIndex++) {
                     AutoFollowRule rule = allRules.get(ruleIndex);
-                    if (category.equals(getRuleCategory(rule))) {
+                    if (category.equals(getRuleCategory(rule))
+                            && (!searchActive || categoryMatches || matchesRuleSearch(rule, normalizedSearch))) {
                         visibleTreeRows.add(TreeRow.ruleRow(category, safe(rule.name), safe(rule.name), ruleIndex));
                     }
                 }
@@ -965,8 +1032,11 @@ public class GuiAutoFollowManager extends ThemedGuiScreen {
 
     private void rebuildVisibleRules() {
         visibleRules.clear();
+        String normalizedSearch = PinyinSearchHelper.normalizeQuery(treeSearchQuery);
+        boolean searchActive = !normalizedSearch.isEmpty();
         for (AutoFollowRule rule : allRules) {
-            if (CATEGORY_ALL.equals(selectedCategory) || selectedCategory.equals(getRuleCategory(rule))) {
+            if ((searchActive || CATEGORY_ALL.equals(selectedCategory) || selectedCategory.equals(getRuleCategory(rule)))
+                    && matchesRuleSearch(rule, normalizedSearch)) {
                 visibleRules.add(rule);
             }
         }
@@ -976,6 +1046,53 @@ public class GuiAutoFollowManager extends ThemedGuiScreen {
         if (selectedVisibleIndex >= visibleRules.size()) {
             selectedVisibleIndex = visibleRules.isEmpty() ? -1 : 0;
         }
+    }
+
+    private boolean categoryHasMatchingRule(String category, String normalizedSearch) {
+        for (AutoFollowRule rule : allRules) {
+            if (category.equals(getRuleCategory(rule)) && matchesRuleSearch(rule, normalizedSearch)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean matchesRuleSearch(AutoFollowRule rule, String normalizedSearch) {
+        if (normalizedSearch.isEmpty()) {
+            return true;
+        }
+        return PinyinSearchHelper.matchesNormalized(safe(rule == null ? "" : rule.name)
+                + " " + getRuleCategory(rule), normalizedSearch);
+    }
+
+    private void updateTreeSearchFromField() {
+        String newQuery = treeSearchField == null ? "" : PinyinSearchHelper.normalizeQuery(treeSearchField.getText());
+        if (treeSearchQuery.equals(newQuery)) {
+            return;
+        }
+        treeSearchQuery = newQuery;
+        treeScrollOffset = 0;
+        listScrollOffset = 0;
+        rebuildTreeRows();
+        rebuildVisibleRules();
+        refreshSelectionAfterFilter();
+    }
+
+    private void clearTreeSearch(boolean keepFocus) {
+        treeSearchQuery = "";
+        if (treeSearchField != null) {
+            treeSearchField.setText("");
+            treeSearchField.setFocused(keepFocus);
+        }
+        treeScrollOffset = 0;
+        listScrollOffset = 0;
+        rebuildTreeRows();
+        rebuildVisibleRules();
+        refreshSelectionAfterFilter();
+    }
+
+    private boolean isTreeSearchActive() {
+        return !treeSearchQuery.isEmpty();
     }
 
     private void clearEditorForNew() {
@@ -1001,6 +1118,8 @@ public class GuiAutoFollowManager extends ThemedGuiScreen {
 
         AutoFollowHandler.Point primaryReturnPoint = model.getPrimaryReturnPoint();
         setText(returnPointXField, formatDouble(primaryReturnPoint == null ? 0.0 : primaryReturnPoint.x));
+        setText(returnPointYField, primaryReturnPoint != null && primaryReturnPoint.hasY()
+                ? formatDouble(primaryReturnPoint.y) : "");
         setText(returnPointZField, formatDouble(primaryReturnPoint == null ? 0.0 : primaryReturnPoint.z));
         setText(returnStayMillisField, String.valueOf(model.returnStayMillis > 0
                 ? model.returnStayMillis
@@ -1011,6 +1130,10 @@ public class GuiAutoFollowManager extends ThemedGuiScreen {
         setText(returnArriveDistanceField, formatDouble(model.returnArriveDistance > 0
                 ? model.returnArriveDistance
                 : AutoFollowRule.DEFAULT_RETURN_ARRIVE_DISTANCE));
+        setText(monsterChaseYLimitField, String.valueOf(model.monsterChaseYLimit != null
+                && model.monsterChaseYLimit >= 0
+                ? model.monsterChaseYLimit
+                : AutoFollowRule.DEFAULT_MONSTER_CHASE_Y_LIMIT));
         setText(maxRecoveryDistanceField, formatDouble(model.maxRecoveryDistance));
         setText(monsterVerticalRangeField, formatDouble(model.monsterVerticalRange > 0
                 ? model.monsterVerticalRange
@@ -1216,7 +1339,7 @@ public class GuiAutoFollowManager extends ThemedGuiScreen {
             return;
         }
         if (button.id == BTN_GET_P3) {
-            updatePointFromPlayer(returnPointXField, returnPointZField);
+            updateReturnPointFromPlayer();
             return;
         }
         if (button.id == BTN_ADD_RETURN_POINT) {
@@ -1438,6 +1561,19 @@ public class GuiAutoFollowManager extends ThemedGuiScreen {
             closeContextMenu();
         }
 
+        if (treeSearchField != null) {
+            if (mouseButton == 0 && treeSearchClearBounds != null && treeSearchClearBounds.contains(mouseX, mouseY)) {
+                clearTreeSearch(true);
+                return;
+            }
+            boolean clickedSearchField = isMouseOverField(mouseX, mouseY, treeSearchField);
+            treeSearchField.mouseClicked(mouseX, mouseY, mouseButton);
+            if (clickedSearchField) {
+                return;
+            }
+            treeSearchField.setFocused(false);
+        }
+
         if (mouseButton == 0) {
             if (isInTreeCollapseButton(mouseX, mouseY)) {
                 treeCollapsed = !treeCollapsed;
@@ -1552,7 +1688,7 @@ public class GuiAutoFollowManager extends ThemedGuiScreen {
 
     @Override
     protected void mouseClickMove(int mouseX, int mouseY, int clickedMouseButton, long timeSinceLastClick) {
-        if (clickedMouseButton == 0 && pendingTreePressIndex >= 0 && !treeDragging) {
+        if (clickedMouseButton == 0 && pendingTreePressIndex >= 0 && !treeDragging && !isTreeSearchActive()) {
             if (Math.abs(mouseX - pendingTreePressMouseX) >= 4 || Math.abs(mouseY - pendingTreePressMouseY) >= 4) {
                 TreeRow row = pendingTreePressIndex >= 0 && pendingTreePressIndex < visibleTreeRows.size()
                         ? visibleTreeRows.get(pendingTreePressIndex)
@@ -1707,6 +1843,20 @@ public class GuiAutoFollowManager extends ThemedGuiScreen {
             return;
         }
 
+        if (keyCode == Keyboard.KEY_F
+                && (Keyboard.isKeyDown(Keyboard.KEY_LCONTROL) || Keyboard.isKeyDown(Keyboard.KEY_RCONTROL))) {
+            if (treeSearchField != null && !treeCollapsed) {
+                treeSearchField.setFocused(true);
+            }
+            return;
+        }
+
+        if (treeSearchField != null && treeSearchField.isFocused()
+                && treeSearchField.textboxKeyTyped(typedChar, keyCode)) {
+            updateTreeSearchFromField();
+            return;
+        }
+
         boolean consumed = false;
         for (GuiTextField field : allFields()) {
             if (field.isFocused() && field.textboxKeyTyped(typedChar, keyCode)) {
@@ -1722,6 +1872,9 @@ public class GuiAutoFollowManager extends ThemedGuiScreen {
     @Override
     public void updateScreen() {
         super.updateScreen();
+        if (treeSearchField != null) {
+            treeSearchField.updateCursorCounter();
+        }
         for (GuiTextField field : allFields()) {
             field.updateCursorCounter();
         }
@@ -1782,7 +1935,27 @@ public class GuiAutoFollowManager extends ThemedGuiScreen {
             return;
         }
 
-        int contentY = treeY + 22;
+        layoutTreeSearchField();
+        treeSearchClearBounds = null;
+        drawThemedTextField(treeSearchField);
+        if (treeSearchField.getText().trim().isEmpty() && !treeSearchField.isFocused()) {
+            drawString(fontRenderer, "搜索（中文/拼音）", treeSearchField.x + 4,
+                    treeSearchField.y + (treeSearchField.height - fontRenderer.FONT_HEIGHT) / 2, 0xFF8A96A8);
+        }
+        if (isTreeSearchActive()) {
+            int clearSize = Math.max(12, treeSearchField.height - 4);
+            int clearX = treeSearchField.x + treeSearchField.width - clearSize - 3;
+            int clearY = treeSearchField.y + (treeSearchField.height - clearSize) / 2;
+            treeSearchClearBounds = new Rectangle(clearX, clearY, clearSize, clearSize);
+            boolean hoveredClear = treeSearchClearBounds.contains(mouseX, mouseY);
+            drawRect(clearX, clearY, clearX + clearSize, clearY + clearSize,
+                    hoveredClear ? 0x99556F84 : 0x663C5366);
+            drawCenteredString(fontRenderer, "x", clearX + clearSize / 2,
+                    clearY + (clearSize - fontRenderer.FONT_HEIGHT) / 2, 0xFFFFFFFF);
+        }
+
+        int contentY = getTreeContentY();
+        int contentHeight = getTreeContentHeight();
         int visibleRows = getVisibleTreeRowCount();
         int max = Math.max(0, visibleTreeRows.size() - visibleRows);
         treeScrollOffset = Math.max(0, Math.min(treeScrollOffset, max));
@@ -1833,10 +2006,10 @@ public class GuiAutoFollowManager extends ThemedGuiScreen {
 
         if (visibleTreeRows.size() > visibleRows) {
             int thumbHeight = Math.max(18,
-                    (int) ((visibleRows / (float) Math.max(visibleRows, visibleTreeRows.size())) * (treeHeight - 28)));
-            int track = Math.max(1, (treeHeight - 28) - thumbHeight);
+                    (int) ((visibleRows / (float) Math.max(visibleRows, visibleTreeRows.size())) * contentHeight));
+            int track = Math.max(1, contentHeight - thumbHeight);
             int thumbY = contentY + (int) ((treeScrollOffset / (float) Math.max(1, max)) * track);
-            GuiTheme.drawScrollbar(treeX + treeWidth - 8, contentY, 4, treeHeight - 28, thumbY, thumbHeight);
+            GuiTheme.drawScrollbar(treeX + treeWidth - 8, contentY, 4, contentHeight, thumbY, thumbHeight);
         }
     }
 
@@ -2008,10 +2181,15 @@ public class GuiAutoFollowManager extends ThemedGuiScreen {
                 return "范围点2：圈定自动追怪区域的第二个角点坐标，与范围点1共同形成追怪区域。";
             case 5:
                 return "范围点2操作：使用当前位置快速记录范围点2。";
-            case 6:
-                return "回归点输入：填写一个回归点坐标，用于巡逻或战斗结束后的回归。回归点现在不是必填。";
-            case 7:
-                return "回归点操作：可取当前点、添加回点、删除选中的回点。只有手动添加时才会真正写入回点。";
+        }
+        if (row == getMonsterChaseYLimitRow()) {
+            return "追怪 Y 轴高度限制：自动追怪先寻找目标怪物脚下所在层；同层没有可站立位置时，最多在上下该层数的平台中寻找。默认2格。";
+        }
+        if (row == getReturnPointInputRow()) {
+            return "回归点输入：依次填写 X、Y、Z。回归会固定前往该高度，不再按人物当前层数决定。";
+        }
+        if (row == getReturnPointActionRow()) {
+            return "回归点操作：可取当前点、添加回点、删除选中的回点。旧回点没有 Y，重新取点并添加可补全固定高度。";
         }
         if (row == getReturnListStartRow()) {
             return "已添加回点：显示当前规则已经手动添加的回点列表；为空时不会自动补点。";
@@ -2141,7 +2319,8 @@ public class GuiAutoFollowManager extends ThemedGuiScreen {
             drawVerticalLine(innerX + innerWidth - 4, itemTop, itemBottom, border);
 
             String prefix = selected ? "选 " : "";
-            String text = prefix + (actualIndex + 1) + ". (" + formatDouble(point.x) + ", " + formatDouble(point.z) + ")";
+            String text = prefix + (actualIndex + 1) + ". ("
+                    + formatDouble(point.x) + ", " + getReturnPointYText(point) + ", " + formatDouble(point.z) + ")";
             int color = actualIndex == 0 ? 0xFF8CFF9E : 0xFFE8F1FA;
             drawString(fontRenderer, trimToWidth(text, innerWidth - 14), innerX + 5, itemTop + 5, color);
         }
@@ -2164,7 +2343,7 @@ public class GuiAutoFollowManager extends ThemedGuiScreen {
             return;
         }
         int width = Math.max(120, (editorX + editorWidth - 14) - editorFieldX);
-        String text = "提示：支持 Ctrl 多选、Shift 连续多选；中键对准范围内方块可添加回点；删除请在列表中选中后点击“删除选中”。";
+        String text = "提示：回点按 X/Y/Z 固定高度；支持 Ctrl 多选、Shift 连续多选；中键对准范围内方块可添加回点。";
         int color = 0xFFB8C7D9;
         drawString(fontRenderer, trimToWidth(text, width), editorFieldX, y + 4, color);
     }
@@ -2274,10 +2453,13 @@ public class GuiAutoFollowManager extends ThemedGuiScreen {
         if (row == 5) {
             return "范围点2操作";
         }
-        if (row == 6) {
-            return "回归点输入";
+        if (row == getMonsterChaseYLimitRow()) {
+            return "追怪Y轴高度限制";
         }
-        if (row == 7) {
+        if (row == getReturnPointInputRow()) {
+            return "回归点 X/Y/Z";
+        }
+        if (row == getReturnPointActionRow()) {
             return "回归点操作";
         }
 
@@ -2376,10 +2558,12 @@ public class GuiAutoFollowManager extends ThemedGuiScreen {
         fields.add(point2XField);
         fields.add(point2ZField);
         fields.add(returnPointXField);
+        fields.add(returnPointYField);
         fields.add(returnPointZField);
         fields.add(returnStayMillisField);
         fields.add(patrolStuckRestartSecondsField);
         fields.add(returnArriveDistanceField);
+        fields.add(monsterChaseYLimitField);
         fields.add(maxRecoveryDistanceField);
         fields.add(monsterVerticalRangeField);
         fields.add(monsterUpwardRangeField);
@@ -2435,6 +2619,10 @@ public class GuiAutoFollowManager extends ThemedGuiScreen {
         base.point1.z = parseDouble(point1ZField.getText(), base.point1.z);
         base.point2.x = parseDouble(point2XField.getText(), base.point2.x);
         base.point2.z = parseDouble(point2ZField.getText(), base.point2.z);
+        base.monsterChaseYLimit = Math.max(0, parseInt(monsterChaseYLimitField.getText(),
+                base.monsterChaseYLimit != null && base.monsterChaseYLimit >= 0
+                        ? base.monsterChaseYLimit
+                        : AutoFollowRule.DEFAULT_MONSTER_CHASE_Y_LIMIT));
         base.maxRecoveryDistance = parseDouble(maxRecoveryDistanceField.getText(), base.maxRecoveryDistance);
         base.monsterVerticalRange = Math.max(0.1, parseDouble(monsterVerticalRangeField.getText(),
                 base.monsterVerticalRange > 0 ? base.monsterVerticalRange : AutoFollowRule.DEFAULT_MONSTER_VERTICAL_RANGE));
@@ -2500,16 +2688,14 @@ public class GuiAutoFollowManager extends ThemedGuiScreen {
         copy.name = src.name;
         copy.category = src.category;
         copy.enabled = src.enabled;
-        copy.point1 = new AutoFollowHandler.Point(src.point1 == null ? 0.0 : src.point1.x,
-                src.point1 == null ? 0.0 : src.point1.z);
-        copy.point2 = new AutoFollowHandler.Point(src.point2 == null ? 0.0 : src.point2.x,
-                src.point2 == null ? 0.0 : src.point2.z);
-        copy.point3 = new AutoFollowHandler.Point(src.point3 == null ? 0.0 : src.point3.x,
-                src.point3 == null ? 0.0 : src.point3.z);
+        copy.point1 = AutoFollowRule.copyPoint(src.point1);
+        copy.point2 = AutoFollowRule.copyPoint(src.point2);
+        copy.point3 = AutoFollowRule.copyPoint(src.point3);
         copy.returnPoints = copyReturnPoints(src.returnPoints);
         copy.returnStayMillis = src.returnStayMillis;
         copy.patrolStuckRestartSeconds = src.patrolStuckRestartSeconds;
         copy.returnArriveDistance = src.returnArriveDistance;
+        copy.monsterChaseYLimit = src.monsterChaseYLimit;
         copy.patrolMode = src.patrolMode;
         copy.monsterVerticalRange = src.monsterVerticalRange;
         copy.monsterUpwardRange = src.monsterUpwardRange;
@@ -2548,6 +2734,7 @@ public class GuiAutoFollowManager extends ThemedGuiScreen {
         target.returnStayMillis = source.returnStayMillis;
         target.patrolStuckRestartSeconds = source.patrolStuckRestartSeconds;
         target.returnArriveDistance = source.returnArriveDistance;
+        target.monsterChaseYLimit = source.monsterChaseYLimit;
         target.patrolMode = source.patrolMode;
         target.monsterVerticalRange = source.monsterVerticalRange;
         target.monsterUpwardRange = source.monsterUpwardRange;
@@ -2678,11 +2865,21 @@ public class GuiAutoFollowManager extends ThemedGuiScreen {
         }
     }
 
+    private void updateReturnPointFromPlayer() {
+        if (mc.getRenderViewEntity() == null) {
+            return;
+        }
+        setText(returnPointXField, formatDouble(mc.getRenderViewEntity().posX));
+        setText(returnPointYField, formatDouble(Math.floor(mc.getRenderViewEntity().posY)));
+        setText(returnPointZField, formatDouble(mc.getRenderViewEntity().posZ));
+    }
+
     private void addReturnPointFromInputs() {
         double x = parseDouble(returnPointXField.getText(), Double.NaN);
+        double y = parseDouble(returnPointYField.getText(), Double.NaN);
         double z = parseDouble(returnPointZField.getText(), Double.NaN);
-        if (Double.isNaN(x) || Double.isNaN(z)) {
-            setStatus("§c回归点坐标无效", 0xFFFF8E8E);
+        if (!isFiniteCoordinate(x) || !isFiniteCoordinate(y) || !isFiniteCoordinate(z)) {
+            setStatus("§c回归点 X/Y/Z 坐标无效", 0xFFFF8E8E);
             return;
         }
 
@@ -2698,21 +2895,35 @@ public class GuiAutoFollowManager extends ThemedGuiScreen {
             }
         }
 
-        for (AutoFollowHandler.Point point : editorReturnPoints) {
-            if (point != null && Math.abs(point.x - x) < 0.01 && Math.abs(point.z - z) < 0.01) {
-                setStatus("§e该回归点已存在，无需重复添加", 0xFFFFD27F);
-                return;
-            }
+        int existingIndex = findReturnPointIndex(x, y, z);
+        if (existingIndex >= 0) {
+            setStatus("§e该回归点已存在，无需重复添加", 0xFFFFD27F);
+            return;
         }
 
-        editorReturnPoints.add(new AutoFollowHandler.Point(x, z));
+        int legacyIndex = findLegacyReturnPointIndex(x, z);
+        if (legacyIndex >= 0) {
+            editorReturnPoints.set(legacyIndex, new AutoFollowHandler.Point(x, y, z));
+            selectedReturnPointIndices.clear();
+            selectedReturnPointIndices.add(legacyIndex);
+            returnPointSelectionAnchor = legacyIndex;
+            ensureReturnPointVisible(legacyIndex);
+            clampReturnPointListScroll();
+            updateButtonStates();
+            setStatus("§a已补全旧回归点的 Y 轴高度 (" + formatDouble(x) + ", "
+                    + formatDouble(y) + ", " + formatDouble(z) + ")", 0xFF8CFF9E);
+            return;
+        }
+
+        editorReturnPoints.add(new AutoFollowHandler.Point(x, y, z));
         selectedReturnPointIndices.clear();
         selectedReturnPointIndices.add(editorReturnPoints.size() - 1);
         returnPointSelectionAnchor = editorReturnPoints.size() - 1;
         ensureReturnPointVisible(editorReturnPoints.size() - 1);
         clampReturnPointListScroll();
         updateButtonStates();
-        setStatus("§a已添加回归点 (" + formatDouble(x) + ", " + formatDouble(z) + ")", 0xFF8CFF9E);
+        setStatus("§a已添加回归点 (" + formatDouble(x) + ", " + formatDouble(y) + ", "
+                + formatDouble(z) + ")", 0xFF8CFF9E);
     }
 
     private void removeLastReturnPoint() {
@@ -2724,6 +2935,7 @@ public class GuiAutoFollowManager extends ThemedGuiScreen {
         AutoFollowHandler.Point removed = editorReturnPoints.remove(editorReturnPoints.size() - 1);
         if (removed != null) {
             setText(returnPointXField, formatDouble(removed.x));
+            setText(returnPointYField, removed.hasY() ? formatDouble(removed.y) : "");
             setText(returnPointZField, formatDouble(removed.z));
         }
         clampReturnPointListScroll();
@@ -2849,13 +3061,27 @@ public class GuiAutoFollowManager extends ThemedGuiScreen {
             return null;
         }
         BlockPos pos = result.getBlockPos();
-        return new AutoFollowHandler.Point(pos.getX(), pos.getZ());
+        return new AutoFollowHandler.Point(pos.getX(), pos.getY() + 1.0, pos.getZ());
     }
 
-    private int findReturnPointIndex(double x, double z) {
+    private int findReturnPointIndex(double x, double y, double z) {
         for (int i = 0; i < editorReturnPoints.size(); i++) {
             AutoFollowHandler.Point point = editorReturnPoints.get(i);
-            if (point != null && Math.abs(point.x - x) < 0.01 && Math.abs(point.z - z) < 0.01) {
+            if (point != null && point.hasY()
+                    && Math.abs(point.x - x) < 0.01
+                    && Math.abs(point.y - y) < 0.01
+                    && Math.abs(point.z - z) < 0.01) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private int findLegacyReturnPointIndex(double x, double z) {
+        for (int i = 0; i < editorReturnPoints.size(); i++) {
+            AutoFollowHandler.Point point = editorReturnPoints.get(i);
+            if (point != null && !point.hasY()
+                    && Math.abs(point.x - x) < 0.01 && Math.abs(point.z - z) < 0.01) {
                 return i;
             }
         }
@@ -2871,9 +3097,6 @@ public class GuiAutoFollowManager extends ThemedGuiScreen {
         Vec3d lookVec = mc.player.getLook(1.0F);
         Vec3d end = eyePos.add(lookVec.scale(64.0));
 
-        double baseY = mc.player.posY - 1.0;
-        double topY = mc.player.posY + 2.0;
-
         int bestIndex = -1;
         double bestDistanceSq = Double.MAX_VALUE;
 
@@ -2882,6 +3105,9 @@ public class GuiAutoFollowManager extends ThemedGuiScreen {
             if (point == null) {
                 continue;
             }
+
+            double baseY = point.hasY() ? point.y - 0.05 : mc.player.posY - 1.0;
+            double topY = point.hasY() ? point.y + 2.0 : mc.player.posY + 2.0;
 
             AxisAlignedBB box = new AxisAlignedBB(
                     point.x - 2.0,
@@ -2915,7 +3141,8 @@ public class GuiAutoFollowManager extends ThemedGuiScreen {
             ensureReturnPointVisible(lookedReturnPointIndex);
             updateButtonStates();
             AutoFollowHandler.Point point = editorReturnPoints.get(lookedReturnPointIndex);
-            setStatus("§e该回点已存在 (" + formatDouble(point.x) + ", " + formatDouble(point.z) + ")，删除请在列表中选中后点击“删除选中”",
+            setStatus("§e该回点已存在 (" + formatDouble(point.x) + ", " + getReturnPointYText(point)
+                            + ", " + formatDouble(point.z) + ")，删除请在列表中选中后点击“删除选中”",
                     0xFFFFD27F);
             return;
         }
@@ -2936,7 +3163,7 @@ public class GuiAutoFollowManager extends ThemedGuiScreen {
             return;
         }
 
-        int existingIndex = findReturnPointIndex(target.x, target.z);
+        int existingIndex = findReturnPointIndex(target.x, target.y, target.z);
         if (existingIndex >= 0) {
             selectedReturnPointIndices.clear();
             selectedReturnPointIndices.add(existingIndex);
@@ -2947,14 +3174,28 @@ public class GuiAutoFollowManager extends ThemedGuiScreen {
             return;
         }
 
-        editorReturnPoints.add(new AutoFollowHandler.Point(target.x, target.z));
+        int legacyIndex = findLegacyReturnPointIndex(target.x, target.z);
+        if (legacyIndex >= 0) {
+            editorReturnPoints.set(legacyIndex, target);
+            selectedReturnPointIndices.clear();
+            selectedReturnPointIndices.add(legacyIndex);
+            returnPointSelectionAnchor = legacyIndex;
+            ensureReturnPointVisible(legacyIndex);
+            clampReturnPointListScroll();
+            updateButtonStates();
+            setStatus("§a已通过中键补全旧回点的 Y 轴高度", 0xFF8CFF9E);
+            return;
+        }
+
+        editorReturnPoints.add(target);
         selectedReturnPointIndices.clear();
         selectedReturnPointIndices.add(editorReturnPoints.size() - 1);
         returnPointSelectionAnchor = editorReturnPoints.size() - 1;
         ensureReturnPointVisible(editorReturnPoints.size() - 1);
         clampReturnPointListScroll();
         updateButtonStates();
-        setStatus("§a已通过中键添加回点 (" + formatDouble(target.x) + ", " + formatDouble(target.z) + ")", 0xFF8CFF9E);
+        setStatus("§a已通过中键添加回点 (" + formatDouble(target.x) + ", "
+                + formatDouble(target.y) + ", " + formatDouble(target.z) + ")", 0xFF8CFF9E);
     }
 
     private List<AutoFollowHandler.Point> copyReturnPoints(List<AutoFollowHandler.Point> source) {
@@ -3018,7 +3259,7 @@ public class GuiAutoFollowManager extends ThemedGuiScreen {
         if (target.highlightCategoryIndex >= 0 && target.highlightCategoryIndex < visibleTreeRows.size()) {
             int drawIndex = target.highlightCategoryIndex - treeScrollOffset;
             if (drawIndex >= 0 && drawIndex < getVisibleTreeRowCount()) {
-                int rowY = treeY + 22 + drawIndex * TREE_ROW_HEIGHT;
+                int rowY = getTreeContentY() + drawIndex * TREE_ROW_HEIGHT;
                 drawRect(treeX + 5, rowY, treeX + treeWidth - 9, rowY + TREE_ROW_HEIGHT - 2, 0x553A86B8);
             }
         }
@@ -3080,7 +3321,7 @@ public class GuiAutoFollowManager extends ThemedGuiScreen {
     }
 
     private int getTreeRowTop(int actualIndex) {
-        return treeY + 22 + (actualIndex - treeScrollOffset) * TREE_ROW_HEIGHT;
+        return getTreeContentY() + (actualIndex - treeScrollOffset) * TREE_ROW_HEIGHT;
     }
 
     private int getInsertionLineY(int actualIndex, boolean afterRow) {
@@ -3465,7 +3706,15 @@ public class GuiAutoFollowManager extends ThemedGuiScreen {
     }
 
     private int getVisibleTreeRowCount() {
-        return Math.max(1, (treeHeight - 26) / TREE_ROW_HEIGHT);
+        return Math.max(1, getTreeContentHeight() / TREE_ROW_HEIGHT);
+    }
+
+    private int getTreeContentY() {
+        return treeY + TREE_SEARCH_TOP_OFFSET + TREE_SEARCH_FIELD_HEIGHT + TREE_SEARCH_BOTTOM_GAP;
+    }
+
+    private int getTreeContentHeight() {
+        return Math.max(TREE_ROW_HEIGHT, treeY + treeHeight - getTreeContentY() - 4);
     }
 
     private int getVisibleCardCount() {
@@ -3473,7 +3722,7 @@ public class GuiAutoFollowManager extends ThemedGuiScreen {
     }
 
     private int getTreeRowIndexAt(int mouseY) {
-        int contentY = treeY + 22;
+        int contentY = getTreeContentY();
         int localY = mouseY - contentY;
         if (localY < 0) {
             return -1;
@@ -3596,6 +3845,17 @@ public class GuiAutoFollowManager extends ThemedGuiScreen {
         return COORD_FORMAT.format(value);
     }
 
+    private boolean isFiniteCoordinate(double value) {
+        return !Double.isNaN(value) && !Double.isInfinite(value);
+    }
+
+    private String getReturnPointYText(AutoFollowHandler.Point point) {
+        if (point == null) {
+            return "--";
+        }
+        return point.hasY() ? formatDouble(point.y) : "旧版无Y";
+    }
+
     private String getReturnPointSummary(AutoFollowRule rule) {
         if (rule == null) {
             return "回点: --";
@@ -3606,12 +3866,16 @@ public class GuiAutoFollowManager extends ThemedGuiScreen {
         AutoFollowHandler.Point primary = rule.getPrimaryReturnPoint();
         return "回点数:" + count
                 + " 首点(" + formatDouble(primary == null ? 0 : primary.x)
+                + ", " + getReturnPointYText(primary)
                 + ", " + formatDouble(primary == null ? 0 : primary.z) + ")"
                 + " 停留:" + Math.max(1, rule.returnStayMillis) + "ms"
                 + " 防卡:" + Math.max(1, rule.patrolStuckRestartSeconds) + "s"
                 + " 到达:" + formatDouble(rule.returnArriveDistance <= 0
                 ? AutoFollowRule.DEFAULT_RETURN_ARRIVE_DISTANCE
                 : rule.returnArriveDistance)
+                + " Y限:" + (rule.monsterChaseYLimit == null || rule.monsterChaseYLimit < 0
+                ? AutoFollowRule.DEFAULT_MONSTER_CHASE_Y_LIMIT
+                : rule.monsterChaseYLimit)
                 + " 上:" + formatDouble(rule.monsterUpwardRange <= 0
                 ? AutoFollowRule.DEFAULT_MONSTER_UPWARD_RANGE
                 : rule.monsterUpwardRange)
@@ -3637,8 +3901,9 @@ public class GuiAutoFollowManager extends ThemedGuiScreen {
                 return "--";
             }
             double dx = this.mc.player.posX - primary.x;
+            double dy = primary.hasY() ? this.mc.player.posY - primary.y : 0.0;
             double dz = this.mc.player.posZ - primary.z;
-            return formatDouble(Math.sqrt(dx * dx + dz * dz));
+            return formatDouble(Math.sqrt(dx * dx + dy * dy + dz * dz));
         }
 
         double best = Double.MAX_VALUE;
@@ -3647,8 +3912,9 @@ public class GuiAutoFollowManager extends ThemedGuiScreen {
                 continue;
             }
             double dx = this.mc.player.posX - point.x;
+            double dy = point.hasY() ? this.mc.player.posY - point.y : 0.0;
             double dz = this.mc.player.posZ - point.z;
-            best = Math.min(best, Math.sqrt(dx * dx + dz * dz));
+            best = Math.min(best, Math.sqrt(dx * dx + dy * dy + dz * dz));
         }
         return best == Double.MAX_VALUE ? "--" : formatDouble(best);
     }

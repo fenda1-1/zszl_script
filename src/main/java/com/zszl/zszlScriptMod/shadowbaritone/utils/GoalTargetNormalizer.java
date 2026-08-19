@@ -56,7 +56,7 @@ public final class GoalTargetNormalizer {
         IBlockState targetState = bsi.get0(pos.getX(), pos.getY(), pos.getZ());
         if (!BaritoneAPI.getSettings().allowBreak.value
                 && !MovementHelper.canWalkThrough(bsi, pos.getX(), pos.getY(), pos.getZ(), targetState)) {
-            GoalBlock corrected = findClosestStandableGoal(bsi, pos);
+            GoalBlock corrected = findFirstStandableGoalAboveTarget(bsi, pos);
             if (corrected != null) {
                 return corrected;
             }
@@ -73,18 +73,13 @@ public final class GoalTargetNormalizer {
         return new GoalBlock(pos.up());
     }
 
-    private static GoalBlock findClosestStandableGoal(BlockStateInterface bsi, BlockPos pos) {
-        GoalBlock upward = findStandableGoalInDirection(bsi, pos, 1);
-        if (upward != null) {
-            return upward;
-        }
-        return findStandableGoalInDirection(bsi, pos, -1);
-    }
-
-    private static GoalBlock findStandableGoalInDirection(BlockStateInterface bsi, BlockPos origin, int step) {
-        int minY = 1;
-        int maxY = 254;
-        for (int y = origin.getY() + step; y >= minY && y <= maxY; y += step) {
+    private static GoalBlock findFirstStandableGoalAboveTarget(BlockStateInterface bsi, BlockPos origin) {
+        // A coordinate inside a solid block must resolve from that coordinate upward.
+        // Never fall back to a lower or top-down scan, because either can select a
+        // different floor in the same X/Z column.
+        int firstFeetY = Math.max(1, origin.getY() + 1);
+        int maxFeetY = 254;
+        for (int y = firstFeetY; y <= maxFeetY; y++) {
             if (!MovementHelper.canWalkThrough(bsi, origin.getX(), y, origin.getZ())
                     || !MovementHelper.canWalkThrough(bsi, origin.getX(), y + 1, origin.getZ())) {
                 continue;

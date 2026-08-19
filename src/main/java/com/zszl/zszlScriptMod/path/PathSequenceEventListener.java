@@ -6024,17 +6024,20 @@ public class PathSequenceEventListener {
         int baseX = MathHelper.floor(desiredX);
         int baseY = MathHelper.floor(desiredY);
         int baseZ = MathHelper.floor(desiredZ);
-        BlockPos bestStandPos = null;
-        double bestScore = Double.MAX_VALUE;
         int maxFeetY = MathHelper.floor(mc.player.getEntityBoundingBox().minY + 0.001D) + 1;
+        BlockPos bestStandPos = null;
 
-        for (int radius = 0; radius <= 2; radius++) {
-            for (int dx = -radius; dx <= radius; dx++) {
-                for (int dz = -radius; dz <= radius; dz++) {
-                    if (radius > 0 && Math.max(Math.abs(dx), Math.abs(dz)) != radius) {
-                        continue;
-                    }
-                    for (int dy = 3; dy >= -4; dy--) {
+        // Search every nearby X/Z position on the requested level first, then
+        // move upward one layer at a time. A top-down scan can choose a
+        // platform above an otherwise usable target floor.
+        for (int dy = 0; dy <= 3 && bestStandPos == null; dy++) {
+            double bestLayerScore = Double.MAX_VALUE;
+            for (int radius = 0; radius <= 2; radius++) {
+                for (int dx = -radius; dx <= radius; dx++) {
+                    for (int dz = -radius; dz <= radius; dz++) {
+                        if (radius > 0 && Math.max(Math.abs(dx), Math.abs(dz)) != radius) {
+                            continue;
+                        }
                         BlockPos candidate = new BlockPos(baseX + dx, baseY + dy, baseZ + dz);
                         if (!isStandableHuntFeetPos(candidate, maxFeetY)) {
                             continue;
@@ -6047,15 +6050,12 @@ public class PathSequenceEventListener {
                         double dyScore = centerY - desiredY;
                         double dzScore = centerZ - desiredZ;
                         double score = dxScore * dxScore + dzScore * dzScore + dyScore * dyScore * 0.45D;
-                        if (score < bestScore) {
-                            bestScore = score;
+                        if (score < bestLayerScore) {
+                            bestLayerScore = score;
                             bestStandPos = candidate;
                         }
                     }
                 }
-            }
-            if (bestStandPos != null) {
-                break;
             }
         }
 

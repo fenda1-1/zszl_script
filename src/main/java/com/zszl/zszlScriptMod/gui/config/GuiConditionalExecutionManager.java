@@ -7,6 +7,7 @@ import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
 import com.zszl.zszlScriptMod.gui.path.GuiSequenceSelector;
 import com.zszl.zszlScriptMod.handlers.ConditionalExecutionHandler;
 import com.zszl.zszlScriptMod.system.ConditionalRule;
+import com.zszl.zszlScriptMod.utils.PinyinSearchHelper;
 import net.minecraft.client.gui.GuiButton;
 import net.minecraft.client.gui.GuiScreen;
 import net.minecraft.client.gui.GuiTextField;
@@ -15,6 +16,7 @@ import org.lwjgl.input.Keyboard;
 import org.lwjgl.input.Mouse;
 
 import java.io.IOException;
+import java.awt.Rectangle;
 import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -43,6 +45,9 @@ public class GuiConditionalExecutionManager extends ThemedGuiScreen {
     private static final int BTN_TOGGLE_ANTI_STUCK = 112;
 
     private static final int TREE_ROW_HEIGHT = 18;
+    private static final int TREE_SEARCH_FIELD_HEIGHT = 16;
+    private static final int TREE_SEARCH_TOP_OFFSET = 24;
+    private static final int TREE_SEARCH_BOTTOM_GAP = 4;
     private static final int CARD_HEIGHT = 56;
     private static final int CARD_GAP = 6;
     private static final long CARD_DOUBLE_CLICK_WINDOW_MS = 300L;
@@ -95,6 +100,7 @@ public class GuiConditionalExecutionManager extends ThemedGuiScreen {
     private int editorRowStartY;
     private int editorVisibleRows;
 
+    private GuiTextField treeSearchField;
     private GuiTextField nameField;
     private GuiTextField categoryField;
     private GuiTextField sequenceField;
@@ -147,6 +153,8 @@ public class GuiConditionalExecutionManager extends ThemedGuiScreen {
     private boolean treeDragging = false;
     private DragPayload activeDragPayload = null;
     private TreeDropTarget currentTreeDropTarget = null;
+    private Rectangle treeSearchClearBounds = null;
+    private String treeSearchQuery = "";
 
     private String statusMessage = "§7使用指南：左键筛选/折叠，右键分组或卡片打开菜单，滚轮可滚动右侧规则编辑器";
     private int statusColor = 0xFFB8C7D9;
@@ -161,6 +169,7 @@ public class GuiConditionalExecutionManager extends ThemedGuiScreen {
         this.buttonList.clear();
 
         recalcLayout();
+        initTreeSearchField();
         initEditorFields();
         initButtons();
         refreshData(false);
@@ -202,6 +211,35 @@ public class GuiConditionalExecutionManager extends ThemedGuiScreen {
         editorFieldX = editorX + 92;
         editorRowStartY = editorY + 28;
         editorVisibleRows = Math.max(1, (editorHeight - 38) / EDITOR_ROW_HEIGHT);
+        layoutTreeSearchField();
+    }
+
+    private void initTreeSearchField() {
+        if (treeSearchField == null) {
+            treeSearchField = new GuiTextField(2020, this.fontRenderer, 0, 0, 100, TREE_SEARCH_FIELD_HEIGHT);
+            treeSearchField.setMaxStringLength(120);
+            treeSearchField.setCanLoseFocus(true);
+            treeSearchField.setEnableBackgroundDrawing(false);
+            treeSearchField.setText(treeSearchQuery);
+        }
+        layoutTreeSearchField();
+    }
+
+    private void layoutTreeSearchField() {
+        if (treeSearchField == null) {
+            return;
+        }
+        if (treeCollapsed) {
+            treeSearchField.x = -2000;
+            treeSearchField.y = -2000;
+            treeSearchField.setFocused(false);
+            treeSearchClearBounds = null;
+            return;
+        }
+        treeSearchField.x = treeX + 6;
+        treeSearchField.y = treeY + TREE_SEARCH_TOP_OFFSET;
+        treeSearchField.width = Math.max(30, treeWidth - 20);
+        treeSearchField.height = TREE_SEARCH_FIELD_HEIGHT;
     }
 
     private void initEditorFields() {
@@ -376,12 +414,20 @@ public class GuiConditionalExecutionManager extends ThemedGuiScreen {
     private void rebuildTreeRows() {
         visibleTreeRows.clear();
         visibleTreeRows.add(TreeRow.allRow("全部规则"));
+        String normalizedSearch = PinyinSearchHelper.normalizeQuery(treeSearchQuery);
+        boolean searchActive = !normalizedSearch.isEmpty();
         for (String category : categories) {
+            boolean categoryMatches = PinyinSearchHelper.matchesNormalized(category, normalizedSearch);
+            boolean hasMatchingRule = categoryMatches || categoryHasMatchingRule(category, normalizedSearch);
+            if (searchActive && !hasMatchingRule) {
+                continue;
+            }
             visibleTreeRows.add(TreeRow.categoryRow(category));
-            if (expandedCategories.contains(category)) {
+            if (expandedCategories.contains(category) || searchActive) {
                 for (int ruleIndex = 0; ruleIndex < allRules.size(); ruleIndex++) {
                     ConditionalRule rule = allRules.get(ruleIndex);
-                    if (category.equals(getRuleCategory(rule))) {
+                    if (category.equals(getRuleCategory(rule))
+                            && (!searchActive || categoryMatches || matchesRuleSearch(rule, normalizedSearch))) {
                         visibleTreeRows.add(TreeRow.ruleRow(category, safe(rule.name), safe(rule.name), ruleIndex));
                     }
                 }
@@ -392,8 +438,11 @@ public class GuiConditionalExecutionManager extends ThemedGuiScreen {
 
     private void rebuildVisibleRules() {
         visibleRules.clear();
+        String normalizedSearch = PinyinSearchHelper.normalizeQuery(treeSearchQuery);
+        boolean searchActive = !normalizedSearch.isEmpty();
         for (ConditionalRule rule : allRules) {
-            if (CATEGORY_ALL.equals(selectedCategory) || selectedCategory.equals(getRuleCategory(rule))) {
+            if ((searchActive || CATEGORY_ALL.equals(selectedCategory) || selectedCategory.equals(getRuleCategory(rule)))
+                    && matchesRuleSearch(rule, normalizedSearch)) {
                 visibleRules.add(rule);
             }
         }
@@ -403,6 +452,53 @@ public class GuiConditionalExecutionManager extends ThemedGuiScreen {
         if (selectedVisibleIndex >= visibleRules.size()) {
             selectedVisibleIndex = visibleRules.isEmpty() ? -1 : 0;
         }
+    }
+
+    private boolean categoryHasMatchingRule(String category, String normalizedSearch) {
+        for (ConditionalRule rule : allRules) {
+            if (category.equals(getRuleCategory(rule)) && matchesRuleSearch(rule, normalizedSearch)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean matchesRuleSearch(ConditionalRule rule, String normalizedSearch) {
+        if (normalizedSearch.isEmpty()) {
+            return true;
+        }
+        return PinyinSearchHelper.matchesNormalized(safe(rule == null ? "" : rule.name)
+                + " " + getRuleCategory(rule), normalizedSearch);
+    }
+
+    private void updateTreeSearchFromField() {
+        String newQuery = treeSearchField == null ? "" : PinyinSearchHelper.normalizeQuery(treeSearchField.getText());
+        if (treeSearchQuery.equals(newQuery)) {
+            return;
+        }
+        treeSearchQuery = newQuery;
+        treeScrollOffset = 0;
+        listScrollOffset = 0;
+        rebuildTreeRows();
+        rebuildVisibleRules();
+        loadSelectionOrNew();
+    }
+
+    private void clearTreeSearch(boolean keepFocus) {
+        treeSearchQuery = "";
+        if (treeSearchField != null) {
+            treeSearchField.setText("");
+            treeSearchField.setFocused(keepFocus);
+        }
+        treeScrollOffset = 0;
+        listScrollOffset = 0;
+        rebuildTreeRows();
+        rebuildVisibleRules();
+        loadSelectionOrNew();
+    }
+
+    private boolean isTreeSearchActive() {
+        return !treeSearchQuery.isEmpty();
     }
 
     private void loadSelectionOrNew() {
@@ -769,6 +865,19 @@ public class GuiConditionalExecutionManager extends ThemedGuiScreen {
             closeContextMenu();
         }
 
+        if (treeSearchField != null) {
+            if (mouseButton == 0 && treeSearchClearBounds != null && treeSearchClearBounds.contains(mouseX, mouseY)) {
+                clearTreeSearch(true);
+                return;
+            }
+            boolean clickedSearchField = isMouseOverField(mouseX, mouseY, treeSearchField);
+            treeSearchField.mouseClicked(mouseX, mouseY, mouseButton);
+            if (clickedSearchField) {
+                return;
+            }
+            treeSearchField.setFocused(false);
+        }
+
         if (mouseButton == 0) {
             if (isInTreeCollapseButton(mouseX, mouseY)) {
                 treeCollapsed = !treeCollapsed;
@@ -875,7 +984,7 @@ public class GuiConditionalExecutionManager extends ThemedGuiScreen {
 
     @Override
     protected void mouseClickMove(int mouseX, int mouseY, int clickedMouseButton, long timeSinceLastClick) {
-        if (clickedMouseButton == 0 && pendingTreePressIndex >= 0 && !treeDragging) {
+        if (clickedMouseButton == 0 && pendingTreePressIndex >= 0 && !treeDragging && !isTreeSearchActive()) {
             if (Math.abs(mouseX - pendingTreePressMouseX) >= 4 || Math.abs(mouseY - pendingTreePressMouseY) >= 4) {
                 TreeRow row = pendingTreePressIndex >= 0 && pendingTreePressIndex < visibleTreeRows.size()
                         ? visibleTreeRows.get(pendingTreePressIndex)
@@ -997,6 +1106,20 @@ public class GuiConditionalExecutionManager extends ThemedGuiScreen {
             return;
         }
 
+        if (keyCode == Keyboard.KEY_F
+                && (Keyboard.isKeyDown(Keyboard.KEY_LCONTROL) || Keyboard.isKeyDown(Keyboard.KEY_RCONTROL))) {
+            if (treeSearchField != null && !treeCollapsed) {
+                treeSearchField.setFocused(true);
+            }
+            return;
+        }
+
+        if (treeSearchField != null && treeSearchField.isFocused()
+                && treeSearchField.textboxKeyTyped(typedChar, keyCode)) {
+            updateTreeSearchFromField();
+            return;
+        }
+
         boolean consumed = false;
         for (GuiTextField field : allFields()) {
             if (field.isFocused() && field.textboxKeyTyped(typedChar, keyCode)) {
@@ -1012,6 +1135,9 @@ public class GuiConditionalExecutionManager extends ThemedGuiScreen {
     @Override
     public void updateScreen() {
         super.updateScreen();
+        if (treeSearchField != null) {
+            treeSearchField.updateCursorCounter();
+        }
         for (GuiTextField field : allFields()) {
             field.updateCursorCounter();
         }
@@ -1057,7 +1183,27 @@ public class GuiConditionalExecutionManager extends ThemedGuiScreen {
             return;
         }
 
-        int contentY = treeY + 22;
+        layoutTreeSearchField();
+        treeSearchClearBounds = null;
+        drawThemedTextField(treeSearchField);
+        if (treeSearchField.getText().trim().isEmpty() && !treeSearchField.isFocused()) {
+            drawString(fontRenderer, "搜索（中文/拼音）", treeSearchField.x + 4,
+                    treeSearchField.y + (treeSearchField.height - fontRenderer.FONT_HEIGHT) / 2, 0xFF8A96A8);
+        }
+        if (isTreeSearchActive()) {
+            int clearSize = Math.max(12, treeSearchField.height - 4);
+            int clearX = treeSearchField.x + treeSearchField.width - clearSize - 3;
+            int clearY = treeSearchField.y + (treeSearchField.height - clearSize) / 2;
+            treeSearchClearBounds = new Rectangle(clearX, clearY, clearSize, clearSize);
+            boolean hoveredClear = treeSearchClearBounds.contains(mouseX, mouseY);
+            drawRect(clearX, clearY, clearX + clearSize, clearY + clearSize,
+                    hoveredClear ? 0x99556F84 : 0x663C5366);
+            drawCenteredString(fontRenderer, "x", clearX + clearSize / 2,
+                    clearY + (clearSize - fontRenderer.FONT_HEIGHT) / 2, 0xFFFFFFFF);
+        }
+
+        int contentY = getTreeContentY();
+        int contentHeight = getTreeContentHeight();
         int visibleRows = getVisibleTreeRowCount();
         int max = Math.max(0, visibleTreeRows.size() - visibleRows);
         treeScrollOffset = Math.max(0, Math.min(treeScrollOffset, max));
@@ -1108,10 +1254,10 @@ public class GuiConditionalExecutionManager extends ThemedGuiScreen {
 
         if (visibleTreeRows.size() > visibleRows) {
             int thumbHeight = Math.max(18,
-                    (int) ((visibleRows / (float) Math.max(visibleRows, visibleTreeRows.size())) * (treeHeight - 28)));
-            int track = Math.max(1, (treeHeight - 28) - thumbHeight);
+                    (int) ((visibleRows / (float) Math.max(visibleRows, visibleTreeRows.size())) * contentHeight));
+            int track = Math.max(1, contentHeight - thumbHeight);
             int thumbY = contentY + (int) ((treeScrollOffset / (float) Math.max(1, max)) * track);
-            GuiTheme.drawScrollbar(treeX + treeWidth - 8, contentY, 4, treeHeight - 28, thumbY, thumbHeight);
+            GuiTheme.drawScrollbar(treeX + treeWidth - 8, contentY, 4, contentHeight, thumbY, thumbHeight);
         }
     }
 
@@ -1498,7 +1644,7 @@ public class GuiConditionalExecutionManager extends ThemedGuiScreen {
         if (target.highlightCategoryIndex >= 0 && target.highlightCategoryIndex < visibleTreeRows.size()) {
             int drawIndex = target.highlightCategoryIndex - treeScrollOffset;
             if (drawIndex >= 0 && drawIndex < getVisibleTreeRowCount()) {
-                int rowY = treeY + 22 + drawIndex * TREE_ROW_HEIGHT;
+                int rowY = getTreeContentY() + drawIndex * TREE_ROW_HEIGHT;
                 drawRect(treeX + 5, rowY, treeX + treeWidth - 9, rowY + TREE_ROW_HEIGHT - 2, 0x553A86B8);
             }
         }
@@ -1564,7 +1710,7 @@ public class GuiConditionalExecutionManager extends ThemedGuiScreen {
     }
 
     private int getTreeRowTop(int actualIndex) {
-        return treeY + 22 + (actualIndex - treeScrollOffset) * TREE_ROW_HEIGHT;
+        return getTreeContentY() + (actualIndex - treeScrollOffset) * TREE_ROW_HEIGHT;
     }
 
     private int getInsertionLineY(int actualIndex, boolean afterRow) {
@@ -1953,7 +2099,15 @@ public class GuiConditionalExecutionManager extends ThemedGuiScreen {
     }
 
     private int getVisibleTreeRowCount() {
-        return Math.max(1, (treeHeight - 26) / TREE_ROW_HEIGHT);
+        return Math.max(1, getTreeContentHeight() / TREE_ROW_HEIGHT);
+    }
+
+    private int getTreeContentY() {
+        return treeY + TREE_SEARCH_TOP_OFFSET + TREE_SEARCH_FIELD_HEIGHT + TREE_SEARCH_BOTTOM_GAP;
+    }
+
+    private int getTreeContentHeight() {
+        return Math.max(TREE_ROW_HEIGHT, treeY + treeHeight - getTreeContentY() - 4);
     }
 
     private int getVisibleCardCount() {
@@ -1961,7 +2115,7 @@ public class GuiConditionalExecutionManager extends ThemedGuiScreen {
     }
 
     private int getTreeRowIndexAt(int mouseY) {
-        int contentY = treeY + 22;
+        int contentY = getTreeContentY();
         int localY = mouseY - contentY;
         if (localY < 0) {
             return -1;

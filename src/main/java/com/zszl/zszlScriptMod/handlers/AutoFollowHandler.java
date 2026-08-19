@@ -40,8 +40,10 @@ import net.minecraft.entity.passive.EntityVillager;
 import net.minecraft.entity.passive.EntityWaterMob;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.init.Blocks;
+import net.minecraft.util.EnumFacing;
 import net.minecraft.util.math.AxisAlignedBB;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.util.text.TextComponentString;
 import net.minecraft.util.text.TextFormatting;
@@ -102,6 +104,7 @@ public class AutoFollowHandler {
     private static final int HUNT_GOTO_INTERVAL_TICKS = 20; // 增加到20 ticks (1秒) 间隔
     private static final double HUNT_FIXED_DISTANCE_TOLERANCE = 0.35D;
     private static final int MONSTER_SCORE_SCAN_INTERVAL_TICKS = 4;
+    private static final int HUNT_DESTINATION_HORIZONTAL_SEARCH_RADIUS = 2;
 
     private static volatile List<ScoredMonsterInfo> lastScoredMonsters = Collections.emptyList();
     private static int lastMonsterScoreScanTick = -99999;
@@ -135,11 +138,33 @@ public class AutoFollowHandler {
 
     public static class Point {
         public double x;
+        /**
+         * Optional fixed Y coordinate. Older rule files only contain X/Z and
+         * intentionally keep this value unset so they retain their old behavior.
+         */
+        public Double y;
         public double z;
 
         public Point(double x, double z) {
+            this(x, null, z);
+        }
+
+        public Point(double x, double y, double z) {
+            this(x, Double.valueOf(y), z);
+        }
+
+        public Point(double x, Double y, double z) {
             this.x = x;
+            this.y = isFinite(y) ? y : null;
             this.z = z;
+        }
+
+        public boolean hasY() {
+            return isFinite(y);
+        }
+
+        private static boolean isFinite(Double value) {
+            return value != null && !Double.isNaN(value) && !Double.isInfinite(value);
         }
     }
 
@@ -556,7 +581,7 @@ public class AutoFollowHandler {
         replaceLastScoredMonsters(Collections.<ScoredMonsterInfo>emptyList());
 
         if (mc.player != null) {
-            currentReturnPointIndex = getNearestReturnPointIndex(mc.player.posX, mc.player.posZ);
+            currentReturnPointIndex = getNearestReturnPointIndex(mc.player.posX, mc.player.posY, mc.player.posZ);
         } else {
             currentReturnPointIndex = selectInitialReturnPointIndex();
         }
@@ -655,8 +680,7 @@ public class AutoFollowHandler {
 
             Point unfinishedReturnPoint = getCurrentReturnPoint();
             if (escapeDestination == null
-                    && !zszlScriptMod.ArriveAt(unfinishedReturnPoint.x, Double.NaN, unfinishedReturnPoint.z,
-                            getReturnArriveDistance())
+                    && !isAtReturnPoint(unfinishedReturnPoint, getReturnArriveDistance())
                     && handleInterruptedPatrolRoute(player, currentPos)) {
                 lastTickPlayerPos = currentPos;
                 return;
@@ -679,7 +703,7 @@ public class AutoFollowHandler {
             } else {
                 Point returnPoint = getCurrentReturnPoint();
                 double tolerance = getReturnArriveDistance();
-                arrived = zszlScriptMod.ArriveAt(returnPoint.x, Double.NaN, returnPoint.z, tolerance);
+                arrived = isAtReturnPoint(returnPoint, tolerance);
                 if (arrived) {
                     isMovingToPoint = false;
                     returningToCenterFromOutOfBounds = false;
@@ -757,7 +781,7 @@ public class AutoFollowHandler {
                     return;
                 }
 
-                currentReturnPointIndex = getNearestReturnPointIndex(playerX, playerZ);
+                currentReturnPointIndex = getNearestReturnPointIndex(playerX, player.posY, playerZ);
                 Point returnPoint = getCurrentReturnPoint();
                 double distToCenter = distanceToPoint(playerX, playerZ, returnPoint);
 
@@ -901,11 +925,21 @@ public class AutoFollowHandler {
                 : (distanceSq > minGotoDistance * minGotoDistance));
 
         if (shouldSendGoto) {
+            double destinationX = targetPos.x;
+            double destinationZ = targetPos.z;
             if (fixedDistanceMode) {
                 double[] destination = computeFixedDistanceHuntDestination(player, huntTargetEntity, keepDistance);
-                EmbeddedNavigationHandler.INSTANCE.startGotoXZ(destination[0], destination[1]);
+                destinationX = destination[0];
+                destinationZ = destination[1];
+            }
+
+            BlockPos destination = findBoundedHuntDestination(huntTargetEntity, destinationX, destinationZ);
+            if (destination != null) {
+                EmbeddedNavigationHandler.INSTANCE.startGoto(destination.getX() + 0.5D, destination.getY(),
+                        destination.getZ() + 0.5D);
             } else {
-                EmbeddedNavigationHandler.INSTANCE.startGotoXZ(targetPos.x, targetPos.z);
+                EmbeddedNavigationHandler.INSTANCE.stop();
+                huntMovementStopped = true;
             }
             lastHuntGotoTick = nowTick;
             lastHuntTargetEntityId = targetId;
@@ -946,6 +980,99 @@ public class AutoFollowHandler {
         double destinationX = target.posX + dx * scale;
         double destinationZ = target.posZ + dz * scale;
         return clipFixedDistanceDestination(activeRule, target.posX, target.posZ, destinationX, destinationZ);
+    }
+
+    private BlockPos findBoundedHuntDestination(Entity target, double desiredX, double desiredZ) {
+        if (target == null || mc.world == null) {
+            return null;
+        }
+
+        int targetFeetY = MathHelper.floor(target.posY);
+        int maxYDistance = activeRule == null
+                ? AutoFollowRule.DEFAULT_MONSTER_CHASE_Y_LIMIT
+                : Math.max(0, activeRule.monsterChaseYLimit == null
+                        ? AutoFollowRule.DEFAULT_MONSTER_CHASE_Y_LIMIT
+                        : activeRule.monsterChaseYLimit);
+
+        BlockPos sameLevel = findStandableHuntDestinationAtY(targetFeetY, desiredX, desiredZ);
+        if (sameLevel != null) {
+            return sameLevel;
+        }
+
+        for (int offset = 1; offset <= maxYDistance; offset++) {
+            BlockPos above = findStandableHuntDestinationAtY(targetFeetY + offset, desiredX, desiredZ);
+            if (above != null) {
+                return above;
+            }
+        }
+        return null;
+    }
+
+    private BlockPos findStandableHuntDestinationAtY(int feetY, double desiredX, double desiredZ) {
+        if (feetY <= 0 || feetY >= 255) {
+            return null;
+        }
+
+        int baseX = MathHelper.floor(desiredX);
+        int baseZ = MathHelper.floor(desiredZ);
+        BlockPos best = null;
+        double bestDistanceSq = Double.MAX_VALUE;
+        for (int radius = 0; radius <= HUNT_DESTINATION_HORIZONTAL_SEARCH_RADIUS; radius++) {
+            for (int dx = -radius; dx <= radius; dx++) {
+                for (int dz = -radius; dz <= radius; dz++) {
+                    if (radius > 0 && Math.max(Math.abs(dx), Math.abs(dz)) != radius) {
+                        continue;
+                    }
+                    BlockPos candidate = new BlockPos(baseX + dx, feetY, baseZ + dz);
+                    if (!isStandableHuntDestination(candidate)
+                            || !isPositionWithinActiveLockChaseBounds(candidate.getX() + 0.5D,
+                                    candidate.getZ() + 0.5D)) {
+                        continue;
+                    }
+
+                    double candidateX = candidate.getX() + 0.5D;
+                    double candidateZ = candidate.getZ() + 0.5D;
+                    double distanceSq = (candidateX - desiredX) * (candidateX - desiredX)
+                            + (candidateZ - desiredZ) * (candidateZ - desiredZ);
+                    if (best == null || distanceSq < bestDistanceSq) {
+                        best = candidate;
+                        bestDistanceSq = distanceSq;
+                    }
+                }
+            }
+            if (best != null) {
+                return best;
+            }
+        }
+        return null;
+    }
+
+    private boolean isStandableHuntDestination(BlockPos feetPos) {
+        if (feetPos == null || mc.world == null) {
+            return false;
+        }
+
+        IBlockState feetState = mc.world.getBlockState(feetPos);
+        IBlockState headState = mc.world.getBlockState(feetPos.up());
+        if (feetState.getMaterial().blocksMovement() || headState.getMaterial().blocksMovement()) {
+            return false;
+        }
+
+        IBlockState supportState = mc.world.getBlockState(feetPos.down());
+        if (!supportState.getMaterial().blocksMovement()) {
+            return false;
+        }
+        try {
+            if (supportState.isSideSolid(mc.world, feetPos.down(), EnumFacing.UP)) {
+                return true;
+            }
+        } catch (Throwable ignored) {
+        }
+
+        AxisAlignedBB collisionBox = supportState.getCollisionBoundingBox(mc.world, feetPos.down());
+        return collisionBox != null
+                && collisionBox != Block.NULL_AABB
+                && collisionBox.maxY >= 1.0D - 1.0E-4D;
     }
 
     private double[] clipFixedDistanceDestination(AutoFollowRule rule, double centerX, double centerZ,
@@ -1008,7 +1135,7 @@ public class AutoFollowHandler {
             return;
         }
 
-        boolean atPoint = zszlScriptMod.ArriveAt(returnPoint.x, Double.NaN, returnPoint.z, getReturnArriveDistance());
+        boolean atPoint = isAtReturnPoint(returnPoint, getReturnArriveDistance());
         if (!atPoint) {
             if (!isMovingToPoint || !centerReturnCommandIssued) {
                 startMoveToCurrentReturnPoint();
@@ -1074,7 +1201,7 @@ public class AutoFollowHandler {
         resetPatrolStuckMonitor();
         centerReturnCommandIssued = true;
         ModUtils.DelayScheduler.instance.schedule(() -> {
-            EmbeddedNavigationHandler.INSTANCE.startGotoXZ(targetPoint.x, targetPoint.z);
+            startGotoPoint(targetPoint, false);
         }, COMMAND_DELAY_TICKS);
     }
 
@@ -1110,7 +1237,7 @@ public class AutoFollowHandler {
         Point unfinishedPoint = getCurrentReturnPoint();
         resetPatrolStuckMonitor();
         centerReturnCommandIssued = true;
-        EmbeddedNavigationHandler.INSTANCE.startGotoXZ(unfinishedPoint.x, unfinishedPoint.z, true);
+        startGotoPoint(unfinishedPoint, true);
         player.sendMessage(new TextComponentString(
                 TextFormatting.AQUA + "[自动追怪] " + TextFormatting.YELLOW
                         + "巡逻寻路停留超过 " + Math.max(1, activeRule.patrolStuckRestartSeconds)
@@ -1146,7 +1273,7 @@ public class AutoFollowHandler {
             currentReturnPointIndex = 0;
         }
         Point point = returnPoints.get(currentReturnPointIndex);
-        return point == null ? new Point(0, 0) : new Point(point.x, point.z);
+        return point == null ? new Point(0, 0) : AutoFollowRule.copyPoint(point);
     }
 
     private static Point getRandomPatrolPointWithinBounds() {
@@ -1175,7 +1302,7 @@ public class AutoFollowHandler {
         return 0;
     }
 
-    private static int getNearestReturnPointIndex(double x, double z) {
+    private static int getNearestReturnPointIndex(double x, double y, double z) {
         if (activeRule == null) {
             return 0;
         }
@@ -1195,6 +1322,10 @@ public class AutoFollowHandler {
             double dx = x - point.x;
             double dz = z - point.z;
             double distSq = dx * dx + dz * dz;
+            if (point.hasY()) {
+                double dy = y - point.y;
+                distSq += dy * dy;
+            }
             if (distSq < bestDistSq) {
                 bestDistSq = distSq;
                 bestIndex = i;
@@ -1240,6 +1371,24 @@ public class AutoFollowHandler {
             return AutoFollowRule.DEFAULT_RETURN_ARRIVE_DISTANCE;
         }
         return activeRule.returnArriveDistance;
+    }
+
+    private static boolean isAtReturnPoint(Point point, double tolerance) {
+        if (point == null) {
+            return false;
+        }
+        return zszlScriptMod.ArriveAt(point.x, point.hasY() ? point.y : Double.NaN, point.z, tolerance);
+    }
+
+    private static void startGotoPoint(Point point, boolean bypassGotoThrottle) {
+        if (point == null) {
+            return;
+        }
+        if (point.hasY()) {
+            EmbeddedNavigationHandler.INSTANCE.startGoto(point.x, point.y, point.z, bypassGotoThrottle);
+        } else {
+            EmbeddedNavigationHandler.INSTANCE.startGotoXZ(point.x, point.z, bypassGotoThrottle);
+        }
     }
 
     private boolean shouldYieldChaseToKillAura(EntityPlayerSP player) {
@@ -1906,12 +2055,14 @@ public class AutoFollowHandler {
                         continue;
                     }
                     float alpha = i == currentReturnPointIndex ? 0.34F : 0.22F;
+                    double returnBaseY = point.hasY() ? point.y - 0.05D : baseY;
+                    double returnTopY = point.hasY() ? point.y + 2.0D : topY;
                     AxisAlignedBB returnOuter = new AxisAlignedBB(
                             point.x - 2.0,
-                            baseY,
+                            returnBaseY,
                             point.z - 2.0,
                             point.x + 3.0,
-                            topY,
+                            returnTopY,
                             point.z + 3.0);
                     renderWallShell(returnOuter, viewerX, viewerY, viewerZ, 0.20F, 1.0F, 0.35F, alpha);
                 }

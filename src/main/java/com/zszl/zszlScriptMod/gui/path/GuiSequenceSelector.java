@@ -5,6 +5,7 @@ import com.zszl.zszlScriptMod.gui.MainUiLayoutManager;
 import com.zszl.zszlScriptMod.gui.components.GuiTheme;
 import com.zszl.zszlScriptMod.gui.components.ThemedButton;
 import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
+import com.zszl.zszlScriptMod.utils.PinyinSearchHelper;
 import com.zszl.zszlScriptMod.path.PathSequenceManager;
 import com.zszl.zszlScriptMod.path.PathSequenceManager.PathSequence;
 import java.awt.Rectangle;
@@ -287,20 +288,14 @@ public class GuiSequenceSelector extends ThemedGuiScreen {
         if (sequence == null) {
             return false;
         }
-        if (normalizedQuery.isEmpty()) {
+        String query = PinyinSearchHelper.normalizeQuery(normalizedQuery);
+        if (query.isEmpty()) {
             return true;
         }
 
-        String lowerQuery = normalizedQuery.toLowerCase(Locale.ROOT);
-        String name = normalize(sequence.getName()).toLowerCase(Locale.ROOT);
-        String displayName = getSequenceDisplayName(sequence).toLowerCase(Locale.ROOT);
-        String category = normalize(sequence.getCategory()).toLowerCase(Locale.ROOT);
-        String subCategory = normalize(sequence.getSubCategory()).toLowerCase(Locale.ROOT);
-
-        return name.contains(lowerQuery)
-                || displayName.contains(lowerQuery)
-                || category.contains(lowerQuery)
-                || subCategory.contains(lowerQuery);
+        String searchText = normalize(sequence.getName()) + " " + getSequenceDisplayName(sequence) + " "
+                + normalize(sequence.getCategory()) + " " + normalize(sequence.getSubCategory());
+        return PinyinSearchHelper.matchesNormalized(searchText, query);
     }
 
     private List<PathSequence> applySearchFilter(List<PathSequence> sequences) {

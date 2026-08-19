@@ -25,6 +25,8 @@ import net.minecraft.client.renderer.vertex.DefaultVertexFormats;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.item.EntityItem;
 import net.minecraft.item.ItemStack;
+import net.minecraft.block.state.IBlockState;
+import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.text.TextComponentString;
 import net.minecraft.util.text.TextFormatting;
 import net.minecraftforge.client.event.RenderWorldLastEvent;
@@ -1006,11 +1008,52 @@ public class AutoPickupHandler {
             return;
         }
 
-        EmbeddedNavigationHandler.INSTANCE.startGoto(currentTargetItem.posX, currentTargetItem.posY,
-                currentTargetItem.posZ);
+        BlockPos pickupGoal = getLocalPickupGoal(currentTargetItem);
+        if (pickupGoal == null) {
+            // Do not let GoalTargetNormalizer climb through every layer in this X/Z column.
+            // The normal pickup retry path will mark the item as unreachable if this remains true.
+            EmbeddedNavigationHandler.INSTANCE.stop();
+            lastGotoTick = nowTick;
+            lastGotoTargetEntityId = targetId;
+            armPendingNavigationAttempt(nowTick);
+            if (ModConfig.isDebugFlagEnabled(DebugModule.AUTO_PICKUP)) {
+                zszlScriptMod.LOGGER.info(
+                        "[自动拾取] 掉落物所在方块上方无本层可用目标，跳过跨层修正: {} @ ({}, {}, {})",
+                        currentTargetItem.getItem().getDisplayName(), currentTargetItem.posX,
+                        currentTargetItem.posY, currentTargetItem.posZ);
+            }
+            return;
+        }
+
+        EmbeddedNavigationHandler.INSTANCE.startGoto(pickupGoal.getX() + 0.5D, pickupGoal.getY(),
+                pickupGoal.getZ() + 0.5D);
         lastGotoTick = nowTick;
         lastGotoTargetEntityId = targetId;
         armPendingNavigationAttempt(nowTick);
+    }
+
+    /**
+     * Resolves a pickup goal without the generic vertical correction that can
+     * otherwise jump from an item embedded in a lower block to an upper floor.
+     */
+    private BlockPos getLocalPickupGoal(EntityItem item) {
+        if (item == null || mc.world == null) {
+            return null;
+        }
+
+        BlockPos itemBlock = new BlockPos(item.posX, item.posY, item.posZ);
+        IBlockState itemState = mc.world.getBlockState(itemBlock);
+        if (!itemState.getMaterial().blocksMovement()) {
+            return itemBlock;
+        }
+
+        BlockPos directlyAbove = itemBlock.up();
+        if (directlyAbove.getY() >= 255) {
+            return null;
+        }
+
+        IBlockState aboveState = mc.world.getBlockState(directlyAbove);
+        return aboveState.getMaterial().blocksMovement() ? null : directlyAbove;
     }
 
     private void armPendingNavigationAttempt(int nowTick) {

@@ -588,20 +588,17 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
     }
 
     private BetterBlockPos findRecoverableStandingPos(int x, int z, int minY, int maxY) {
-        BetterBlockPos best = null;
-        double bestDistance = Double.POSITIVE_INFINITY;
-        for (int y = maxY; y >= minY; y--) {
+        // Resolve the recovery column from the requested feet level upward. A
+        // top-down scan can jump over the target floor and select an unrelated
+        // platform above it.
+        for (int y = minY; y <= maxY; y++) {
             BetterBlockPos candidate = new BetterBlockPos(x, y, z);
             if (!canOccupyRecoveryPosition(candidate)) {
                 continue;
             }
-            double distance = Math.abs(ctx.player().posY - candidate.y);
-            if (distance < bestDistance) {
-                bestDistance = distance;
-                best = candidate;
-            }
+            return candidate;
         }
-        return best;
+        return null;
     }
 
     private boolean canOccupyRecoveryPosition(BetterBlockPos pos) {

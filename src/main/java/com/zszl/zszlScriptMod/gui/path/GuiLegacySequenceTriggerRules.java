@@ -14,6 +14,7 @@ import com.zszl.zszlScriptMod.path.runtime.ScopedRuntimeVariables;
 import com.zszl.zszlScriptMod.path.trigger.LegacySequenceTriggerManager;
 import com.zszl.zszlScriptMod.path.trigger.PlayerListTriggerSupport;
 import com.zszl.zszlScriptMod.utils.PacketCaptureHandler;
+import com.zszl.zszlScriptMod.utils.PinyinSearchHelper;
 import com.zszl.zszlScriptMod.utils.guiinspect.GuiInspectionManager;
 import net.minecraft.client.gui.GuiButton;
 import net.minecraft.client.gui.GuiScreen;
@@ -24,6 +25,7 @@ import org.lwjgl.input.Mouse;
 import org.lwjgl.opengl.GL11;
 
 import java.io.IOException;
+import java.awt.Rectangle;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashSet;
@@ -56,6 +58,9 @@ public class GuiLegacySequenceTriggerRules extends ThemedGuiScreen {
     private static final int RULE_CARD_H = 36;
     private static final int RULE_CARD_GAP = 4;
     private static final int RULE_TREE_ROW_H = 20;
+    private static final int RULE_TREE_SEARCH_FIELD_H = 16;
+    private static final int RULE_TREE_SEARCH_TOP_OFFSET = 24;
+    private static final int RULE_TREE_SEARCH_BOTTOM_GAP = 4;
     private static final int LIB_ROW_H = 28;
     private static final int TAB_BAR_H = 22;
     private static final int TAB_BAR_GAP = 4;
@@ -203,6 +208,7 @@ public class GuiLegacySequenceTriggerRules extends ThemedGuiScreen {
     private GuiTextField containsField;
     private GuiTextField noteField;
     private GuiTextField librarySearchField;
+    private GuiTextField ruleTreeSearchField;
     private GuiTextField eventTextField;
     private GuiTextField keyNameField;
     private GuiTextField idleDurationMsField;
@@ -264,6 +270,8 @@ public class GuiLegacySequenceTriggerRules extends ThemedGuiScreen {
     private String treeContextTargetCategory = "";
     private int treeContextMenuWidth = 164;
     private int treeContextMenuItemHeight = 18;
+    private String ruleTreeSearchQuery = "";
+    private Rectangle ruleTreeSearchClearBounds = null;
 
     public GuiLegacySequenceTriggerRules(GuiScreen parent) {
         this.parent = parent;
@@ -279,6 +287,7 @@ public class GuiLegacySequenceTriggerRules extends ThemedGuiScreen {
             workingCopyInitialized = true;
         }
         recalcLayout();
+        initRuleTreeSearchField();
         initFields();
         initButtons();
         if (!rules.isEmpty()) {
@@ -319,6 +328,34 @@ public class GuiLegacySequenceTriggerRules extends ThemedGuiScreen {
         labelWidth = Math.min(labelWidth, maxLabelWidth);
         fieldX = contentLeft + labelWidth + labelGap;
         fieldW = Math.max(1, contentRight - fieldX);
+        layoutRuleTreeSearchField();
+    }
+
+    private void initRuleTreeSearchField() {
+        if (ruleTreeSearchField == null) {
+            ruleTreeSearchField = createField(3020);
+            ruleTreeSearchField.setMaxStringLength(120);
+            ruleTreeSearchField.setCanLoseFocus(true);
+            ruleTreeSearchField.setText(ruleTreeSearchQuery);
+        }
+        layoutRuleTreeSearchField();
+    }
+
+    private void layoutRuleTreeSearchField() {
+        if (ruleTreeSearchField == null) {
+            return;
+        }
+        if (listCollapsed) {
+            ruleTreeSearchField.x = -2000;
+            ruleTreeSearchField.y = -2000;
+            ruleTreeSearchField.setFocused(false);
+            ruleTreeSearchClearBounds = null;
+            return;
+        }
+        ruleTreeSearchField.x = listX + 6;
+        ruleTreeSearchField.y = listY + RULE_TREE_SEARCH_TOP_OFFSET;
+        ruleTreeSearchField.width = Math.max(40, listW - 20);
+        ruleTreeSearchField.height = RULE_TREE_SEARCH_FIELD_H;
     }
 
     private void initFields() {
@@ -745,11 +782,30 @@ public class GuiLegacySequenceTriggerRules extends ThemedGuiScreen {
         if (listCollapsed) {
             return;
         }
+        layoutRuleTreeSearchField();
+        ruleTreeSearchClearBounds = null;
+        drawThemedTextField(ruleTreeSearchField);
+        if (safe(ruleTreeSearchField.getText()).trim().isEmpty() && !ruleTreeSearchField.isFocused()) {
+            drawString(fontRenderer, "搜索（中文/拼音）", ruleTreeSearchField.x + 4,
+                    ruleTreeSearchField.y + (ruleTreeSearchField.height - fontRenderer.FONT_HEIGHT) / 2,
+                    0xFF8A96A8);
+        }
+        if (isRuleTreeSearchActive()) {
+            int clearSize = Math.max(12, ruleTreeSearchField.height - 4);
+            int clearX = ruleTreeSearchField.x + ruleTreeSearchField.width - clearSize - 3;
+            int clearY = ruleTreeSearchField.y + (ruleTreeSearchField.height - clearSize) / 2;
+            ruleTreeSearchClearBounds = new Rectangle(clearX, clearY, clearSize, clearSize);
+            boolean hoveredClear = ruleTreeSearchClearBounds.contains(mouseX, mouseY);
+            drawRect(clearX, clearY, clearX + clearSize, clearY + clearSize,
+                    hoveredClear ? 0x99556F84 : 0x663C5366);
+            drawCenteredString(fontRenderer, "x", clearX + clearSize / 2,
+                    clearY + (clearSize - fontRenderer.FONT_HEIGHT) / 2, 0xFFFFFFFF);
+        }
         rebuildVisibleRuleTreeRows();
         int visible = getVisibleRuleTreeRowCount();
         maxListScroll = Math.max(0, visibleRuleTreeRows.size() - visible);
         listScroll = Math.max(0, Math.min(listScroll, maxListScroll));
-        int rowY = listY + 24;
+        int rowY = getRuleTreeContentY();
         for (int i = 0; i < visible; i++) {
             int idx = listScroll + i;
             if (idx >= visibleRuleTreeRows.size()) {
@@ -789,8 +845,8 @@ public class GuiLegacySequenceTriggerRules extends ThemedGuiScreen {
         }
 
         if (visibleRuleTreeRows.size() > visible) {
-            int barY = listY + 24;
-            int barH = Math.max(20, listH - 30);
+            int barY = getRuleTreeContentY();
+            int barH = getRuleTreeContentHeight();
             int thumbH = Math.max(18,
                     (int) ((visible / (float) Math.max(visible, visibleRuleTreeRows.size())) * barH));
             int track = Math.max(1, barH - thumbH);
@@ -802,14 +858,30 @@ public class GuiLegacySequenceTriggerRules extends ThemedGuiScreen {
     private void rebuildVisibleRuleTreeRows() {
         visibleRuleTreeRows.clear();
         ensureLocalCategoriesSynced();
+        String normalizedSearch = PinyinSearchHelper.normalizeQuery(ruleTreeSearchQuery);
+        boolean searchActive = !normalizedSearch.isEmpty();
         for (String category : categories) {
             List<Integer> groupRuleIndices = collectRuleIndicesForCategory(category);
-            String groupLabel = category + " §7(" + groupRuleIndices.size() + ")";
-            visibleRuleTreeRows.add(RuleTreeRow.group(category, groupLabel));
-            if (collapsedRuleGroups.contains(category)) {
+            List<Integer> matchingRuleIndices = new ArrayList<>();
+            for (Integer ruleIndex : groupRuleIndices) {
+                LegacySequenceTriggerManager.RuleEditModel rule = ruleIndex != null && ruleIndex >= 0
+                        && ruleIndex < rules.size() ? rules.get(ruleIndex) : null;
+                if (matchesRuleTreeSearch(rule, normalizedSearch)) {
+                    matchingRuleIndices.add(ruleIndex);
+                }
+            }
+            boolean categoryMatches = PinyinSearchHelper.matchesNormalized(category, normalizedSearch);
+            if (searchActive && !categoryMatches && matchingRuleIndices.isEmpty()) {
                 continue;
             }
-            for (Integer ruleIndex : groupRuleIndices) {
+            List<Integer> visibleRuleIndices = searchActive && !categoryMatches
+                    ? matchingRuleIndices : groupRuleIndices;
+            String groupLabel = category + " §7(" + groupRuleIndices.size() + ")";
+            visibleRuleTreeRows.add(RuleTreeRow.group(category, groupLabel));
+            if (collapsedRuleGroups.contains(category) && !searchActive) {
+                continue;
+            }
+            for (Integer ruleIndex : visibleRuleIndices) {
                 LegacySequenceTriggerManager.RuleEditModel rule = ruleIndex != null && ruleIndex >= 0
                         && ruleIndex < rules.size()
                                 ? rules.get(ruleIndex)
@@ -817,6 +889,72 @@ public class GuiLegacySequenceTriggerRules extends ThemedGuiScreen {
                 visibleRuleTreeRows.add(RuleTreeRow.rule(category, displayRuleName(rule), ruleIndex == null ? -1 : ruleIndex));
             }
         }
+    }
+
+    private boolean matchesRuleTreeSearch(LegacySequenceTriggerManager.RuleEditModel rule, String normalizedSearch) {
+        if (normalizedSearch.isEmpty()) {
+            return true;
+        }
+        if (rule == null) {
+            return false;
+        }
+        String searchText = safe(rule.name) + " " + displayRuleName(rule) + " "
+                + safe(rule.sequenceName) + " " + safe(rule.contains) + " " + safe(rule.note) + " "
+                + safe(rule.triggerType) + " " + normalizeCategory(rule.category);
+        return PinyinSearchHelper.matchesNormalized(searchText, normalizedSearch);
+    }
+
+    private void updateRuleTreeSearchFromField() {
+        String newQuery = ruleTreeSearchField == null ? ""
+                : PinyinSearchHelper.normalizeQuery(ruleTreeSearchField.getText());
+        if (ruleTreeSearchQuery.equals(newQuery)) {
+            return;
+        }
+        ruleTreeSearchQuery = newQuery;
+        listScroll = 0;
+        rebuildVisibleRuleTreeRows();
+        ensureSelectedRuleVisibleAfterSearch();
+    }
+
+    private void clearRuleTreeSearch(boolean keepFocus) {
+        ruleTreeSearchQuery = "";
+        if (ruleTreeSearchField != null) {
+            ruleTreeSearchField.setText("");
+            ruleTreeSearchField.setFocused(keepFocus);
+        }
+        listScroll = 0;
+        rebuildVisibleRuleTreeRows();
+        ensureSelectedRuleVisibleAfterSearch();
+    }
+
+    private void ensureSelectedRuleVisibleAfterSearch() {
+        boolean selectedVisible = false;
+        int firstRuleIndex = -1;
+        for (RuleTreeRow row : visibleRuleTreeRows) {
+            if (row.type != RuleTreeRow.TYPE_RULE) {
+                continue;
+            }
+            if (firstRuleIndex < 0) {
+                firstRuleIndex = row.ruleIndex;
+            }
+            if (row.ruleIndex == selectedRuleIndex) {
+                selectedVisible = true;
+                break;
+            }
+        }
+        if (!selectedVisible) {
+            selectedRuleIndex = firstRuleIndex;
+            if (selectedRuleIndex >= 0 && selectedRuleIndex < rules.size()) {
+                loadFromRule(rules.get(selectedRuleIndex));
+            } else {
+                clearEditor();
+            }
+            refreshButtons();
+        }
+    }
+
+    private boolean isRuleTreeSearchActive() {
+        return !ruleTreeSearchQuery.isEmpty();
     }
 
     private List<Integer> collectRuleIndicesForCategory(String category) {
@@ -830,18 +968,26 @@ public class GuiLegacySequenceTriggerRules extends ThemedGuiScreen {
     }
 
     private int getVisibleRuleTreeRowCount() {
-        return Math.max(1, (listH - 30) / RULE_TREE_ROW_H);
+        return Math.max(1, getRuleTreeContentHeight() / RULE_TREE_ROW_H);
+    }
+
+    private int getRuleTreeContentY() {
+        return listY + RULE_TREE_SEARCH_TOP_OFFSET + RULE_TREE_SEARCH_FIELD_H + RULE_TREE_SEARCH_BOTTOM_GAP;
+    }
+
+    private int getRuleTreeContentHeight() {
+        return Math.max(RULE_TREE_ROW_H, listY + listH - getRuleTreeContentY() - 4);
     }
 
     private int getRuleTreeRowTop(int actualIndex) {
-        return listY + 24 + (actualIndex - listScroll) * RULE_TREE_ROW_H;
+        return getRuleTreeContentY() + (actualIndex - listScroll) * RULE_TREE_ROW_H;
     }
 
     private int getRuleTreeRowIndexAt(int mouseY) {
         if (listCollapsed) {
             return -1;
         }
-        int row = (mouseY - (listY + 24)) / RULE_TREE_ROW_H;
+        int row = (mouseY - getRuleTreeContentY()) / RULE_TREE_ROW_H;
         if (row < 0) {
             return -1;
         }
@@ -1616,6 +1762,19 @@ public class GuiLegacySequenceTriggerRules extends ThemedGuiScreen {
             }
             closeTreeContextMenu();
         }
+        if (ruleTreeSearchField != null) {
+            if (mouseButton == 0 && ruleTreeSearchClearBounds != null
+                    && ruleTreeSearchClearBounds.contains(mouseX, mouseY)) {
+                clearRuleTreeSearch(true);
+                return;
+            }
+            boolean clickedSearchField = isMouseOverField(mouseX, mouseY, ruleTreeSearchField);
+            ruleTreeSearchField.mouseClicked(mouseX, mouseY, mouseButton);
+            if (clickedSearchField) {
+                return;
+            }
+            ruleTreeSearchField.setFocused(false);
+        }
         if (mouseButton == 0) {
             if (isInListCollapseButton(mouseX, mouseY)) {
                 listCollapsed = !listCollapsed;
@@ -1723,7 +1882,8 @@ public class GuiLegacySequenceTriggerRules extends ThemedGuiScreen {
 
     @Override
     protected void mouseClickMove(int mouseX, int mouseY, int clickedMouseButton, long timeSinceLastClick) {
-        if (clickedMouseButton == 0 && pendingRuleTreePressIndex >= 0 && !ruleTreeDragging) {
+        if (clickedMouseButton == 0 && pendingRuleTreePressIndex >= 0 && !ruleTreeDragging
+                && !isRuleTreeSearchActive()) {
             if (Math.abs(mouseX - pendingRuleTreePressMouseX) >= 4 || Math.abs(mouseY - pendingRuleTreePressMouseY) >= 4) {
                 rebuildVisibleRuleTreeRows();
                 RuleTreeRow row = pendingRuleTreePressIndex >= 0 && pendingRuleTreePressIndex < visibleRuleTreeRows.size()
@@ -1759,6 +1919,18 @@ public class GuiLegacySequenceTriggerRules extends ThemedGuiScreen {
             mc.displayGuiScreen(parent);
             return;
         }
+        if (keyCode == Keyboard.KEY_F
+                && (Keyboard.isKeyDown(Keyboard.KEY_LCONTROL) || Keyboard.isKeyDown(Keyboard.KEY_RCONTROL))) {
+            if (ruleTreeSearchField != null && !listCollapsed) {
+                ruleTreeSearchField.setFocused(true);
+            }
+            return;
+        }
+        if (ruleTreeSearchField != null && ruleTreeSearchField.isFocused()
+                && ruleTreeSearchField.textboxKeyTyped(typedChar, keyCode)) {
+            updateRuleTreeSearchFromField();
+            return;
+        }
         super.keyTyped(typedChar, keyCode);
         if (!libraryCollapsed && librarySearchField != null && librarySearchField.textboxKeyTyped(typedChar, keyCode)) {
             libraryScroll = 0;
@@ -1773,6 +1945,9 @@ public class GuiLegacySequenceTriggerRules extends ThemedGuiScreen {
     @Override
     public void updateScreen() {
         super.updateScreen();
+        if (ruleTreeSearchField != null) {
+            ruleTreeSearchField.updateCursorCounter();
+        }
         if (librarySearchField != null) {
             librarySearchField.updateCursorCounter();
         }
@@ -2440,6 +2615,9 @@ public class GuiLegacySequenceTriggerRules extends ThemedGuiScreen {
     }
 
     private void clearFieldFocus() {
+        if (ruleTreeSearchField != null) {
+            ruleTreeSearchField.setFocused(false);
+        }
         if (librarySearchField != null) {
             librarySearchField.setFocused(false);
         }

@@ -17,6 +17,7 @@ public class AutoFollowRule {
     public static final double DEFAULT_MONSTER_VERTICAL_RANGE = 5.0;
     public static final double DEFAULT_MONSTER_UPWARD_RANGE = 3.0;
     public static final double DEFAULT_MONSTER_DOWNWARD_RANGE = 8.0;
+    public static final int DEFAULT_MONSTER_CHASE_Y_LIMIT = 2;
     public static final double DEFAULT_MONSTER_STOP_DISTANCE = 1.1;
     public static final double DEFAULT_MONSTER_FIXED_DISTANCE = 3.0;
     public static final double DEFAULT_LOCK_CHASE_OUT_OF_BOUNDS_DISTANCE = 10.0;
@@ -64,6 +65,11 @@ public class AutoFollowRule {
     public double monsterVerticalRange; // 旧版兼容字段
     public double monsterUpwardRange;
     public double monsterDownwardRange;
+    /**
+     * The maximum number of whole blocks a chase destination may differ from the
+     * target's feet Y. Zero keeps destination selection on the target's layer.
+     */
+    public Integer monsterChaseYLimit;
     public String monsterChaseMode;
     public double monsterStopDistance;
     public double monsterFixedDistance;
@@ -99,6 +105,7 @@ public class AutoFollowRule {
         this.monsterVerticalRange = DEFAULT_MONSTER_VERTICAL_RANGE;
         this.monsterUpwardRange = DEFAULT_MONSTER_UPWARD_RANGE;
         this.monsterDownwardRange = DEFAULT_MONSTER_DOWNWARD_RANGE;
+        this.monsterChaseYLimit = DEFAULT_MONSTER_CHASE_Y_LIMIT;
         this.monsterChaseMode = MONSTER_CHASE_MODE_APPROACH;
         this.monsterStopDistance = DEFAULT_MONSTER_STOP_DISTANCE;
         this.monsterFixedDistance = DEFAULT_MONSTER_FIXED_DISTANCE;
@@ -190,6 +197,9 @@ public class AutoFollowRule {
             monsterDownwardRange = monsterVerticalRange > 0
                     ? Math.max(DEFAULT_MONSTER_UPWARD_RANGE, monsterVerticalRange)
                     : DEFAULT_MONSTER_DOWNWARD_RANGE;
+        }
+        if (monsterChaseYLimit == null || monsterChaseYLimit < 0) {
+            monsterChaseYLimit = DEFAULT_MONSTER_CHASE_Y_LIMIT;
         }
         if (monsterStopDistance <= 0) {
             monsterStopDistance = DEFAULT_MONSTER_STOP_DISTANCE;
@@ -300,6 +310,6 @@ public class AutoFollowRule {
         if (source == null) {
             return new AutoFollowHandler.Point(0, 0);
         }
-        return new AutoFollowHandler.Point(source.x, source.z);
+        return new AutoFollowHandler.Point(source.x, source.y, source.z);
     }
 }

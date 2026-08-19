@@ -5,6 +5,7 @@ import com.zszl.zszlScriptMod.gui.components.GuiTheme;
 import com.zszl.zszlScriptMod.gui.components.ThemedGuiScreen;
 import com.zszl.zszlScriptMod.gui.path.GuiSequenceSelector;
 import com.zszl.zszlScriptMod.utils.CapturedIdRuleManager;
+import com.zszl.zszlScriptMod.utils.PinyinSearchHelper;
 import net.minecraft.client.gui.GuiButton;
 import net.minecraft.client.gui.GuiScreen;
 import net.minecraft.client.gui.GuiTextField;
@@ -14,6 +15,7 @@ import org.lwjgl.input.Keyboard;
 import org.lwjgl.input.Mouse;
 
 import java.io.IOException;
+import java.awt.Rectangle;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -30,6 +32,9 @@ public class GuiCapturedIdViewer extends ThemedGuiScreen {
     private static final String CATEGORY_UNGROUPED = "未分组";
 
     private static final int TREE_ROW_HEIGHT = 18;
+    private static final int TREE_SEARCH_FIELD_HEIGHT = 16;
+    private static final int TREE_SEARCH_TOP_OFFSET = 24;
+    private static final int TREE_SEARCH_BOTTOM_GAP = 4;
     private static final int CARD_HEIGHT = 56;
     private static final int CARD_GAP = 6;
     private static final int EDITOR_ROW_HEIGHT = 20;
@@ -111,6 +116,9 @@ public class GuiCapturedIdViewer extends ThemedGuiScreen {
     private int editorRowStartY;
     private int editorVisibleRows = EDITOR_BASE_ROWS;
     private int editorScrollOffset = 0;
+    private GuiTextField treeSearchField;
+    private String treeSearchQuery = "";
+    private Rectangle treeSearchClearBounds = null;
 
     private GuiTextField nameField;
     private GuiTextField displayNameField;
@@ -166,6 +174,7 @@ public class GuiCapturedIdViewer extends ThemedGuiScreen {
         this.buttonList.clear();
 
         recalcLayout();
+        initTreeSearchField();
         initEditorFields();
         initButtons();
         layoutEditorFields();
@@ -236,6 +245,35 @@ public class GuiCapturedIdViewer extends ThemedGuiScreen {
         editorLabelWidth = Math.max(72, Math.min(92, editorBoxWidth / 5));
         editorRowStartY = editorBoxY + 8;
         editorVisibleRows = Math.max(1, (editorBoxHeight - 18) / EDITOR_ROW_HEIGHT);
+        layoutTreeSearchField();
+    }
+
+    private void initTreeSearchField() {
+        if (treeSearchField == null) {
+            treeSearchField = new GuiTextField(2020, this.fontRenderer, 0, 0, 100, TREE_SEARCH_FIELD_HEIGHT);
+            treeSearchField.setMaxStringLength(120);
+            treeSearchField.setCanLoseFocus(true);
+            treeSearchField.setEnableBackgroundDrawing(false);
+            treeSearchField.setText(treeSearchQuery);
+        }
+        layoutTreeSearchField();
+    }
+
+    private void layoutTreeSearchField() {
+        if (treeSearchField == null) {
+            return;
+        }
+        if (treeCollapsed) {
+            treeSearchField.x = -2000;
+            treeSearchField.y = -2000;
+            treeSearchField.setFocused(false);
+            treeSearchClearBounds = null;
+            return;
+        }
+        treeSearchField.x = treeX + 6;
+        treeSearchField.y = treeY + TREE_SEARCH_TOP_OFFSET;
+        treeSearchField.width = Math.max(30, treeWidth - 20);
+        treeSearchField.height = TREE_SEARCH_FIELD_HEIGHT;
     }
 
     private void initEditorFields() {
@@ -525,6 +563,19 @@ public class GuiCapturedIdViewer extends ThemedGuiScreen {
             closeContextMenu();
         }
 
+        if (treeSearchField != null) {
+            if (mouseButton == 0 && treeSearchClearBounds != null && treeSearchClearBounds.contains(mouseX, mouseY)) {
+                clearTreeSearch(true);
+                return;
+            }
+            boolean clickedSearchField = isMouseOverField(mouseX, mouseY, treeSearchField);
+            treeSearchField.mouseClicked(mouseX, mouseY, mouseButton);
+            if (clickedSearchField) {
+                return;
+            }
+            treeSearchField.setFocused(false);
+        }
+
         if (mouseButton == 0) {
             if (isInTreeCollapseButton(mouseX, mouseY)) {
                 treeCollapsed = !treeCollapsed;
@@ -652,7 +703,7 @@ public class GuiCapturedIdViewer extends ThemedGuiScreen {
     }
 
     private int getTreeRowIndexAt(int mouseY) {
-        int contentY = treeY + 22;
+        int contentY = getTreeContentY();
         int localY = mouseY - contentY;
         if (localY < 0) {
             return -1;
@@ -676,6 +727,20 @@ public class GuiCapturedIdViewer extends ThemedGuiScreen {
                 collapseAllDropdowns();
                 return;
             }
+        }
+
+        if (keyCode == Keyboard.KEY_F
+                && (Keyboard.isKeyDown(Keyboard.KEY_LCONTROL) || Keyboard.isKeyDown(Keyboard.KEY_RCONTROL))) {
+            if (treeSearchField != null && !treeCollapsed) {
+                treeSearchField.setFocused(true);
+            }
+            return;
+        }
+
+        if (treeSearchField != null && treeSearchField.isFocused()
+                && treeSearchField.textboxKeyTyped(typedChar, keyCode)) {
+            updateTreeSearchFromField();
+            return;
         }
 
         if (keyCode == Keyboard.KEY_UP && selectedVisibleIndex > 0 && !visibleCards.isEmpty()) {
@@ -747,6 +812,9 @@ public class GuiCapturedIdViewer extends ThemedGuiScreen {
     @Override
     public void updateScreen() {
         super.updateScreen();
+        if (treeSearchField != null) {
+            treeSearchField.updateCursorCounter();
+        }
         for (GuiTextField field : allFields()) {
             field.updateCursorCounter();
         }
@@ -796,7 +864,27 @@ public class GuiCapturedIdViewer extends ThemedGuiScreen {
             return;
         }
 
-        int contentY = treeY + 22;
+        layoutTreeSearchField();
+        treeSearchClearBounds = null;
+        drawThemedTextField(treeSearchField);
+        if (treeSearchField.getText().trim().isEmpty() && !treeSearchField.isFocused()) {
+            drawString(fontRenderer, "搜索（中文/拼音）", treeSearchField.x + 4,
+                    treeSearchField.y + (treeSearchField.height - fontRenderer.FONT_HEIGHT) / 2, 0xFF8A96A8);
+        }
+        if (isTreeSearchActive()) {
+            int clearSize = Math.max(12, treeSearchField.height - 4);
+            int clearX = treeSearchField.x + treeSearchField.width - clearSize - 3;
+            int clearY = treeSearchField.y + (treeSearchField.height - clearSize) / 2;
+            treeSearchClearBounds = new Rectangle(clearX, clearY, clearSize, clearSize);
+            boolean hoveredClear = treeSearchClearBounds.contains(mouseX, mouseY);
+            drawRect(clearX, clearY, clearX + clearSize, clearY + clearSize,
+                    hoveredClear ? 0x99556F84 : 0x663C5366);
+            drawCenteredString(fontRenderer, "x", clearX + clearSize / 2,
+                    clearY + (clearSize - fontRenderer.FONT_HEIGHT) / 2, 0xFFFFFFFF);
+        }
+
+        int contentY = getTreeContentY();
+        int contentHeight = getTreeContentHeight();
         int visibleRows = getVisibleTreeRowCount();
 
         if (visibleTreeRows.isEmpty()) {
@@ -843,10 +931,10 @@ public class GuiCapturedIdViewer extends ThemedGuiScreen {
 
         if (visibleTreeRows.size() > visibleRows) {
             int thumbHeight = Math.max(18,
-                    (int) ((visibleRows / (float) Math.max(visibleRows, visibleTreeRows.size())) * (treeHeight - 28)));
-            int track = Math.max(1, (treeHeight - 28) - thumbHeight);
+                    (int) ((visibleRows / (float) Math.max(visibleRows, visibleTreeRows.size())) * contentHeight));
+            int track = Math.max(1, contentHeight - thumbHeight);
             int thumbY = contentY + (int) ((treeScrollOffset / (float) Math.max(1, max)) * track);
-            GuiTheme.drawScrollbar(treeX + treeWidth - 8, contentY, 4, treeHeight - 28, thumbY, thumbHeight);
+            GuiTheme.drawScrollbar(treeX + treeWidth - 8, contentY, 4, contentHeight, thumbY, thumbHeight);
         }
     }
 
@@ -1315,11 +1403,19 @@ public class GuiCapturedIdViewer extends ThemedGuiScreen {
     private void rebuildTreeRows() {
         visibleTreeRows.clear();
         visibleTreeRows.add(TreeRow.allRow("全部规则"));
+        String normalizedSearch = PinyinSearchHelper.normalizeQuery(treeSearchQuery);
+        boolean searchActive = !normalizedSearch.isEmpty();
         for (String category : categories) {
+            boolean categoryMatches = PinyinSearchHelper.matchesNormalized(category, normalizedSearch);
+            boolean hasMatchingCard = categoryMatches || categoryHasMatchingCard(category, normalizedSearch);
+            if (searchActive && !hasMatchingCard) {
+                continue;
+            }
             visibleTreeRows.add(TreeRow.categoryRow(category));
-            if (expandedCategories.contains(category)) {
+            if (expandedCategories.contains(category) || searchActive) {
                 for (CapturedIdRuleManager.RuleCard card : allCards) {
-                    if (category.equalsIgnoreCase(getCardCategory(card))) {
+                    if (category.equalsIgnoreCase(getCardCategory(card))
+                            && (!searchActive || categoryMatches || matchesCardSearch(card, normalizedSearch))) {
                         visibleTreeRows.add(TreeRow.ruleRow(category, safe(card.model.name),
                                 isBlank(card.model.displayName) ? safe(card.model.name) : safe(card.model.displayName)));
                     }
@@ -1331,10 +1427,13 @@ public class GuiCapturedIdViewer extends ThemedGuiScreen {
 
     private void rebuildVisibleCards() {
         visibleCards.clear();
+        String normalizedSearch = PinyinSearchHelper.normalizeQuery(treeSearchQuery);
+        boolean searchActive = !normalizedSearch.isEmpty();
         for (CapturedIdRuleManager.RuleCard card : allCards) {
-            if (CATEGORY_ALL.equals(selectedCategory)) {
+            if ((searchActive || CATEGORY_ALL.equals(selectedCategory)) && matchesCardSearch(card, normalizedSearch)) {
                 visibleCards.add(card);
-            } else if (selectedCategory.equalsIgnoreCase(getCardCategory(card))) {
+            } else if (selectedCategory.equalsIgnoreCase(getCardCategory(card))
+                    && matchesCardSearch(card, normalizedSearch)) {
                 visibleCards.add(card);
             }
         }
@@ -1344,6 +1443,73 @@ public class GuiCapturedIdViewer extends ThemedGuiScreen {
         if (selectedVisibleIndex >= visibleCards.size()) {
             selectedVisibleIndex = visibleCards.isEmpty() ? -1 : 0;
         }
+    }
+
+    private boolean categoryHasMatchingCard(String category, String normalizedSearch) {
+        for (CapturedIdRuleManager.RuleCard card : allCards) {
+            if (category.equalsIgnoreCase(getCardCategory(card)) && matchesCardSearch(card, normalizedSearch)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean matchesCardSearch(CapturedIdRuleManager.RuleCard card, String normalizedSearch) {
+        if (normalizedSearch.isEmpty()) {
+            return true;
+        }
+        if (card == null || card.model == null) {
+            return false;
+        }
+        String text = safe(card.model.name) + " " + safe(card.model.displayName) + " "
+                + safe(card.model.note) + " " + safe(card.model.aliasesCsv) + " "
+                + safe(card.model.pattern) + " " + getCardCategory(card);
+        return PinyinSearchHelper.matchesNormalized(text, normalizedSearch);
+    }
+
+    private void updateTreeSearchFromField() {
+        String newQuery = treeSearchField == null ? "" : PinyinSearchHelper.normalizeQuery(treeSearchField.getText());
+        if (treeSearchQuery.equals(newQuery)) {
+            return;
+        }
+        treeSearchQuery = newQuery;
+        treeScrollOffset = 0;
+        listScrollOffset = 0;
+        rebuildTreeRows();
+        rebuildVisibleCards();
+        loadSelectionAfterFilter();
+    }
+
+    private void clearTreeSearch(boolean keepFocus) {
+        treeSearchQuery = "";
+        if (treeSearchField != null) {
+            treeSearchField.setText("");
+            treeSearchField.setFocused(keepFocus);
+        }
+        treeScrollOffset = 0;
+        listScrollOffset = 0;
+        rebuildTreeRows();
+        rebuildVisibleCards();
+        loadSelectionAfterFilter();
+    }
+
+    private void loadSelectionAfterFilter() {
+        if (visibleCards.isEmpty()) {
+            selectedVisibleIndex = -1;
+            creatingNew = true;
+            editingBuiltinSequenceOnly = false;
+            clearEditorForNew();
+            return;
+        }
+        if (selectedVisibleIndex < 0 || selectedVisibleIndex >= visibleCards.size()) {
+            selectedVisibleIndex = 0;
+        }
+        creatingNew = false;
+        loadEditor(visibleCards.get(selectedVisibleIndex).model);
+    }
+
+    private boolean isTreeSearchActive() {
+        return !treeSearchQuery.isEmpty();
     }
 
     private boolean selectByRuleName(String name) {
@@ -1755,7 +1921,15 @@ public class GuiCapturedIdViewer extends ThemedGuiScreen {
     }
 
     private int getVisibleTreeRowCount() {
-        return Math.max(1, (treeHeight - 26) / TREE_ROW_HEIGHT);
+        return Math.max(1, getTreeContentHeight() / TREE_ROW_HEIGHT);
+    }
+
+    private int getTreeContentY() {
+        return treeY + TREE_SEARCH_TOP_OFFSET + TREE_SEARCH_FIELD_HEIGHT + TREE_SEARCH_BOTTOM_GAP;
+    }
+
+    private int getTreeContentHeight() {
+        return Math.max(TREE_ROW_HEIGHT, treeY + treeHeight - getTreeContentY() - 4);
     }
 
     private int getVisibleCardCount() {
