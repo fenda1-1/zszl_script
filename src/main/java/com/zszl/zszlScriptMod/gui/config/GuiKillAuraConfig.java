@@ -2031,7 +2031,7 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
         }
         drawRect(huntScoreDebugPanelX, panelTop, huntScoreDebugPanelX + huntScoreDebugPanelW, panelBottom,
                 0xCC1A2533);
-        drawString(this.fontRenderer, "追击落点评分（分数越低越优先）", huntScoreDebugPanelX + 5, panelTop + 4,
+        drawString(this.fontRenderer, "追击落点评分（采样，分数越低越优先）", huntScoreDebugPanelX + 5, panelTop + 4,
                 GuiTheme.TITLE_RIGHT);
 
         List<KillAuraHandler.HuntScoreDebugEntry> entries = KillAuraHandler.INSTANCE.getHuntScoreDebugEntries();

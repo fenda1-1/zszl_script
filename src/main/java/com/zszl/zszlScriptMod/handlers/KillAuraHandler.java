@@ -241,9 +241,13 @@ public class KillAuraHandler implements AbstractGameEventListener {
     private static final double HUNT_APPROACH_MIN_STAND_RADIUS = 0.85D;
     private static final double HUNT_APPROACH_TARGET_BUFFER = 0.35D;
     private static final double HUNT_GOAL_REACHED_TOLERANCE_SQ = 0.36D;
+    private static final double HUNT_MIN_MEANINGFUL_GOAL_DISTANCE_SQ = 0.64D;
+    private static final double HUNT_MIN_APPROACH_PROGRESS = 0.08D;
     private static final double HUNT_NAVIGATION_RADIUS_SAMPLE_STEP = 0.75D;
     private static final double HUNT_NAVIGATION_ANGLE_SAMPLE_STEP_RADIANS = Math.toRadians(18.0D);
     private static final int HUNT_NAVIGATION_ANGLE_SAMPLE_PAIRS = 10;
+    private static final int[] HUNT_STAND_Y_OFFSETS = new int[] { 0, -1, 1, -2, 2, -3, 3 };
+    private static final int HUNT_STAND_CANDIDATE_LIMIT = 4;
     private static final double TELEPORT_ATTACK_STEP_DISTANCE = 8.0D;
     private static final double TELEPORT_ATTACK_REACH = 2.85D;
     private static final float TELEPORT_ATTACK_MIN_RANGE = 6.0F;
@@ -2114,9 +2118,10 @@ public class KillAuraHandler implements AbstractGameEventListener {
                     shouldAllowHuntTrackingWithoutLineOfSight(), null) == null) {
                 continue;
             }
-            double[] destination = isHuntFixedDistanceMode()
-                    ? findFixedDistanceHuntNavigationDestination(player, target)
-                    : findApproachHuntNavigationDestination(player, target);
+            // The detailed route solver evaluates many angle/layer pairs and is
+            // reserved for the active target. The panel needs comparable score
+            // components, not a full path search for every visible mob.
+            double[] destination = findHuntScoreDebugDestination(player, target, preferredRadius);
             HuntScoreBreakdown breakdown = destination == null
                     ? new HuntScoreBreakdown(Double.POSITIVE_INFINITY, 0.0D, 0.0D, 0.0D, 0.0D, 0.0D, 0.0D, false)
                     : buildHuntScoreBreakdown(player, target, destination, preferredRadius,
@@ -2157,6 +2162,12 @@ public class KillAuraHandler implements AbstractGameEventListener {
 
             EntityLivingBase candidate = (EntityLivingBase) entity;
             if (candidate == lockedTarget) {
+                continue;
+            }
+            // Reject distant entities before name matching and advanced aim
+            // prediction. Large mob groups otherwise pay those costs for every
+            // loaded entity even though they cannot become a target.
+            if (getTargetSearchDistanceSq(player, candidate) > targetSearchRadiusSq) {
                 continue;
             }
             TargetCandidate targetCandidate = buildTargetCandidate(player, candidate, targetSearchRadiusSq,
@@ -2724,7 +2735,12 @@ public class KillAuraHandler implements AbstractGameEventListener {
         if (!whitelistMatched && !matchesEnabledTargetGroup(target)) {
             return null;
         }
-        float yawDeltaAbs = Math.abs(MathHelper.wrapDegrees(getDesiredAimRotation(player, target).getYaw() - player.rotationYaw));
+        // Yaw is only an orbit tie breaker. Use a cheap horizontal bearing
+        // rather than the full predictive aim pipeline for every nearby mob.
+        double yawToTarget = Math.toDegrees(Math.atan2(target.posZ - player.posZ, target.posX - player.posX)) - 90.0D;
+        float yawDeltaAbs = isHuntOrbitEnabled()
+                ? Math.abs(MathHelper.wrapDegrees((float) yawToTarget - player.rotationYaw))
+                : 0.0F;
         return new TargetCandidate(target, distanceSq, useWhitelistPriority ? whitelistPriority : 0,
                 isCurrentTarget ? 0 : 1, yawDeltaAbs);
     }
@@ -2961,6 +2977,16 @@ public class KillAuraHandler implements AbstractGameEventListener {
             this.visible = visible;
             this.totalScore = radiusScore + playerDistanceScore + playerPlaneScore + targetHeightScore
                     + attackRangeScore + visibilityScore + opennessScore;
+        }
+    }
+
+    private static final class HuntStandCandidate {
+        private final BlockPos position;
+        private final double terrainScore;
+
+        private HuntStandCandidate(BlockPos position, double terrainScore) {
+            this.position = position;
+            this.terrainScore = terrainScore;
         }
     }
 
@@ -4609,6 +4635,10 @@ public class KillAuraHandler implements AbstractGameEventListener {
         if (shouldSendGoto) {
             if (isHuntFixedDistanceMode()) {
                 double[] safeDestination = findFixedDistanceHuntNavigationDestination(player, target);
+                if (safeDestination != null && !isMeaningfulHuntNavigationDestination(player, target,
+                        safeDestination, getEffectiveHuntFixedDistance())) {
+                    safeDestination = null;
+                }
                 if (safeDestination != null) {
                     EmbeddedNavigationHandler.INSTANCE.startGoto(safeDestination[0], safeDestination[1],
                             safeDestination[2], true);
@@ -4628,6 +4658,14 @@ public class KillAuraHandler implements AbstractGameEventListener {
                 }
             } else {
                 double[] safeDestination = findApproachHuntNavigationDestination(player, target);
+                double preferredRadius = Math.max(HUNT_APPROACH_MIN_STAND_RADIUS,
+                        Math.min(Math.max(HUNT_APPROACH_MIN_STAND_RADIUS,
+                                attackRange - HUNT_APPROACH_TARGET_BUFFER),
+                                attackRange - HUNT_APPROACH_TARGET_BUFFER * 2.0D));
+                if (safeDestination != null && !isMeaningfulHuntNavigationDestination(player, target,
+                        safeDestination, preferredRadius)) {
+                    safeDestination = null;
+                }
                 if (safeDestination != null) {
                     EmbeddedNavigationHandler.INSTANCE.startGoto(safeDestination[0], safeDestination[1],
                             safeDestination[2], true);
@@ -5148,6 +5186,29 @@ public class KillAuraHandler implements AbstractGameEventListener {
                 HUNT_APPROACH_MIN_STAND_RADIUS, maxStandRadius);
     }
 
+    private double[] findHuntScoreDebugDestination(EntityPlayerSP player, EntityLivingBase target,
+            double preferredRadius) {
+        if (player == null || target == null) {
+            return null;
+        }
+        double dx = player.posX - target.posX;
+        double dz = player.posZ - target.posZ;
+        double horizontalDistance = Math.sqrt(dx * dx + dz * dz);
+        if (horizontalDistance <= 1.0E-4D) {
+            double yawRadians = Math.toRadians(player.rotationYaw);
+            dx = -Math.sin(yawRadians);
+            dz = Math.cos(yawRadians);
+            horizontalDistance = 1.0D;
+        }
+        double[] clipped = clipHuntDestinationXZ(target.posX, target.posZ,
+                target.posX + dx / horizontalDistance * preferredRadius,
+                target.posZ + dz / horizontalDistance * preferredRadius);
+        // Keep the debug panel responsive in dense fights. The active target
+        // still uses the full angle/layer solver; this is a representative
+        // local stand point used only to expose the configured score weights.
+        return findSafeHuntNavigationDestination(player, null, clipped[0], player.posY, clipped[1], 1);
+    }
+
     private double[] findFixedDistanceHuntNavigationDestination(EntityPlayerSP player, EntityLivingBase target) {
         if (player == null || target == null) {
             return null;
@@ -5355,6 +5416,9 @@ public class KillAuraHandler implements AbstractGameEventListener {
                 if (safeDestination == null) {
                     continue;
                 }
+                if (!isMeaningfulHuntNavigationDestination(player, target, safeDestination, clampedPreferredRadius)) {
+                    continue;
+                }
 
                 BlockPos standPos = new BlockPos(safeDestination[0], safeDestination[1], safeDestination[2]);
                 boolean hasLineOfSight = hasHuntLineOfSightFromStandPos(standPos, target);
@@ -5413,6 +5477,71 @@ public class KillAuraHandler implements AbstractGameEventListener {
     private double scoreHuntNavigationDestination(EntityPlayerSP player, EntityLivingBase target, double[] destination,
             double preferredRadius, boolean hasLineOfSight) {
         return buildHuntScoreBreakdown(player, target, destination, preferredRadius, hasLineOfSight).totalScore;
+    }
+
+    private boolean isMeaningfulHuntNavigationDestination(EntityPlayerSP player, EntityLivingBase target,
+            double[] destination, double preferredRadius) {
+        if (player == null || target == null || destination == null || destination.length < 3) {
+            return false;
+        }
+
+        double currentDistance = player.getDistance(target);
+        boolean orbitNavigation = isHuntFixedDistanceMode() && isHuntOrbitEnabled();
+        boolean fixedDistanceNeedsAdjustment = !orbitNavigation && isHuntFixedDistanceMode()
+                && Math.abs(currentDistance - preferredRadius) > HUNT_FIXED_DISTANCE_TOLERANCE;
+        boolean approachNeedsProgress = !isHuntFixedDistanceMode() && currentDistance > attackRange;
+        boolean missingAttackLineOfSight = shouldRequireAttackLineOfSight() && !player.canEntityBeSeen(target);
+        if (!orbitNavigation && !fixedDistanceNeedsAdjustment && !approachNeedsProgress && !missingAttackLineOfSight) {
+            return true;
+        }
+
+        // EmbeddedNavigationHandler floors GoalBlock coordinates. A point can
+        // look 0.8 blocks away by centre distance while still resolving to the
+        // exact path node currently occupied by the player. Baritone then
+        // completes it instantly and KillAura keeps reissuing the same goal.
+        if (isHuntGoalAtCurrentPathNode(player, destination)) {
+            return false;
+        }
+        double goalDx = destination[0] - player.posX;
+        double goalDz = destination[2] - player.posZ;
+        if (goalDx * goalDx + goalDz * goalDz < HUNT_MIN_MEANINGFUL_GOAL_DISTANCE_SQ) {
+            return false;
+        }
+
+        double destinationDistance = Math.sqrt(getHuntCandidateDistanceSq(target, destination[0], destination[1],
+                destination[2]));
+        if (approachNeedsProgress) {
+            return destinationDistance <= currentDistance - HUNT_MIN_APPROACH_PROGRESS;
+        }
+        if (fixedDistanceNeedsAdjustment) {
+            return Math.abs(destinationDistance - preferredRadius)
+                    <= Math.abs(currentDistance - preferredRadius) - HUNT_MIN_APPROACH_PROGRESS;
+        }
+        // Entering an orbit often requires a lateral move that deliberately
+        // keeps the same radius. It only needs to be a real movement goal.
+        return true;
+    }
+
+    private boolean isHuntGoalAtCurrentPathNode(EntityPlayerSP player, double[] destination) {
+        if (player == null || destination == null || destination.length < 3) {
+            return false;
+        }
+        int goalX = MathHelper.floor(destination[0]);
+        int goalY = MathHelper.floor(destination[1]);
+        int goalZ = MathHelper.floor(destination[2]);
+        try {
+            IBaritone baritone = BaritoneAPI.getProvider().getPrimaryBaritone();
+            if (baritone != null && baritone.getPlayerContext() != null) {
+                BetterBlockPos feet = baritone.getPlayerContext().playerFeet();
+                if (feet != null) {
+                    return feet.getX() == goalX && feet.getY() == goalY && feet.getZ() == goalZ;
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return MathHelper.floor(player.posX) == goalX
+                && MathHelper.floor(player.posY + 0.1251D) == goalY
+                && MathHelper.floor(player.posZ) == goalZ;
     }
 
     private HuntScoreBreakdown buildHuntScoreBreakdown(EntityPlayerSP player, EntityLivingBase target,
@@ -5531,70 +5660,127 @@ public class KillAuraHandler implements AbstractGameEventListener {
         }
 
         int baseX = MathHelper.floor(desiredX);
-        int baseY = MathHelper.floor(desiredY);
         int baseZ = MathHelper.floor(desiredZ);
         int maxHorizontalSearchRadius = Math.max(0, horizontalSearchRadius);
-        BlockPos bestStandPos = null;
-        double bestStandScore = Double.MAX_VALUE;
+        List<HuntStandCandidate> standCandidates = new ArrayList<>(HUNT_STAND_CANDIDATE_LIMIT);
 
-        // Search all nearby standable layers instead of stopping at the first
-        // target-height floor. A combat sphere can intersect multiple floors;
-        // select the layer that is reachable from the player's current height
-        // and still provides a real attack line.
-        int attackHeightPadding = Math.max(3, MathHelper.ceil(attackRange) + 1);
-        int minY = MathHelper.floor(target == null ? desiredY - 3.0D : target.posY - attackHeightPadding);
-        int maxY = MathHelper.floor(target == null ? desiredY + 3.0D : target.posY + attackHeightPadding);
-        for (int candidateY = minY; candidateY <= maxY; candidateY++) {
-            for (int radius = 0; radius <= maxHorizontalSearchRadius; radius++) {
-                for (int dx = -radius; dx <= radius; dx++) {
-                    for (int dz = -radius; dz <= radius; dz++) {
-                        if (radius > 0 && Math.max(Math.abs(dx), Math.abs(dz)) != radius) {
-                            continue;
-                        }
-                        BlockPos candidate = new BlockPos(baseX + dx, candidateY, baseZ + dz);
-                        if (!isStandableHuntFeetPos(candidate)) {
-                            continue;
-                        }
-
-                        double centerX = candidate.getX() + 0.5D;
-                        double centerY = candidate.getY();
-                        double centerZ = candidate.getZ() + 0.5D;
-                        if (isBlockedHuntNavigationDestination(target, centerX, centerY, centerZ)) {
-                            continue;
-                        }
-                        double dxScore = centerX - desiredX;
-                        double dyScore = centerY - desiredY;
-                        double dzScore = centerZ - desiredZ;
-                        double score = dxScore * dxScore + dzScore * dzScore + dyScore * dyScore * 0.12D;
-                        if (target != null) {
-                            BlockPos standPos = candidate;
-                            boolean hasLineOfSight = hasHuntLineOfSightFromStandPos(standPos, target);
-                            double targetDistance = Math.sqrt(getHuntCandidateDistanceSq(target, centerX, centerY,
-                                    centerZ));
-                            double outsideAttackRange = Math.max(0.0D, targetDistance - attackRange);
-                            double playerHeight = Math.abs(centerY - player.posY);
-                            double opennessPenalty = (4 - getHuntStandOpenness(candidate)) * 0.8D;
-                            // Attackable + visible points dominate; among those,
-                            // the player's current plane is preferred.
-                            score += playerHeight * huntScorePlayerPlaneWeight
-                                    + Math.abs(centerY - target.posY) * huntScoreTargetHeightWeight
-                                    + outsideAttackRange * huntScoreAttackRangeWeight
-                                    + (hasLineOfSight ? 0.0D : huntScoreVisibilityWeight * 1.5D)
-                                    + opennessPenalty * (huntScoreOpennessWeight / DEFAULT_HUNT_SCORE_OPENNESS_WEIGHT);
-                        }
-                        if (score < bestStandScore) {
-                            bestStandScore = score;
-                            bestStandPos = candidate;
-                        }
-                    }
-                }
+        // Check the most useful layers first. This is the normal fast path.
+        int playerBaseY = target == null ? MathHelper.floor(desiredY) : MathHelper.floor(player.posY);
+        int targetBaseY = target == null ? MathHelper.floor(desiredY) : MathHelper.floor(target.posY);
+        int layerOrigins = target != null && targetBaseY != playerBaseY ? 2 : 1;
+        for (int originIndex = 0; originIndex < layerOrigins; originIndex++) {
+            int layerBaseY = originIndex == 0 ? playerBaseY : targetBaseY;
+            for (int yOffset : HUNT_STAND_Y_OFFSETS) {
+                collectHuntStandCandidates(standCandidates, player, target, baseX, baseZ, layerBaseY + yOffset,
+                        desiredX, desiredY, desiredZ, maxHorizontalSearchRadius);
             }
         }
 
-        if (bestStandPos == null) {
+        // If neither nearby plane has a stand point, fall back to every layer
+        // intersecting the target's attack sphere. This keeps caves, bridges,
+        // and intermediate floors reachable without paying that scan normally.
+        if (standCandidates.isEmpty() && target != null) {
+            int verticalPadding = Math.max(3, MathHelper.ceil(attackRange) + 1);
+            int minY = MathHelper.floor(target.posY) - verticalPadding;
+            int maxY = MathHelper.floor(target.posY) + verticalPadding;
+            for (int candidateY = minY; candidateY <= maxY; candidateY++) {
+                collectHuntStandCandidates(standCandidates, player, target, baseX, baseZ, candidateY,
+                        desiredX, desiredY, desiredZ, maxHorizontalSearchRadius);
+            }
+        }
+
+        if (standCandidates.isEmpty()) {
             return null;
         }
-        return new double[] { bestStandPos.getX() + 0.5D, bestStandPos.getY(), bestStandPos.getZ() + 0.5D };
+        HuntStandCandidate best = chooseBestHuntStandCandidate(standCandidates, target);
+        if (best == null || best.position == null) {
+            return null;
+        }
+        return new double[] { best.position.getX() + 0.5D, best.position.getY(), best.position.getZ() + 0.5D };
+    }
+
+    private void collectHuntStandCandidates(List<HuntStandCandidate> candidates, EntityPlayerSP player,
+            EntityLivingBase target, int baseX, int baseZ, int candidateY, double desiredX, double desiredY,
+            double desiredZ, int maxHorizontalSearchRadius) {
+        if (candidates == null) {
+            return;
+        }
+        for (int radius = 0; radius <= maxHorizontalSearchRadius; radius++) {
+            for (int dx = -radius; dx <= radius; dx++) {
+                for (int dz = -radius; dz <= radius; dz++) {
+                    if (radius > 0 && Math.max(Math.abs(dx), Math.abs(dz)) != radius) {
+                        continue;
+                    }
+                    BlockPos candidate = new BlockPos(baseX + dx, candidateY, baseZ + dz);
+                    if (!isStandableHuntFeetPos(candidate)) {
+                        continue;
+                    }
+
+                    double centerX = candidate.getX() + 0.5D;
+                    double centerY = candidate.getY();
+                    double centerZ = candidate.getZ() + 0.5D;
+                    if (isBlockedHuntNavigationDestination(target, centerX, centerY, centerZ)) {
+                        continue;
+                    }
+                    double dxScore = centerX - desiredX;
+                    double dyScore = centerY - desiredY;
+                    double dzScore = centerZ - desiredZ;
+                    double score = dxScore * dxScore + dzScore * dzScore + dyScore * dyScore * 0.12D;
+                    if (target != null) {
+                        double targetDistance = Math.sqrt(getHuntCandidateDistanceSq(target, centerX, centerY, centerZ));
+                        score += Math.abs(centerY - player.posY) * huntScorePlayerPlaneWeight
+                                + Math.abs(centerY - target.posY) * huntScoreTargetHeightWeight
+                                + Math.max(0.0D, targetDistance - attackRange) * huntScoreAttackRangeWeight;
+                    }
+                    insertHuntStandCandidate(candidates, new HuntStandCandidate(candidate, score));
+                }
+            }
+        }
+    }
+
+    private void insertHuntStandCandidate(List<HuntStandCandidate> candidates, HuntStandCandidate candidate) {
+        if (candidates == null || candidate == null || candidate.position == null) {
+            return;
+        }
+        for (HuntStandCandidate existing : candidates) {
+            if (existing != null && candidate.position.equals(existing.position)) {
+                return;
+            }
+        }
+        int index = 0;
+        while (index < candidates.size() && candidates.get(index).terrainScore <= candidate.terrainScore) {
+            index++;
+        }
+        if (index >= HUNT_STAND_CANDIDATE_LIMIT && candidates.size() >= HUNT_STAND_CANDIDATE_LIMIT) {
+            return;
+        }
+        candidates.add(index, candidate);
+        if (candidates.size() > HUNT_STAND_CANDIDATE_LIMIT) {
+            candidates.remove(candidates.size() - 1);
+        }
+    }
+
+    private HuntStandCandidate chooseBestHuntStandCandidate(List<HuntStandCandidate> candidates,
+            EntityLivingBase target) {
+        HuntStandCandidate best = null;
+        double bestScore = Double.POSITIVE_INFINITY;
+        for (HuntStandCandidate candidate : candidates) {
+            if (candidate == null || candidate.position == null) {
+                continue;
+            }
+            double score = candidate.terrainScore;
+            if (target != null) {
+                boolean visible = hasHuntLineOfSightFromStandPos(candidate.position, target);
+                score += visible ? 0.0D : huntScoreVisibilityWeight * 1.5D;
+                score += (4 - getHuntStandOpenness(candidate.position))
+                        * (huntScoreOpennessWeight / DEFAULT_HUNT_SCORE_OPENNESS_WEIGHT) * 0.8D;
+            }
+            if (score < bestScore) {
+                bestScore = score;
+                best = candidate;
+            }
+        }
+        return best;
     }
 
     private boolean hasHuntLineOfSightFromStandPos(BlockPos standPos, EntityLivingBase target) {
