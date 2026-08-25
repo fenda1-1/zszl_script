@@ -28,15 +28,21 @@ import com.zszl.zszlScriptMod.shadowbaritone.pathing.movement.MovementHelper;
 import com.zszl.zszlScriptMod.shadowbaritone.pathing.movement.MovementState;
 import com.zszl.zszlScriptMod.shadowbaritone.utils.BlockStateInterface;
 import com.google.common.collect.ImmutableSet;
+import net.minecraft.block.BlockFence;
 import net.minecraft.block.BlockFalling;
 import net.minecraft.block.BlockSnow;
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.init.Blocks;
 import net.minecraft.util.EnumFacing;
+import net.minecraft.util.math.BlockPos;
 
 import java.util.Set;
 
 public class MovementAscend extends Movement {
+
+    // At this distance the player's front edge is close to the raised block,
+    // while still leaving enough room for the jump to begin before collision.
+    private static final double NORMAL_ASCEND_JUMP_START_DISTANCE = 0.85D;
 
     private int ticksWithoutPlacement = 0;
 
@@ -141,7 +147,7 @@ public class MovementAscend extends Movement {
         IBlockState destFeet = context.get(destX, destY, destZ);
         if (destFeet.getBlock() instanceof BlockSnow
                 && context.bsi.worldContainsLoadedChunk(destX, destZ)
-                && destFeet.getValue(BlockSnow.LAYERS) >= 4) {
+                && destFeet.getValue(BlockSnow.LAYERS) >= 6) {
             return COST_INF;
         }
         // we can jump from soul sand, but not from a bottom slab
@@ -178,7 +184,11 @@ public class MovementAscend extends Movement {
         // includeFalling isn't needed because of the falling check above -- if srcUp3
         // is falling we will have already exited with COST_INF if we'd actually have to
         // break it
-        totalCost += MovementHelper.getMiningDurationTicks(context, x, y + 2, z, srcUp2, false);
+        // The target client allows movement beneath a fence above the launch block.
+        // Treat it as overhead clearance rather than a block that must be mined.
+        if (!(srcUp2.getBlock() instanceof BlockFence)) {
+            totalCost += MovementHelper.getMiningDurationTicks(context, x, y + 2, z, srcUp2, false);
+        }
         if (totalCost >= COST_INF) {
             return COST_INF;
         }
@@ -186,13 +196,17 @@ public class MovementAscend extends Movement {
         if (totalCost >= COST_INF) {
             return COST_INF;
         }
-        totalCost += MovementHelper.getMiningDurationTicks(context, destX, destY + 1, destZ, true);
+        IBlockState destHead = context.get(destX, destY + 1, destZ);
+        if (!(destHead.getBlock() instanceof BlockFence)) {
+            totalCost += MovementHelper.getMiningDurationTicks(context, destX, destY + 1, destZ, destHead, true);
+        }
         return totalCost;
     }
 
     @Override
     public MovementState updateState(MovementState state) {
-        if (ctx.playerFeet().y < src.y) {
+        BlockPos pathFeet = logicalPlayerFeet();
+        if (pathFeet.getY() < src.y) {
             // this check should run even when in preparing state (breaking blocks)
             return state.setStatus(MovementStatus.UNREACHABLE);
         }
@@ -205,7 +219,7 @@ public class MovementAscend extends Movement {
             return state;
         }
 
-        if (ctx.playerFeet().equals(dest) || ctx.playerFeet().equals(dest.add(getDirection().down()))) {
+        if (pathFeet.equals(dest) || pathFeet.equals(dest.add(getDirection().down()))) {
             return state.setStatus(MovementStatus.SUCCESS);
         }
 
@@ -232,7 +246,7 @@ public class MovementAscend extends Movement {
             return state; // don't jump while walking from a non double slab into a bottom slab
         }
 
-        if (Baritone.settings().assumeStep.value || ctx.playerFeet().equals(src.up())) {
+        if (Baritone.settings().assumeStep.value || pathFeet.equals(src.up())) {
             // no need to hit space if we're already jumping
             return state;
         }
@@ -249,11 +263,14 @@ public class MovementAscend extends Movement {
             return state;
         }
 
-        if (headBonkClear()) {
+        // The executor's sprint-ascend shortcut already observes this setting.
+        // Keep the movement-level early jump behind the same setting; otherwise
+        // disabling sprintAscends still makes the player jump one block early.
+        if (Baritone.settings().sprintAscends.value && headBonkClear()) {
             return state.setInput(Input.JUMP, true);
         }
 
-        if (flatDistToNext > 1.2 || sideDist > 0.2) {
+        if (flatDistToNext > NORMAL_ASCEND_JUMP_START_DISTANCE || sideDist > 0.2) {
             return state;
         }
 
@@ -270,7 +287,8 @@ public class MovementAscend extends Movement {
         BetterBlockPos startUp = src.up(2);
         for (int i = 0; i < 4; i++) {
             BetterBlockPos check = startUp.offset(EnumFacing.getHorizontal(i));
-            if (!MovementHelper.canWalkThrough(ctx, check)) {
+            if (!MovementHelper.canWalkThrough(ctx, check)
+                    && !(BlockStateInterface.getBlock(ctx, check) instanceof BlockFence)) {
                 // We might bonk our head
                 return false;
             }

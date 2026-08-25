@@ -10,6 +10,10 @@ import com.zszl.zszlScriptMod.config.DebugModule;
 import com.zszl.zszlScriptMod.config.ModConfig;
 import com.zszl.zszlScriptMod.path.PathSequenceEventListener;
 import com.zszl.zszlScriptMod.path.PathSequenceManager;
+import com.zszl.zszlScriptMod.shadowbaritone.api.BaritoneAPI;
+import com.zszl.zszlScriptMod.shadowbaritone.api.IBaritone;
+import com.zszl.zszlScriptMod.shadowbaritone.api.utils.BetterBlockPos;
+import com.zszl.zszlScriptMod.shadowbaritone.pathing.movement.MovementHelper;
 import com.zszl.zszlScriptMod.system.AutoPickupRule;
 import com.zszl.zszlScriptMod.system.ProfileManager;
 
@@ -1033,8 +1037,11 @@ public class AutoPickupHandler {
     }
 
     /**
-     * Resolves a pickup goal without the generic vertical correction that can
-     * otherwise jump from an item embedded in a lower block to an upper floor.
+     * Resolves a local pickup goal without letting the generic goal normalizer
+     * scan upward through an entire snow column. When the item is inside a
+     * non-passable cell, the immediately adjacent air cell is sufficient: the
+     * configured pickup radius is measured to the entity, not to a standable
+     * floor.
      */
     private BlockPos getLocalPickupGoal(EntityItem item) {
         if (item == null || mc.world == null) {
@@ -1042,8 +1049,7 @@ public class AutoPickupHandler {
         }
 
         BlockPos itemBlock = new BlockPos(item.posX, item.posY, item.posZ);
-        IBlockState itemState = mc.world.getBlockState(itemBlock);
-        if (!itemState.getMaterial().blocksMovement()) {
+        if (isPickupGoalPassable(itemBlock)) {
             return itemBlock;
         }
 
@@ -1051,9 +1057,16 @@ public class AutoPickupHandler {
         if (directlyAbove.getY() >= 255) {
             return null;
         }
+        return isPickupGoalPassable(directlyAbove) ? directlyAbove : null;
+    }
 
-        IBlockState aboveState = mc.world.getBlockState(directlyAbove);
-        return aboveState.getMaterial().blocksMovement() ? null : directlyAbove;
+    private boolean isPickupGoalPassable(BlockPos pos) {
+        IBaritone baritone = BaritoneAPI.getProvider().getPrimaryBaritone();
+        if (baritone != null && baritone.getPlayerContext() != null) {
+            return MovementHelper.canWalkThrough(baritone.getPlayerContext(), new BetterBlockPos(pos));
+        }
+        IBlockState state = mc.world.getBlockState(pos);
+        return state.getBlock().isPassable(mc.world, pos);
     }
 
     private void armPendingNavigationAttempt(int nowTick) {

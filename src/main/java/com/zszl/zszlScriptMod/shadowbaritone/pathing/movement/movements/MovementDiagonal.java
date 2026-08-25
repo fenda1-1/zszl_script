@@ -291,7 +291,7 @@ public class MovementDiagonal extends Movement {
             return state;
         }
 
-        if (ctx.playerFeet().equals(dest)) {
+        if (logicalPlayerFeet().equals(dest)) {
             return state.setStatus(MovementStatus.SUCCESS);
         } else if (!playerInValidPosition()
                 && !(MovementHelper.isLiquid(ctx, src) && getValidPositions().contains(ctx.playerFeet().up()))) {

@@ -145,7 +145,9 @@ public interface MovementHelper extends ActionCosts, Helper {
             return NO;
         }
         if (isConfiguredInteractionBlock(block)) {
-            if (block == Blocks.IRON_DOOR || block == Blocks.IRON_TRAPDOOR) {
+            // A closed trapdoor has collision, unlike a door or fence gate. Its OPEN
+            // state must therefore be checked against the actual block position.
+            if (block == Blocks.IRON_DOOR || block == Blocks.IRON_TRAPDOOR || block instanceof BlockTrapDoor) {
                 return MAYBE;
             }
             return YES;
@@ -199,10 +201,9 @@ public interface MovementHelper extends ActionCosts, Helper {
                 return true;
             }
             int layers = state.getValue(BlockSnow.LAYERS);
-            // Under a low ceiling, thicker snow layers clip the player's head even though
-            // vanilla still reports them passable. In open space we should still allow
-            // normal traversal across 3-4 layers.
-            if (layers >= 5) {
+            // Treat up to five layers as ground-level terrain. Six or more layers are
+            // represented as a full block, so the feet cell itself is no longer passable.
+            if (layers >= 6) {
                 return false;
             }
             if (layers >= 3 && !hasSnowHeadroom(bsi, x, y, z)) {
@@ -230,6 +231,10 @@ public interface MovementHelper extends ActionCosts, Helper {
 
         if (block == Blocks.IRON_DOOR) {
             return state.getValue(BlockDoor.OPEN) || canOpenIronDoorWithButton(bsi, new BlockPos(x, y, z), state);
+        }
+
+        if (block instanceof BlockTrapDoor && isConfiguredInteractionBlock(block)) {
+            return state.getValue(BlockTrapDoor.OPEN);
         }
 
         return block.isPassable(bsi.access, bsi.isPassableBlockPos.setPos(x, y, z));
@@ -610,7 +615,18 @@ public interface MovementHelper extends ActionCosts, Helper {
             if (!bsi.worldContainsLoadedChunk(x, z)) {
                 return true;
             }
-            return state.getValue(BlockSnow.LAYERS) >= 8 && hasSnowHeadroom(bsi, x, y, z);
+            int layers = state.getValue(BlockSnow.LAYERS);
+            if (layers < 1) {
+                return false;
+            }
+            // A snow layer is a walkable surface regardless of its exact height. This
+            // lets the planner use the air cell above 6-7 layers as a normal destination,
+            // while the passability rule above still keeps 6+ layers one block high.
+            Block below = bsi.get0(x, y - 1, z).getBlock();
+            if (below == Blocks.AIR || below instanceof BlockLiquid) {
+                return false;
+            }
+            return hasSnowHeadroom(bsi, x, y, z);
         }
         if (isWater(block)) {
             // since this is called literally millions of times per second, the benefit of
@@ -652,7 +668,7 @@ public interface MovementHelper extends ActionCosts, Helper {
             return true;
         }
         if (aboveBlock instanceof BlockSnow) {
-            return above.getValue(BlockSnow.LAYERS) <= 3;
+            return above.getValue(BlockSnow.LAYERS) <= 5;
         }
         if (aboveBlock == Blocks.CARPET) {
             return true;
@@ -757,6 +773,11 @@ public interface MovementHelper extends ActionCosts, Helper {
             boolean includeFalling) {
         Block block = state.getBlock();
         if (!canWalkThrough(context, x, y, z, state)) {
+            // Closed interaction trapdoors are opened by MovementTraverse. Do not
+            // turn a failed interaction into a block-breaking route.
+            if (block instanceof BlockTrapDoor && isConfiguredInteractionBlock(block)) {
+                return COST_INF;
+            }
             if (block instanceof BlockLiquid) {
                 return COST_INF;
             }

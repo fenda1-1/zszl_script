@@ -25,7 +25,10 @@ import com.zszl.zszlScriptMod.shadowbaritone.api.utils.*;
 import com.zszl.zszlScriptMod.shadowbaritone.api.utils.input.Input;
 import com.zszl.zszlScriptMod.shadowbaritone.behavior.PathingBehavior;
 import com.zszl.zszlScriptMod.shadowbaritone.utils.BlockStateInterface;
+import net.minecraft.block.BlockSnow;
+import net.minecraft.block.BlockFence;
 import net.minecraft.block.BlockLiquid;
+import net.minecraft.block.state.IBlockState;
 import net.minecraft.entity.item.EntityFallingBlock;
 import net.minecraft.util.EnumFacing;
 import net.minecraft.util.math.AxisAlignedBB;
@@ -114,8 +117,30 @@ public abstract class Movement implements IMovement, MovementHelper {
     }
 
     protected boolean playerInValidPosition() {
-        return getValidPositions().contains(ctx.playerFeet())
+        BlockPos feet = logicalPlayerFeet();
+        return getValidPositions().contains(feet)
                 || getValidPositions().contains(((PathingBehavior) baritone.getPathingBehavior()).pathStart());
+    }
+
+    /**
+     * Six or seven snow layers are treated as a full block by the planner, while
+     * Minecraft still reports the player's physical feet inside the snow block
+     * because its collision top is below the next integer Y.  Align the runtime
+     * coordinate with the logical path node when that shifted position is valid.
+     */
+    protected BlockPos logicalPlayerFeet() {
+        BlockPos feet = ctx.playerFeet();
+        if (getValidPositions().contains(feet)) {
+            return feet;
+        }
+        IBlockState state = BlockStateInterface.get(ctx, feet);
+        if (state.getBlock() instanceof BlockSnow
+                && state.getValue(BlockSnow.LAYERS) >= 6
+                && MovementHelper.canWalkOn(ctx, feet)
+                && getValidPositions().contains(feet.up())) {
+            return feet.up();
+        }
+        return feet;
     }
 
     /**
@@ -171,8 +196,22 @@ public abstract class Movement implements IMovement, MovementHelper {
             if (!MovementHelper.canWalkThrough(ctx, blockPos)
                     && !(BlockStateInterface.getBlock(ctx, blockPos) instanceof BlockLiquid)) { // can't break liquid,
                                                                                                 // so don't try
+                IBlockState blockState = BlockStateInterface.get(ctx, blockPos);
+                if (!Baritone.settings().allowBreak.value
+                        && !Baritone.settings().allowBreakAnyway.value.contains(blockState.getBlock())) {
+                    if (isPassableFenceClearance(blockPos, blockState)) {
+                        // This client permits the player to move under a fence hanging
+                        // above a route block. Do not turn that clearance probe into
+                        // a mandatory break when mining is disabled.
+                        continue;
+                    }
+                    // Head-clearance checks run while executing a movement. They must
+                    // obey the same no-break policy used while calculating the path.
+                    state.setStatus(MovementStatus.UNREACHABLE);
+                    return true;
+                }
                 somethingInTheWay = true;
-                MovementHelper.switchToBestToolFor(ctx, BlockStateInterface.get(ctx, blockPos));
+                MovementHelper.switchToBestToolFor(ctx, blockState);
                 Optional<Rotation> reachable = RotationUtils.reachable(ctx, blockPos,
                         ctx.playerController().getBlockReachDistance());
                 if (reachable.isPresent()) {
@@ -203,6 +242,40 @@ public abstract class Movement implements IMovement, MovementHelper {
             return true;
         }
         return true;
+    }
+
+    /**
+     * Returns whether a fence is only occupying a head-clearance cell for this
+     * movement.  Fences are not full cubes, and the normal client movement can
+     * reach the next block/jump while leaving that fence in place.  Keeping this
+     * test in the movement base class makes preparation and the cached
+     * to-break list agree with the cost calculation.
+     */
+    protected final boolean isPassableFenceClearance(BetterBlockPos blockPos, IBlockState blockState) {
+        if (!(blockState.getBlock() instanceof BlockFence)) {
+            return false;
+        }
+        if (dest.y > src.y && (blockPos.equals(src.up(2)) || blockPos.equals(dest.up()))) {
+            return true;
+        }
+        if (dest.y > src.y) {
+            BetterBlockPos feet = null;
+            try {
+                feet = ctx.playerFeet();
+            } catch (Throwable ignored) {
+            }
+            if (getValidPositions().contains(feet) && blockPos.equals(feet.up(2))) {
+                // MovementAscend can begin one route node before src while
+                // preserving the same straight line. The runtime clearance
+                // probe uses the player's actual feet position in that case,
+                // so it must receive the same fence exception as src.up(2).
+                return true;
+            }
+        }
+        // A flat traverse can move under the overhead fence before the next
+        // movement ascends. Treat only the head-clearance position as passable;
+        // a fence in the destination feet block remains an obstacle.
+        return dest.y == src.y && blockPos.equals(dest.up());
     }
 
     @Override
@@ -277,6 +350,14 @@ public abstract class Movement implements IMovement, MovementHelper {
         List<BlockPos> result = new ArrayList<>();
         for (BetterBlockPos positionToBreak : preparationBreakPositions()) {
             if (!MovementHelper.canWalkThrough(bsi, positionToBreak.x, positionToBreak.y, positionToBreak.z)) {
+                IBlockState state = bsi.get0(positionToBreak);
+                if (!Baritone.settings().allowBreak.value && isPassableFenceClearance(positionToBreak, state)) {
+                    // This is clearance for the jump, not a block that the
+                    // executor is expected to mine.  In particular, leaving it
+                    // in toBreakCached prevents the straight traverse -> ascend
+                    // hand-off and makes the player stop below the fence.
+                    continue;
+                }
                 result.add(positionToBreak);
             }
         }

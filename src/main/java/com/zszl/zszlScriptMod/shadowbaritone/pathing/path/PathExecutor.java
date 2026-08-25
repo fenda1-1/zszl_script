@@ -36,6 +36,7 @@ import com.zszl.zszlScriptMod.shadowbaritone.pathing.movement.MovementHelper;
 import com.zszl.zszlScriptMod.shadowbaritone.pathing.movement.PathingSpeedController;
 import com.zszl.zszlScriptMod.shadowbaritone.pathing.movement.movements.*;
 import com.zszl.zszlScriptMod.shadowbaritone.utils.BlockStateInterface;
+import net.minecraft.block.BlockFence;
 import net.minecraft.block.BlockLiquid;
 import net.minecraft.util.Tuple;
 import net.minecraft.util.math.BlockPos;
@@ -652,6 +653,21 @@ public class PathExecutor implements IPathExecutor, Helper {
         // control and sprint for us
         behavior.baritone.getInputOverrideHandler().setInputForceState(Input.SPRINT, false);
 
+        IMovement current = path.movements().get(pathPosition);
+
+        // This is a movement-safety requirement, not a sprint optimization.
+        // Keep the active traverse in control so it continues to hold forward;
+        // switching to MovementAscend immediately is what previously left the
+        // player standing still until W was pressed manually.
+        if (current instanceof MovementTraverse && pathPosition + 1 < path.movements().size()) {
+            IMovement next = path.movements().get(pathPosition + 1);
+            if (next instanceof MovementAscend
+                    && current.getDirection().equals(next.getDirection().down())
+                    && fenceBlocksStraightAscend(ctx, (MovementTraverse) current, (MovementAscend) next)) {
+                ((MovementTraverse) current).requestAscendJump();
+            }
+        }
+
         // first and foremost, if allowSprint is off, or if we don't have enough hunger,
         // don't try and sprint
         if (!new CalculationContext(behavior.baritone, false).canSprint) {
@@ -660,13 +676,14 @@ public class PathExecutor implements IPathExecutor, Helper {
         if (PathingSpeedController.shouldHoldSprint(ctx.player())) {
             return false;
         }
-        IMovement current = path.movements().get(pathPosition);
-
         // traverse requests sprinting, so we need to do this check first
         if (current instanceof MovementTraverse && pathPosition < path.length() - 3) {
             IMovement next = path.movements().get(pathPosition + 1);
-            if (next instanceof MovementAscend && sprintableAscend(ctx, (MovementTraverse) current,
-                    (MovementAscend) next, path.movements().get(pathPosition + 2))) {
+            boolean straightAscend = next instanceof MovementAscend
+                    && current.getDirection().equals(next.getDirection().down());
+            boolean sprintableAscend = straightAscend && sprintableAscend(ctx, (MovementTraverse) current,
+                    (MovementAscend) next, path.movements().get(pathPosition + 2));
+            if (sprintableAscend) {
                 if (skipNow(ctx, current)) {
                     logDebug("Skipping traverse to straight ascend");
                     pathPosition++;
@@ -893,7 +910,11 @@ public class PathExecutor implements IPathExecutor, Helper {
                 if (x == 1) {
                     chk = chk.add(current.getDirection());
                 }
-                if (!MovementHelper.fullyPassable(ctx, chk)) {
+                // A fence in a head-clearance cell is intentionally handled by
+                // the jump movement. It must not disable the straight
+                // traverse-to-ascend hand-off (which would leave the player
+                // pressed against the fence). Feet-level fences remain blocking.
+                if (!isAscendClearancePassable(ctx, chk, y)) {
                     return false;
                 }
             }
@@ -904,6 +925,39 @@ public class PathExecutor implements IPathExecutor, Helper {
         return !MovementHelper.avoidWalkingInto(ctx.world().getBlockState(next.getDest().up(2)).getBlock()); // codacy
                                                                                                              // smh my
                                                                                                              // head
+    }
+
+    private static boolean isAscendClearancePassable(IPlayerContext ctx, BlockPos pos, int relativeY) {
+        if (relativeY > 0 && ctx.world().getBlockState(pos).getBlock() instanceof BlockFence) {
+            return true;
+        }
+        return MovementHelper.fullyPassable(ctx, pos);
+    }
+
+    /**
+     * With sprintAscends disabled Baritone normally completes the horizontal
+     * traverse before starting MovementAscend.  That is not possible when the
+     * traverse's head cell contains a fence: the player can jump from the
+     * preceding block, but cannot enter the fence's collision cell first.  Use
+     * the same hand-off as sprint ascends, without enabling sprinting.
+     */
+    private static boolean fenceBlocksStraightAscend(IPlayerContext ctx, MovementTraverse current,
+            MovementAscend next) {
+        if (Baritone.settings().allowBreak.value) {
+            return false;
+        }
+        BlockPos src = current.getSrc();
+        BlockPos dest = current.getDest();
+        BlockPos nextDest = next.getDest();
+        return isOverheadFence(ctx, src.up())
+                || isOverheadFence(ctx, dest.up())
+                || isOverheadFence(ctx, src.up(2))
+                || isOverheadFence(ctx, nextDest.up())
+                || isOverheadFence(ctx, nextDest.up(2));
+    }
+
+    private static boolean isOverheadFence(IPlayerContext ctx, BlockPos pos) {
+        return ctx.world().getBlockState(pos).getBlock() instanceof BlockFence;
     }
 
     private static boolean canSprintFromDescendInto(IPlayerContext ctx, IMovement current, IMovement next) {

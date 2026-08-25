@@ -51,6 +51,12 @@ public class MovementTraverse extends Movement {
      * Did we have to place a bridge block or was it always there
      */
     private boolean wasTheBridgeBlockAlwaysThere = true;
+    /**
+     * A following straight ascend must begin before entering a fence's head
+     * cell. This flag lets the traverse keep forward pressure and start the
+     * jump near its destination when sprintAscends is disabled.
+     */
+    private boolean requestedAscendJump;
     private int ironDoorButtonClickCooldown;
     private int ironDoorPassagePushTicks;
 
@@ -62,6 +68,7 @@ public class MovementTraverse extends Movement {
     public void reset() {
         super.reset();
         wasTheBridgeBlockAlwaysThere = true;
+        requestedAscendJump = false;
         ironDoorButtonClickCooldown = 0;
         ironDoorPassagePushTicks = 0;
     }
@@ -128,7 +135,7 @@ public class MovementTraverse extends Movement {
             if (hardness1 >= COST_INF) {
                 return COST_INF;
             }
-            double hardness2 = MovementHelper.getMiningDurationTicks(context, destX, y + 1, destZ, pb0, true); // only
+            double hardness2 = overheadFenceClearanceCost(context, destX, y + 1, destZ, pb0); // only
                                                                                                                // include
                                                                                                                // falling
                                                                                                                // on the
@@ -170,7 +177,7 @@ public class MovementTraverse extends Movement {
                 if (hardness1 >= COST_INF) {
                     return COST_INF;
                 }
-                double hardness2 = MovementHelper.getMiningDurationTicks(context, destX, y + 1, destZ, pb0, true); // only
+                double hardness2 = overheadFenceClearanceCost(context, destX, y + 1, destZ, pb0); // only
                                                                                                                    // include
                                                                                                                    // falling
                                                                                                                    // on
@@ -216,6 +223,17 @@ public class MovementTraverse extends Movement {
             }
             return COST_INF;
         }
+    }
+
+    private static double overheadFenceClearanceCost(CalculationContext context, int x, int y, int z,
+            IBlockState state) {
+        // The target client allows walking beneath a fence in the head-clearance
+        // cell. It is neither an obstacle to mine nor a reason to reject a flat
+        // traverse before the following upward movement.
+        if (state.getBlock() instanceof BlockFence) {
+            return 0.0D;
+        }
+        return MovementHelper.getMiningDurationTicks(context, x, y, z, state, true);
     }
 
     @Override
@@ -275,7 +293,8 @@ public class MovementTraverse extends Movement {
         Block fd = BlockStateInterface.get(ctx, src.down()).getBlock();
         boolean ladder = fd == Blocks.LADDER || fd == Blocks.VINE;
         BlockPos actualFeet = ctx.playerFeet();
-        BlockPos pathFeet = adjustFeetForLiquidTraversal(actualFeet);
+        BlockPos pathFeet = logicalPlayerFeet();
+        pathFeet = adjustFeetForLiquidTraversal(pathFeet);
         if (ironDoorButtonClickCooldown > 0) {
             ironDoorButtonClickCooldown--;
         }
@@ -379,6 +398,12 @@ public class MovementTraverse extends Movement {
                             .setInput(Input.CLICK_RIGHT, true);
                 }
             }
+            if (blocked != null) {
+                // The path was calculated before the trapdoor closed, or belongs to
+                // a custom route. Continuing to walk into an unclickable trapdoor
+                // would leave the executor active until its timeout expires.
+                return state.setStatus(MovementStatus.UNREACHABLE);
+            }
         }
 
         boolean isTheBridgeBlockThere = MovementHelper.canWalkOn(ctx, positionToPlace) || ladder
@@ -437,6 +462,20 @@ public class MovementTraverse extends Movement {
                     logDirect("Unable to climb vines. Consider disabling allowVines.");
                     return state.setStatus(MovementStatus.UNREACHABLE);
                 }
+            }
+            if (requestedAscendJump && !pathFeet.equals(dest)) {
+                // Keep the traverse active so its source/destination remain
+                // valid, but jump as we reach the fence-facing edge.  Starting
+                // MovementAscend two blocks early loses the forward input when
+                // sprintAscends is disabled and was the reason for the stall.
+                MovementHelper.moveTowards(ctx, state, dest);
+                double distanceToDestination = Math.max(
+                        Math.abs(ctx.player().posX - (dest.getX() + 0.5D)),
+                        Math.abs(ctx.player().posZ - (dest.getZ() + 0.5D)));
+                if (distanceToDestination <= 0.65D) {
+                    state.setInput(Input.JUMP, true);
+                }
+                return state;
             }
             MovementHelper.moveTowards(ctx, state, against);
             return state;
@@ -561,12 +600,16 @@ public class MovementTraverse extends Movement {
 
     @Override
     protected boolean prepared(MovementState state) {
-        if (ctx.playerFeet().equals(src) || ctx.playerFeet().equals(src.down())) {
+        if (logicalPlayerFeet().equals(src) || logicalPlayerFeet().equals(src.down())) {
             Block block = BlockStateInterface.getBlock(ctx, src.down());
             if (block == Blocks.LADDER || block == Blocks.VINE) {
                 state.setInput(Input.SNEAK, true);
             }
         }
         return super.prepared(state);
+    }
+
+    public void requestAscendJump() {
+        requestedAscendJump = true;
     }
 }
