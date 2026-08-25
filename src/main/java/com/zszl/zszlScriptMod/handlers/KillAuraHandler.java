@@ -193,6 +193,20 @@ public class KillAuraHandler implements AbstractGameEventListener {
     public static final List<KillAuraPreset> presets = new ArrayList<>();
 
     public static float attackRange = 4.2F;
+    public static final float DEFAULT_HUNT_SCORE_RADIUS_WEIGHT = 4.0F;
+    public static final float DEFAULT_HUNT_SCORE_PLAYER_DISTANCE_WEIGHT = 0.18F;
+    public static final float DEFAULT_HUNT_SCORE_PLAYER_PLANE_WEIGHT = 1.8F;
+    public static final float DEFAULT_HUNT_SCORE_TARGET_HEIGHT_WEIGHT = 0.12F;
+    public static final float DEFAULT_HUNT_SCORE_ATTACK_RANGE_WEIGHT = 8.0F;
+    public static final float DEFAULT_HUNT_SCORE_VISIBILITY_WEIGHT = 12.0F;
+    public static final float DEFAULT_HUNT_SCORE_OPENNESS_WEIGHT = 0.65F;
+    public static float huntScoreRadiusWeight = DEFAULT_HUNT_SCORE_RADIUS_WEIGHT;
+    public static float huntScorePlayerDistanceWeight = DEFAULT_HUNT_SCORE_PLAYER_DISTANCE_WEIGHT;
+    public static float huntScorePlayerPlaneWeight = DEFAULT_HUNT_SCORE_PLAYER_PLANE_WEIGHT;
+    public static float huntScoreTargetHeightWeight = DEFAULT_HUNT_SCORE_TARGET_HEIGHT_WEIGHT;
+    public static float huntScoreAttackRangeWeight = DEFAULT_HUNT_SCORE_ATTACK_RANGE_WEIGHT;
+    public static float huntScoreVisibilityWeight = DEFAULT_HUNT_SCORE_VISIBILITY_WEIGHT;
+    public static float huntScoreOpennessWeight = DEFAULT_HUNT_SCORE_OPENNESS_WEIGHT;
     public static float minAttackStrength = 0.92F;
     public static float minTurnSpeed = 4.0F;
     public static float maxTurnSpeed = 18.0F;
@@ -215,9 +229,15 @@ public class KillAuraHandler implements AbstractGameEventListener {
     private static final double HUNT_ORBIT_ENTRY_RADIUS_BAND = 0.45D;
     private static final int HUNT_ORBIT_ENTRY_SAFE_SEARCH_RADIUS = 1;
     private static final double HUNT_ORBIT_ENTRY_POINT_TOLERANCE = 0.85D;
+    // Match the rule manager's pickup refresh cadence. Its navigation bridge
+    // performs the final command throttling without force-cancelling a route.
     private static final int HUNT_PICKUP_GOTO_INTERVAL_TICKS = 5;
+    private static final int HUNT_PICKUP_AIRBORNE_GOTO_INTERVAL_TICKS = 5;
+    private static final double HUNT_PICKUP_AIRBORNE_LEAD_TICKS = 6.0D;
     private static final int HUNT_PICKUP_SEARCH_INTERVAL_TICKS = 3;
-    private static final double HUNT_PICKUP_OVERLAP_GROWTH = 0.05D;
+    private static final int HUNT_PICKUP_NAVIGATION_STALL_TICKS = 60;
+    private static final int HUNT_PICKUP_RETRY_WAIT_TICKS = 10;
+    private static final double HUNT_PICKUP_PROGRESS_EPSILON_SQ = 0.0025D;
     private static final double HUNT_APPROACH_MIN_STAND_RADIUS = 0.85D;
     private static final double HUNT_APPROACH_TARGET_BUFFER = 0.35D;
     private static final double HUNT_GOAL_REACHED_TOLERANCE_SQ = 0.36D;
@@ -284,9 +304,13 @@ public class KillAuraHandler implements AbstractGameEventListener {
     private boolean huntPickupNavigationActive = false;
     private int lastHuntPickupGotoTick = -99999;
     private int lastHuntPickupTargetEntityId = Integer.MIN_VALUE;
+    private int huntPickupReachedEntityId = Integer.MIN_VALUE;
     private int lastHuntPickupSearchTick = -99999;
     private int lastHuntPickupSearchTargetEntityId = Integer.MIN_VALUE;
     private boolean lastHuntPickupSearchFound = false;
+    private int huntPickupLastProgressTick = -99999;
+    private double huntPickupLastDistanceSq = Double.MAX_VALUE;
+    private int huntPickupRetryAfterTick = -99999;
     private int lastOrbitProcessRequestTick = -99999;
     private int lastOrbitProcessTargetEntityId = Integer.MIN_VALUE;
     private double lastOrbitProcessRequestedRadius = Double.NaN;
@@ -304,6 +328,8 @@ public class KillAuraHandler implements AbstractGameEventListener {
     private final Map<Integer, NoDamageAttackTracker> noDamageAttackTrackers = new LinkedHashMap<>();
     private final Set<Integer> noDamageExcludedEntityIds = new LinkedHashSet<>();
     private final Map<Integer, HuntUnreachableTracker> huntUnreachableTrackers = new LinkedHashMap<>();
+    private final List<HuntScoreDebugEntry> huntScoreDebugEntries = new ArrayList<>();
+    private int lastHuntScoreDebugTick = Integer.MIN_VALUE;
     private int areaHuntControlTicks = 0;
 
     private static final class HuntUnreachableTracker {
@@ -430,6 +456,13 @@ public class KillAuraHandler implements AbstractGameEventListener {
         public List<String> nameBlacklist = new ArrayList<>();
         public float nearbyEntityScanRange = 10.0F;
         public float attackRange = 4.2F;
+        public float huntScoreRadiusWeight = DEFAULT_HUNT_SCORE_RADIUS_WEIGHT;
+        public float huntScorePlayerDistanceWeight = DEFAULT_HUNT_SCORE_PLAYER_DISTANCE_WEIGHT;
+        public float huntScorePlayerPlaneWeight = DEFAULT_HUNT_SCORE_PLAYER_PLANE_WEIGHT;
+        public float huntScoreTargetHeightWeight = DEFAULT_HUNT_SCORE_TARGET_HEIGHT_WEIGHT;
+        public float huntScoreAttackRangeWeight = DEFAULT_HUNT_SCORE_ATTACK_RANGE_WEIGHT;
+        public float huntScoreVisibilityWeight = DEFAULT_HUNT_SCORE_VISIBILITY_WEIGHT;
+        public float huntScoreOpennessWeight = DEFAULT_HUNT_SCORE_OPENNESS_WEIGHT;
         public float minAttackStrength = 0.92F;
         public float minTurnSpeed = 4.0F;
         public float maxTurnSpeed = 18.0F;
@@ -500,6 +533,13 @@ public class KillAuraHandler implements AbstractGameEventListener {
             this.nameBlacklist = new ArrayList<>(other.nameBlacklist == null ? new ArrayList<>() : other.nameBlacklist);
             this.nearbyEntityScanRange = other.nearbyEntityScanRange;
             this.attackRange = other.attackRange;
+            this.huntScoreRadiusWeight = other.huntScoreRadiusWeight;
+            this.huntScorePlayerDistanceWeight = other.huntScorePlayerDistanceWeight;
+            this.huntScorePlayerPlaneWeight = other.huntScorePlayerPlaneWeight;
+            this.huntScoreTargetHeightWeight = other.huntScoreTargetHeightWeight;
+            this.huntScoreAttackRangeWeight = other.huntScoreAttackRangeWeight;
+            this.huntScoreVisibilityWeight = other.huntScoreVisibilityWeight;
+            this.huntScoreOpennessWeight = other.huntScoreOpennessWeight;
             this.minAttackStrength = other.minAttackStrength;
             this.minTurnSpeed = other.minTurnSpeed;
             this.maxTurnSpeed = other.maxTurnSpeed;
@@ -660,6 +700,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
         presets.clear();
 
         attackRange = 4.2F;
+        resetHuntScoreWeights();
         minAttackStrength = 0.92F;
         minTurnSpeed = 4.0F;
         maxTurnSpeed = 18.0F;
@@ -842,6 +883,27 @@ public class KillAuraHandler implements AbstractGameEventListener {
             if (json.has("attackRange")) {
                 attackRange = json.get("attackRange").getAsFloat();
             }
+            if (json.has("huntScoreRadiusWeight")) {
+                huntScoreRadiusWeight = json.get("huntScoreRadiusWeight").getAsFloat();
+            }
+            if (json.has("huntScorePlayerDistanceWeight")) {
+                huntScorePlayerDistanceWeight = json.get("huntScorePlayerDistanceWeight").getAsFloat();
+            }
+            if (json.has("huntScorePlayerPlaneWeight")) {
+                huntScorePlayerPlaneWeight = json.get("huntScorePlayerPlaneWeight").getAsFloat();
+            }
+            if (json.has("huntScoreTargetHeightWeight")) {
+                huntScoreTargetHeightWeight = json.get("huntScoreTargetHeightWeight").getAsFloat();
+            }
+            if (json.has("huntScoreAttackRangeWeight")) {
+                huntScoreAttackRangeWeight = json.get("huntScoreAttackRangeWeight").getAsFloat();
+            }
+            if (json.has("huntScoreVisibilityWeight")) {
+                huntScoreVisibilityWeight = json.get("huntScoreVisibilityWeight").getAsFloat();
+            }
+            if (json.has("huntScoreOpennessWeight")) {
+                huntScoreOpennessWeight = json.get("huntScoreOpennessWeight").getAsFloat();
+            }
             if (!hasHuntFixedDistance) {
                 huntFixedDistance = attackRange;
             }
@@ -934,6 +996,13 @@ public class KillAuraHandler implements AbstractGameEventListener {
             json.addProperty("nearbyEntityScanRange", nearbyEntityScanRange);
             json.add("presets", GSON.toJsonTree(getPresetSnapshots(), PRESET_LIST_TYPE));
             json.addProperty("attackRange", attackRange);
+            json.addProperty("huntScoreRadiusWeight", huntScoreRadiusWeight);
+            json.addProperty("huntScorePlayerDistanceWeight", huntScorePlayerDistanceWeight);
+            json.addProperty("huntScorePlayerPlaneWeight", huntScorePlayerPlaneWeight);
+            json.addProperty("huntScoreTargetHeightWeight", huntScoreTargetHeightWeight);
+            json.addProperty("huntScoreAttackRangeWeight", huntScoreAttackRangeWeight);
+            json.addProperty("huntScoreVisibilityWeight", huntScoreVisibilityWeight);
+            json.addProperty("huntScoreOpennessWeight", huntScoreOpennessWeight);
             json.addProperty("minAttackStrength", minAttackStrength);
             json.addProperty("minTurnSpeed", minTurnSpeed);
             json.addProperty("maxTurnSpeed", maxTurnSpeed);
@@ -1125,6 +1194,13 @@ public class KillAuraHandler implements AbstractGameEventListener {
         nameBlacklist = new ArrayList<>(safePreset.nameBlacklist);
         nearbyEntityScanRange = safePreset.nearbyEntityScanRange;
         attackRange = safePreset.attackRange;
+        huntScoreRadiusWeight = safePreset.huntScoreRadiusWeight;
+        huntScorePlayerDistanceWeight = safePreset.huntScorePlayerDistanceWeight;
+        huntScorePlayerPlaneWeight = safePreset.huntScorePlayerPlaneWeight;
+        huntScoreTargetHeightWeight = safePreset.huntScoreTargetHeightWeight;
+        huntScoreAttackRangeWeight = safePreset.huntScoreAttackRangeWeight;
+        huntScoreVisibilityWeight = safePreset.huntScoreVisibilityWeight;
+        huntScoreOpennessWeight = safePreset.huntScoreOpennessWeight;
         minAttackStrength = safePreset.minAttackStrength;
         minTurnSpeed = safePreset.minTurnSpeed;
         maxTurnSpeed = safePreset.maxTurnSpeed;
@@ -1153,9 +1229,15 @@ public class KillAuraHandler implements AbstractGameEventListener {
         this.huntPickupNavigationActive = false;
         this.lastHuntPickupGotoTick = -99999;
         this.lastHuntPickupTargetEntityId = Integer.MIN_VALUE;
+        this.huntPickupReachedEntityId = Integer.MIN_VALUE;
         this.lastHuntPickupSearchTick = -99999;
         this.lastHuntPickupSearchTargetEntityId = Integer.MIN_VALUE;
         this.lastHuntPickupSearchFound = false;
+        this.huntScoreDebugEntries.clear();
+        this.lastHuntScoreDebugTick = Integer.MIN_VALUE;
+        this.huntPickupLastProgressTick = -99999;
+        this.huntPickupLastDistanceSq = Double.MAX_VALUE;
+        this.huntPickupRetryAfterTick = -99999;
         this.lastOrbitProcessRequestTick = -99999;
         this.lastOrbitProcessTargetEntityId = Integer.MIN_VALUE;
         this.lastOrbitProcessRequestedRadius = Double.NaN;
@@ -2001,6 +2083,51 @@ public class KillAuraHandler implements AbstractGameEventListener {
         return findTargets(player, null);
     }
 
+    public List<HuntScoreDebugEntry> getHuntScoreDebugEntries() {
+        Minecraft mc = Minecraft.getMinecraft();
+        EntityPlayerSP player = mc == null ? null : mc.player;
+        if (player == null || player.world == null) {
+            return new ArrayList<>();
+        }
+        int nowTick = player.ticksExisted;
+        if (this.lastHuntScoreDebugTick != Integer.MIN_VALUE
+                && nowTick - this.lastHuntScoreDebugTick < 10) {
+            return new ArrayList<>(this.huntScoreDebugEntries);
+        }
+
+        this.lastHuntScoreDebugTick = nowTick;
+        this.huntScoreDebugEntries.clear();
+        double searchRadius = getTargetSearchRadius();
+        double searchRadiusSq = searchRadius * searchRadius;
+        boolean useWhitelistPriority = enableNameWhitelist && nameWhitelist != null && !nameWhitelist.isEmpty();
+        double preferredRadius = isHuntFixedDistanceMode()
+                ? Math.max(HUNT_APPROACH_MIN_STAND_RADIUS, getEffectiveHuntFixedDistance())
+                : Math.max(HUNT_APPROACH_MIN_STAND_RADIUS, attackRange - HUNT_APPROACH_TARGET_BUFFER * 2.0D);
+
+        for (Entity entity : player.world.loadedEntityList) {
+            if (!(entity instanceof EntityLivingBase) || this.huntScoreDebugEntries.size() >= 24) {
+                continue;
+            }
+            EntityLivingBase target = (EntityLivingBase) entity;
+            if (buildTargetCandidate(player, target, searchRadiusSq, useWhitelistPriority,
+                    target.getEntityId() == this.currentTargetEntityId,
+                    shouldAllowHuntTrackingWithoutLineOfSight(), null) == null) {
+                continue;
+            }
+            double[] destination = isHuntFixedDistanceMode()
+                    ? findFixedDistanceHuntNavigationDestination(player, target)
+                    : findApproachHuntNavigationDestination(player, target);
+            HuntScoreBreakdown breakdown = destination == null
+                    ? new HuntScoreBreakdown(Double.POSITIVE_INFINITY, 0.0D, 0.0D, 0.0D, 0.0D, 0.0D, 0.0D, false)
+                    : buildHuntScoreBreakdown(player, target, destination, preferredRadius,
+                            hasHuntLineOfSightFromStandPos(new BlockPos(destination[0], destination[1], destination[2]),
+                                    target));
+            this.huntScoreDebugEntries.add(new HuntScoreDebugEntry(target, breakdown, destination));
+        }
+        this.huntScoreDebugEntries.sort((left, right) -> Double.compare(left.totalScore, right.totalScore));
+        return new ArrayList<>(this.huntScoreDebugEntries);
+    }
+
     private List<EntityLivingBase> findTargets(EntityPlayerSP player, AreaHuntOptions areaOptions) {
         List<EntityLivingBase> targets = new ArrayList<>();
         EntityLivingBase lockedTarget = null;
@@ -2772,6 +2899,69 @@ public class KillAuraHandler implements AbstractGameEventListener {
                 && target != null
                 && !isTeleportAttackRecoveryActive()
                 && player.getDistance(target) > TELEPORT_ATTACK_MIN_RANGE;
+    }
+
+    public static final class HuntScoreDebugEntry {
+        public final String name;
+        public final int entityId;
+        public final double totalScore;
+        public final double radiusScore;
+        public final double playerDistanceScore;
+        public final double playerPlaneScore;
+        public final double targetHeightScore;
+        public final double attackRangeScore;
+        public final double visibilityScore;
+        public final double opennessScore;
+        public final boolean hasDestination;
+        public final boolean visible;
+        public final double destinationX;
+        public final double destinationY;
+        public final double destinationZ;
+
+        private HuntScoreDebugEntry(EntityLivingBase target, HuntScoreBreakdown breakdown, double[] destination) {
+            this.name = getFilterableEntityName(target);
+            this.entityId = target.getEntityId();
+            this.totalScore = breakdown.totalScore;
+            this.radiusScore = breakdown.radiusScore;
+            this.playerDistanceScore = breakdown.playerDistanceScore;
+            this.playerPlaneScore = breakdown.playerPlaneScore;
+            this.targetHeightScore = breakdown.targetHeightScore;
+            this.attackRangeScore = breakdown.attackRangeScore;
+            this.visibilityScore = breakdown.visibilityScore;
+            this.opennessScore = breakdown.opennessScore;
+            this.hasDestination = destination != null;
+            this.visible = breakdown.visible;
+            this.destinationX = destination == null ? 0.0D : destination[0];
+            this.destinationY = destination == null ? 0.0D : destination[1];
+            this.destinationZ = destination == null ? 0.0D : destination[2];
+        }
+    }
+
+    private static final class HuntScoreBreakdown {
+        private final double totalScore;
+        private final double radiusScore;
+        private final double playerDistanceScore;
+        private final double playerPlaneScore;
+        private final double targetHeightScore;
+        private final double attackRangeScore;
+        private final double visibilityScore;
+        private final double opennessScore;
+        private final boolean visible;
+
+        private HuntScoreBreakdown(double radiusScore, double playerDistanceScore, double playerPlaneScore,
+                double targetHeightScore, double attackRangeScore, double visibilityScore, double opennessScore,
+                boolean visible) {
+            this.radiusScore = radiusScore;
+            this.playerDistanceScore = playerDistanceScore;
+            this.playerPlaneScore = playerPlaneScore;
+            this.targetHeightScore = targetHeightScore;
+            this.attackRangeScore = attackRangeScore;
+            this.visibilityScore = visibilityScore;
+            this.opennessScore = opennessScore;
+            this.visible = visible;
+            this.totalScore = radiusScore + playerDistanceScore + playerPlaneScore + targetHeightScore
+                    + attackRangeScore + visibilityScore + opennessScore;
+        }
     }
 
     private static final class TargetCandidate {
@@ -4515,6 +4705,9 @@ public class KillAuraHandler implements AbstractGameEventListener {
         }
 
         int nowTick = player.ticksExisted;
+        if (nowTick < huntPickupRetryAfterTick) {
+            return null;
+        }
         double radiusSq = huntRadius * huntRadius;
         if (nowTick - lastHuntPickupSearchTick < HUNT_PICKUP_SEARCH_INTERVAL_TICKS) {
             EntityItem cached = resolveCachedHuntPickupItem(player, radiusSq);
@@ -4537,7 +4730,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
             }
 
             EntityItem item = (EntityItem) entity;
-            if (item.isDead || !item.onGround) {
+            if (item.isDead) {
                 continue;
             }
 
@@ -4669,7 +4862,16 @@ public class KillAuraHandler implements AbstractGameEventListener {
             return null;
         }
         EntityItem item = (EntityItem) entity;
-        return item.isDead || !item.onGround || player.getDistanceSq(item) > radiusSq ? null : item;
+        if (item.isDead) {
+            return null;
+        }
+        double distanceSq = player.getDistanceSq(item);
+        if (distanceSq > radiusSq) {
+            return null;
+        }
+        boolean hasAllowRules = hasEnabledHuntPickupAllowRules();
+        HuntPickupRuleDecision decision = evaluateHuntPickupItem(player, item, Math.sqrt(distanceSq), hasAllowRules);
+        return decision.allowed ? item : null;
     }
 
     private void handleHuntPickupMovement(EntityPlayerSP player, EntityItem item) {
@@ -4678,24 +4880,86 @@ public class KillAuraHandler implements AbstractGameEventListener {
             return;
         }
 
-        if (hasReachedHuntPickupItem(player, item)) {
-            stopHuntPickupNavigation();
-            return;
-        }
-
         int nowTick = player.ticksExisted;
         int itemId = item.getEntityId();
+        if (hasReachedHuntPickupItem(player, item)) {
+            // This deliberately mirrors AutoPickupHandler: once within its
+            // pickup radius, release navigation and wait for the server-side
+            // item entity to disappear. Restarting a forced GoalBlock route
+            // here repeatedly cancelled the player before vanilla collection.
+            if (this.huntPickupReachedEntityId != itemId) {
+                EmbeddedNavigationHandler.INSTANCE.stop();
+            }
+            this.huntPickupNavigationActive = false;
+            this.lastHuntPickupTargetEntityId = itemId;
+            this.huntPickupReachedEntityId = itemId;
+            this.huntPickupLastProgressTick = nowTick;
+            return;
+        }
+        this.huntPickupReachedEntityId = Integer.MIN_VALUE;
+
+        double distanceSq = player.getDistanceSq(item);
+        if (this.huntPickupNavigationActive && itemId == this.lastHuntPickupTargetEntityId
+                && distanceSq + HUNT_PICKUP_PROGRESS_EPSILON_SQ < this.huntPickupLastDistanceSq) {
+            this.huntPickupLastDistanceSq = distanceSq;
+            this.huntPickupLastProgressTick = nowTick;
+        }
+        boolean stalled = this.huntPickupNavigationActive
+                && itemId == this.lastHuntPickupTargetEntityId
+                && nowTick - this.huntPickupLastProgressTick >= HUNT_PICKUP_NAVIGATION_STALL_TICKS;
+        int gotoInterval = item.onGround ? HUNT_PICKUP_GOTO_INTERVAL_TICKS : HUNT_PICKUP_AIRBORNE_GOTO_INTERVAL_TICKS;
         boolean shouldSendGoto = !huntPickupNavigationActive
                 || itemId != this.lastHuntPickupTargetEntityId
-                || (nowTick - this.lastHuntPickupGotoTick) >= HUNT_PICKUP_GOTO_INTERVAL_TICKS;
+                || stalled
+                || (nowTick - this.lastHuntPickupGotoTick) >= gotoInterval;
         if (!shouldSendGoto) {
             return;
         }
 
-        EmbeddedNavigationHandler.INSTANCE.startGoto(item.posX, item.posY, item.posZ);
-        this.huntPickupNavigationActive = true;
-        this.lastHuntPickupGotoTick = nowTick;
-        this.lastHuntPickupTargetEntityId = itemId;
+        if (stalled) {
+            EmbeddedNavigationHandler.INSTANCE.stop();
+        }
+        boolean dispatched = dispatchHuntPickupGoto(item);
+        if (dispatched) {
+            this.huntPickupNavigationActive = true;
+            this.lastHuntPickupGotoTick = nowTick;
+            this.huntPickupLastProgressTick = nowTick;
+            this.huntPickupLastDistanceSq = distanceSq;
+            this.lastHuntPickupTargetEntityId = itemId;
+            this.huntPickupRetryAfterTick = -99999;
+        } else if (this.huntPickupNavigationActive
+                && itemId == this.lastHuntPickupTargetEntityId
+                && EmbeddedNavigationHandler.INSTANCE.isPathingOrCalculating()) {
+            // The shared manager intentionally uses the normal goto throttle.
+            // A throttled refresh must not discard the still-running route.
+            this.lastHuntPickupGotoTick = nowTick;
+        } else {
+            // Do not leave a false active state behind when the navigation layer
+            // rejects a request (for example while another command is throttled).
+            this.huntPickupNavigationActive = false;
+            this.lastHuntPickupGotoTick = -99999;
+            this.lastHuntPickupTargetEntityId = Integer.MIN_VALUE;
+            this.huntPickupRetryAfterTick = nowTick + HUNT_PICKUP_RETRY_WAIT_TICKS;
+        }
+    }
+
+    private boolean dispatchHuntPickupGoto(EntityItem item) {
+        if (item == null) {
+            return false;
+        }
+        if (item.onGround) {
+            // Reuse the automatic pickup manager's exact local-goal resolver.
+            // It navigates to a passable feet cell (or its direct upper cell),
+            // rather than the item entity's often-unwalkable raw Y coordinate.
+            return AutoPickupHandler.INSTANCE.startNavigationToPickupItem(item);
+        }
+
+        // An airborne ItemEntity does not provide a useful standable Y goal.
+        // Approach its short-term horizontal landing trajectory, then vanilla
+        // collision picks it up as soon as the item reaches the player.
+        double goalX = item.posX + item.motionX * HUNT_PICKUP_AIRBORNE_LEAD_TICKS;
+        double goalZ = item.posZ + item.motionZ * HUNT_PICKUP_AIRBORNE_LEAD_TICKS;
+        return EmbeddedNavigationHandler.INSTANCE.startGotoXZ(goalX, goalZ);
     }
 
     private boolean hasReachedHuntPickupItem(EntityPlayerSP player, EntityItem item) {
@@ -4703,10 +4967,9 @@ public class KillAuraHandler implements AbstractGameEventListener {
             return false;
         }
 
-        // Hunt 拾取必须真正踩到掉落物实体上，不能只是在附近 1 格就停下。
-        return player.getEntityBoundingBox()
-                .grow(HUNT_PICKUP_OVERLAP_GROWTH, 0.0D, HUNT_PICKUP_OVERLAP_GROWTH)
-                .intersects(item.getEntityBoundingBox());
+        // Keep this consistent with the automatic pickup rule manager's
+        // default target reach distance.
+        return player.getDistanceSq(item) < 0.25D;
     }
 
     private void stopHuntNavigation() {
@@ -4731,13 +4994,17 @@ public class KillAuraHandler implements AbstractGameEventListener {
     }
 
     private void stopHuntPickupNavigation() {
-        if (!this.huntPickupNavigationActive) {
+        if (!this.huntPickupNavigationActive && this.lastHuntPickupTargetEntityId == Integer.MIN_VALUE) {
             return;
         }
         EmbeddedNavigationHandler.INSTANCE.stop();
         this.huntPickupNavigationActive = false;
         this.lastHuntPickupGotoTick = -99999;
         this.lastHuntPickupTargetEntityId = Integer.MIN_VALUE;
+        this.huntPickupReachedEntityId = Integer.MIN_VALUE;
+        this.huntPickupLastProgressTick = -99999;
+        this.huntPickupLastDistanceSq = Double.MAX_VALUE;
+        this.huntPickupRetryAfterTick = -99999;
     }
 
     public boolean isHuntPickupNavigationActive() {
@@ -5145,8 +5412,13 @@ public class KillAuraHandler implements AbstractGameEventListener {
 
     private double scoreHuntNavigationDestination(EntityPlayerSP player, EntityLivingBase target, double[] destination,
             double preferredRadius, boolean hasLineOfSight) {
+        return buildHuntScoreBreakdown(player, target, destination, preferredRadius, hasLineOfSight).totalScore;
+    }
+
+    private HuntScoreBreakdown buildHuntScoreBreakdown(EntityPlayerSP player, EntityLivingBase target,
+            double[] destination, double preferredRadius, boolean hasLineOfSight) {
         if (player == null || target == null || destination == null || destination.length < 3) {
-            return Double.POSITIVE_INFINITY;
+            return new HuntScoreBreakdown(Double.POSITIVE_INFINITY, 0.0D, 0.0D, 0.0D, 0.0D, 0.0D, 0.0D, false);
         }
 
         double targetDx = destination[0] - target.posX;
@@ -5156,10 +5428,26 @@ public class KillAuraHandler implements AbstractGameEventListener {
         double playerDx = destination[0] - player.posX;
         double playerDy = destination[1] - player.posY;
         double playerDz = destination[2] - player.posZ;
-        double playerDistancePenalty = playerDx * playerDx + playerDz * playerDz + playerDy * playerDy * 0.35D;
-        double verticalPenalty = Math.abs(destination[1] - target.posY);
-        double visibilityPenalty = hasLineOfSight ? 0.0D : 4.0D;
-        return radiusPenalty * 4.0D + playerDistancePenalty * 0.18D + verticalPenalty * 0.7D + visibilityPenalty;
+        double playerDistancePenalty = playerDx * playerDx + playerDz * playerDz;
+        double playerHeightPenalty = Math.abs(playerDy);
+        double targetHeightPenalty = Math.abs(destination[1] - target.posY);
+        double targetDistance = Math.sqrt(getHuntCandidateDistanceSq(target, destination[0], destination[1],
+                destination[2]));
+        double outsideAttackRangePenalty = Math.max(0.0D, targetDistance - attackRange);
+        double opennessPenalty = 4 - getHuntStandOpenness(new BlockPos(destination[0], destination[1],
+                destination[2]));
+        // When several floors intersect the attack sphere, stay on the player's
+        // current plane whenever that floor can actually see/reach the target.
+        // Target-height matching is only a weak tie breaker.
+        return new HuntScoreBreakdown(
+                radiusPenalty * huntScoreRadiusWeight,
+                playerDistancePenalty * huntScorePlayerDistanceWeight,
+                playerHeightPenalty * huntScorePlayerPlaneWeight,
+                targetHeightPenalty * huntScoreTargetHeightWeight,
+                outsideAttackRangePenalty * huntScoreAttackRangeWeight,
+                hasLineOfSight ? 0.0D : huntScoreVisibilityWeight,
+                opennessPenalty * huntScoreOpennessWeight,
+                hasLineOfSight);
     }
 
     private double scoreOrbitEntryDestination(EntityPlayerSP player, EntityLivingBase target, double[] destination,
@@ -5247,19 +5535,23 @@ public class KillAuraHandler implements AbstractGameEventListener {
         int baseZ = MathHelper.floor(desiredZ);
         int maxHorizontalSearchRadius = Math.max(0, horizontalSearchRadius);
         BlockPos bestStandPos = null;
+        double bestStandScore = Double.MAX_VALUE;
 
-        // Resolve the whole search ring at the requested level before looking
-        // at a higher platform. This keeps a usable target-level floor ahead of
-        // a closer-looking position on an upper layer.
-        for (int dy = 0; dy <= 3 && bestStandPos == null; dy++) {
-            double bestLayerScore = Double.MAX_VALUE;
+        // Search all nearby standable layers instead of stopping at the first
+        // target-height floor. A combat sphere can intersect multiple floors;
+        // select the layer that is reachable from the player's current height
+        // and still provides a real attack line.
+        int attackHeightPadding = Math.max(3, MathHelper.ceil(attackRange) + 1);
+        int minY = MathHelper.floor(target == null ? desiredY - 3.0D : target.posY - attackHeightPadding);
+        int maxY = MathHelper.floor(target == null ? desiredY + 3.0D : target.posY + attackHeightPadding);
+        for (int candidateY = minY; candidateY <= maxY; candidateY++) {
             for (int radius = 0; radius <= maxHorizontalSearchRadius; radius++) {
                 for (int dx = -radius; dx <= radius; dx++) {
                     for (int dz = -radius; dz <= radius; dz++) {
                         if (radius > 0 && Math.max(Math.abs(dx), Math.abs(dz)) != radius) {
                             continue;
                         }
-                        BlockPos candidate = new BlockPos(baseX + dx, baseY + dy, baseZ + dz);
+                        BlockPos candidate = new BlockPos(baseX + dx, candidateY, baseZ + dz);
                         if (!isStandableHuntFeetPos(candidate)) {
                             continue;
                         }
@@ -5273,9 +5565,25 @@ public class KillAuraHandler implements AbstractGameEventListener {
                         double dxScore = centerX - desiredX;
                         double dyScore = centerY - desiredY;
                         double dzScore = centerZ - desiredZ;
-                        double score = dxScore * dxScore + dzScore * dzScore + dyScore * dyScore * 0.45D;
-                        if (score < bestLayerScore) {
-                            bestLayerScore = score;
+                        double score = dxScore * dxScore + dzScore * dzScore + dyScore * dyScore * 0.12D;
+                        if (target != null) {
+                            BlockPos standPos = candidate;
+                            boolean hasLineOfSight = hasHuntLineOfSightFromStandPos(standPos, target);
+                            double targetDistance = Math.sqrt(getHuntCandidateDistanceSq(target, centerX, centerY,
+                                    centerZ));
+                            double outsideAttackRange = Math.max(0.0D, targetDistance - attackRange);
+                            double playerHeight = Math.abs(centerY - player.posY);
+                            double opennessPenalty = (4 - getHuntStandOpenness(candidate)) * 0.8D;
+                            // Attackable + visible points dominate; among those,
+                            // the player's current plane is preferred.
+                            score += playerHeight * huntScorePlayerPlaneWeight
+                                    + Math.abs(centerY - target.posY) * huntScoreTargetHeightWeight
+                                    + outsideAttackRange * huntScoreAttackRangeWeight
+                                    + (hasLineOfSight ? 0.0D : huntScoreVisibilityWeight * 1.5D)
+                                    + opennessPenalty * (huntScoreOpennessWeight / DEFAULT_HUNT_SCORE_OPENNESS_WEIGHT);
+                        }
+                        if (score < bestStandScore) {
+                            bestStandScore = score;
                             bestStandPos = candidate;
                         }
                     }
@@ -5296,9 +5604,54 @@ public class KillAuraHandler implements AbstractGameEventListener {
         }
 
         Vec3d eyePos = new Vec3d(standPos).addVector(0.5D, 1.62D, 0.5D);
-        Vec3d targetEye = new Vec3d(target.posX, target.posY + target.getEyeHeight() * 0.85D, target.posZ);
-        RayTraceResult ray = mc.world.rayTraceBlocks(eyePos, targetEye, false, true, false);
-        return ray == null || ray.typeOfHit != RayTraceResult.Type.BLOCK;
+        AxisAlignedBB targetBox = target.getEntityBoundingBox();
+        double targetX = (targetBox.minX + targetBox.maxX) * 0.5D;
+        double targetZ = (targetBox.minZ + targetBox.maxZ) * 0.5D;
+        double[] targetHeights = new double[] {
+                targetBox.minY + 0.15D,
+                (targetBox.minY + targetBox.maxY) * 0.5D,
+                Math.max(targetBox.minY + 0.15D, targetBox.maxY - 0.15D)
+        };
+        for (double targetY : targetHeights) {
+            Vec3d targetPoint = new Vec3d(targetX, targetY, targetZ);
+            RayTraceResult ray = mc.world.rayTraceBlocks(eyePos, targetPoint, false, true, false);
+            if (ray == null || ray.typeOfHit != RayTraceResult.Type.BLOCK) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private double getHuntCandidateDistanceSq(EntityLivingBase target, double x, double y, double z) {
+        if (target == null) {
+            return Double.MAX_VALUE;
+        }
+        AxisAlignedBB box = target.getEntityBoundingBox();
+        double closestX = Math.max(box.minX, Math.min(x, box.maxX));
+        double closestY = Math.max(box.minY, Math.min(y, box.maxY));
+        double closestZ = Math.max(box.minZ, Math.min(z, box.maxZ));
+        double dx = x - closestX;
+        double dy = y - closestY;
+        double dz = z - closestZ;
+        return dx * dx + dy * dy + dz * dz;
+    }
+
+    private int getHuntStandOpenness(BlockPos standPos) {
+        if (standPos == null || Minecraft.getMinecraft().world == null) {
+            return 0;
+        }
+        int openSides = 0;
+        BlockPos[] neighbors = new BlockPos[] {
+                standPos.north(), standPos.south(), standPos.west(), standPos.east()
+        };
+        for (BlockPos neighbor : neighbors) {
+            IBlockState feetState = Minecraft.getMinecraft().world.getBlockState(neighbor);
+            IBlockState headState = Minecraft.getMinecraft().world.getBlockState(neighbor.up());
+            if (!feetState.getMaterial().blocksMovement() && !headState.getMaterial().blocksMovement()) {
+                openSides++;
+            }
+        }
+        return openSides;
     }
 
     private double centerDistSq(double leftX, double leftZ, double rightX, double rightZ) {
@@ -5988,6 +6341,13 @@ public class KillAuraHandler implements AbstractGameEventListener {
         preset.nameBlacklist = new ArrayList<>(nameBlacklist == null ? new ArrayList<>() : nameBlacklist);
         preset.nearbyEntityScanRange = nearbyEntityScanRange;
         preset.attackRange = attackRange;
+        preset.huntScoreRadiusWeight = huntScoreRadiusWeight;
+        preset.huntScorePlayerDistanceWeight = huntScorePlayerDistanceWeight;
+        preset.huntScorePlayerPlaneWeight = huntScorePlayerPlaneWeight;
+        preset.huntScoreTargetHeightWeight = huntScoreTargetHeightWeight;
+        preset.huntScoreAttackRangeWeight = huntScoreAttackRangeWeight;
+        preset.huntScoreVisibilityWeight = huntScoreVisibilityWeight;
+        preset.huntScoreOpennessWeight = huntScoreOpennessWeight;
         preset.minAttackStrength = minAttackStrength;
         preset.minTurnSpeed = minTurnSpeed;
         preset.maxTurnSpeed = maxTurnSpeed;
@@ -6018,6 +6378,7 @@ public class KillAuraHandler implements AbstractGameEventListener {
                 : normalizedPreset.attackSequenceName.trim();
         normalizedPreset.fullBrightGamma = MathHelper.clamp(normalizedPreset.fullBrightGamma, 1.0F, 1000.0F);
         normalizedPreset.attackRange = MathHelper.clamp(normalizedPreset.attackRange, 1.0F, 100.0F);
+        normalizeHuntScoreWeights(normalizedPreset);
         normalizedPreset.minAttackStrength = MathHelper.clamp(normalizedPreset.minAttackStrength, 0.0F, 1.0F);
         SmoothTurnStepRange presetTurnRange = parseSmoothMaxTurnStepSpec(normalizedPreset.smoothMaxTurnStepSpec,
                 normalizedPreset.smoothMaxTurnStep);
@@ -6085,8 +6446,56 @@ public class KillAuraHandler implements AbstractGameEventListener {
         return normalizedPreset;
     }
 
+    public static void resetHuntScoreWeights() {
+        huntScoreRadiusWeight = DEFAULT_HUNT_SCORE_RADIUS_WEIGHT;
+        huntScorePlayerDistanceWeight = DEFAULT_HUNT_SCORE_PLAYER_DISTANCE_WEIGHT;
+        huntScorePlayerPlaneWeight = DEFAULT_HUNT_SCORE_PLAYER_PLANE_WEIGHT;
+        huntScoreTargetHeightWeight = DEFAULT_HUNT_SCORE_TARGET_HEIGHT_WEIGHT;
+        huntScoreAttackRangeWeight = DEFAULT_HUNT_SCORE_ATTACK_RANGE_WEIGHT;
+        huntScoreVisibilityWeight = DEFAULT_HUNT_SCORE_VISIBILITY_WEIGHT;
+        huntScoreOpennessWeight = DEFAULT_HUNT_SCORE_OPENNESS_WEIGHT;
+        INSTANCE.lastHuntScoreDebugTick = Integer.MIN_VALUE;
+    }
+
+    private static void normalizeHuntScoreWeights(KillAuraPreset preset) {
+        if (preset == null) {
+            return;
+        }
+        preset.huntScoreRadiusWeight = clampHuntScoreWeight(preset.huntScoreRadiusWeight,
+                DEFAULT_HUNT_SCORE_RADIUS_WEIGHT);
+        preset.huntScorePlayerDistanceWeight = clampHuntScoreWeight(preset.huntScorePlayerDistanceWeight,
+                DEFAULT_HUNT_SCORE_PLAYER_DISTANCE_WEIGHT);
+        preset.huntScorePlayerPlaneWeight = clampHuntScoreWeight(preset.huntScorePlayerPlaneWeight,
+                DEFAULT_HUNT_SCORE_PLAYER_PLANE_WEIGHT);
+        preset.huntScoreTargetHeightWeight = clampHuntScoreWeight(preset.huntScoreTargetHeightWeight,
+                DEFAULT_HUNT_SCORE_TARGET_HEIGHT_WEIGHT);
+        preset.huntScoreAttackRangeWeight = clampHuntScoreWeight(preset.huntScoreAttackRangeWeight,
+                DEFAULT_HUNT_SCORE_ATTACK_RANGE_WEIGHT);
+        preset.huntScoreVisibilityWeight = clampHuntScoreWeight(preset.huntScoreVisibilityWeight,
+                DEFAULT_HUNT_SCORE_VISIBILITY_WEIGHT);
+        preset.huntScoreOpennessWeight = clampHuntScoreWeight(preset.huntScoreOpennessWeight,
+                DEFAULT_HUNT_SCORE_OPENNESS_WEIGHT);
+    }
+
+    private static float clampHuntScoreWeight(float value, float fallback) {
+        return Float.isNaN(value) || Float.isInfinite(value) ? fallback : MathHelper.clamp(value, 0.0F, 100.0F);
+    }
+
     private static void normalizeConfig() {
         attackRange = MathHelper.clamp(attackRange, 1.0F, 100.0F);
+        huntScoreRadiusWeight = clampHuntScoreWeight(huntScoreRadiusWeight, DEFAULT_HUNT_SCORE_RADIUS_WEIGHT);
+        huntScorePlayerDistanceWeight = clampHuntScoreWeight(huntScorePlayerDistanceWeight,
+                DEFAULT_HUNT_SCORE_PLAYER_DISTANCE_WEIGHT);
+        huntScorePlayerPlaneWeight = clampHuntScoreWeight(huntScorePlayerPlaneWeight,
+                DEFAULT_HUNT_SCORE_PLAYER_PLANE_WEIGHT);
+        huntScoreTargetHeightWeight = clampHuntScoreWeight(huntScoreTargetHeightWeight,
+                DEFAULT_HUNT_SCORE_TARGET_HEIGHT_WEIGHT);
+        huntScoreAttackRangeWeight = clampHuntScoreWeight(huntScoreAttackRangeWeight,
+                DEFAULT_HUNT_SCORE_ATTACK_RANGE_WEIGHT);
+        huntScoreVisibilityWeight = clampHuntScoreWeight(huntScoreVisibilityWeight,
+                DEFAULT_HUNT_SCORE_VISIBILITY_WEIGHT);
+        huntScoreOpennessWeight = clampHuntScoreWeight(huntScoreOpennessWeight,
+                DEFAULT_HUNT_SCORE_OPENNESS_WEIGHT);
         minAttackStrength = MathHelper.clamp(minAttackStrength, 0.0F, 1.0F);
         SmoothTurnStepRange turnRange = parseSmoothMaxTurnStepSpec(smoothMaxTurnStepSpec, smoothMaxTurnStep);
         smoothMaxTurnStep = turnRange.min;

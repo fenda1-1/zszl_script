@@ -1012,7 +1012,7 @@ public class AutoPickupHandler {
             return;
         }
 
-        BlockPos pickupGoal = getLocalPickupGoal(currentTargetItem);
+        BlockPos pickupGoal = resolveLocalPickupGoal(currentTargetItem);
         if (pickupGoal == null) {
             // Do not let GoalTargetNormalizer climb through every layer in this X/Z column.
             // The normal pickup retry path will mark the item as unreachable if this remains true.
@@ -1029,21 +1029,18 @@ public class AutoPickupHandler {
             return;
         }
 
-        EmbeddedNavigationHandler.INSTANCE.startGoto(pickupGoal.getX() + 0.5D, pickupGoal.getY(),
-                pickupGoal.getZ() + 0.5D);
+        startNavigationToPickupGoal(pickupGoal);
         lastGotoTick = nowTick;
         lastGotoTargetEntityId = targetId;
         armPendingNavigationAttempt(nowTick);
     }
 
     /**
-     * Resolves a local pickup goal without letting the generic goal normalizer
-     * scan upward through an entire snow column. When the item is inside a
-     * non-passable cell, the immediately adjacent air cell is sufficient: the
-     * configured pickup radius is measured to the entity, not to a standable
-     * floor.
+     * Resolves the same local, standable pickup goal used by the rule manager.
+     * It avoids scanning through a whole snow column: when the item is inside
+     * a non-passable cell, only the immediately adjacent air cell is used.
      */
-    private BlockPos getLocalPickupGoal(EntityItem item) {
+    public BlockPos resolveLocalPickupGoal(EntityItem item) {
         if (item == null || mc.world == null) {
             return null;
         }
@@ -1058,6 +1055,27 @@ public class AutoPickupHandler {
             return null;
         }
         return isPickupGoalPassable(directlyAbove) ? directlyAbove : null;
+    }
+
+    /**
+     * Starts navigation with the rule manager's exact grounded-item goal
+     * normalization and normal command throttling.
+     */
+    public boolean startNavigationToPickupItem(EntityItem item) {
+        BlockPos pickupGoal = resolveLocalPickupGoal(item);
+        if (pickupGoal == null) {
+            EmbeddedNavigationHandler.INSTANCE.stop();
+            return false;
+        }
+        return startNavigationToPickupGoal(pickupGoal);
+    }
+
+    private boolean startNavigationToPickupGoal(BlockPos pickupGoal) {
+        if (pickupGoal == null) {
+            return false;
+        }
+        return EmbeddedNavigationHandler.INSTANCE.startGoto(pickupGoal.getX() + 0.5D, pickupGoal.getY(),
+                pickupGoal.getZ() + 0.5D);
     }
 
     private boolean isPickupGoalPassable(BlockPos pos) {

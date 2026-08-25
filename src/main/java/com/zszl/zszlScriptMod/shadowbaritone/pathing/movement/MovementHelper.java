@@ -616,12 +616,13 @@ public interface MovementHelper extends ActionCosts, Helper {
                 return true;
             }
             int layers = state.getValue(BlockSnow.LAYERS);
-            if (layers < 1) {
+            if (layers < 6) {
                 return false;
             }
-            // A snow layer is a walkable surface regardless of its exact height. This
-            // lets the planner use the air cell above 6-7 layers as a normal destination,
-            // while the passability rule above still keeps 6+ layers one block high.
+            // Low snow stays inside the current feet cell and must not also be
+            // exposed as a supporting block for the air cell above it. Otherwise
+            // the search can alternate between the flat node and a one-block-high
+            // node on 2-5 layers, making the executor repeatedly jump.
             Block below = bsi.get0(x, y - 1, z).getBlock();
             if (below == Blocks.AIR || below instanceof BlockLiquid) {
                 return false;

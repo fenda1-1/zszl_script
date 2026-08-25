@@ -74,6 +74,14 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
     private static final int BTN_HUNT_PICKUP_RULES = 51;
     private static final int BTN_ENDER_CRYSTAL = 52;
     private static final int BTN_THROUGH_WALL_ATTACK = 53;
+    private static final int BTN_HUNT_SCORE_RADIUS_WEIGHT = 54;
+    private static final int BTN_HUNT_SCORE_PLAYER_DISTANCE_WEIGHT = 55;
+    private static final int BTN_HUNT_SCORE_PLAYER_PLANE_WEIGHT = 56;
+    private static final int BTN_HUNT_SCORE_TARGET_HEIGHT_WEIGHT = 57;
+    private static final int BTN_HUNT_SCORE_ATTACK_RANGE_WEIGHT = 58;
+    private static final int BTN_HUNT_SCORE_VISIBILITY_WEIGHT = 59;
+    private static final int BTN_HUNT_SCORE_OPENNESS_WEIGHT = 60;
+    private static final int BTN_HUNT_SCORE_RESET = 61;
 
     private static final int BTN_SAVE = 100;
     private static final int BTN_DEFAULT = 101;
@@ -153,6 +161,14 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
     private GuiButton addSelectedBlacklistButton;
     private GuiButton addManualWhitelistButton;
     private GuiButton addManualBlacklistButton;
+    private GuiButton huntScoreRadiusWeightButton;
+    private GuiButton huntScorePlayerDistanceWeightButton;
+    private GuiButton huntScorePlayerPlaneWeightButton;
+    private GuiButton huntScoreTargetHeightWeightButton;
+    private GuiButton huntScoreAttackRangeWeightButton;
+    private GuiButton huntScoreVisibilityWeightButton;
+    private GuiButton huntScoreOpennessWeightButton;
+    private GuiButton huntScoreResetButton;
 
     private GuiButton saveButton;
     private GuiButton defaultButton;
@@ -230,6 +246,13 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
     private int selectedWhitelistIndex = -1;
     private boolean whitelistDragActive = false;
     private int whitelistDragIndex = -1;
+    private static final int HUNT_SCORE_DEBUG_PANEL_HEIGHT = 138;
+    private static final int HUNT_SCORE_DEBUG_ROW_HEIGHT = 38;
+    private int huntScoreDebugPanelX;
+    private int huntScoreDebugPanelY;
+    private int huntScoreDebugPanelW;
+    private int huntScoreDebugPanelH;
+    private int huntScoreDebugScroll = 0;
 
     private final NearbyNameDropdown nearbyNameDropdown = new NearbyNameDropdown();
     private final AttackModeDropdown attackModeDropdown = new AttackModeDropdown();
@@ -259,24 +282,19 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
         this.panelY = (this.height - this.panelHeight) / 2;
 
         this.instructionLines.clear();
-        String instruction = "顶部可用滚轮或左右方向键切换分组；下方只显示当前分组内容，方便集中修改。";
-        int instructionWidth = Math.max(80, this.panelWidth - 32);
-        this.instructionLines.addAll(this.fontRenderer.listFormattedStringToWidth(instruction, instructionWidth));
-
-        int instructionHeight = this.instructionLines.size() * 10;
         int footerTop = this.panelY + this.panelHeight - 28;
         this.groupBarX = this.panelX + 10;
-        this.groupBarY = this.panelY + 24 + instructionHeight + 6;
-        this.groupBarW = this.panelWidth - 20;
-        this.groupBarH = GROUP_TAB_HEIGHT + GROUP_SCROLLBAR_HEIGHT + 14;
-        this.groupTabsX = this.groupBarX + 32;
-        this.groupTabsY = this.groupBarY + 5;
-        this.groupTabsW = this.groupBarW - 64;
+        this.groupBarY = this.panelY + 24;
+        this.groupBarW = Math.min(112, Math.max(88, this.panelWidth / 4));
+        this.groupBarH = Math.max(150, footerTop - 8 - this.groupBarY);
+        this.groupTabsX = this.groupBarX + 6;
+        this.groupTabsY = this.groupBarY + 20;
+        this.groupTabsW = this.groupBarW - 12;
         this.groupTabsH = GROUP_TAB_HEIGHT;
 
-        this.contentFrameX = this.panelX + 10;
-        this.contentFrameY = this.groupBarY + this.groupBarH + 8;
-        this.contentFrameW = this.panelWidth - 20;
+        this.contentFrameX = this.groupBarX + this.groupBarW + 8;
+        this.contentFrameY = this.panelY + 24;
+        this.contentFrameW = this.panelX + this.panelWidth - 10 - this.contentFrameX;
         this.contentFrameH = Math.max(80, footerTop - 8 - this.contentFrameY);
 
         this.contentTop = this.contentFrameY + 22;
@@ -354,6 +372,17 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
         addSelectedBlacklistButton = new ThemedButton(BTN_ADD_SELECTED_BLACKLIST, 0, 0, 100, 20, "");
         addManualWhitelistButton = new ThemedButton(BTN_ADD_MANUAL_WHITELIST, 0, 0, 100, 20, "");
         addManualBlacklistButton = new ThemedButton(BTN_ADD_MANUAL_BLACKLIST, 0, 0, 100, 20, "");
+        huntScoreRadiusWeightButton = new ThemedButton(BTN_HUNT_SCORE_RADIUS_WEIGHT, 0, 0, 100, 20, "");
+        huntScorePlayerDistanceWeightButton = new ThemedButton(BTN_HUNT_SCORE_PLAYER_DISTANCE_WEIGHT, 0, 0, 100, 20,
+                "");
+        huntScorePlayerPlaneWeightButton = new ThemedButton(BTN_HUNT_SCORE_PLAYER_PLANE_WEIGHT, 0, 0, 100, 20, "");
+        huntScoreTargetHeightWeightButton = new ThemedButton(BTN_HUNT_SCORE_TARGET_HEIGHT_WEIGHT, 0, 0, 100, 20,
+                "");
+        huntScoreAttackRangeWeightButton = new ThemedButton(BTN_HUNT_SCORE_ATTACK_RANGE_WEIGHT, 0, 0, 100, 20,
+                "");
+        huntScoreVisibilityWeightButton = new ThemedButton(BTN_HUNT_SCORE_VISIBILITY_WEIGHT, 0, 0, 100, 20, "");
+        huntScoreOpennessWeightButton = new ThemedButton(BTN_HUNT_SCORE_OPENNESS_WEIGHT, 0, 0, 100, 20, "");
+        huntScoreResetButton = new ThemedButton(BTN_HUNT_SCORE_RESET, 0, 0, 100, 20, "恢复默认评分权重");
 
         saveButton = new ThemedButton(BTN_SAVE, 0, 0, 90, 20, "§a保存并关闭");
         defaultButton = new ThemedButton(BTN_DEFAULT, 0, 0, 90, 20, "§e恢复默认");
@@ -416,6 +445,14 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
         this.buttonList.add(addSelectedBlacklistButton);
         this.buttonList.add(addManualWhitelistButton);
         this.buttonList.add(addManualBlacklistButton);
+        this.buttonList.add(huntScoreRadiusWeightButton);
+        this.buttonList.add(huntScorePlayerDistanceWeightButton);
+        this.buttonList.add(huntScorePlayerPlaneWeightButton);
+        this.buttonList.add(huntScoreTargetHeightWeightButton);
+        this.buttonList.add(huntScoreAttackRangeWeightButton);
+        this.buttonList.add(huntScoreVisibilityWeightButton);
+        this.buttonList.add(huntScoreOpennessWeightButton);
+        this.buttonList.add(huntScoreResetButton);
         this.buttonList.add(groupPrevButton);
         this.buttonList.add(groupNextButton);
         this.buttonList.add(presetSaveNewButton);
@@ -614,6 +651,21 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
         addManualWhitelistButton.displayString = "手动添加白名单项";
         addManualBlacklistButton.displayString = "手动添加黑名单项";
 
+        huntScoreRadiusWeightButton.displayString = "半径偏差: " + formatFloat(KillAuraHandler.huntScoreRadiusWeight);
+        huntScorePlayerDistanceWeightButton.displayString = "移动距离: "
+                + formatFloat(KillAuraHandler.huntScorePlayerDistanceWeight);
+        huntScorePlayerPlaneWeightButton.displayString = "玩家平面: "
+                + formatFloat(KillAuraHandler.huntScorePlayerPlaneWeight);
+        huntScoreTargetHeightWeightButton.displayString = "目标高度: "
+                + formatFloat(KillAuraHandler.huntScoreTargetHeightWeight);
+        huntScoreAttackRangeWeightButton.displayString = "超攻击距离: "
+                + formatFloat(KillAuraHandler.huntScoreAttackRangeWeight);
+        huntScoreVisibilityWeightButton.displayString = "视线阻挡: "
+                + formatFloat(KillAuraHandler.huntScoreVisibilityWeight);
+        huntScoreOpennessWeightButton.displayString = "周边狭窄: "
+                + formatFloat(KillAuraHandler.huntScoreOpennessWeight);
+        huntScoreResetButton.displayString = "恢复默认评分权重";
+
         groupPrevButton.enabled = this.selectedGroup.ordinal() > 0;
         groupNextButton.enabled = this.selectedGroup.ordinal() < ConfigGroup.values().length - 1;
 
@@ -659,8 +711,9 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
         int footerTotalW = footerButtonW * 3 + footerGap * 2;
         int footerStartX = this.panelX + (this.panelWidth - footerTotalW) / 2;
 
-        layoutFixedButton(groupPrevButton, this.groupBarX + 6, this.groupTabsY, 20, this.groupTabsH);
-        layoutFixedButton(groupNextButton, this.groupBarX + this.groupBarW - 26, this.groupTabsY, 20, this.groupTabsH);
+        layoutFixedButton(groupPrevButton, this.groupBarX + 6, this.groupBarY + this.groupBarH - 24, 20, 18);
+        layoutFixedButton(groupNextButton, this.groupBarX + this.groupBarW - 26, this.groupBarY + this.groupBarH - 24,
+                20, 18);
 
         layoutFixedButton(saveButton, footerStartX, footerY, footerButtonW, 20);
         layoutFixedButton(defaultButton, footerStartX + footerButtonW + footerGap, footerY, footerButtonW, 20);
@@ -805,7 +858,28 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
 
         currentY += rowStep;
         placeContentButton(noDamageAttackLimitButton, leftX, currentY, fullWidth, buttonHeight, layout);
-        return currentY + buttonHeight + 4;
+
+        currentY += rowStep;
+        placeContentButton(huntScoreRadiusWeightButton, leftX, currentY, buttonW, buttonHeight, layout);
+        placeContentButton(huntScorePlayerDistanceWeightButton, rightX, currentY, buttonW, buttonHeight, layout);
+        currentY += rowStep;
+        placeContentButton(huntScorePlayerPlaneWeightButton, leftX, currentY, buttonW, buttonHeight, layout);
+        placeContentButton(huntScoreTargetHeightWeightButton, rightX, currentY, buttonW, buttonHeight, layout);
+        currentY += rowStep;
+        placeContentButton(huntScoreAttackRangeWeightButton, leftX, currentY, buttonW, buttonHeight, layout);
+        placeContentButton(huntScoreVisibilityWeightButton, rightX, currentY, buttonW, buttonHeight, layout);
+        currentY += rowStep;
+        placeContentButton(huntScoreOpennessWeightButton, leftX, currentY, buttonW, buttonHeight, layout);
+        placeContentButton(huntScoreResetButton, rightX, currentY, buttonW, buttonHeight, layout);
+
+        currentY += rowStep;
+        if (layout) {
+            this.huntScoreDebugPanelX = leftX;
+            this.huntScoreDebugPanelY = this.contentTop + currentY - this.contentScroll;
+            this.huntScoreDebugPanelW = fullWidth;
+            this.huntScoreDebugPanelH = HUNT_SCORE_DEBUG_PANEL_HEIGHT;
+        }
+        return currentY + HUNT_SCORE_DEBUG_PANEL_HEIGHT + 4;
     }
 
     private int layoutNameFilterGroup(int leftX, int rightX, int fullWidth, int buttonW, int buttonHeight, int rowStep,
@@ -982,6 +1056,14 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
         hideButton(addSelectedBlacklistButton);
         hideButton(addManualWhitelistButton);
         hideButton(addManualBlacklistButton);
+        hideButton(huntScoreRadiusWeightButton);
+        hideButton(huntScorePlayerDistanceWeightButton);
+        hideButton(huntScorePlayerPlaneWeightButton);
+        hideButton(huntScoreTargetHeightWeightButton);
+        hideButton(huntScoreAttackRangeWeightButton);
+        hideButton(huntScoreVisibilityWeightButton);
+        hideButton(huntScoreOpennessWeightButton);
+        hideButton(huntScoreResetButton);
         hideButton(presetSaveNewButton);
         hideButton(presetApplyButton);
         hideButton(presetOverwriteButton);
@@ -1052,15 +1134,8 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
 
     private void recalcGroupTabs() {
         this.groupTabContentWidth = 0;
-        ConfigGroup[] groups = ConfigGroup.values();
-        for (int i = 0; i < groups.length; i++) {
-            this.groupTabContentWidth += getGroupTabWidth(groups[i]);
-            if (i < groups.length - 1) {
-                this.groupTabContentWidth += GROUP_TAB_GAP;
-            }
-        }
-        this.groupTabMaxScroll = Math.max(0, this.groupTabContentWidth - this.groupTabsW);
-        ensureSelectedGroupVisible();
+        this.groupTabMaxScroll = 0;
+        this.groupTabScroll = 0;
     }
 
     private int getGroupTabWidth(ConfigGroup group) {
@@ -1069,23 +1144,7 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
     }
 
     private void ensureSelectedGroupVisible() {
-        int startX = 0;
-        ConfigGroup[] groups = ConfigGroup.values();
-        for (ConfigGroup group : groups) {
-            int tabWidth = getGroupTabWidth(group);
-            if (group == this.selectedGroup) {
-                int endX = startX + tabWidth;
-                if (startX < this.groupTabScroll) {
-                    this.groupTabScroll = startX;
-                } else if (endX > this.groupTabScroll + this.groupTabsW) {
-                    this.groupTabScroll = endX - this.groupTabsW;
-                }
-                this.groupTabScroll = clampInt(this.groupTabScroll, 0, this.groupTabMaxScroll);
-                return;
-            }
-            startX += tabWidth + GROUP_TAB_GAP;
-        }
-        this.groupTabScroll = clampInt(this.groupTabScroll, 0, this.groupTabMaxScroll);
+        this.groupTabScroll = 0;
     }
 
     private boolean handleGroupWheel(int wheel, int mouseX, int mouseY) {
@@ -1112,19 +1171,31 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
         return true;
     }
 
+    private boolean handleHuntScoreDebugWheel(int wheel, int mouseX, int mouseY) {
+        if (this.selectedGroup != ConfigGroup.TARGET
+                || !isMouseInside(mouseX, mouseY, huntScoreDebugPanelX, huntScoreDebugPanelY, huntScoreDebugPanelW,
+                        huntScoreDebugPanelH)) {
+            return false;
+        }
+        int entries = KillAuraHandler.INSTANCE.getHuntScoreDebugEntries().size();
+        int visibleRows = Math.max(1, (huntScoreDebugPanelH - 19) / HUNT_SCORE_DEBUG_ROW_HEIGHT);
+        int maxScroll = Math.max(0, entries - visibleRows);
+        this.huntScoreDebugScroll = clampInt(this.huntScoreDebugScroll + (wheel < 0 ? 1 : -1), 0, maxScroll);
+        return true;
+    }
+
     private boolean handleGroupClick(int mouseX, int mouseY) {
-        if (!isMouseInside(mouseX, mouseY, this.groupTabsX, this.groupTabsY, this.groupTabsW, this.groupTabsH)) {
+        if (!isMouseInside(mouseX, mouseY, this.groupBarX, this.groupBarY, this.groupBarW, this.groupBarH)) {
             return false;
         }
 
-        int currentX = this.groupTabsX - this.groupTabScroll;
+        int currentY = this.groupTabsY;
         for (ConfigGroup group : ConfigGroup.values()) {
-            int tabWidth = getGroupTabWidth(group);
-            if (isMouseInside(mouseX, mouseY, currentX, this.groupTabsY, tabWidth, this.groupTabsH)) {
+            if (isMouseInside(mouseX, mouseY, this.groupTabsX, currentY, this.groupTabsW, this.groupTabsH)) {
                 setSelectedGroup(group);
                 return true;
             }
-            currentX += tabWidth + GROUP_TAB_GAP;
+            currentY += this.groupTabsH + GROUP_TAB_GAP;
         }
         return false;
     }
@@ -1188,6 +1259,10 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
         int mouseY = this.height - Mouse.getEventY() * this.height / this.mc.displayHeight - 1;
 
         if (handlePresetWheel(wheel, mouseX, mouseY)) {
+            return;
+        }
+
+        if (handleHuntScoreDebugWheel(wheel, mouseX, mouseY)) {
             return;
         }
 
@@ -1586,6 +1661,38 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
         case BTN_HUNT_PICKUP_RULES:
             mc.displayGuiScreen(new GuiHuntPickupRuleManager(this));
             return;
+        case BTN_HUNT_SCORE_RADIUS_WEIGHT:
+            openHuntScoreWeightInput("半径偏差权重", KillAuraHandler.huntScoreRadiusWeight,
+                    value -> KillAuraHandler.huntScoreRadiusWeight = value);
+            return;
+        case BTN_HUNT_SCORE_PLAYER_DISTANCE_WEIGHT:
+            openHuntScoreWeightInput("移动距离权重", KillAuraHandler.huntScorePlayerDistanceWeight,
+                    value -> KillAuraHandler.huntScorePlayerDistanceWeight = value);
+            return;
+        case BTN_HUNT_SCORE_PLAYER_PLANE_WEIGHT:
+            openHuntScoreWeightInput("玩家平面权重", KillAuraHandler.huntScorePlayerPlaneWeight,
+                    value -> KillAuraHandler.huntScorePlayerPlaneWeight = value);
+            return;
+        case BTN_HUNT_SCORE_TARGET_HEIGHT_WEIGHT:
+            openHuntScoreWeightInput("目标高度权重", KillAuraHandler.huntScoreTargetHeightWeight,
+                    value -> KillAuraHandler.huntScoreTargetHeightWeight = value);
+            return;
+        case BTN_HUNT_SCORE_ATTACK_RANGE_WEIGHT:
+            openHuntScoreWeightInput("超攻击距离权重", KillAuraHandler.huntScoreAttackRangeWeight,
+                    value -> KillAuraHandler.huntScoreAttackRangeWeight = value);
+            return;
+        case BTN_HUNT_SCORE_VISIBILITY_WEIGHT:
+            openHuntScoreWeightInput("视线阻挡权重", KillAuraHandler.huntScoreVisibilityWeight,
+                    value -> KillAuraHandler.huntScoreVisibilityWeight = value);
+            return;
+        case BTN_HUNT_SCORE_OPENNESS_WEIGHT:
+            openHuntScoreWeightInput("周边狭窄权重", KillAuraHandler.huntScoreOpennessWeight,
+                    value -> KillAuraHandler.huntScoreOpennessWeight = value);
+            return;
+        case BTN_HUNT_SCORE_RESET:
+            KillAuraHandler.resetHuntScoreWeights();
+            refreshButtonTexts();
+            return;
         case BTN_HUNT_VISUALIZE:
             KillAuraHandler.visualizeHuntRadius = !KillAuraHandler.visualizeHuntRadius;
             break;
@@ -1892,6 +1999,8 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
                     whitelistBoxH, whitelistListScroll, mouseX, mouseY, 0xFF4FA6D9, true);
             drawNameListBox("黑名单", KillAuraHandler.nameBlacklist, blacklistBoxX, blacklistBoxY, blacklistBoxW,
                     blacklistBoxH, blacklistListScroll, mouseX, mouseY, 0xFFE57C7C, false);
+        } else if (this.selectedGroup == ConfigGroup.TARGET) {
+            drawHuntScoreDebugPanel();
         } else if (this.selectedGroup == ConfigGroup.PRESET) {
             drawPresetPanel(mouseX, mouseY);
         }
@@ -1910,7 +2019,62 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
         drawHoverTooltips(mouseX, mouseY);
     }
 
+    private void drawHuntScoreDebugPanel() {
+        if (huntScoreDebugPanelY + huntScoreDebugPanelH < this.contentTop
+                || huntScoreDebugPanelY > this.contentBottom) {
+            return;
+        }
+        int panelTop = Math.max(this.contentTop, huntScoreDebugPanelY);
+        int panelBottom = Math.min(this.contentBottom, huntScoreDebugPanelY + huntScoreDebugPanelH);
+        if (panelBottom <= panelTop) {
+            return;
+        }
+        drawRect(huntScoreDebugPanelX, panelTop, huntScoreDebugPanelX + huntScoreDebugPanelW, panelBottom,
+                0xCC1A2533);
+        drawString(this.fontRenderer, "追击落点评分（分数越低越优先）", huntScoreDebugPanelX + 5, panelTop + 4,
+                GuiTheme.TITLE_RIGHT);
+
+        List<KillAuraHandler.HuntScoreDebugEntry> entries = KillAuraHandler.INSTANCE.getHuntScoreDebugEntries();
+        int listTop = panelTop + 16;
+        int listBottom = panelBottom - 3;
+        int visibleRows = Math.max(1, (listBottom - listTop) / HUNT_SCORE_DEBUG_ROW_HEIGHT);
+        int maxScroll = Math.max(0, entries.size() - visibleRows);
+        this.huntScoreDebugScroll = clampInt(this.huntScoreDebugScroll, 0, maxScroll);
+        if (entries.isEmpty()) {
+            drawString(this.fontRenderer, "暂无符合当前筛选条件的目标", huntScoreDebugPanelX + 5, listTop + 5,
+                    GuiTheme.SUB_TEXT);
+            return;
+        }
+
+        int rowWidth = huntScoreDebugPanelW - 12;
+        for (int row = 0; row < visibleRows; row++) {
+            int index = this.huntScoreDebugScroll + row;
+            if (index >= entries.size()) {
+                break;
+            }
+            KillAuraHandler.HuntScoreDebugEntry entry = entries.get(index);
+            int rowY = listTop + row * HUNT_SCORE_DEBUG_ROW_HEIGHT;
+            drawRect(huntScoreDebugPanelX + 4, rowY, huntScoreDebugPanelX + 4 + rowWidth,
+                    rowY + HUNT_SCORE_DEBUG_ROW_HEIGHT - 2, index == 0 ? 0x55368B72 : 0x33314155);
+            String header = String.format(Locale.ROOT, "%d. %s  总分 %.2f  %s", index + 1,
+                    safe(entry.name), entry.totalScore, entry.hasDestination ? "可达" : "无落点");
+            drawString(this.fontRenderer, trimToWidth(header, rowWidth - 8), huntScoreDebugPanelX + 7, rowY + 3,
+                    index == 0 ? 0xFF7FE6B6 : GuiTheme.LABEL_TEXT);
+            String detailOne = String.format(Locale.ROOT, "半径 %.2f  距离 %.2f  平面 %.2f  高度 %.2f",
+                    entry.radiusScore, entry.playerDistanceScore, entry.playerPlaneScore, entry.targetHeightScore);
+            String detailTwo = String.format(Locale.ROOT, "范围 %.2f  视线 %.2f  开阔 %.2f%s", entry.attackRangeScore,
+                    entry.visibilityScore, entry.opennessScore, entry.visible ? "" : "  无视线");
+            drawString(this.fontRenderer, trimToWidth(detailOne, rowWidth - 8), huntScoreDebugPanelX + 7, rowY + 14,
+                    GuiTheme.SUB_TEXT);
+            drawString(this.fontRenderer, trimToWidth(detailTwo, rowWidth - 8), huntScoreDebugPanelX + 7, rowY + 24,
+                    GuiTheme.SUB_TEXT);
+        }
+    }
+
     private void drawHoverTooltips(int mouseX, int mouseY) {
+        if (this.selectedGroup == ConfigGroup.TARGET && drawHuntScoreWeightTooltip(mouseX, mouseY)) {
+            return;
+        }
         if (this.selectedGroup == ConfigGroup.PRESET
                 && isMouseInside(mouseX, mouseY, this.contentFrameX, this.contentFrameY, this.contentFrameW,
                         this.contentFrameH)) {
@@ -1931,7 +2095,7 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
                         mouseY);
             }
         } else if (isMouseInside(mouseX, mouseY, this.groupBarX, this.groupBarY, this.groupBarW, this.groupBarH)) {
-            drawHoveringText(Arrays.asList("§e顶部功能分组", "§7点击分组可切换当前功能页。", "§7把鼠标放在这里滚轮滚动，或按键盘左右方向键，也能快速切组。"), mouseX,
+            drawHoveringText(Arrays.asList("§e左侧功能分组", "§7点击分组可切换当前功能页。", "§7把鼠标放在侧栏滚轮滚动，或按键盘左右方向键，也能快速切组。"), mouseX,
                     mouseY);
         } else if (this.selectedGroup == ConfigGroup.ATTACK && attackModeDropdown.isHoveringAnyPart(mouseX, mouseY)) {
             drawHoveringText(
@@ -2023,6 +2187,7 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
                     mouseX, mouseY);
         } else if (huntPickupButton.visible && isMouseOver(mouseX, mouseY, huntPickupButton)) {
             drawHoveringText(Arrays.asList("§e优先拾取掉落物", "§7默认关闭。", "§7开启后，Hunt 在追击半径内发现掉落物时会先去捡，再继续追怪。",
+                    "§7空中掉落物会提前靠近其短期水平落点，落地前不再忽略。",
                     "§7如果你当前就在自动拾取规则范围内，会优先让自动拾取规则管理器接管，不会互相抢导航。"), mouseX, mouseY);
         } else if (huntPickupRuleButton.visible && isMouseOver(mouseX, mouseY, huntPickupRuleButton)) {
             drawHoveringText(Arrays.asList("§e掉落过滤规则", "§7打开独立规则管理器，给 Hunt 拾取掉落物配置允许/屏蔽规则。",
@@ -2097,6 +2262,38 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
         }
     }
 
+    private boolean drawHuntScoreWeightTooltip(int mouseX, int mouseY) {
+        if (huntScoreRadiusWeightButton.visible && isMouseOver(mouseX, mouseY, huntScoreRadiusWeightButton)) {
+            drawHoveringText(Arrays.asList("§e半径偏差权重", "§7惩罚落点与期望追击半径的偏差。", "§7越大越倾向严格保持靠近/固定距离。"), mouseX, mouseY);
+        } else if (huntScorePlayerDistanceWeightButton.visible
+                && isMouseOver(mouseX, mouseY, huntScorePlayerDistanceWeightButton)) {
+            drawHoveringText(Arrays.asList("§e移动距离权重", "§7惩罚落点离玩家当前水平位置过远。", "§7越大越少绕路、更倾向就近落点。"), mouseX, mouseY);
+        } else if (huntScorePlayerPlaneWeightButton.visible
+                && isMouseOver(mouseX, mouseY, huntScorePlayerPlaneWeightButton)) {
+            drawHoveringText(Arrays.asList("§e玩家平面权重", "§7惩罚落点与玩家脚底高度不同。", "§7越大越优先保持在玩家当前楼层。"), mouseX, mouseY);
+        } else if (huntScoreTargetHeightWeightButton.visible
+                && isMouseOver(mouseX, mouseY, huntScoreTargetHeightWeightButton)) {
+            drawHoveringText(Arrays.asList("§e目标高度权重", "§7惩罚落点与目标高度不同。", "§7这是弱参考；调高后更偏向与目标同层。"), mouseX, mouseY);
+        } else if (huntScoreAttackRangeWeightButton.visible
+                && isMouseOver(mouseX, mouseY, huntScoreAttackRangeWeightButton)) {
+            drawHoveringText(Arrays.asList("§e超攻击距离权重", "§7惩罚落点到目标碰撞箱最近点超过攻击范围。", "§7建议保持较高，避免走到仍然打不到的位置。"), mouseX, mouseY);
+        } else if (huntScoreVisibilityWeightButton.visible
+                && isMouseOver(mouseX, mouseY, huntScoreVisibilityWeightButton)) {
+            drawHoveringText(Arrays.asList("§e视线阻挡权重", "§7惩罚无法看到目标上/中/下部任一点的落点。", "§7越大越优先选择有稳定攻击视线的平台。"), mouseX, mouseY);
+        } else if (huntScoreOpennessWeightButton.visible
+                && isMouseOver(mouseX, mouseY, huntScoreOpennessWeightButton)) {
+            drawHoveringText(Arrays.asList("§e周边狭窄权重", "§7惩罚四周可通行方向较少的狭窄落点。", "§7越大越倾向开阔空间。"), mouseX, mouseY);
+        } else if (huntScoreResetButton.visible && isMouseOver(mouseX, mouseY, huntScoreResetButton)) {
+            drawHoveringText(Arrays.asList("§e恢复默认评分权重", "§7只重置落点评分的七个权重。", "§7不会影响目标类型、攻击范围或其他杀戮光环设置。"), mouseX, mouseY);
+        } else if (isMouseInside(mouseX, mouseY, huntScoreDebugPanelX, huntScoreDebugPanelY, huntScoreDebugPanelW,
+                huntScoreDebugPanelH)) {
+            drawHoveringText(Arrays.asList("§e追击落点评分", "§7总分越低，代表当前权重下越优先。", "§7滚轮可浏览更多目标；明细显示各项实际扣分。"), mouseX, mouseY);
+        } else {
+            return false;
+        }
+        return true;
+    }
+
     private void drawPresetPanel(int mouseX, int mouseY) {
         int visibleRows = getPresetVisibleRows();
         int startIndex = this.presetScrollOffset;
@@ -2154,34 +2351,24 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
     private void drawGroupTabs(int mouseX, int mouseY) {
         drawCustomSectionFrame("功能分组", this.groupBarX, this.groupBarY, this.groupBarW, this.groupBarH);
 
-        int currentX = this.groupTabsX - this.groupTabScroll;
+        int currentY = this.groupTabsY;
         for (ConfigGroup group : ConfigGroup.values()) {
-            int tabWidth = getGroupTabWidth(group);
-            if (currentX + tabWidth >= this.groupTabsX && currentX <= this.groupTabsX + this.groupTabsW) {
-                boolean hovered = isMouseInside(mouseX, mouseY, currentX, this.groupTabsY, tabWidth, this.groupTabsH);
+            if (currentY + this.groupTabsH <= this.groupBarY + this.groupBarH - 28) {
+                boolean hovered = isMouseInside(mouseX, mouseY, this.groupTabsX, currentY, this.groupTabsW,
+                        this.groupTabsH);
                 boolean selected = group == this.selectedGroup;
                 UiState state = selected ? UiState.SUCCESS : (hovered ? UiState.HOVER : UiState.NORMAL);
-                GuiTheme.drawButtonFrameSafe(currentX, this.groupTabsY, tabWidth, this.groupTabsH, state);
+                GuiTheme.drawButtonFrameSafe(this.groupTabsX, currentY, this.groupTabsW, this.groupTabsH, state);
                 if (selected) {
-                    drawRect(currentX + 3, this.groupTabsY + this.groupTabsH - 2, currentX + tabWidth - 3,
-                            this.groupTabsY + this.groupTabsH, 0xFF8EE2FF);
+                    drawRect(this.groupTabsX, currentY + 2, this.groupTabsX + 3, currentY + this.groupTabsH - 2,
+                            0xFF8EE2FF);
                 }
                 int textColor = selected ? 0xFFEAFBFF : GuiTheme.getStateTextColor(state);
-                this.drawCenteredString(this.fontRenderer, group.tabLabel, currentX + tabWidth / 2, this.groupTabsY + 6,
+                this.drawCenteredString(this.fontRenderer, trimToWidth(group.tabLabel, this.groupTabsW - 10),
+                        this.groupTabsX + this.groupTabsW / 2, currentY + 6,
                         textColor);
             }
-            currentX += tabWidth + GROUP_TAB_GAP;
-        }
-
-        if (this.groupTabMaxScroll > 0) {
-            int trackX = this.groupTabsX;
-            int trackY = this.groupBarY + this.groupBarH - GROUP_SCROLLBAR_HEIGHT - 4;
-            int trackW = this.groupTabsW;
-            int thumbW = Math.max(18, (int) ((this.groupTabsW / (float) this.groupTabContentWidth) * trackW));
-            int thumbTravel = Math.max(1, trackW - thumbW);
-            int thumbX = trackX + (int) ((this.groupTabScroll / (float) this.groupTabMaxScroll) * thumbTravel);
-            drawRect(trackX, trackY, trackX + trackW, trackY + GROUP_SCROLLBAR_HEIGHT, 0xAA1B2733);
-            drawRect(thumbX, trackY, thumbX + thumbW, trackY + GROUP_SCROLLBAR_HEIGHT, 0xFF4FA6D9);
+            currentY += this.groupTabsH + GROUP_TAB_GAP;
         }
     }
 
@@ -2564,6 +2751,7 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
         clearWhitelistSelectionState();
         KillAuraHandler.nearbyEntityScanRange = 10.0F;
         KillAuraHandler.attackRange = 4.2F;
+        KillAuraHandler.resetHuntScoreWeights();
         KillAuraHandler.minAttackStrength = 0.92F;
         KillAuraHandler.minTurnSpeed = 4.0F;
         KillAuraHandler.maxTurnSpeed = 18.0F;
@@ -2585,6 +2773,13 @@ public class GuiKillAuraConfig extends ThemedGuiScreen {
                 && !KillAuraHandler.targetEnderCrystal) {
             KillAuraHandler.targetHostile = true;
         }
+    }
+
+    private void openHuntScoreWeightInput(String label, float current, FloatConsumer consumer) {
+        openFloatInput("输入" + label + " (0.0 - 100.0)", current, 0.0F, 100.0F, value -> {
+            consumer.accept(value);
+            refreshButtonTexts();
+        });
     }
 
     private void openFloatInput(String title, float current, float min, float max, FloatConsumer consumer) {
