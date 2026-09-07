@@ -1,3 +1,6 @@
+
+> ⚠️ **本仓库已停止维护。** 新版请前往 [MythosScript](https://github.com/fenda1-1/MythosScript) 查看。
+
 # 🎮 我的世界脚本（Minecraft Script System）
 ![GitHub license](https://img.shields.io/badge/license-LGPL%20v3.0-blue.svg)
 ![Minecraft](https://img.shields.io/badge/Minecraft-1.12.2-brightgreen.svg)
@@ -247,3 +250,4 @@
 ---
 
 ✨ *End of README*
+
